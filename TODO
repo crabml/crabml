@@ -1,0 +1,3 @@
+- [ ] gguf parser
+
+https://github.com/ggerganov/llama.cpp/blob/master/gguf-py/gguf/gguf.py

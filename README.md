@@ -1,5 +1,3 @@
 # ggml-rs
 
-## TODO
-
-- [ ] GgufDecoder
+ggml-rs is a Rust reimplementation of ggml.

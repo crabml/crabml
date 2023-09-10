@@ -1,1 +1,5 @@
 # ggml-rs
+
+## TODO
+
+- [ ] GgufDecoder

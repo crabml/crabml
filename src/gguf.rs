@@ -49,3 +49,34 @@ const KEY_TOKENIZER_SEP_ID: &str = "tokenizer.ggml.seperator_token_id";
 const KEY_TOKENIZER_PAD_ID: &str = "tokenizer.ggml.padding_token_id";
 const KEY_TOKENIZER_HF_JSON: &str = "tokenizer.huggingface.json";
 const KEY_TOKENIZER_RWKV: &str = "tokenizer.rwkv.world";
+
+#[derive(Debug)]
+pub enum ModelArch {
+    Llama = 0,
+    Falcon = 1,
+    GPT2 = 2,
+    GPTJ = 3,
+    GPTNEOX = 4,
+    MPT = 5,
+}
+
+#[derive(Debug)]
+pub enum MODEL_TENSOR {
+    TOKEN_EMBD = 0,
+    POS_EMBD = 1,
+    OUTPUT = 2,
+    OUTPUT_NORM = 3,
+    ROPE_FREQS = 4,
+    ATTN_Q = 5,
+    ATTN_K = 6,
+    ATTN_V = 7,
+    ATTN_QKV = 8,
+    ATTN_OUT = 9,
+    ATTN_NORM = 10,
+    ATTN_NORM_2 = 11,
+    ATTN_ROT_EMBD = 12,
+    FFN_GATE = 13,
+    FFN_DOWN = 14,
+    FFN_UP = 15,
+    FFN_NORM = 16,
+}

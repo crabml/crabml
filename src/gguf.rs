@@ -1,6 +1,6 @@
 use std::{io::Read, collections::HashMap};
 
-const GGUF_MAGIC: u64 = 0x46554747;
+const GGUF_MAGIC: u32 = 0x46554747;
 const GGUF_VERSION: u64 = 2;
 const GGUF_DEFAULT_ALIGNMENT: u64 = 32;
 
@@ -147,18 +147,27 @@ pub enum GGUFValue<'a> {
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub enum GGUFReaderErrorKind {
     Unexpected,
-    DataError,
+    FormatError,
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct GGUFError {
     kind: GGUFReaderErrorKind,
-    msg: String,
+    message: String,
+}
+
+impl std::fmt::Display for GGUFError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{:?}: {}", self.kind, self.message)
+    }
+}
+
+impl std::error::Error for GGUFError {
 }
 
 pub type Result<T> = std::result::Result<T, GGUFError>;
 
-pub struct GGUFHeader {
+pub struct GGUFHeader<'a> {
     // Magic number to announce that this is a GGUF file.
     // Must be `GGUF` at the byte level: `0x47` `0x47` `0x55` `0x46`.
     // Your executor might do little-endian byte order, so it might be
@@ -177,19 +186,58 @@ pub struct GGUFHeader {
     // for loading the tensors.
     tensor_count: u64,
     // The number of metadata key-value pairs.
-    metadata_kv: HashMap<String, GGUFValue>,
+    metadata_kv: HashMap<String, GGUFValue<'a>>,
 }
 
-pub struct GGUFReader<R: Read> {
-    r: R,
-    arch: String,
+pub struct GGUFReader<'a> {
+    buf: &'a [u8],
 }
 
-impl<R> GGUFReader<R>
-where
-    R: Read,
-{
+impl<'a> GGUFReader<'a> {
+    fn read_header(&mut self) -> Result<GGUFHeader<'a>> {
+        let magic = self.read_u32()?;
+        if magic != GGUF_MAGIC {
+            return Err(GGUFError {
+                kind: GGUFReaderErrorKind::FormatError,
+                message: format!("Invalid magic number: {}", magic),
+            });
+        }
+
+        let version = self.read_u32()?;
+        if version != 2 {
+            return Err(GGUFError {
+                kind: GGUFReaderErrorKind::FormatError,
+                message: format!("Unsupported version number: {}, only 2 is supported yet", version),
+            });
+        }
+
+        let tensor_count = self.read_u64()?;
+        let metadata_kv_count = self.read_u64()?;
+
+        todo!()
+    } 
+
     fn read_value(&mut self) -> Result<GGUFValue> {
         todo!()
+    }
+
+    pub fn read_u32(&mut self) -> Result<u32> {
+        let mut valbuf = [0_u8; 4];
+        valbuf.copy_from_slice(self.read_bytes(4)?);
+        let v = u32::from_le_bytes(valbuf);
+        Ok(v)
+    }
+
+    pub fn read_u64(&mut self) -> Result<u64> {
+        let mut valbuf = [0_u8; 8];
+        valbuf.copy_from_slice(self.read_bytes(8)?);
+        let v = u64::from_le_bytes(valbuf);
+        Ok(v)
+    }
+
+    pub fn read_bytes(&mut self, len: usize) -> Result<&'a [u8]> {
+        let v = &self.buf[0..len];
+        self.buf = &self.buf[len..];
+        Ok(v)
     }
 }

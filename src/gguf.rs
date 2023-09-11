@@ -1,4 +1,4 @@
-use std::io::Read;
+use std::{io::Read, collections::HashMap};
 
 const GGUF_MAGIC: u64 = 0x46554747;
 const GGUF_VERSION: u64 = 2;
@@ -84,7 +84,7 @@ pub enum ModelTensor {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ValueType {
+pub enum GGUFValueType {
     // The value is a 8-bit unsigned integer.
     U8 = 0,
     // The value is a 8-bit signed little-endian integer.
@@ -118,7 +118,7 @@ pub enum ValueType {
 }
 
 #[derive(Debug, Clone)]
-pub enum Value {
+pub enum GGUFValue {
     U8(u8),
     I8(i8),
     U16(u16),
@@ -131,7 +131,7 @@ pub enum Value {
     F64(f64),
     Bool(bool),
     String(String),
-    Array(Vec<Value>),
+    Array(Vec<GGUFValue>),
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
@@ -148,6 +148,28 @@ pub struct GGUFError {
 
 pub type Result<T> = std::result::Result<T, GGUFError>;
 
+pub struct GGUFHeader {
+    // Magic number to announce that this is a GGUF file.
+    // Must be `GGUF` at the byte level: `0x47` `0x47` `0x55` `0x46`.
+    // Your executor might do little-endian byte order, so it might be
+    // check for 0x46554747 and letting the endianness cancel out.
+    // Consider being *very* explicit about the byte order here.
+    magic: u32,
+    // The version of the format implemented.
+    // Must be `2` for version described in this spec.
+    //
+    // This version should only be increased for structural changes to the format.
+    // Changes that do not affect the structure of the file should instead update the metadata
+    // to signify the change.
+    version: u32,
+    // The number of tensors in the file.
+    // This is explicit, instead of being included in the metadata, to ensure it is always present
+    // for loading the tensors.
+    tensor_count: u64,
+    // The number of metadata key-value pairs.
+    metadata_kv: HashMap<String, GGUFValue>,
+}
+
 pub struct GGUFReader<R: Read> {
     r: R,
     arch: String,
@@ -157,6 +179,7 @@ impl<R> GGUFReader<R>
 where
     R: Read,
 {
-    pub fn read_string(&mut self) -> Result<String> {
+    fn read_value(&mut self) -> Result<GGUFValue> {
+        todo!()
     }
 }

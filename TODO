@@ -1,3 +1,4 @@
-- [ ] gguf parser
+- [ ] read value
+- [ ] read header
 
 https://github.com/ggerganov/llama.cpp/blob/master/gguf-py/gguf/gguf.py

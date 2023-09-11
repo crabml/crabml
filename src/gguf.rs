@@ -118,20 +118,30 @@ pub enum GGUFValueType {
 }
 
 #[derive(Debug, Clone)]
-pub enum GGUFValue {
+pub enum GGUFValue<'a> {
     U8(u8),
+    U8Array(&'a [u8]),
     I8(i8),
+    I8Array(&'a [i8]),
     U16(u16),
+    U16Array(&'a [u16]),
     I16(i16),
+    I16Array(&'a [i16]),
     U32(u32),
+    U32Array(&'a [u32]),
     I32(i32),
+    I32Array(&'a [i32]),
     U64(u64),
+    U64Array(&'a [u64]),
     I64(i64),
+    I64Array(&'a [i64]),
     F32(f32),
+    F32Array(&'a [f32]),
     F64(f64),
-    Bool(bool),
-    String(String),
-    Array(Vec<GGUFValue>),
+    F64Array(&'a [f64]),
+    Bool(u8),
+    BoolArray(&'a [u8]),
+    String(&'a str),
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]

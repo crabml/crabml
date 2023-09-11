@@ -1,4 +1,4 @@
-use std::{io::Read, collections::HashMap};
+use std::{collections::HashMap, io::Read};
 
 const GGUF_MAGIC: u32 = 0x46554747;
 const GGUF_VERSION: u64 = 2;
@@ -162,8 +162,7 @@ impl std::fmt::Display for GGUFError {
     }
 }
 
-impl std::error::Error for GGUFError {
-}
+impl std::error::Error for GGUFError {}
 
 pub type Result<T> = std::result::Result<T, GGUFError>;
 
@@ -207,7 +206,10 @@ impl<'a> GGUFReader<'a> {
         if version != 2 {
             return Err(GGUFError {
                 kind: GGUFReaderErrorKind::FormatError,
-                message: format!("Unsupported version number: {}, only 2 is supported yet", version),
+                message: format!(
+                    "Unsupported version number: {}, only 2 is supported yet",
+                    version
+                ),
             });
         }
 
@@ -215,7 +217,7 @@ impl<'a> GGUFReader<'a> {
         let metadata_kv_count = self.read_u64()?;
 
         todo!()
-    } 
+    }
 
     fn read_value(&mut self) -> Result<GGUFValue> {
         todo!()

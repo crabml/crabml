@@ -222,25 +222,95 @@ pub enum GGUFMetadataValue<'a> {
 }
 
 impl<'a> GGUFMetadataValue<'a> {
-    pub fn as_u64(&self) -> Option<u64> {
+    pub fn typ(&self) -> GGUFMetadataValueType {
         match self {
-            GGUFMetadataValue::U8(v) => Some(*v as u64),
-            GGUFMetadataValue::U16(v) => Some(*v as u64),
-            GGUFMetadataValue::U32(v) => Some(*v as u64),
-            GGUFMetadataValue::U64(v) => Some(*v as u64),
-            GGUFMetadataValue::I8(v) if *v >= 0 => Some(*v as u64),
-            GGUFMetadataValue::I16(v) if *v >= 0 => Some(*v as u64),
-            GGUFMetadataValue::I32(v) if *v >= 0 => Some(*v as u64),
-            GGUFMetadataValue::I64(v) if *v >= 0 => Some(*v as u64),
-            _ => None,
+            GGUFMetadataValue::U8(_) => GGUFMetadataValueType::U8,
+            GGUFMetadataValue::I8(_) => GGUFMetadataValueType::I8,
+            GGUFMetadataValue::U16(_) => GGUFMetadataValueType::U16,
+            GGUFMetadataValue::I16(_) => GGUFMetadataValueType::I16,
+            GGUFMetadataValue::U32(_) => GGUFMetadataValueType::U32,
+            GGUFMetadataValue::I32(_) => GGUFMetadataValueType::I32,
+            GGUFMetadataValue::U64(_) => GGUFMetadataValueType::U64,
+            GGUFMetadataValue::I64(_) => GGUFMetadataValueType::I64,
+            GGUFMetadataValue::F32(_) => GGUFMetadataValueType::F32,
+            GGUFMetadataValue::F64(_) => GGUFMetadataValueType::F64,
+            GGUFMetadataValue::Bool(_) => GGUFMetadataValueType::Bool,
+            GGUFMetadataValue::String(_) => GGUFMetadataValueType::String,
+            GGUFMetadataValue::Array(_) => GGUFMetadataValueType::Array,
+        }
+    }
+ 
+    pub fn as_u64(&self) -> Result<u64> {
+        match self {
+            GGUFMetadataValue::U8(v) => Ok(*v as u64),
+            GGUFMetadataValue::U16(v) => Ok(*v as u64),
+            GGUFMetadataValue::U32(v) => Ok(*v as u64),
+            GGUFMetadataValue::U64(v) => Ok(*v as u64),
+            GGUFMetadataValue::I8(v) if *v >= 0 => Ok(*v as u64),
+            GGUFMetadataValue::I16(v) if *v >= 0 => Ok(*v as u64),
+            GGUFMetadataValue::I32(v) if *v >= 0 => Ok(*v as u64),
+            GGUFMetadataValue::I64(v) if *v >= 0 => Ok(*v as u64),
+            _ => Err(GGUFError {
+                kind: GGUFErrorKind::DataError,
+                message: format!("failed to convert {:?} to u64", self),
+                cause: None,
+            }),
         }
     }
 
-    pub fn as_f64(&self) -> Option<f64> {
+    pub fn as_f64(&self) -> Result<f64> {
         match self {
-            GGUFMetadataValue::F32(v) => Some(*v as f64),
-            GGUFMetadataValue::F64(v) => Some(*v as f64),
-            _ => None,
+            GGUFMetadataValue::F32(v) => Ok(*v as f64),
+            GGUFMetadataValue::F64(v) => Ok(*v as f64),
+            _ => Err(GGUFError{
+                kind: GGUFErrorKind::DataError,
+                message: format!("failed to convert {:?} to f64", self),
+                cause: None,
+            }),
+        }
+    }
+
+    pub fn as_str(&self) -> Result<&str> {
+        match self {
+            GGUFMetadataValue::String(v) => Ok(*v),
+            _ => Err(GGUFError{
+                kind: GGUFErrorKind::DataError,
+                message: format!("failed to convert {:?} to string", self),
+                cause: None,
+            }),
+        }
+    }
+
+    pub fn as_f64_array(&self) -> Result<&[f64]> {
+        match self {
+            GGUFMetadataValue::Array(GGUFMetadataArray::F64Array(v)) => Ok(*v),
+            _ => Err(GGUFError{
+                kind: GGUFErrorKind::DataError,
+                message: format!("failed to convert {:?} to f64 array", self),
+                cause: None,
+            }),
+        }
+    }
+
+    pub fn as_f32_array(&self) -> Result<&[f32]> {
+        match self {
+            GGUFMetadataValue::Array(GGUFMetadataArray::F32Array(v)) => Ok(*v),
+            _ => Err(GGUFError{
+                kind: GGUFErrorKind::DataError,
+                message: format!("failed to convert {:?} to f32 array", self),
+                cause: None,
+            }),
+        }
+    }
+
+    pub fn as_str_array(&self) -> Result<&[&str]> {
+        match self {
+            GGUFMetadataValue::Array(GGUFMetadataArray::StringArray(v)) => Ok(v),
+            _ => Err(GGUFError{
+                kind: GGUFErrorKind::DataError,
+                message: format!("failed to convert {:?} to string array", self),
+                cause: None,
+            }),
         }
     }
 }
@@ -267,6 +337,7 @@ pub enum GGUFErrorKind {
     Unexpected,
     IOError,
     FormatError,
+    DataError,
 }
 
 #[derive(Debug)]
@@ -800,8 +871,6 @@ impl GGUFFileLoader {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
-
     use super::*;
 
     #[test]
@@ -853,15 +922,39 @@ mod tests {
             gf.header
                 .get_metadata(KEY_ATTENTION_HEAD_COUNT)?
                 .unwrap()
-                .as_u64(),
-            Some(8_u64)
+                .as_u64()?,
+            8_u64
         );
         assert_eq!(
             gf.header
                 .get_metadata(KEY_ATTENTION_HEAD_COUNT_KV)?
                 .unwrap()
-                .as_u64(),
-            Some(4_u64)
+                .as_u64()?,
+            4_u64
+        );
+        assert_eq!(
+            gf.header.get_metadata(KEY_TOKENIZER_SCORES)?.unwrap().as_f32_array()?.len(),
+            512,
+        );
+        assert_eq!(
+            gf.header.get_metadata(KEY_TOKENIZER_LIST)?.unwrap().as_str_array()?.len(),
+            512,
+        );
+        assert_eq!(
+            gf.header.get_metadata(KEY_TOKENIZER_MODEL)?.unwrap().typ(),
+            GGUFMetadataValueType::String,
+        );
+        assert_eq!(
+            gf.header.get_metadata(KEY_TOKENIZER_MODEL)?.unwrap().as_str()?,
+            "llama",
+        );
+        assert_eq!(
+            gf.header.get_metadata(KEY_TOKENIZER_MERGES)?,
+            None
+        );
+        assert_eq!(
+            gf.header.get_metadata(KEY_TOKENIZER_PAD_ID)?.unwrap().typ(),
+            GGUFMetadataValueType::U32,
         );
         Ok(())
     }

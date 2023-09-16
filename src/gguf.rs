@@ -559,10 +559,10 @@ impl<'a> GGUFFile<'a> {
         let header = GGUFHeader::decode(buf)?;
 
         // load on disk tensor infos
-        let mut tensor_infos = Vec::with_capacity(header.tensor_count as usize);
+        let mut on_disk_tensor_infos = Vec::with_capacity(header.tensor_count as usize);
         for _ in 0..header.tensor_count {
             let tensor_info = GGUFOnDiskTensorInfo::decode(buf)?;
-            tensor_infos.push(tensor_info);
+            on_disk_tensor_infos.push(tensor_info);
         }
 
         // find the tensor_data position
@@ -573,7 +573,7 @@ impl<'a> GGUFFile<'a> {
         let tensor_data = buf.cursor();
 
         // convert the on-disk tensor infos to in-memory
-        let tensor_infos = Self::convert_tensor_infos(&tensor_infos, tensor_data)?;
+        let tensor_infos = Self::convert_tensor_infos(&on_disk_tensor_infos, tensor_data)?;
 
         Ok(Self {
             header,

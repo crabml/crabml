@@ -1,6 +1,8 @@
 use std::mem;
 use std::{collections::HashMap, io::Read};
 
+use int_enum::IntEnum;
+
 const GGUF_MAGIC: u32 = 0x46554747;
 const GGUF_VERSION: u64 = 2;
 const GGUF_DEFAULT_ALIGNMENT: u64 = 32;
@@ -110,10 +112,22 @@ pub enum GGMLType {
     COUNT = 19,
 }
 
+impl TryFrom<u8> for GGMLType {
+    type Error = GGUFError;
 
+    fn try_from(v: u8) -> std::result::Result<Self, Self::Error> {
+        Self::from_int(v).map_err(|err|
+            GGUFError {
+                kind: GGUFErrorKind::FormatError,
+                message: format!("failed to decode the ggml type for {}", v),
+                cause: Some(Box::new(err)),
+            }
+        )
+    }
+}
 
 #[repr(u32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, IntEnum)]
 pub enum GGUFMetadataValueType {
     // The value is a 8-bit unsigned integer.
     U8 = 0,
@@ -155,7 +169,7 @@ impl TryFrom<u32> for GGUFMetadataValueType {
             GGUFError {
                 kind: GGUFErrorKind::FormatError,
                 message: format!("failed to decode the value type for {}", v),
-                cause: Some(err),
+                cause: Some(Box::new(err)),
             }
         )
     }
@@ -201,7 +215,7 @@ pub enum GGUFErrorKind {
     FormatError,
 }
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug)]
 pub struct GGUFError {
     kind: GGUFErrorKind,
     message: String,
@@ -210,7 +224,11 @@ pub struct GGUFError {
 
 impl std::fmt::Display for GGUFError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{:?}: {}", self.kind, self.message)
+        write!(f, "{:?}: {}", self.kind, self.message);
+        if let Some(cause) = self.cause.as_ref() {
+            write!(f, "\ncaused by: {}", cause);
+        }
+        Ok(())
     }
 }
 
@@ -347,7 +365,7 @@ impl<'a> GGUFMetadataReader<'a> {
         let s = std::str::from_utf8(buf).map_err(|e| GGUFError {
             kind: GGUFErrorKind::FormatError,
             message: format!("Invalid UTF-8 string"),
-            cause: Some(e)
+            cause: Some(Box::new(e))
         });
         s
     }
@@ -439,13 +457,13 @@ struct GGUFTensorInfo {
 }
 
 impl GGUFTensorInfo {
-    pub fn decode(buf: &mut GGUFBufReader) -> Result<Self> {
+    pub fn decode<'a>(buf: &'a mut GGUFBufReader<'a>) -> Result<Self> {
         let mut r = GGUFMetadataReader::new(buf);
         let name = r.read_string()?.to_string();
         let n_dimensions = r.read_u32()? as usize;
         let dimensions = r.read_u64_array(n_dimensions)?.to_vec();
         // TODO: ensure the length of the typ field
-        let typ = r.read_u8()?;
+        let typ = GGMLType::try_from(r.read_u8()?)?;
         let offset = r.read_u64()?;
         Ok(Self {
             name,
@@ -454,4 +472,24 @@ impl GGUFTensorInfo {
             offset
         })
     }
+}
+
+struct GGUFFile<'a> {
+    // The header of the file.
+    header: GGUFHeader<'a>,
+
+    // Tensor infos, which can be used to locate the tensor data.
+    tensor_infos: Vec<GGUFTensorInfo>,
+
+    // Tensor data.
+    //
+    // This is arbitrary binary data corresponding to the weights of the model. This data should be close
+    // or identical to the data in the original model file, but may be different due to quantization or
+    // other optimizations for inference. Any such deviations should be recorded in the metadata or as
+    // part of the architecture definition.
+    //
+    // Each tensor's data must be stored within this array, and located through its `tensor_infos` entry.
+    // The offset of each tensor's data must be a multiple of `ALIGNMENT`, and the space between tensors
+    // should be padded to `ALIGNMENT` bytes.
+    tensor_data: &'a [u8],
 }

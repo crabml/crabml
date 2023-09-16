@@ -1,4 +1,6 @@
-- [ ] read value
-- [ ] read header
+- [x] read metadata value
+- [x] read header
+- [x] read tensor info
+- [ ] gguf_file_t
 
 https://github.com/ggerganov/llama.cpp/blob/master/gguf-py/gguf/gguf.py

@@ -1,5 +1,6 @@
 use memmap2::Mmap;
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::fs::File;
 use std::mem;
 
@@ -56,6 +57,22 @@ pub const KEY_TOKENIZER_SEP_ID: &str = "tokenizer.ggml.seperator_token_id";
 pub const KEY_TOKENIZER_PAD_ID: &str = "tokenizer.ggml.padding_token_id";
 pub const KEY_TOKENIZER_HF_JSON: &str = "tokenizer.huggingface.json";
 pub const KEY_TOKENIZER_RWKV: &str = "tokenizer.rwkv.world";
+
+#[repr(u32)]
+#[derive(Debug, Clone, Copy, IntEnum)]
+pub enum GGUFVersion {
+    V1 = 1,
+    V2 = 2,
+}
+
+impl Display for GGUFVersion {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            GGUFVersion::V1 => write!(f, "1"),
+            GGUFVersion::V2 => write!(f, "2"),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub enum GGUFTensorKey {
@@ -270,7 +287,7 @@ where
     'a: 'b,
 {
     buf: &'b mut GGUFBufReader<'a>,
-    version: u32,
+    version: GGUFVersion,
 }
 
 macro_rules! define_gguf_metadata_value_read_fn {
@@ -294,7 +311,7 @@ macro_rules! define_gguf_metadata_value_read_fn {
 }
 
 impl<'a, 'b> GGUFMetadataReader<'a, 'b> {
-    pub fn new(buf: &'b mut GGUFBufReader<'a>, version: u32) -> GGUFMetadataReader<'a, 'b> {
+    pub fn new(buf: &'b mut GGUFBufReader<'a>, version: GGUFVersion) -> GGUFMetadataReader<'a, 'b> {
         GGUFMetadataReader { buf, version }
     }
 
@@ -375,16 +392,13 @@ impl<'a, 'b> GGUFMetadataReader<'a, 'b> {
         s
     }
 
-    /// Read the length for string & array. It would be an 32 bit unsigned integer on spec v1, but 64 
+    /// Read the length for string & array. It would be an 32 bit unsigned integer on spec v1, but 64
     /// bit on spec v2. For more infomation:
     /// https://github.com/philpax/ggml/commit/b021b2577d4294800ece200c9f26c9c65b0f6f51
     fn read_len(&mut self) -> Result<usize> {
-        let v = if self.version == 1 {
-            self.read_u32()? as usize
-        } else if self.version == 2 {
-            self.read_u64()? as usize
-        } else {
-            panic!("unsupported version: {}", self.version);
+        let v = match self.version {
+            GGUFVersion::V1 => self.read_u32()? as usize,
+            GGUFVersion::V2 => self.read_u64()? as usize,
         };
         Ok(v)
     }
@@ -392,12 +406,17 @@ impl<'a, 'b> GGUFMetadataReader<'a, 'b> {
     /// compat v1 & v2 on the type change of the field dimensions[n]. for more infomation:
     /// https://github.com/philpax/ggml/commit/b021b2577d4294800ece200c9f26c9c65b0f6f51#diff-d553f5c3bea777978686f7fd4ed40a185a2d8cdec90cba5e2d8a4d5504148505L154
     fn read_len_array(&mut self, n: usize) -> Result<Vec<usize>> {
-        let v = if self.version == 1 {
-            self.read_u32_array(n)?.iter().map(|v| *v as usize).collect()
-        } else if self.version == 2 {
-            self.read_u64_array(n)?.iter().map(|v| *v as usize).collect()
-        } else {
-            panic!("unsupported version: {}", self.version);
+        let v = match self.version {
+            GGUFVersion::V1 => self
+                .read_u32_array(n)?
+                .iter()
+                .map(|v| *v as usize)
+                .collect(),
+            GGUFVersion::V2 => self
+                .read_u64_array(n)?
+                .iter()
+                .map(|v| *v as usize)
+                .collect(),
         };
         Ok(v)
     }
@@ -417,7 +436,7 @@ pub struct GGUFHeader<'a> {
     // This version should only be increased for structural changes to the format.
     // Changes that do not affect the structure of the file should instead update the metadata
     // to signify the change.
-    version: u32,
+    version: GGUFVersion,
 
     // The number of tensors in the file.
     // This is explicit, instead of being included in the metadata, to ensure it is always present
@@ -430,7 +449,7 @@ pub struct GGUFHeader<'a> {
 
 impl<'a> GGUFHeader<'a> {
     fn decode(buf: &mut GGUFBufReader<'a>) -> Result<Self> {
-        let mut r = GGUFMetadataReader::new(buf, 2);
+        let mut r = GGUFMetadataReader::new(buf, GGUFVersion::V2);
         let magic = r.read_u32()?;
         if magic != GGUF_MAGIC {
             return Err(GGUFError {
@@ -441,16 +460,14 @@ impl<'a> GGUFHeader<'a> {
         }
 
         let version = r.read_u32()?;
-        if version != 2 || version != 1 {
-            return Err(GGUFError {
-                kind: GGUFErrorKind::FormatError,
-                message: format!(
-                    "Unsupported version number: {}, only 1 & 2 is supported yet",
-                    version
-                ),
-                cause: None,
-            });
-        }
+        let version = GGUFVersion::from_int(version).map_err(|err| GGUFError {
+            kind: GGUFErrorKind::FormatError,
+            message: format!(
+                "Unsupported version number: {}, only 1, 2 is supported yet",
+                version
+            ),
+            cause: None,
+        })?;
         r.version = version;
 
         let tensor_count = r.read_len()?;
@@ -550,10 +567,10 @@ struct GGUFOnDiskTensorInfo {
 }
 
 impl GGUFOnDiskTensorInfo {
-    pub fn decode(buf: &mut GGUFBufReader, version: u32) -> Result<Self> {
+    pub fn decode(buf: &mut GGUFBufReader, version: GGUFVersion) -> Result<Self> {
         let mut r = GGUFMetadataReader::new(buf, version);
         let name = r.read_string()?.to_string();
-        let n_dimensions = r.read_len()?;
+        let n_dimensions = r.read_u32()? as usize;
         let dimensions = r.read_len_array(n_dimensions)?;
         let typ = GGMLType::try_from(r.read_u32()?)?;
         let offset = r.read_u64()?;
@@ -572,7 +589,7 @@ struct GGUFTensorInfo<'a> {
     name: String,
     // The dimensions in the tensor.
     // Currently at most 4, but this may change in the future.
-    dimensions: Vec<u64>,
+    dimensions: Vec<usize>,
     // The type of the tensor.
     typ: GGMLType,
     // The offset of the tensor's data in this file in bytes.
@@ -589,7 +606,7 @@ struct GGUFTensorInfo<'a> {
 impl<'a> GGUFTensorInfo<'a> {
     pub fn new(
         name: String,
-        dimensions: Vec<u64>,
+        dimensions: Vec<usize>,
         typ: GGMLType,
         offset: u64,
         data: &'a [u8],

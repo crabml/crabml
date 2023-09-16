@@ -138,7 +138,7 @@ impl TryFrom<u32> for GGUFMetadataValueType {
             x if x == GGUFMetadataValueType::I64 as u32 => Ok(GGUFMetadataValueType::I64),
             x if x == GGUFMetadataValueType::F64 as u32 => Ok(GGUFMetadataValueType::F64),
             _ => Err(GGUFError {
-                kind: GGUFReaderErrorKind::FormatError,
+                kind: GGUFErrorKind::FormatError,
                 message: format!("failed to decode the value type for {}", v),
             }),
         }
@@ -180,14 +180,14 @@ pub enum GGUFMetadataArray<'a> {
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
-pub enum GGUFReaderErrorKind {
+pub enum GGUFErrorKind {
     Unexpected,
     FormatError,
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct GGUFError {
-    kind: GGUFReaderErrorKind,
+    kind: GGUFErrorKind,
     message: String,
 }
 
@@ -252,7 +252,7 @@ impl<'a> GGUFReader<'a> {
         let magic = self.read_u32()?;
         if magic != GGUF_MAGIC {
             return Err(GGUFError {
-                kind: GGUFReaderErrorKind::FormatError,
+                kind: GGUFErrorKind::FormatError,
                 message: format!("Invalid magic number: {}", magic),
             });
         }
@@ -260,7 +260,7 @@ impl<'a> GGUFReader<'a> {
         let version = self.read_u32()?;
         if version != 2 {
             return Err(GGUFError {
-                kind: GGUFReaderErrorKind::FormatError,
+                kind: GGUFErrorKind::FormatError,
                 message: format!(
                     "Unsupported version number: {}, only 2 is supported yet",
                     version
@@ -270,6 +270,21 @@ impl<'a> GGUFReader<'a> {
 
         let tensor_count = self.read_u64()?;
         let metadata_kv_count = self.read_u64()?;
+        let mut metadata_kv = HashMap::new();
+
+        for _ in 0..metadata_kv_count {
+            let key = self.read_string()?;
+            let value = self.read_metadata_value()?;
+            metadata_kv.insert(key.to_string(), value);
+        }
+
+        Ok(GGUFHeader {
+            magic,
+            version,
+            tensor_count,
+            metadata_kv,
+        })
+
     }
 
     pub fn read_metadata_value(&mut self) -> Result<GGUFMetadataValue<'a>> {
@@ -343,7 +358,7 @@ impl<'a> GGUFReader<'a> {
         let buf = self.read_bytes(n as usize)?;
         let s = std::str::from_utf8(buf).map_err(|e|
             GGUFError {
-                kind: GGUFReaderErrorKind::FormatError,
+                kind: GGUFErrorKind::FormatError,
                 message: format!("Invalid UTF-8 string: {}", e),
             }
         );

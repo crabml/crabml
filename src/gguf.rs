@@ -237,13 +237,13 @@ impl std::error::Error for GGUFError {}
 pub type Result<T> = std::result::Result<T, GGUFError>;
 
 pub struct GGUFBufReader<'a> {
-    buf: &'a [u8],
     cursor: &'a [u8],
+    read_bytes: usize,
 }
 
 impl<'a> GGUFBufReader<'a> {
     pub fn new(buf: &'a [u8]) -> GGUFBufReader {
-        GGUFBufReader { buf, cursor: buf }
+        GGUFBufReader { cursor: buf, read_bytes: 0 }
     }
 
     pub fn read(&mut self, n: usize) -> Result<&'a [u8]> {
@@ -259,8 +259,13 @@ impl<'a> GGUFBufReader<'a> {
             });
         }
         let v = &self.cursor[0..n];
-        self.cursor = &self.buf[n..];
+        self.cursor = &self.cursor[n..];
+        self.read_bytes += n;
         Ok(v)
+    }
+
+    pub fn read_bytes(&self) -> usize {
+        self.read_bytes
     }
 }
 
@@ -462,7 +467,6 @@ impl GGUFTensorInfo {
         let name = r.read_string()?.to_string();
         let n_dimensions = r.read_u32()? as usize;
         let dimensions = r.read_u64_array(n_dimensions)?.to_vec();
-        // TODO: ensure the length of the typ field
         let typ = GGMLType::try_from(r.read_u32()?)?;
         let offset = r.read_u64()?;
         Ok(Self {

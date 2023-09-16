@@ -84,6 +84,7 @@ pub enum ModelTensor {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u32)]
 pub enum GGUFValueType {
     // The value is a 8-bit unsigned integer.
     U8 = 0,
@@ -115,6 +116,32 @@ pub enum GGUFValueType {
     I64 = 11,
     // The value is a 64-bit IEEE754 floating point number.
     F64 = 12,
+}
+
+impl TryFrom<u32> for GGUFValueType {
+    type Error = GGUFError;
+
+    fn try_from(v: u32) -> std::result::Result<Self, Self::Error> {
+        match v {
+            x if x == GGUFValueType::U8 as u32 => Ok(GGUFValueType::U8),
+            x if x == GGUFValueType::I8 as u32 => Ok(GGUFValueType::I8),
+            x if x == GGUFValueType::U16 as u32 => Ok(GGUFValueType::U16),
+            x if x == GGUFValueType::I16 as u32 => Ok(GGUFValueType::I16),
+            x if x == GGUFValueType::U32 as u32 => Ok(GGUFValueType::U32),
+            x if x == GGUFValueType::I32 as u32 => Ok(GGUFValueType::I32),
+            x if x == GGUFValueType::F32 as u32 => Ok(GGUFValueType::F32),
+            x if x == GGUFValueType::Bool as u32 => Ok(GGUFValueType::Bool),
+            x if x == GGUFValueType::String as u32 => Ok(GGUFValueType::String),
+            x if x == GGUFValueType::Array as u32 => Ok(GGUFValueType::Array),
+            x if x == GGUFValueType::U64 as u32 => Ok(GGUFValueType::U64),
+            x if x == GGUFValueType::I64 as u32 => Ok(GGUFValueType::I64),
+            x if x == GGUFValueType::F64 as u32 => Ok(GGUFValueType::F64),
+            _ => Err(GGUFError {
+                kind: GGUFReaderErrorKind::FormatError,
+                message: format!("failed to decode the value type for {}", v),
+            }),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -223,6 +250,12 @@ impl<'a> GGUFReader<'a> {
         todo!()
     }
 
+    pub fn read_value_tyoe(&mut self) -> Result<GGUFValueType> {
+        let n = self.read_u32()?;
+        let ty = GGUFValueType::try_from(n)?;
+        Ok(ty)
+    }
+
     pub fn read_u32(&mut self) -> Result<u32> {
         let mut valbuf = [0_u8; 4];
         valbuf.copy_from_slice(self.read_bytes(4)?);
@@ -235,6 +268,18 @@ impl<'a> GGUFReader<'a> {
         valbuf.copy_from_slice(self.read_bytes(8)?);
         let v = u64::from_le_bytes(valbuf);
         Ok(v)
+    }
+
+    pub fn read_string(&mut self) -> Result<&'a str> {
+        let n = self.read_u64()?;
+        let buf = self.read_bytes(n as usize)?;
+        let s = std::str::from_utf8(buf).map_err(|e|
+            GGUFError {
+                kind: GGUFReaderErrorKind::FormatError,
+                message: format!("Invalid UTF-8 string: {}", e),
+            }
+        );
+        s
     }
 
     pub fn read_bytes(&mut self, len: usize) -> Result<&'a [u8]> {

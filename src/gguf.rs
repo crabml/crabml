@@ -376,13 +376,26 @@ impl<'a, 'b> GGUFMetadataReader<'a, 'b> {
     }
 
     /// Read the length for string & array. It would be an 32 bit unsigned integer on spec v1, but 64 
-    /// bit on spec v2. This seems to be the only difference between v1 and v2, for more infomation:
+    /// bit on spec v2. For more infomation:
     /// https://github.com/philpax/ggml/commit/b021b2577d4294800ece200c9f26c9c65b0f6f51
     fn read_len(&mut self) -> Result<usize> {
         let v = if self.version == 1 {
             self.read_u32()? as usize
         } else if self.version == 2 {
             self.read_u64()? as usize
+        } else {
+            panic!("unsupported version: {}", self.version);
+        };
+        Ok(v)
+    }
+
+    /// compat v1 & v2 on the type change of the field dimensions[n]. for more infomation:
+    /// https://github.com/philpax/ggml/commit/b021b2577d4294800ece200c9f26c9c65b0f6f51#diff-d553f5c3bea777978686f7fd4ed40a185a2d8cdec90cba5e2d8a4d5504148505L154
+    fn read_len_array(&mut self, n: usize) -> Result<Vec<usize>> {
+        let v = if self.version == 1 {
+            self.read_u32_array(n)?.iter().map(|v| *v as usize).collect()
+        } else if self.version == 2 {
+            self.read_u64_array(n)?.iter().map(|v| *v as usize).collect()
         } else {
             panic!("unsupported version: {}", self.version);
         };
@@ -409,7 +422,7 @@ pub struct GGUFHeader<'a> {
     // The number of tensors in the file.
     // This is explicit, instead of being included in the metadata, to ensure it is always present
     // for loading the tensors.
-    tensor_count: u64,
+    tensor_count: usize,
 
     // The metadata key-value pairs.
     metadata_kv: HashMap<String, GGUFMetadataValue<'a>>,
@@ -438,9 +451,10 @@ impl<'a> GGUFHeader<'a> {
                 cause: None,
             });
         }
+        r.version = version;
 
-        let tensor_count = r.read_u64()?;
-        let metadata_kv_count = r.read_u64()?;
+        let tensor_count = r.read_len()?;
+        let metadata_kv_count = r.read_len()?;
         let mut metadata_kv = HashMap::new();
 
         for _ in 0..metadata_kv_count {
@@ -523,7 +537,7 @@ struct GGUFOnDiskTensorInfo {
     name: String,
     // The dimensions in the tensor.
     // Currently at most 4, but this may change in the future.
-    dimensions: Vec<u64>,
+    dimensions: Vec<usize>,
     // The type of the tensor.
     typ: GGMLType,
     // The offset of the tensor's data in this file in bytes.
@@ -539,8 +553,8 @@ impl GGUFOnDiskTensorInfo {
     pub fn decode(buf: &mut GGUFBufReader, version: u32) -> Result<Self> {
         let mut r = GGUFMetadataReader::new(buf, version);
         let name = r.read_string()?.to_string();
-        let n_dimensions = r.read_u32()? as usize;
-        let dimensions = r.read_u64_array(n_dimensions)?.to_vec();
+        let n_dimensions = r.read_len()?;
+        let dimensions = r.read_len_array(n_dimensions)?;
         let typ = GGMLType::try_from(r.read_u32()?)?;
         let offset = r.read_u64()?;
         Ok(Self {

@@ -1,4 +1,5 @@
 use std::{collections::HashMap, io::Read};
+use std::mem;
 
 const GGUF_MAGIC: u32 = 0x46554747;
 const GGUF_VERSION: u64 = 2;
@@ -226,6 +227,26 @@ pub struct GGUFReader<'a> {
     buf: &'a [u8],
 }
 
+macro_rules! define_gguf_value_read_fn {
+    ($read_array_func:ident, $read_item_func:ident, $typ:ty) => {
+        fn $read_array_func(&mut self, n: usize) -> Result<&'a [$typ]> {
+            let typ_size = mem::size_of::<$typ>();
+            let data = self.read_bytes(n * typ_size)?;
+            let transmuted_data = unsafe {
+                assert!(data.len() % typ_size == 0);
+                let ptr = data.as_ptr();
+                mem::transmute(std::slice::from_raw_parts(ptr, data.len() / typ_size))
+            };
+            Ok(transmuted_data)
+        }
+
+        fn $read_item_func(&mut self) -> Result<$typ> {
+            let arr = self.$read_array_func(1)?;
+            Ok(arr[0])
+        }
+    }
+}
+
 impl<'a> GGUFReader<'a> {
     fn read_header(&mut self) -> Result<GGUFHeader<'a>> {
         let magic = self.read_u32()?;
@@ -258,15 +279,15 @@ impl<'a> GGUFReader<'a> {
         let typ = GGUFValueType::try_from(n)?;
         let v = match typ {
             GGUFValueType::U8 => GGUFValue::U8(self.read_u8()?),
-            GGUFValueType::I8 => GGUFValue::I8(self.read_u8()? as i8),
+            GGUFValueType::I8 => GGUFValue::I8(self.read_i8()?),
             GGUFValueType::U16 => GGUFValue::U16(self.read_u16()?),
-            GGUFValueType::I16 => GGUFValue::I16(self.read_u16()? as i16),
-            GGUFValueType::U32 => GGUFValue::U32(self.read_u32()? as u32),
-            GGUFValueType::I32 => GGUFValue::I32(self.read_u32()? as i32),
+            GGUFValueType::I16 => GGUFValue::I16(self.read_i16()?),
+            GGUFValueType::U32 => GGUFValue::U32(self.read_u32()?),
+            GGUFValueType::I32 => GGUFValue::I32(self.read_i32()?),
             GGUFValueType::F32 => GGUFValue::F32(self.read_f32()?),
             GGUFValueType::F64 => GGUFValue::F64(self.read_f64()?),
             GGUFValueType::U64 => GGUFValue::U64(self.read_u64()?),
-            GGUFValueType::I64 => GGUFValue::I64(self.read_u64()? as i64),
+            GGUFValueType::I64 => GGUFValue::I64(self.read_i64()?),
             GGUFValueType::String => GGUFValue::String(self.read_string()?),
             GGUFValueType::Bool => GGUFValue::Bool(self.read_u8()?),
             GGUFValueType::Array => GGUFValue::Array(self.read_array()?),
@@ -275,49 +296,19 @@ impl<'a> GGUFReader<'a> {
     }
 
     pub fn read_array(&mut self) -> Result<GGUFArray<'a>> {
-
         todo!()
     }
 
-    pub fn read_u8(&mut self) -> Result<u8> {
-        let buf = self.read_bytes(1)?;
-        return Ok(buf[0])
-    }
-
-    pub fn read_u16(&mut self) -> Result<u16> {
-        let mut valbuf = [0_u8; 2];
-        valbuf.copy_from_slice(self.read_bytes(2)?);
-        let v = u16::from_le_bytes(valbuf);
-        Ok(v)
-    }
-
-    pub fn read_u32(&mut self) -> Result<u32> {
-        let mut valbuf = [0_u8; 4];
-        valbuf.copy_from_slice(self.read_bytes(4)?);
-        let v = u32::from_le_bytes(valbuf);
-        Ok(v)
-    }
-
-    pub fn read_u64(&mut self) -> Result<u64> {
-        let mut valbuf = [0_u8; 8];
-        valbuf.copy_from_slice(self.read_bytes(8)?);
-        let v = u64::from_le_bytes(valbuf);
-        Ok(v)
-    }
-
-    pub fn read_f32(&mut self) -> Result<f32> {
-        let mut valbuf = [0_u8; 4];
-        valbuf.copy_from_slice(self.read_bytes(4)?);
-        let v = f32::from_le_bytes(valbuf);
-        Ok(v)
-    }
-
-    pub fn read_f64(&mut self) -> Result<f64> {
-        let mut valbuf = [0_u8; 8];
-        valbuf.copy_from_slice(self.read_bytes(8)?);
-        let v = f64::from_le_bytes(valbuf);
-        Ok(v)
-    }
+    define_gguf_value_read_fn!(read_u8_array, read_u8, u8);
+    define_gguf_value_read_fn!(read_i8_array, read_i8, i8);
+    define_gguf_value_read_fn!(read_u16_array, read_u16, u16);
+    define_gguf_value_read_fn!(read_i16_array, read_i16, i16);
+    define_gguf_value_read_fn!(read_u32_array, read_u32, u32);
+    define_gguf_value_read_fn!(read_i32_array, read_i32, i32);
+    define_gguf_value_read_fn!(read_u64_array, read_u64, u64);
+    define_gguf_value_read_fn!(read_i64_array, read_i64, i64);
+    define_gguf_value_read_fn!(read_f32_array, read_f32, f32);
+    define_gguf_value_read_fn!(read_f64_array, read_f64, f64);
 
     pub fn read_string(&mut self) -> Result<&'a str> {
         let n = self.read_u64()?;

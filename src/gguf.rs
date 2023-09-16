@@ -1,5 +1,7 @@
+use memmap2::Mmap;
+use std::collections::HashMap;
+use std::fs::File;
 use std::mem;
-use std::{collections::HashMap, io::Read};
 
 use int_enum::IntEnum;
 
@@ -8,63 +10,52 @@ const GGUF_VERSION: u64 = 2;
 const GGUF_DEFAULT_ALIGNMENT: u64 = 32;
 
 // General
-const KEY_GENERAL_ARCHITECTURE: &str = "general.architecture";
-const KEY_GENERAL_QUANTIZATION_VERSION: &str = "general.quantization_version";
-const KEY_GENERAL_ALIGNMENT: &str = "general.alignment";
-const KEY_GENERAL_NAME: &str = "general.name";
-const KEY_GENERAL_AUTHOR: &str = "general.author";
-const KEY_GENERAL_URL: &str = "general.url";
-const KEY_GENERAL_DESCRIPTION: &str = "general.description";
-const KEY_GENERAL_LICENSE: &str = "general.license";
-const KEY_GENERAL_SOURCE_URL: &str = "general.source.url";
-const KEY_GENERAL_SOURCE_HF_REPO: &str = "general.source.hugginface.repository";
-const KEY_GENERAL_FILE_TYPE: &str = "general.file_type";
+pub const KEY_GENERAL_ARCHITECTURE: &str = "general.architecture";
+pub const KEY_GENERAL_QUANTIZATION_VERSION: &str = "general.quantization_version";
+pub const KEY_GENERAL_ALIGNMENT: &str = "general.alignment";
+pub const KEY_GENERAL_NAME: &str = "general.name";
+pub const KEY_GENERAL_AUTHOR: &str = "general.author";
+pub const KEY_GENERAL_URL: &str = "general.url";
+pub const KEY_GENERAL_DESCRIPTION: &str = "general.description";
+pub const KEY_GENERAL_LICENSE: &str = "general.license";
+pub const KEY_GENERAL_SOURCE_URL: &str = "general.source.url";
+pub const KEY_GENERAL_SOURCE_HF_REPO: &str = "general.source.hugginface.repository";
+pub const KEY_GENERAL_FILE_TYPE: &str = "general.file_type";
 
 // LLM
-const KEY_CONTEXT_LENGTH: &str = "{arch}.context_length";
-const KEY_EMBEDDING_LENGTH: &str = "{arch}.embedding_length";
-const KEY_BLOCK_COUNT: &str = "{arch}.block_count";
-const KEY_FEED_FORWARD_LENGTH: &str = "{arch}.feed_forward_length";
-const KEY_USE_PARALLEL_RESIDUAL: &str = "{arch}.use_parallel_residual";
-const KEY_TENSOR_DATA_LAYOUT: &str = "{arch}.tensor_data_layout";
+pub const KEY_CONTEXT_LENGTH: &str = "{arch}.context_length";
+pub const KEY_EMBEDDING_LENGTH: &str = "{arch}.embedding_length";
+pub const KEY_BLOCK_COUNT: &str = "{arch}.block_count";
+pub const KEY_FEED_FORWARD_LENGTH: &str = "{arch}.feed_forward_length";
+pub const KEY_USE_PARALLEL_RESIDUAL: &str = "{arch}.use_parallel_residual";
+pub const KEY_TENSOR_DATA_LAYOUT: &str = "{arch}.tensor_data_layout";
 
 // Attention
-const KEY_ATTENTION_HEAD_COUNT: &str = "{arch}.attention.head_count";
-const KEY_ATTENTION_HEAD_COUNT_KV: &str = "{arch}.attention.head_count_kv";
-const KEY_ATTENTION_MAX_ALIBI_BIAS: &str = "{arch}.attention.max_alibi_bias";
-const KEY_ATTENTION_CLAMP_KQV: &str = "{arch}.attention.clamp_kqv";
-const KEY_ATTENTION_LAYERNORM_EPS: &str = "{arch}.attention.layer_norm_epsilon";
-const KEY_ATTENTION_LAYERNORM_RMS_EPS: &str = "{arch}.attention.layer_norm_rms_epsilon";
+pub const KEY_ATTENTION_HEAD_COUNT: &str = "{arch}.attention.head_count";
+pub const KEY_ATTENTION_HEAD_COUNT_KV: &str = "{arch}.attention.head_count_kv";
+pub const KEY_ATTENTION_MAX_ALIBI_BIAS: &str = "{arch}.attention.max_alibi_bias";
+pub const KEY_ATTENTION_CLAMP_KQV: &str = "{arch}.attention.clamp_kqv";
+pub const KEY_ATTENTION_LAYERNORM_EPS: &str = "{arch}.attention.layer_norm_epsilon";
+pub const KEY_ATTENTION_LAYERNORM_RMS_EPS: &str = "{arch}.attention.layer_norm_rms_epsilon";
 
 // RoPE
-const KEY_ROPE_DIMENSION_COUNT: &str = "{arch}.rope.dimension_count";
-const KEY_ROPE_FREQ_BASE: &str = "{arch}.rope.freq_base";
-const KEY_ROPE_SCALE_LINEAR: &str = "{arch}.rope.scale_linear";
+pub const KEY_ROPE_DIMENSION_COUNT: &str = "{arch}.rope.dimension_count";
+pub const KEY_ROPE_FREQ_BASE: &str = "{arch}.rope.freq_base";
+pub const KEY_ROPE_SCALE_LINEAR: &str = "{arch}.rope.scale_linear";
 
 // Tokenization
-const KEY_TOKENIZER_MODEL: &str = "tokenizer.ggml.model";
-const KEY_TOKENIZER_LIST: &str = "tokenizer.ggml.tokens";
-const KEY_TOKENIZER_TOKEN_TYPE: &str = "tokenizer.ggml.token_type";
-const KEY_TOKENIZER_SCORES: &str = "tokenizer.ggml.scores";
-const KEY_TOKENIZER_MERGES: &str = "tokenizer.ggml.merges";
-const KEY_TOKENIZER_BOS_ID: &str = "tokenizer.ggml.bos_token_id";
-const KEY_TOKENIZER_EOS_ID: &str = "tokenizer.ggml.eos_token_id";
-const KEY_TOKENIZER_UNK_ID: &str = "tokenizer.ggml.unknown_token_id";
-const KEY_TOKENIZER_SEP_ID: &str = "tokenizer.ggml.seperator_token_id";
-const KEY_TOKENIZER_PAD_ID: &str = "tokenizer.ggml.padding_token_id";
-const KEY_TOKENIZER_HF_JSON: &str = "tokenizer.huggingface.json";
-const KEY_TOKENIZER_RWKV: &str = "tokenizer.rwkv.world";
-
-#[repr(u32)]
-#[derive(Debug, Clone, Copy, IntEnum)]
-pub enum GGUFArchitecture {
-    Llama = 0,
-    Falcon = 1,
-    GPT2 = 2,
-    GPTJ = 3,
-    GPTNEOX = 4,
-    MPT = 5,
-}
+pub const KEY_TOKENIZER_MODEL: &str = "tokenizer.ggml.model";
+pub const KEY_TOKENIZER_LIST: &str = "tokenizer.ggml.tokens";
+pub const KEY_TOKENIZER_TOKEN_TYPE: &str = "tokenizer.ggml.token_type";
+pub const KEY_TOKENIZER_SCORES: &str = "tokenizer.ggml.scores";
+pub const KEY_TOKENIZER_MERGES: &str = "tokenizer.ggml.merges";
+pub const KEY_TOKENIZER_BOS_ID: &str = "tokenizer.ggml.bos_token_id";
+pub const KEY_TOKENIZER_EOS_ID: &str = "tokenizer.ggml.eos_token_id";
+pub const KEY_TOKENIZER_UNK_ID: &str = "tokenizer.ggml.unknown_token_id";
+pub const KEY_TOKENIZER_SEP_ID: &str = "tokenizer.ggml.seperator_token_id";
+pub const KEY_TOKENIZER_PAD_ID: &str = "tokenizer.ggml.padding_token_id";
+pub const KEY_TOKENIZER_HF_JSON: &str = "tokenizer.huggingface.json";
+pub const KEY_TOKENIZER_RWKV: &str = "tokenizer.rwkv.world";
 
 #[derive(Debug)]
 pub enum GGUFTensorKey {
@@ -209,6 +200,7 @@ pub enum GGUFMetadataArray<'a> {
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub enum GGUFErrorKind {
     Unexpected,
+    IOError,
     FormatError,
 }
 
@@ -450,7 +442,7 @@ impl<'a> GGUFHeader<'a> {
         })
     }
 
-    /// the global alignment to use, as described above. This can vary to allow for different alignment schemes, 
+    /// the global alignment to use, as described above. This can vary to allow for different alignment schemes,
     /// but it must be a multiple of 8. Some writers may not write the alignment. If the alignment is not specified,
     /// assume it is 32.
     pub fn alignment(&self) -> u64 {
@@ -467,9 +459,9 @@ impl<'a> GGUFHeader<'a> {
         }
     }
 
-    /// describes what architecture this model implements. All lowercase ASCII, with only [a-z0-9]+ characters 
+    /// describes what architecture this model implements. All lowercase ASCII, with only [a-z0-9]+ characters
     /// allowed. Known values include:
-    /// 
+    ///
     /// - llama
     /// - mpt
     /// - gptneox
@@ -478,7 +470,7 @@ impl<'a> GGUFHeader<'a> {
     /// - bloom
     /// - falcon
     /// - rwkv
-    /// 
+    ///
     pub fn architecture(&self) -> Result<&'a str> {
         match self.metadata_kv.get(KEY_GENERAL_ARCHITECTURE) {
             Some(GGUFMetadataValue::String(v)) => Ok(v),
@@ -490,8 +482,8 @@ impl<'a> GGUFHeader<'a> {
         }
     }
 
-    /// The version of the quantization format. Not required if the model is not quantized (i.e. no tensors are 
-    /// quantized). If any tensors are quantized, this must be present. This is separate to the quantization 
+    /// The version of the quantization format. Not required if the model is not quantized (i.e. no tensors are
+    /// quantized). If any tensors are quantized, this must be present. This is separate to the quantization
     /// scheme of the tensors itself; the quantization version may change without changing the scheme's name
     /// (e.g. the quantization scheme is Q5_K, and the quantization version is 4).
     pub fn quantization_version(&self) -> Result<u32> {
@@ -583,7 +575,7 @@ impl<'a> GGUFTensorInfo<'a> {
     }
 }
 
-struct GGUFFile<'a> {
+pub struct GGUFFile<'a> {
     // The header of the file.
     header: GGUFHeader<'a>,
 
@@ -604,7 +596,7 @@ struct GGUFFile<'a> {
 }
 
 impl<'a> GGUFFile<'a> {
-    pub fn decode(buf: &mut GGUFBufReader<'a>) -> Result<Self> {
+    fn decode(buf: &mut GGUFBufReader<'a>) -> Result<Self> {
         let header = GGUFHeader::decode(buf)?;
 
         // load on disk tensor infos
@@ -631,7 +623,10 @@ impl<'a> GGUFFile<'a> {
         })
     }
 
-    fn convert_tensor_infos(tensor_infos: &[GGUFOnDiskTensorInfo], tensor_data: &'a [u8]) -> Result<Vec<GGUFTensorInfo<'a>>> {
+    fn convert_tensor_infos(
+        tensor_infos: &[GGUFOnDiskTensorInfo],
+        tensor_data: &'a [u8],
+    ) -> Result<Vec<GGUFTensorInfo<'a>>> {
         let mut result = Vec::with_capacity(tensor_infos.len());
         for (i, tensor_info) in tensor_infos.iter().enumerate() {
             let next_offset = if i >= tensor_infos.len() {
@@ -640,7 +635,7 @@ impl<'a> GGUFFile<'a> {
                 tensor_infos[i + 1].offset as usize
             };
             let data = &tensor_data[tensor_info.offset as usize..next_offset];
-            
+
             let item = GGUFTensorInfo::new(
                 tensor_info.name.clone(),
                 tensor_info.dimensions.clone(),
@@ -651,5 +646,44 @@ impl<'a> GGUFFile<'a> {
             result.push(item);
         }
         Ok(result)
+    }
+}
+
+pub struct GGUFFileLoader {
+    mmap: memmap2::Mmap,
+}
+
+impl GGUFFileLoader {
+    pub fn new(path: &str) -> Result<Self> {
+        let file = File::open(path).map_err(|err| GGUFError {
+            kind: GGUFErrorKind::IOError,
+            message: format!("failed to open the file: {}", path),
+            cause: Some(Box::new(err)),
+        })?;
+
+        let mmap = unsafe {
+            Mmap::map(&file).map_err(|err| GGUFError {
+                kind: GGUFErrorKind::IOError,
+                message: format!("failed to mmap file: {}", path),
+                cause: Some(Box::new(err)),
+            })?
+        };
+
+        Ok(Self { mmap })
+    }
+
+    pub fn load(&self) -> Result<GGUFFile<'_>> {
+        let buf = &mut GGUFBufReader::new(&self.mmap[..]);
+        GGUFFile::decode(buf)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_load() -> Result<()> {
+        todo!()
     }
 }

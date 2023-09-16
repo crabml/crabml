@@ -1,3 +1,3 @@
 # ggml-rs
 
-ggml-rs is a Rust reimplementation of ggml.
+ggml-rs is an experiment to reimplement GGML in rust.

@@ -1,5 +1,5 @@
-use std::{collections::HashMap, io::Read};
 use std::mem;
+use std::{collections::HashMap, io::Read};
 
 const GGUF_MAGIC: u32 = 0x46554747;
 const GGUF_VERSION: u64 = 2;
@@ -201,37 +201,42 @@ impl std::error::Error for GGUFError {}
 
 pub type Result<T> = std::result::Result<T, GGUFError>;
 
-pub struct GGUFHeader<'a> {
-    // Magic number to announce that this is a GGUF file.
-    // Must be `GGUF` at the byte level: `0x47` `0x47` `0x55` `0x46`.
-    // Your executor might do little-endian byte order, so it might be
-    // check for 0x46554747 and letting the endianness cancel out.
-    // Consider being *very* explicit about the byte order here.
-    magic: u32,
-    // The version of the format implemented.
-    // Must be `2` for version described in this spec.
-    //
-    // This version should only be increased for structural changes to the format.
-    // Changes that do not affect the structure of the file should instead update the metadata
-    // to signify the change.
-    version: u32,
-    // The number of tensors in the file.
-    // This is explicit, instead of being included in the metadata, to ensure it is always present
-    // for loading the tensors.
-    tensor_count: u64,
-    // The number of metadata key-value pairs.
-    metadata_kv: HashMap<String, GGUFMetadataValue<'a>>,
+pub struct GGUFBufReader<'a> {
+    buf: &'a [u8],
+    cursor: &'a [u8],
 }
 
-pub struct GGUFReader<'a> {
-    buf: &'a [u8],
+impl<'a> GGUFBufReader<'a> {
+    pub fn new(buf: &'a [u8]) -> GGUFBufReader {
+        GGUFBufReader { buf, cursor: buf }
+    }
+
+    pub fn read(&mut self, n: usize) -> Result<&'a [u8]> {
+        if n > self.cursor.len() {
+            return Err(GGUFError {
+                kind: GGUFErrorKind::FormatError,
+                message: format!(
+                    "failed to read {} bytes from the buffer, only {} bytes left",
+                    n,
+                    self.cursor.len()
+                ),
+            });
+        }
+        let v = &self.cursor[0..n];
+        self.cursor = &self.buf[n..];
+        Ok(v)
+    }
+}
+
+pub struct GGUFMetadataReader<'a> {
+    buf: &'a mut GGUFBufReader<'a>,
 }
 
 macro_rules! define_gguf_metadata_value_read_fn {
     ($read_array_func:ident, $read_item_func:ident, $typ:ty) => {
         fn $read_array_func(&mut self, n: usize) -> Result<&'a [$typ]> {
             let typ_size = mem::size_of::<$typ>();
-            let data = self.read_bytes(n * typ_size)?;
+            let data = self.buf.read(n * typ_size)?;
             let transmuted_data = unsafe {
                 assert!(data.len() % typ_size == 0);
                 let ptr = data.as_ptr();
@@ -244,50 +249,15 @@ macro_rules! define_gguf_metadata_value_read_fn {
             let arr = self.$read_array_func(1)?;
             Ok(arr[0])
         }
-    }
+    };
 }
 
-impl<'a> GGUFReader<'a> {
-    fn read_header(&mut self) -> Result<GGUFHeader<'a>> {
-        let magic = self.read_u32()?;
-        if magic != GGUF_MAGIC {
-            return Err(GGUFError {
-                kind: GGUFErrorKind::FormatError,
-                message: format!("Invalid magic number: {}", magic),
-            });
-        }
-
-        let version = self.read_u32()?;
-        if version != 2 {
-            return Err(GGUFError {
-                kind: GGUFErrorKind::FormatError,
-                message: format!(
-                    "Unsupported version number: {}, only 2 is supported yet",
-                    version
-                ),
-            });
-        }
-
-        let tensor_count = self.read_u64()?;
-        let metadata_kv_count = self.read_u64()?;
-        let mut metadata_kv = HashMap::new();
-
-        for _ in 0..metadata_kv_count {
-            let key = self.read_string()?;
-            let value = self.read_metadata_value()?;
-            metadata_kv.insert(key.to_string(), value);
-        }
-
-        Ok(GGUFHeader {
-            magic,
-            version,
-            tensor_count,
-            metadata_kv,
-        })
-
+impl<'a> GGUFMetadataReader<'a> {
+    pub fn new(buf: &'a mut GGUFBufReader<'a>) -> GGUFMetadataReader<'a> {
+        GGUFMetadataReader { buf }
     }
 
-    pub fn read_metadata_value(&mut self) -> Result<GGUFMetadataValue<'a>> {
+    pub fn read_value(&mut self) -> Result<GGUFMetadataValue<'a>> {
         let n = self.read_u32()?;
         let typ = GGUFMetadataValueType::try_from(n)?;
         let v = match typ {
@@ -337,7 +307,7 @@ impl<'a> GGUFReader<'a> {
                     v.push(self.read_array()?);
                 }
                 GGUFMetadataArray::NestedArray(v)
-            },
+            }
         };
         Ok(arr)
     }
@@ -355,19 +325,76 @@ impl<'a> GGUFReader<'a> {
 
     pub fn read_string(&mut self) -> Result<&'a str> {
         let n = self.read_u64()?;
-        let buf = self.read_bytes(n as usize)?;
-        let s = std::str::from_utf8(buf).map_err(|e|
-            GGUFError {
-                kind: GGUFErrorKind::FormatError,
-                message: format!("Invalid UTF-8 string: {}", e),
-            }
-        );
+        let buf = self.buf.read(n as usize)?;
+        let s = std::str::from_utf8(buf).map_err(|e| GGUFError {
+            kind: GGUFErrorKind::FormatError,
+            message: format!("Invalid UTF-8 string: {}", e),
+        });
         s
     }
+}
 
-    pub fn read_bytes(&mut self, len: usize) -> Result<&'a [u8]> {
-        let v = &self.buf[0..len];
-        self.buf = &self.buf[len..];
-        Ok(v)
+impl<'a> GGUFMetadataReader<'a> {}
+
+pub struct GGUFHeader<'a> {
+    // Magic number to announce that this is a GGUF file.
+    // Must be `GGUF` at the byte level: `0x47` `0x47` `0x55` `0x46`.
+    // Your executor might do little-endian byte order, so it might be
+    // check for 0x46554747 and letting the endianness cancel out.
+    // Consider being *very* explicit about the byte order here.
+    magic: u32,
+    // The version of the format implemented.
+    // Must be `2` for version described in this spec.
+    //
+    // This version should only be increased for structural changes to the format.
+    // Changes that do not affect the structure of the file should instead update the metadata
+    // to signify the change.
+    version: u32,
+    // The number of tensors in the file.
+    // This is explicit, instead of being included in the metadata, to ensure it is always present
+    // for loading the tensors.
+    tensor_count: u64,
+    // The number of metadata key-value pairs.
+    metadata_kv: HashMap<String, GGUFMetadataValue<'a>>,
+}
+
+impl<'a> GGUFHeader<'a> {
+    fn decode(buf: &'a mut GGUFBufReader<'a>) -> Result<Self> {
+        let mut r = GGUFMetadataReader::new(buf);
+        let magic = r.read_u32()?;
+        if magic != GGUF_MAGIC {
+            return Err(GGUFError {
+                kind: GGUFErrorKind::FormatError,
+                message: format!("Invalid magic number: {}", magic),
+            });
+        }
+
+        let version = r.read_u32()?;
+        if version != 2 {
+            return Err(GGUFError {
+                kind: GGUFErrorKind::FormatError,
+                message: format!(
+                    "Unsupported version number: {}, only 2 is supported yet",
+                    version
+                ),
+            });
+        }
+
+        let tensor_count = r.read_u64()?;
+        let metadata_kv_count = r.read_u64()?;
+        let mut metadata_kv = HashMap::new();
+
+        for _ in 0..metadata_kv_count {
+            let key = r.read_string()?;
+            let value = r.read_value()?;
+            metadata_kv.insert(key.to_string(), value);
+        }
+
+        Ok(GGUFHeader {
+            magic,
+            version,
+            tensor_count,
+            metadata_kv,
+        })
     }
 }

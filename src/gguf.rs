@@ -89,8 +89,8 @@ pub enum ModelTensor {
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, IntEnum)]
 pub enum GGMLType {
-    F32  = 0,
-    F16  = 1,
+    F32 = 0,
+    F16 = 1,
     Q4_0 = 2,
     Q4_1 = 3,
     // GGML_TYPE_Q4_2 = 4, support has been removed
@@ -116,13 +116,11 @@ impl TryFrom<u32> for GGMLType {
     type Error = GGUFError;
 
     fn try_from(v: u32) -> std::result::Result<Self, Self::Error> {
-        Self::from_int(v).map_err(|err|
-            GGUFError {
-                kind: GGUFErrorKind::FormatError,
-                message: format!("failed to decode the ggml type for {}", v),
-                cause: Some(Box::new(err)),
-            }
-        )
+        Self::from_int(v).map_err(|err| GGUFError {
+            kind: GGUFErrorKind::FormatError,
+            message: format!("failed to decode the ggml type for {}", v),
+            cause: Some(Box::new(err)),
+        })
     }
 }
 
@@ -165,13 +163,11 @@ impl TryFrom<u32> for GGUFMetadataValueType {
     type Error = GGUFError;
 
     fn try_from(v: u32) -> std::result::Result<Self, Self::Error> {
-        Self::from_int(v).map_err(|err|
-            GGUFError {
-                kind: GGUFErrorKind::FormatError,
-                message: format!("failed to decode the value type for {}", v),
-                cause: Some(Box::new(err)),
-            }
-        )
+        Self::from_int(v).map_err(|err| GGUFError {
+            kind: GGUFErrorKind::FormatError,
+            message: format!("failed to decode the value type for {}", v),
+            cause: Some(Box::new(err)),
+        })
     }
 }
 
@@ -243,7 +239,10 @@ pub struct GGUFBufReader<'a> {
 
 impl<'a> GGUFBufReader<'a> {
     pub fn new(buf: &'a [u8]) -> GGUFBufReader {
-        GGUFBufReader { cursor: buf, read_bytes: 0 }
+        GGUFBufReader {
+            cursor: buf,
+            read_bytes: 0,
+        }
     }
 
     pub fn read(&mut self, n: usize) -> Result<&'a [u8]> {
@@ -264,13 +263,20 @@ impl<'a> GGUFBufReader<'a> {
         Ok(v)
     }
 
+    pub fn cursor(&self) -> &'a [u8] {
+        self.cursor
+    }
+
     pub fn read_bytes(&self) -> usize {
         self.read_bytes
     }
 }
 
-pub struct GGUFMetadataReader<'a> {
-    buf: &'a mut GGUFBufReader<'a>,
+pub struct GGUFMetadataReader<'a, 'b>
+where
+    'a: 'b,
+{
+    buf: &'b mut GGUFBufReader<'a>,
 }
 
 macro_rules! define_gguf_metadata_value_read_fn {
@@ -293,8 +299,8 @@ macro_rules! define_gguf_metadata_value_read_fn {
     };
 }
 
-impl<'a> GGUFMetadataReader<'a> {
-    pub fn new(buf: &'a mut GGUFBufReader<'a>) -> GGUFMetadataReader<'a> {
+impl<'a, 'b> GGUFMetadataReader<'a, 'b> {
+    pub fn new(buf: &'b mut GGUFBufReader<'a>) -> GGUFMetadataReader<'a, 'b> {
         GGUFMetadataReader { buf }
     }
 
@@ -370,13 +376,11 @@ impl<'a> GGUFMetadataReader<'a> {
         let s = std::str::from_utf8(buf).map_err(|e| GGUFError {
             kind: GGUFErrorKind::FormatError,
             message: format!("Invalid UTF-8 string"),
-            cause: Some(Box::new(e))
+            cause: Some(Box::new(e)),
         });
         s
     }
 }
-
-impl<'a> GGUFMetadataReader<'a> {}
 
 pub struct GGUFHeader<'a> {
     // Magic number to announce that this is a GGUF file.
@@ -401,7 +405,7 @@ pub struct GGUFHeader<'a> {
 }
 
 impl<'a> GGUFHeader<'a> {
-    fn decode(buf: &'a mut GGUFBufReader<'a>) -> Result<Self> {
+    fn decode(buf: &mut GGUFBufReader<'a>) -> Result<Self> {
         let mut r = GGUFMetadataReader::new(buf);
         let magic = r.read_u32()?;
         if magic != GGUF_MAGIC {
@@ -441,6 +445,20 @@ impl<'a> GGUFHeader<'a> {
             metadata_kv,
         })
     }
+
+    pub fn alignment(&self) -> u64 {
+        match self.metadata_kv.get(KEY_GENERAL_ALIGNMENT) {
+            Some(GGUFMetadataValue::U64(v)) => *v,
+            Some(GGUFMetadataValue::U32(v)) => *v as u64,
+            Some(GGUFMetadataValue::U16(v)) => *v as u64,
+            Some(GGUFMetadataValue::U8(v)) => *v as u64,
+            Some(GGUFMetadataValue::I64(v)) if *v > 0 => *v as u64,
+            Some(GGUFMetadataValue::I32(v)) if *v > 0 => *v as u64,
+            Some(GGUFMetadataValue::I16(v)) if *v > 0 => *v as u64,
+            Some(GGUFMetadataValue::I8(v)) if *v > 0 => *v as u64,
+            _ => GGUF_DEFAULT_ALIGNMENT,
+        }
+    }
 }
 
 struct GGUFTensorInfo {
@@ -462,7 +480,7 @@ struct GGUFTensorInfo {
 }
 
 impl GGUFTensorInfo {
-    pub fn decode<'a>(buf: &'a mut GGUFBufReader<'a>) -> Result<Self> {
+    pub fn decode(buf: &mut GGUFBufReader) -> Result<Self> {
         let mut r = GGUFMetadataReader::new(buf);
         let name = r.read_string()?.to_string();
         let n_dimensions = r.read_u32()? as usize;
@@ -473,7 +491,7 @@ impl GGUFTensorInfo {
             name,
             dimensions,
             typ,
-            offset
+            offset,
         })
     }
 }
@@ -496,4 +514,28 @@ struct GGUFFile<'a> {
     // The offset of each tensor's data must be a multiple of `ALIGNMENT`, and the space between tensors
     // should be padded to `ALIGNMENT` bytes.
     tensor_data: &'a [u8],
+}
+
+impl<'a> GGUFFile<'a> {
+    fn decode(buf: &mut GGUFBufReader<'a>) -> Result<Self> {
+        let header = GGUFHeader::decode(buf)?;
+
+        let mut tensor_infos = Vec::with_capacity(header.tensor_count as usize);
+        for _ in 0..header.tensor_count {
+            let tensor_info = GGUFTensorInfo::decode(buf)?;
+            tensor_infos.push(tensor_info);
+        }
+
+        let position = buf.read_bytes();
+        let alignment = header.alignment() as usize;
+        let next_position = position - (position % alignment) + alignment;
+        let _ = buf.read(next_position - position)?;
+        let tensor_data = buf.cursor();
+
+        Ok(Self {
+            header,
+            tensor_infos,
+            tensor_data,
+        })
+    }
 }

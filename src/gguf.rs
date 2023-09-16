@@ -1,10 +1,9 @@
+use int_enum::IntEnum;
 use memmap2::Mmap;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::fs::File;
 use std::mem;
-
-use int_enum::IntEnum;
 
 const GGUF_MAGIC: u32 = 0x46554747;
 const GGUF_VERSION: u64 = 2;
@@ -850,8 +849,20 @@ mod tests {
             ]
         );
 
-        assert_eq!(gf.header.get_metadata(KEY_ATTENTION_HEAD_COUNT)?.unwrap().as_u64(), Some(8_u64));
-        assert_eq!(gf.header.get_metadata(KEY_ATTENTION_HEAD_COUNT_KV)?.unwrap().as_u64(), Some(4_u64));
+        assert_eq!(
+            gf.header
+                .get_metadata(KEY_ATTENTION_HEAD_COUNT)?
+                .unwrap()
+                .as_u64(),
+            Some(8_u64)
+        );
+        assert_eq!(
+            gf.header
+                .get_metadata(KEY_ATTENTION_HEAD_COUNT_KV)?
+                .unwrap()
+                .as_u64(),
+            Some(4_u64)
+        );
         Ok(())
     }
 }

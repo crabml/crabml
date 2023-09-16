@@ -1,6 +1,8 @@
 - [x] read metadata value
 - [x] read header
 - [x] read tensor info
-- [ ] gguf_file_t
+- [x] gguf_file_t
+- [ ] test with a real small model
+- [ ] dequantize support
 
 https://github.com/ggerganov/llama.cpp/blob/master/gguf-py/gguf/gguf.py

@@ -55,8 +55,9 @@ const KEY_TOKENIZER_PAD_ID: &str = "tokenizer.ggml.padding_token_id";
 const KEY_TOKENIZER_HF_JSON: &str = "tokenizer.huggingface.json";
 const KEY_TOKENIZER_RWKV: &str = "tokenizer.rwkv.world";
 
-#[derive(Debug)]
-pub enum ModelArch {
+#[repr(u32)]
+#[derive(Debug, Clone, Copy, IntEnum)]
+pub enum GGUFArchitecture {
     Llama = 0,
     Falcon = 1,
     GPT2 = 2,
@@ -66,7 +67,7 @@ pub enum ModelArch {
 }
 
 #[derive(Debug)]
-pub enum ModelTensor {
+pub enum GGUFTensorKey {
     TOKEN_EMBD = 0,
     POS_EMBD = 1,
     OUTPUT = 2,
@@ -389,6 +390,7 @@ pub struct GGUFHeader<'a> {
     // check for 0x46554747 and letting the endianness cancel out.
     // Consider being *very* explicit about the byte order here.
     magic: u32,
+
     // The version of the format implemented.
     // Must be `2` for version described in this spec.
     //
@@ -396,11 +398,13 @@ pub struct GGUFHeader<'a> {
     // Changes that do not affect the structure of the file should instead update the metadata
     // to signify the change.
     version: u32,
+
     // The number of tensors in the file.
     // This is explicit, instead of being included in the metadata, to ensure it is always present
     // for loading the tensors.
     tensor_count: u64,
-    // The number of metadata key-value pairs.
+
+    // The metadata key-value pairs.
     metadata_kv: HashMap<String, GGUFMetadataValue<'a>>,
 }
 
@@ -446,6 +450,9 @@ impl<'a> GGUFHeader<'a> {
         })
     }
 
+    /// the global alignment to use, as described above. This can vary to allow for different alignment schemes, 
+    /// but it must be a multiple of 8. Some writers may not write the alignment. If the alignment is not specified,
+    /// assume it is 32.
     pub fn alignment(&self) -> u64 {
         match self.metadata_kv.get(KEY_GENERAL_ALIGNMENT) {
             Some(GGUFMetadataValue::U64(v)) => *v,
@@ -458,6 +465,48 @@ impl<'a> GGUFHeader<'a> {
             Some(GGUFMetadataValue::I8(v)) if *v > 0 => *v as u64,
             _ => GGUF_DEFAULT_ALIGNMENT,
         }
+    }
+
+    /// describes what architecture this model implements. All lowercase ASCII, with only [a-z0-9]+ characters 
+    /// allowed. Known values include:
+    /// 
+    /// - llama
+    /// - mpt
+    /// - gptneox
+    /// - gptj
+    /// - gpt2
+    /// - bloom
+    /// - falcon
+    /// - rwkv
+    /// 
+    pub fn architecture(&self) -> Result<&'a str> {
+        match self.metadata_kv.get(KEY_GENERAL_ARCHITECTURE) {
+            Some(GGUFMetadataValue::String(v)) => Ok(v),
+            _ => Err(GGUFError {
+                kind: GGUFErrorKind::FormatError,
+                message: format!("Missing string metadata general.architecture"),
+                cause: None,
+            }),
+        }
+    }
+
+    /// The version of the quantization format. Not required if the model is not quantized (i.e. no tensors are 
+    /// quantized). If any tensors are quantized, this must be present. This is separate to the quantization 
+    /// scheme of the tensors itself; the quantization version may change without changing the scheme's name
+    /// (e.g. the quantization scheme is Q5_K, and the quantization version is 4).
+    pub fn quantization_version(&self) -> Result<u32> {
+        match self.metadata_kv.get(KEY_GENERAL_ARCHITECTURE) {
+            Some(GGUFMetadataValue::U32(v)) => Ok(*v),
+            _ => Err(GGUFError {
+                kind: GGUFErrorKind::FormatError,
+                message: format!("Missing U32 metadata general.architecture"),
+                cause: None,
+            }),
+        }
+    }
+
+    pub fn get_metadata(&self, key: &str) -> Option<&GGUFMetadataValue<'a>> {
+        self.metadata_kv.get(key)
     }
 }
 

@@ -86,7 +86,7 @@ pub enum ModelTensor {
     FFN_NORM = 16,
 }
 
-#[repr(u8)]
+#[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, IntEnum)]
 pub enum GGMLType {
     F32  = 0,
@@ -112,10 +112,10 @@ pub enum GGMLType {
     COUNT = 19,
 }
 
-impl TryFrom<u8> for GGMLType {
+impl TryFrom<u32> for GGMLType {
     type Error = GGUFError;
 
-    fn try_from(v: u8) -> std::result::Result<Self, Self::Error> {
+    fn try_from(v: u32) -> std::result::Result<Self, Self::Error> {
         Self::from_int(v).map_err(|err|
             GGUFError {
                 kind: GGUFErrorKind::FormatError,
@@ -463,7 +463,7 @@ impl GGUFTensorInfo {
         let n_dimensions = r.read_u32()? as usize;
         let dimensions = r.read_u64_array(n_dimensions)?.to_vec();
         // TODO: ensure the length of the typ field
-        let typ = GGMLType::try_from(r.read_u8()?)?;
+        let typ = GGMLType::try_from(r.read_u32()?)?;
         let offset = r.read_u64()?;
         Ok(Self {
             name,

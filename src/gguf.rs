@@ -84,8 +84,36 @@ pub enum ModelTensor {
     FFN_NORM = 16,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, IntEnum)]
+pub enum GGMLType {
+    F32  = 0,
+    F16  = 1,
+    Q4_0 = 2,
+    Q4_1 = 3,
+    // GGML_TYPE_Q4_2 = 4, support has been removed
+    // GGML_TYPE_Q4_3 (5) support has been removed
+    Q5_0 = 6,
+    Q5_1 = 7,
+    Q8_0 = 8,
+    Q8_1 = 9,
+    // k-quantizations
+    Q2_K = 10,
+    Q3_K = 11,
+    Q4_K = 12,
+    Q5_K = 13,
+    Q6_K = 14,
+    Q8_K = 15,
+    I8 = 16,
+    I16 = 17,
+    I32 = 18,
+    COUNT = 19,
+}
+
+
+
 #[repr(u32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GGUFMetadataValueType {
     // The value is a 8-bit unsigned integer.
     U8 = 0,
@@ -123,25 +151,13 @@ impl TryFrom<u32> for GGUFMetadataValueType {
     type Error = GGUFError;
 
     fn try_from(v: u32) -> std::result::Result<Self, Self::Error> {
-        match v {
-            x if x == GGUFMetadataValueType::U8 as u32 => Ok(GGUFMetadataValueType::U8),
-            x if x == GGUFMetadataValueType::I8 as u32 => Ok(GGUFMetadataValueType::I8),
-            x if x == GGUFMetadataValueType::U16 as u32 => Ok(GGUFMetadataValueType::U16),
-            x if x == GGUFMetadataValueType::I16 as u32 => Ok(GGUFMetadataValueType::I16),
-            x if x == GGUFMetadataValueType::U32 as u32 => Ok(GGUFMetadataValueType::U32),
-            x if x == GGUFMetadataValueType::I32 as u32 => Ok(GGUFMetadataValueType::I32),
-            x if x == GGUFMetadataValueType::F32 as u32 => Ok(GGUFMetadataValueType::F32),
-            x if x == GGUFMetadataValueType::Bool as u32 => Ok(GGUFMetadataValueType::Bool),
-            x if x == GGUFMetadataValueType::String as u32 => Ok(GGUFMetadataValueType::String),
-            x if x == GGUFMetadataValueType::Array as u32 => Ok(GGUFMetadataValueType::Array),
-            x if x == GGUFMetadataValueType::U64 as u32 => Ok(GGUFMetadataValueType::U64),
-            x if x == GGUFMetadataValueType::I64 as u32 => Ok(GGUFMetadataValueType::I64),
-            x if x == GGUFMetadataValueType::F64 as u32 => Ok(GGUFMetadataValueType::F64),
-            _ => Err(GGUFError {
+        Self::from_int(v).map_err(|err|
+            GGUFError {
                 kind: GGUFErrorKind::FormatError,
                 message: format!("failed to decode the value type for {}", v),
-            }),
-        }
+                cause: Some(err),
+            }
+        )
     }
 }
 
@@ -189,6 +205,7 @@ pub enum GGUFErrorKind {
 pub struct GGUFError {
     kind: GGUFErrorKind,
     message: String,
+    cause: Option<Box<dyn std::error::Error>>,
 }
 
 impl std::fmt::Display for GGUFError {
@@ -220,6 +237,7 @@ impl<'a> GGUFBufReader<'a> {
                     n,
                     self.cursor.len()
                 ),
+                cause: None,
             });
         }
         let v = &self.cursor[0..n];
@@ -328,7 +346,8 @@ impl<'a> GGUFMetadataReader<'a> {
         let buf = self.buf.read(n as usize)?;
         let s = std::str::from_utf8(buf).map_err(|e| GGUFError {
             kind: GGUFErrorKind::FormatError,
-            message: format!("Invalid UTF-8 string: {}", e),
+            message: format!("Invalid UTF-8 string"),
+            cause: Some(e)
         });
         s
     }
@@ -366,6 +385,7 @@ impl<'a> GGUFHeader<'a> {
             return Err(GGUFError {
                 kind: GGUFErrorKind::FormatError,
                 message: format!("Invalid magic number: {}", magic),
+                cause: None,
             });
         }
 
@@ -377,6 +397,7 @@ impl<'a> GGUFHeader<'a> {
                     "Unsupported version number: {}, only 2 is supported yet",
                     version
                 ),
+                cause: None,
             });
         }
 
@@ -395,6 +416,42 @@ impl<'a> GGUFHeader<'a> {
             version,
             tensor_count,
             metadata_kv,
+        })
+    }
+}
+
+struct GGUFTensorInfo {
+    // The name of the tensor. It is a standard GGUF string, with the caveat that
+    // it must be at most 64 bytes long.
+    name: String,
+    // The dimensions in the tensor.
+    // Currently at most 4, but this may change in the future.
+    dimensions: Vec<u64>,
+    // The type of the tensor.
+    typ: GGMLType,
+    // The offset of the tensor's data in this file in bytes.
+    // This offset is relative to `tensor_data`, not to the start
+    // of the file, to make it easier for writers to write the file.
+    // Readers should consider exposing this offset relative to the
+    // file to make it easier to read the data.
+    // Must be a multiple of `ALIGNMENT`.
+    offset: u64,
+}
+
+impl GGUFTensorInfo {
+    pub fn decode(buf: &mut GGUFBufReader) -> Result<Self> {
+        let mut r = GGUFMetadataReader::new(buf);
+        let name = r.read_string()?.to_string();
+        let n_dimensions = r.read_u32()? as usize;
+        let dimensions = r.read_u64_array(n_dimensions)?.to_vec();
+        // TODO: ensure the length of the typ field
+        let typ = r.read_u8()?;
+        let offset = r.read_u64()?;
+        Ok(Self {
+            name,
+            dimensions,
+            typ,
+            offset
         })
     }
 }

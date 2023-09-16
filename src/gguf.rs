@@ -461,7 +461,7 @@ impl<'a> GGUFHeader<'a> {
     }
 }
 
-struct GGUFTensorInfo {
+struct GGUFOnDiskTensorInfo {
     // The name of the tensor. It is a standard GGUF string, with the caveat that
     // it must be at most 64 bytes long.
     name: String,
@@ -479,7 +479,7 @@ struct GGUFTensorInfo {
     offset: u64,
 }
 
-impl GGUFTensorInfo {
+impl GGUFOnDiskTensorInfo {
     pub fn decode(buf: &mut GGUFBufReader) -> Result<Self> {
         let mut r = GGUFMetadataReader::new(buf);
         let name = r.read_string()?.to_string();
@@ -496,12 +496,50 @@ impl GGUFTensorInfo {
     }
 }
 
+struct GGUFTensorInfo<'a> {
+    // The name of the tensor. It is a standard GGUF string, with the caveat that
+    // it must be at most 64 bytes long.
+    name: String,
+    // The dimensions in the tensor.
+    // Currently at most 4, but this may change in the future.
+    dimensions: Vec<u64>,
+    // The type of the tensor.
+    typ: GGMLType,
+    // The offset of the tensor's data in this file in bytes.
+    // This offset is relative to `tensor_data`, not to the start
+    // of the file, to make it easier for writers to write the file.
+    // Readers should consider exposing this offset relative to the
+    // file to make it easier to read the data.
+    // Must be a multiple of `ALIGNMENT`.
+    offset: u64,
+    // The tensor data
+    data: &'a [u8],
+}
+
+impl<'a> GGUFTensorInfo<'a> {
+    pub fn new(
+        name: String,
+        dimensions: Vec<u64>,
+        typ: GGMLType,
+        offset: u64,
+        data: &'a [u8],
+    ) -> Self {
+        Self {
+            name,
+            dimensions,
+            typ,
+            offset,
+            data,
+        }
+    }
+}
+
 struct GGUFFile<'a> {
     // The header of the file.
     header: GGUFHeader<'a>,
 
     // Tensor infos, which can be used to locate the tensor data.
-    tensor_infos: Vec<GGUFTensorInfo>,
+    tensor_infos: Vec<GGUFTensorInfo<'a>>,
 
     // Tensor data.
     //
@@ -517,25 +555,52 @@ struct GGUFFile<'a> {
 }
 
 impl<'a> GGUFFile<'a> {
-    fn decode(buf: &mut GGUFBufReader<'a>) -> Result<Self> {
+    pub fn decode(buf: &mut GGUFBufReader<'a>) -> Result<Self> {
         let header = GGUFHeader::decode(buf)?;
 
+        // load on disk tensor infos
         let mut tensor_infos = Vec::with_capacity(header.tensor_count as usize);
         for _ in 0..header.tensor_count {
-            let tensor_info = GGUFTensorInfo::decode(buf)?;
+            let tensor_info = GGUFOnDiskTensorInfo::decode(buf)?;
             tensor_infos.push(tensor_info);
         }
 
+        // find the tensor_data position
         let position = buf.read_bytes();
         let alignment = header.alignment() as usize;
         let next_position = position - (position % alignment) + alignment;
         let _ = buf.read(next_position - position)?;
         let tensor_data = buf.cursor();
 
+        // convert the on-disk tensor infos to in-memory
+        let tensor_infos = Self::convert_tensor_infos(&tensor_infos, tensor_data)?;
+
         Ok(Self {
             header,
             tensor_infos,
             tensor_data,
         })
+    }
+
+    fn convert_tensor_infos(tensor_infos: &[GGUFOnDiskTensorInfo], tensor_data: &'a [u8]) -> Result<Vec<GGUFTensorInfo<'a>>> {
+        let mut result = Vec::with_capacity(tensor_infos.len());
+        for (i, tensor_info) in tensor_infos.iter().enumerate() {
+            let next_offset = if i >= tensor_infos.len() {
+                tensor_data.len()
+            } else {
+                tensor_infos[i + 1].offset as usize
+            };
+            let data = &tensor_data[tensor_info.offset as usize..next_offset];
+            
+            let item = GGUFTensorInfo::new(
+                tensor_info.name.clone(),
+                tensor_info.dimensions.clone(),
+                tensor_info.typ,
+                tensor_info.offset,
+                &data,
+            );
+            result.push(item);
+        }
+        Ok(result)
     }
 }

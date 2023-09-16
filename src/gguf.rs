@@ -296,7 +296,37 @@ impl<'a> GGUFReader<'a> {
     }
 
     pub fn read_array(&mut self) -> Result<GGUFArray<'a>> {
-        todo!()
+        let n = self.read_u32()?;
+        let typ = GGUFValueType::try_from(n)?;
+        let len = self.read_u64()? as usize;
+        let arr = match typ {
+            GGUFValueType::U8 => GGUFArray::U8Array(self.read_u8_array(len)?),
+            GGUFValueType::I8 => GGUFArray::I8Array(self.read_i8_array(len)?),
+            GGUFValueType::U16 => GGUFArray::U16Array(self.read_u16_array(len)?),
+            GGUFValueType::I16 => GGUFArray::I16Array(self.read_i16_array(len)?),
+            GGUFValueType::U32 => GGUFArray::U32Array(self.read_u32_array(len)?),
+            GGUFValueType::I32 => GGUFArray::I32Array(self.read_i32_array(len)?),
+            GGUFValueType::F32 => GGUFArray::F32Array(self.read_f32_array(len)?),
+            GGUFValueType::F64 => GGUFArray::F64Array(self.read_f64_array(len)?),
+            GGUFValueType::U64 => GGUFArray::U64Array(self.read_u64_array(len)?),
+            GGUFValueType::I64 => GGUFArray::I64Array(self.read_i64_array(len)?),
+            GGUFValueType::Bool => GGUFArray::BoolArray(self.read_u8_array(len)?),
+            GGUFValueType::String => {
+                let mut v = Vec::with_capacity(len);
+                for _ in 0..len {
+                    v.push(self.read_string()?);
+                }
+                GGUFArray::StringArray(v)
+            }
+            GGUFValueType::Array => {
+                let mut v = Vec::with_capacity(len);
+                for _ in 0..len {
+                    v.push(self.read_array()?);
+                }
+                GGUFArray::NestedArray(v)
+            },
+        };
+        Ok(arr)
     }
 
     define_gguf_value_read_fn!(read_u8_array, read_u8, u8);

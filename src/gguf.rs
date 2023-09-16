@@ -365,8 +365,8 @@ impl<'a, 'b> GGUFMetadataReader<'a, 'b> {
     }
 
     pub fn read_value(&mut self) -> Result<GGUFMetadataValue<'a>> {
-        let n = self.read_u32()?;
-        let typ = GGUFMetadataValueType::try_from(n)?;
+        let typ = self.read_u32()?;
+        let typ = GGUFMetadataValueType::try_from(typ)?;
         let v = match typ {
             GGUFMetadataValueType::U8 => GGUFMetadataValue::U8(self.read_u8()?),
             GGUFMetadataValueType::I8 => GGUFMetadataValue::I8(self.read_i8()?),
@@ -386,8 +386,8 @@ impl<'a, 'b> GGUFMetadataReader<'a, 'b> {
     }
 
     pub fn read_array(&mut self) -> Result<GGUFMetadataArray<'a>> {
-        let n = self.read_u32()?;
-        let typ = GGUFMetadataValueType::try_from(n)?;
+        let typ = self.read_u32()?;
+        let typ = GGUFMetadataValueType::try_from(typ)?;
         let len = self.read_len()?;
         let arr = match typ {
             GGUFMetadataValueType::U8 => GGUFMetadataArray::U8Array(self.read_u8_array(len)?),

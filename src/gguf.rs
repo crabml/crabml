@@ -147,28 +147,35 @@ impl TryFrom<u32> for GGUFValueType {
 #[derive(Debug, Clone)]
 pub enum GGUFValue<'a> {
     U8(u8),
-    U8Array(&'a [u8]),
     I8(i8),
-    I8Array(&'a [i8]),
     U16(u16),
-    U16Array(&'a [u16]),
     I16(i16),
-    I16Array(&'a [i16]),
     U32(u32),
-    U32Array(&'a [u32]),
     I32(i32),
-    I32Array(&'a [i32]),
     U64(u64),
-    U64Array(&'a [u64]),
     I64(i64),
-    I64Array(&'a [i64]),
     F32(f32),
-    F32Array(&'a [f32]),
     F64(f64),
-    F64Array(&'a [f64]),
     Bool(u8),
-    BoolArray(&'a [u8]),
     String(&'a str),
+    Array(GGUFArray<'a>),
+}
+
+#[derive(Debug, Clone)]
+pub enum GGUFArray<'a> {
+    U8Array(&'a [u8]),
+    I8Array(&'a [i8]),
+    U16Array(&'a [u16]),
+    I16Array(&'a [i16]),
+    U32Array(&'a [u32]),
+    I32Array(&'a [i32]),
+    U64Array(&'a [u64]),
+    I64Array(&'a [i64]),
+    F32Array(&'a [f32]),
+    F64Array(&'a [f64]),
+    BoolArray(&'a [u8]),
+    StringArray(Vec<&'a str>),
+    NestedArray(Vec<GGUFArray<'a>>),
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
@@ -246,14 +253,42 @@ impl<'a> GGUFReader<'a> {
         todo!()
     }
 
-    fn read_value(&mut self) -> Result<GGUFValue> {
+    pub fn read_value(&mut self) -> Result<GGUFValue<'a>> {
+        let n = self.read_u32()?;
+        let typ = GGUFValueType::try_from(n)?;
+        let v = match typ {
+            GGUFValueType::U8 => GGUFValue::U8(self.read_u8()?),
+            GGUFValueType::I8 => GGUFValue::I8(self.read_u8()? as i8),
+            GGUFValueType::U16 => GGUFValue::U16(self.read_u16()?),
+            GGUFValueType::I16 => GGUFValue::I16(self.read_u16()? as i16),
+            GGUFValueType::U32 => GGUFValue::U32(self.read_u32()? as u32),
+            GGUFValueType::I32 => GGUFValue::I32(self.read_u32()? as i32),
+            GGUFValueType::F32 => GGUFValue::F32(self.read_f32()?),
+            GGUFValueType::F64 => GGUFValue::F64(self.read_f64()?),
+            GGUFValueType::U64 => GGUFValue::U64(self.read_u64()?),
+            GGUFValueType::I64 => GGUFValue::I64(self.read_u64()? as i64),
+            GGUFValueType::String => GGUFValue::String(self.read_string()?),
+            GGUFValueType::Bool => GGUFValue::Bool(self.read_u8()?),
+            GGUFValueType::Array => GGUFValue::Array(self.read_array()?),
+        };
+        Ok(v)
+    }
+
+    pub fn read_array(&mut self) -> Result<GGUFArray<'a>> {
+
         todo!()
     }
 
-    pub fn read_value_tyoe(&mut self) -> Result<GGUFValueType> {
-        let n = self.read_u32()?;
-        let ty = GGUFValueType::try_from(n)?;
-        Ok(ty)
+    pub fn read_u8(&mut self) -> Result<u8> {
+        let buf = self.read_bytes(1)?;
+        return Ok(buf[0])
+    }
+
+    pub fn read_u16(&mut self) -> Result<u16> {
+        let mut valbuf = [0_u8; 2];
+        valbuf.copy_from_slice(self.read_bytes(2)?);
+        let v = u16::from_le_bytes(valbuf);
+        Ok(v)
     }
 
     pub fn read_u32(&mut self) -> Result<u32> {
@@ -267,6 +302,20 @@ impl<'a> GGUFReader<'a> {
         let mut valbuf = [0_u8; 8];
         valbuf.copy_from_slice(self.read_bytes(8)?);
         let v = u64::from_le_bytes(valbuf);
+        Ok(v)
+    }
+
+    pub fn read_f32(&mut self) -> Result<f32> {
+        let mut valbuf = [0_u8; 4];
+        valbuf.copy_from_slice(self.read_bytes(4)?);
+        let v = f32::from_le_bytes(valbuf);
+        Ok(v)
+    }
+
+    pub fn read_f64(&mut self) -> Result<f64> {
+        let mut valbuf = [0_u8; 8];
+        valbuf.copy_from_slice(self.read_bytes(8)?);
+        let v = f64::from_le_bytes(valbuf);
         Ok(v)
     }
 

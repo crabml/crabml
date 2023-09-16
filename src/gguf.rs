@@ -86,7 +86,7 @@ pub enum ModelTensor {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u32)]
-pub enum GGUFValueType {
+pub enum GGUFMetadataValueType {
     // The value is a 8-bit unsigned integer.
     U8 = 0,
     // The value is a 8-bit signed little-endian integer.
@@ -119,24 +119,24 @@ pub enum GGUFValueType {
     F64 = 12,
 }
 
-impl TryFrom<u32> for GGUFValueType {
+impl TryFrom<u32> for GGUFMetadataValueType {
     type Error = GGUFError;
 
     fn try_from(v: u32) -> std::result::Result<Self, Self::Error> {
         match v {
-            x if x == GGUFValueType::U8 as u32 => Ok(GGUFValueType::U8),
-            x if x == GGUFValueType::I8 as u32 => Ok(GGUFValueType::I8),
-            x if x == GGUFValueType::U16 as u32 => Ok(GGUFValueType::U16),
-            x if x == GGUFValueType::I16 as u32 => Ok(GGUFValueType::I16),
-            x if x == GGUFValueType::U32 as u32 => Ok(GGUFValueType::U32),
-            x if x == GGUFValueType::I32 as u32 => Ok(GGUFValueType::I32),
-            x if x == GGUFValueType::F32 as u32 => Ok(GGUFValueType::F32),
-            x if x == GGUFValueType::Bool as u32 => Ok(GGUFValueType::Bool),
-            x if x == GGUFValueType::String as u32 => Ok(GGUFValueType::String),
-            x if x == GGUFValueType::Array as u32 => Ok(GGUFValueType::Array),
-            x if x == GGUFValueType::U64 as u32 => Ok(GGUFValueType::U64),
-            x if x == GGUFValueType::I64 as u32 => Ok(GGUFValueType::I64),
-            x if x == GGUFValueType::F64 as u32 => Ok(GGUFValueType::F64),
+            x if x == GGUFMetadataValueType::U8 as u32 => Ok(GGUFMetadataValueType::U8),
+            x if x == GGUFMetadataValueType::I8 as u32 => Ok(GGUFMetadataValueType::I8),
+            x if x == GGUFMetadataValueType::U16 as u32 => Ok(GGUFMetadataValueType::U16),
+            x if x == GGUFMetadataValueType::I16 as u32 => Ok(GGUFMetadataValueType::I16),
+            x if x == GGUFMetadataValueType::U32 as u32 => Ok(GGUFMetadataValueType::U32),
+            x if x == GGUFMetadataValueType::I32 as u32 => Ok(GGUFMetadataValueType::I32),
+            x if x == GGUFMetadataValueType::F32 as u32 => Ok(GGUFMetadataValueType::F32),
+            x if x == GGUFMetadataValueType::Bool as u32 => Ok(GGUFMetadataValueType::Bool),
+            x if x == GGUFMetadataValueType::String as u32 => Ok(GGUFMetadataValueType::String),
+            x if x == GGUFMetadataValueType::Array as u32 => Ok(GGUFMetadataValueType::Array),
+            x if x == GGUFMetadataValueType::U64 as u32 => Ok(GGUFMetadataValueType::U64),
+            x if x == GGUFMetadataValueType::I64 as u32 => Ok(GGUFMetadataValueType::I64),
+            x if x == GGUFMetadataValueType::F64 as u32 => Ok(GGUFMetadataValueType::F64),
             _ => Err(GGUFError {
                 kind: GGUFReaderErrorKind::FormatError,
                 message: format!("failed to decode the value type for {}", v),
@@ -146,7 +146,7 @@ impl TryFrom<u32> for GGUFValueType {
 }
 
 #[derive(Debug, Clone)]
-pub enum GGUFValue<'a> {
+pub enum GGUFMetadataValue<'a> {
     U8(u8),
     I8(i8),
     U16(u16),
@@ -159,11 +159,11 @@ pub enum GGUFValue<'a> {
     F64(f64),
     Bool(u8),
     String(&'a str),
-    Array(GGUFArray<'a>),
+    Array(GGUFMetadataArray<'a>),
 }
 
 #[derive(Debug, Clone)]
-pub enum GGUFArray<'a> {
+pub enum GGUFMetadataArray<'a> {
     U8Array(&'a [u8]),
     I8Array(&'a [i8]),
     U16Array(&'a [u16]),
@@ -176,7 +176,7 @@ pub enum GGUFArray<'a> {
     F64Array(&'a [f64]),
     BoolArray(&'a [u8]),
     StringArray(Vec<&'a str>),
-    NestedArray(Vec<GGUFArray<'a>>),
+    NestedArray(Vec<GGUFMetadataArray<'a>>),
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
@@ -220,14 +220,14 @@ pub struct GGUFHeader<'a> {
     // for loading the tensors.
     tensor_count: u64,
     // The number of metadata key-value pairs.
-    metadata_kv: HashMap<String, GGUFValue<'a>>,
+    metadata_kv: HashMap<String, GGUFMetadataValue<'a>>,
 }
 
 pub struct GGUFReader<'a> {
     buf: &'a [u8],
 }
 
-macro_rules! define_gguf_value_read_fn {
+macro_rules! define_gguf_metadata_value_read_fn {
     ($read_array_func:ident, $read_item_func:ident, $typ:ty) => {
         fn $read_array_func(&mut self, n: usize) -> Result<&'a [$typ]> {
             let typ_size = mem::size_of::<$typ>();
@@ -270,75 +270,73 @@ impl<'a> GGUFReader<'a> {
 
         let tensor_count = self.read_u64()?;
         let metadata_kv_count = self.read_u64()?;
-
-        todo!()
     }
 
-    pub fn read_value(&mut self) -> Result<GGUFValue<'a>> {
+    pub fn read_metadata_value(&mut self) -> Result<GGUFMetadataValue<'a>> {
         let n = self.read_u32()?;
-        let typ = GGUFValueType::try_from(n)?;
+        let typ = GGUFMetadataValueType::try_from(n)?;
         let v = match typ {
-            GGUFValueType::U8 => GGUFValue::U8(self.read_u8()?),
-            GGUFValueType::I8 => GGUFValue::I8(self.read_i8()?),
-            GGUFValueType::U16 => GGUFValue::U16(self.read_u16()?),
-            GGUFValueType::I16 => GGUFValue::I16(self.read_i16()?),
-            GGUFValueType::U32 => GGUFValue::U32(self.read_u32()?),
-            GGUFValueType::I32 => GGUFValue::I32(self.read_i32()?),
-            GGUFValueType::F32 => GGUFValue::F32(self.read_f32()?),
-            GGUFValueType::F64 => GGUFValue::F64(self.read_f64()?),
-            GGUFValueType::U64 => GGUFValue::U64(self.read_u64()?),
-            GGUFValueType::I64 => GGUFValue::I64(self.read_i64()?),
-            GGUFValueType::String => GGUFValue::String(self.read_string()?),
-            GGUFValueType::Bool => GGUFValue::Bool(self.read_u8()?),
-            GGUFValueType::Array => GGUFValue::Array(self.read_array()?),
+            GGUFMetadataValueType::U8 => GGUFMetadataValue::U8(self.read_u8()?),
+            GGUFMetadataValueType::I8 => GGUFMetadataValue::I8(self.read_i8()?),
+            GGUFMetadataValueType::U16 => GGUFMetadataValue::U16(self.read_u16()?),
+            GGUFMetadataValueType::I16 => GGUFMetadataValue::I16(self.read_i16()?),
+            GGUFMetadataValueType::U32 => GGUFMetadataValue::U32(self.read_u32()?),
+            GGUFMetadataValueType::I32 => GGUFMetadataValue::I32(self.read_i32()?),
+            GGUFMetadataValueType::F32 => GGUFMetadataValue::F32(self.read_f32()?),
+            GGUFMetadataValueType::F64 => GGUFMetadataValue::F64(self.read_f64()?),
+            GGUFMetadataValueType::U64 => GGUFMetadataValue::U64(self.read_u64()?),
+            GGUFMetadataValueType::I64 => GGUFMetadataValue::I64(self.read_i64()?),
+            GGUFMetadataValueType::String => GGUFMetadataValue::String(self.read_string()?),
+            GGUFMetadataValueType::Bool => GGUFMetadataValue::Bool(self.read_u8()?),
+            GGUFMetadataValueType::Array => GGUFMetadataValue::Array(self.read_array()?),
         };
         Ok(v)
     }
 
-    pub fn read_array(&mut self) -> Result<GGUFArray<'a>> {
+    pub fn read_array(&mut self) -> Result<GGUFMetadataArray<'a>> {
         let n = self.read_u32()?;
-        let typ = GGUFValueType::try_from(n)?;
+        let typ = GGUFMetadataValueType::try_from(n)?;
         let len = self.read_u64()? as usize;
         let arr = match typ {
-            GGUFValueType::U8 => GGUFArray::U8Array(self.read_u8_array(len)?),
-            GGUFValueType::I8 => GGUFArray::I8Array(self.read_i8_array(len)?),
-            GGUFValueType::U16 => GGUFArray::U16Array(self.read_u16_array(len)?),
-            GGUFValueType::I16 => GGUFArray::I16Array(self.read_i16_array(len)?),
-            GGUFValueType::U32 => GGUFArray::U32Array(self.read_u32_array(len)?),
-            GGUFValueType::I32 => GGUFArray::I32Array(self.read_i32_array(len)?),
-            GGUFValueType::F32 => GGUFArray::F32Array(self.read_f32_array(len)?),
-            GGUFValueType::F64 => GGUFArray::F64Array(self.read_f64_array(len)?),
-            GGUFValueType::U64 => GGUFArray::U64Array(self.read_u64_array(len)?),
-            GGUFValueType::I64 => GGUFArray::I64Array(self.read_i64_array(len)?),
-            GGUFValueType::Bool => GGUFArray::BoolArray(self.read_u8_array(len)?),
-            GGUFValueType::String => {
+            GGUFMetadataValueType::U8 => GGUFMetadataArray::U8Array(self.read_u8_array(len)?),
+            GGUFMetadataValueType::I8 => GGUFMetadataArray::I8Array(self.read_i8_array(len)?),
+            GGUFMetadataValueType::U16 => GGUFMetadataArray::U16Array(self.read_u16_array(len)?),
+            GGUFMetadataValueType::I16 => GGUFMetadataArray::I16Array(self.read_i16_array(len)?),
+            GGUFMetadataValueType::U32 => GGUFMetadataArray::U32Array(self.read_u32_array(len)?),
+            GGUFMetadataValueType::I32 => GGUFMetadataArray::I32Array(self.read_i32_array(len)?),
+            GGUFMetadataValueType::F32 => GGUFMetadataArray::F32Array(self.read_f32_array(len)?),
+            GGUFMetadataValueType::F64 => GGUFMetadataArray::F64Array(self.read_f64_array(len)?),
+            GGUFMetadataValueType::U64 => GGUFMetadataArray::U64Array(self.read_u64_array(len)?),
+            GGUFMetadataValueType::I64 => GGUFMetadataArray::I64Array(self.read_i64_array(len)?),
+            GGUFMetadataValueType::Bool => GGUFMetadataArray::BoolArray(self.read_u8_array(len)?),
+            GGUFMetadataValueType::String => {
                 let mut v = Vec::with_capacity(len);
                 for _ in 0..len {
                     v.push(self.read_string()?);
                 }
-                GGUFArray::StringArray(v)
+                GGUFMetadataArray::StringArray(v)
             }
-            GGUFValueType::Array => {
+            GGUFMetadataValueType::Array => {
                 let mut v = Vec::with_capacity(len);
                 for _ in 0..len {
                     v.push(self.read_array()?);
                 }
-                GGUFArray::NestedArray(v)
+                GGUFMetadataArray::NestedArray(v)
             },
         };
         Ok(arr)
     }
 
-    define_gguf_value_read_fn!(read_u8_array, read_u8, u8);
-    define_gguf_value_read_fn!(read_i8_array, read_i8, i8);
-    define_gguf_value_read_fn!(read_u16_array, read_u16, u16);
-    define_gguf_value_read_fn!(read_i16_array, read_i16, i16);
-    define_gguf_value_read_fn!(read_u32_array, read_u32, u32);
-    define_gguf_value_read_fn!(read_i32_array, read_i32, i32);
-    define_gguf_value_read_fn!(read_u64_array, read_u64, u64);
-    define_gguf_value_read_fn!(read_i64_array, read_i64, i64);
-    define_gguf_value_read_fn!(read_f32_array, read_f32, f32);
-    define_gguf_value_read_fn!(read_f64_array, read_f64, f64);
+    define_gguf_metadata_value_read_fn!(read_u8_array, read_u8, u8);
+    define_gguf_metadata_value_read_fn!(read_i8_array, read_i8, i8);
+    define_gguf_metadata_value_read_fn!(read_u16_array, read_u16, u16);
+    define_gguf_metadata_value_read_fn!(read_i16_array, read_i16, i16);
+    define_gguf_metadata_value_read_fn!(read_u32_array, read_u32, u32);
+    define_gguf_metadata_value_read_fn!(read_i32_array, read_i32, i32);
+    define_gguf_metadata_value_read_fn!(read_u64_array, read_u64, u64);
+    define_gguf_metadata_value_read_fn!(read_i64_array, read_i64, i64);
+    define_gguf_metadata_value_read_fn!(read_f32_array, read_f32, f32);
+    define_gguf_metadata_value_read_fn!(read_f64_array, read_f64, f64);
 
     pub fn read_string(&mut self) -> Result<&'a str> {
         let n = self.read_u64()?;

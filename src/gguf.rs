@@ -121,6 +121,31 @@ pub enum GGMLType {
     COUNT = 19,
 }
 
+impl Display for GGMLType {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match *self {
+            GGMLType::F32 => write!(f, "F32"),
+            GGMLType::F16 => write!(f, "F16"),
+            GGMLType::Q4_0 => write!(f, "Q4_0"),
+            GGMLType::Q4_1 => write!(f, "Q4_1"),
+            GGMLType::Q5_0 => write!(f, "Q5_0"),
+            GGMLType::Q5_1 => write!(f, "Q5_1"),
+            GGMLType::Q8_0 => write!(f, "Q8_0"),
+            GGMLType::Q8_1 => write!(f, "Q8_1"),
+            GGMLType::Q2_K => write!(f, "Q2_K"),
+            GGMLType::Q3_K => write!(f, "Q3_K"),
+            GGMLType::Q4_K => write!(f, "Q4_K"),
+            GGMLType::Q5_K => write!(f, "Q5_K"),
+            GGMLType::Q6_K => write!(f, "Q6_K"),
+            GGMLType::Q8_K => write!(f, "Q8_K"),
+            GGMLType::I8 => write!(f, "I8"),
+            GGMLType::I16 => write!(f, "I16"),
+            GGMLType::I32 => write!(f, "I32"),
+            GGMLType::COUNT => write!(f, "COUNT"),
+        }
+    }
+}
+
 impl TryFrom<u32> for GGMLType {
     type Error = GGUFError;
 
@@ -180,7 +205,7 @@ impl TryFrom<u32> for GGUFMetadataValueType {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum GGUFMetadataValue<'a> {
     U8(u8),
     I8(i8),
@@ -197,7 +222,31 @@ pub enum GGUFMetadataValue<'a> {
     Array(GGUFMetadataArray<'a>),
 }
 
-#[derive(Debug, Clone)]
+impl<'a> GGUFMetadataValue<'a> {
+    pub fn as_u64(&self) -> Option<u64> {
+        match self {
+            GGUFMetadataValue::U8(v) => Some(*v as u64),
+            GGUFMetadataValue::U16(v) => Some(*v as u64),
+            GGUFMetadataValue::U32(v) => Some(*v as u64),
+            GGUFMetadataValue::U64(v) => Some(*v as u64),
+            GGUFMetadataValue::I8(v) if *v >= 0 => Some(*v as u64),
+            GGUFMetadataValue::I16(v) if *v >= 0 => Some(*v as u64),
+            GGUFMetadataValue::I32(v) if *v >= 0 => Some(*v as u64),
+            GGUFMetadataValue::I64(v) if *v >= 0 => Some(*v as u64),
+            _ => None,
+        }
+    }
+
+    pub fn as_f64(&self) -> Option<f64> {
+        match self {
+            GGUFMetadataValue::F32(v) => Some(*v as f64),
+            GGUFMetadataValue::F64(v) => Some(*v as f64),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum GGUFMetadataArray<'a> {
     U8Array(&'a [u8]),
     I8Array(&'a [i8]),
@@ -543,8 +592,10 @@ impl<'a> GGUFHeader<'a> {
         }
     }
 
-    pub fn get_metadata(&self, key: &str) -> Option<&GGUFMetadataValue<'a>> {
-        self.metadata_kv.get(key)
+    pub fn get_metadata(&self, key: &str) -> Result<Option<&GGUFMetadataValue<'a>>> {
+        let key = key.replace("{arch}", self.architecture()?);
+        let val = self.metadata_kv.get(&key);
+        Ok(val)
     }
 }
 
@@ -583,7 +634,7 @@ impl GGUFOnDiskTensorInfo {
     }
 }
 
-struct GGUFTensorInfo<'a> {
+pub struct GGUFTensorInfo<'a> {
     // The name of the tensor. It is a standard GGUF string, with the caveat that
     // it must be at most 64 bytes long.
     name: String,
@@ -618,6 +669,22 @@ impl<'a> GGUFTensorInfo<'a> {
             offset,
             data,
         }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn dimensions(&self) -> &[usize] {
+        &self.dimensions
+    }
+
+    pub fn typ(&self) -> GGMLType {
+        self.typ
+    }
+
+    pub fn data(&self) -> &[u8] {
+        self.data
     }
 }
 
@@ -675,7 +742,7 @@ impl<'a> GGUFFile<'a> {
     ) -> Result<Vec<GGUFTensorInfo<'a>>> {
         let mut result = Vec::with_capacity(tensor_infos.len());
         for (i, tensor_info) in tensor_infos.iter().enumerate() {
-            let next_offset = if i >= tensor_infos.len() {
+            let next_offset = if i + 1 >= tensor_infos.len() {
                 tensor_data.len()
             } else {
                 tensor_infos[i + 1].offset as usize
@@ -692,6 +759,14 @@ impl<'a> GGUFFile<'a> {
             result.push(item);
         }
         Ok(result)
+    }
+
+    pub fn header(&self) -> &GGUFHeader {
+        &self.header
+    }
+
+    pub fn tensor_infos(&self) -> &[GGUFTensorInfo] {
+        &self.tensor_infos
     }
 }
 
@@ -726,12 +801,57 @@ impl GGUFFileLoader {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use super::*;
 
     #[test]
     fn test_load() -> Result<()> {
         let loader = GGUFFileLoader::new("testdata/tinyllamas-stories-260k-f32.gguf")?;
-        loader.load()?;
+        let gf = loader.load()?;
+        assert_eq!(gf.header.architecture()?, "llama");
+        assert_eq!(gf.header.alignment(), 32);
+        assert_eq!(gf.tensor_infos.len(), 48);
+        assert_eq!(gf.tensor_infos[0].name(), "token_embd.weight");
+        assert_eq!(gf.tensor_infos[0].data().len(), 131072);
+        assert_eq!(gf.tensor_infos[0].data().len() % 32, 0);
+        assert_eq!(gf.tensor_infos[0].typ().to_string(), "F32");
+        assert_eq!(gf.tensor_infos[0].dimensions(), vec![64, 512]);
+
+        let mut keys = gf
+            .header
+            .metadata_kv
+            .keys()
+            .into_iter()
+            .map(|i| i.to_string())
+            .collect::<Vec<_>>();
+        keys.sort();
+        assert_eq!(
+            keys,
+            vec![
+                "general.architecture",
+                "general.name",
+                "llama.attention.head_count",
+                "llama.attention.head_count_kv",
+                "llama.attention.layer_norm_rms_epsilon",
+                "llama.block_count",
+                "llama.context_length",
+                "llama.embedding_length",
+                "llama.feed_forward_length",
+                "llama.rope.dimension_count",
+                "llama.tensor_data_layout",
+                "tokenizer.ggml.bos_token_id",
+                "tokenizer.ggml.eos_token_id",
+                "tokenizer.ggml.model",
+                "tokenizer.ggml.padding_token_id",
+                "tokenizer.ggml.scores",
+                "tokenizer.ggml.token_type",
+                "tokenizer.ggml.tokens"
+            ]
+        );
+
+        assert_eq!(gf.header.get_metadata(KEY_ATTENTION_HEAD_COUNT)?.unwrap().as_u64(), Some(8_u64));
+        assert_eq!(gf.header.get_metadata(KEY_ATTENTION_HEAD_COUNT_KV)?.unwrap().as_u64(), Some(4_u64));
         Ok(())
     }
 }

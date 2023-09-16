@@ -270,6 +270,7 @@ where
     'a: 'b,
 {
     buf: &'b mut GGUFBufReader<'a>,
+    version: u32,
 }
 
 macro_rules! define_gguf_metadata_value_read_fn {
@@ -293,8 +294,8 @@ macro_rules! define_gguf_metadata_value_read_fn {
 }
 
 impl<'a, 'b> GGUFMetadataReader<'a, 'b> {
-    pub fn new(buf: &'b mut GGUFBufReader<'a>) -> GGUFMetadataReader<'a, 'b> {
-        GGUFMetadataReader { buf }
+    pub fn new(buf: &'b mut GGUFBufReader<'a>, version: u32) -> GGUFMetadataReader<'a, 'b> {
+        GGUFMetadataReader { buf, version }
     }
 
     pub fn read_value(&mut self) -> Result<GGUFMetadataValue<'a>> {
@@ -321,7 +322,7 @@ impl<'a, 'b> GGUFMetadataReader<'a, 'b> {
     pub fn read_array(&mut self) -> Result<GGUFMetadataArray<'a>> {
         let n = self.read_u32()?;
         let typ = GGUFMetadataValueType::try_from(n)?;
-        let len = self.read_u64()? as usize;
+        let len = self.read_len()?;
         let arr = match typ {
             GGUFMetadataValueType::U8 => GGUFMetadataArray::U8Array(self.read_u8_array(len)?),
             GGUFMetadataValueType::I8 => GGUFMetadataArray::I8Array(self.read_i8_array(len)?),
@@ -364,14 +365,28 @@ impl<'a, 'b> GGUFMetadataReader<'a, 'b> {
     define_gguf_metadata_value_read_fn!(read_f64_array, read_f64, f64);
 
     pub fn read_string(&mut self) -> Result<&'a str> {
-        let n = self.read_u64()?;
-        let buf = self.buf.read(n as usize)?;
+        let len = self.read_len()?;
+        let buf = self.buf.read(len)?;
         let s = std::str::from_utf8(buf).map_err(|e| GGUFError {
             kind: GGUFErrorKind::FormatError,
             message: format!("Invalid UTF-8 string"),
             cause: Some(Box::new(e)),
         });
         s
+    }
+
+    /// Read the length for string & array. It would be an 32 bit unsigned integer on spec v1, but 64 
+    /// bit on spec v2. This seems to be the only difference between v1 and v2, for more infomation:
+    /// https://github.com/philpax/ggml/commit/b021b2577d4294800ece200c9f26c9c65b0f6f51
+    fn read_len(&mut self) -> Result<usize> {
+        let v = if self.version == 1 {
+            self.read_u32()? as usize
+        } else if self.version == 2 {
+            self.read_u64()? as usize
+        } else {
+            panic!("unsupported version: {}", self.version);
+        };
+        Ok(v)
     }
 }
 
@@ -402,7 +417,7 @@ pub struct GGUFHeader<'a> {
 
 impl<'a> GGUFHeader<'a> {
     fn decode(buf: &mut GGUFBufReader<'a>) -> Result<Self> {
-        let mut r = GGUFMetadataReader::new(buf);
+        let mut r = GGUFMetadataReader::new(buf, 2);
         let magic = r.read_u32()?;
         if magic != GGUF_MAGIC {
             return Err(GGUFError {
@@ -413,11 +428,11 @@ impl<'a> GGUFHeader<'a> {
         }
 
         let version = r.read_u32()?;
-        if version != 2 {
+        if version != 2 || version != 1 {
             return Err(GGUFError {
                 kind: GGUFErrorKind::FormatError,
                 message: format!(
-                    "Unsupported version number: {}, only 2 is supported yet",
+                    "Unsupported version number: {}, only 1 & 2 is supported yet",
                     version
                 ),
                 cause: None,
@@ -521,8 +536,8 @@ struct GGUFOnDiskTensorInfo {
 }
 
 impl GGUFOnDiskTensorInfo {
-    pub fn decode(buf: &mut GGUFBufReader) -> Result<Self> {
-        let mut r = GGUFMetadataReader::new(buf);
+    pub fn decode(buf: &mut GGUFBufReader, version: u32) -> Result<Self> {
+        let mut r = GGUFMetadataReader::new(buf, version);
         let name = r.read_string()?.to_string();
         let n_dimensions = r.read_u32()? as usize;
         let dimensions = r.read_u64_array(n_dimensions)?.to_vec();
@@ -602,7 +617,7 @@ impl<'a> GGUFFile<'a> {
         // load on disk tensor infos
         let mut on_disk_tensor_infos = Vec::with_capacity(header.tensor_count as usize);
         for _ in 0..header.tensor_count {
-            let tensor_info = GGUFOnDiskTensorInfo::decode(buf)?;
+            let tensor_info = GGUFOnDiskTensorInfo::decode(buf, header.version)?;
             on_disk_tensor_infos.push(tensor_info);
         }
 
@@ -684,6 +699,8 @@ mod tests {
 
     #[test]
     fn test_load() -> Result<()> {
-        todo!()
+        let loader = GGUFFileLoader::new("testdata/tinyllamas-stories-260k-f32.gguf")?;
+        loader.load()?;
+        Ok(())
     }
 }

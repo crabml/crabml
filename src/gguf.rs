@@ -838,6 +838,10 @@ impl<'a> GGUFFile<'a> {
     pub fn tensor_infos(&self) -> &[GGUFTensorInfo] {
         &self.tensor_infos
     }
+
+    pub fn get_tensor_info(&self, name: &str) -> Option<&GGUFTensorInfo> {
+        self.tensor_infos.iter().find(|ti| ti.name() == name)
+    }
 }
 
 pub struct GGUFFileLoader {

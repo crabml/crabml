@@ -564,6 +564,10 @@ pub struct GGUFHeader<'a> {
 
     // The metadata key-value pairs.
     metadata_kv: HashMap<String, GGUFMetadataValue<'a>>,
+
+    // The required fields in the metadata
+    architecture: String,
+    quantization_version: u32,
 }
 
 impl<'a> GGUFHeader<'a> {
@@ -599,11 +603,32 @@ impl<'a> GGUFHeader<'a> {
             metadata_kv.insert(key.to_string(), value);
         }
 
+
+        // load the required fields
+        let architecture = match metadata_kv.get(KEY_GENERAL_ARCHITECTURE) {
+            Some(GGUFMetadataValue::String(v)) => v.to_string(),
+            _ => return Err(GGUFError {
+                kind: GGUFErrorKind::FormatError,
+                message: format!("Missing string metadata general.architecture"),
+                cause: None,
+            }),
+        };
+        let quantization_version = match metadata_kv.get(KEY_GENERAL_QUANTIZATION_VERSION) {
+            Some(GGUFMetadataValue::U32(v)) => *v,
+            _ => return Err(GGUFError {
+                kind: GGUFErrorKind::FormatError,
+                message: format!("Missing U32 metadata general.quantization_version"),
+                cause: None,
+            }),
+        };
+
         Ok(GGUFHeader {
             magic,
             version,
             tensor_count,
             metadata_kv,
+            architecture,
+            quantization_version
         })
     }
 
@@ -636,36 +661,21 @@ impl<'a> GGUFHeader<'a> {
     /// - falcon
     /// - rwkv
     ///
-    pub fn architecture(&self) -> Result<&'a str> {
-        match self.metadata_kv.get(KEY_GENERAL_ARCHITECTURE) {
-            Some(GGUFMetadataValue::String(v)) => Ok(v),
-            _ => Err(GGUFError {
-                kind: GGUFErrorKind::FormatError,
-                message: format!("Missing string metadata general.architecture"),
-                cause: None,
-            }),
-        }
+    pub fn architecture(&self) -> &str {
+        &self.architecture
     }
 
     /// The version of the quantization format. Not required if the model is not quantized (i.e. no tensors are
     /// quantized). If any tensors are quantized, this must be present. This is separate to the quantization
     /// scheme of the tensors itself; the quantization version may change without changing the scheme's name
     /// (e.g. the quantization scheme is Q5_K, and the quantization version is 4).
-    pub fn quantization_version(&self) -> Result<u32> {
-        match self.metadata_kv.get(KEY_GENERAL_ARCHITECTURE) {
-            Some(GGUFMetadataValue::U32(v)) => Ok(*v),
-            _ => Err(GGUFError {
-                kind: GGUFErrorKind::FormatError,
-                message: format!("Missing U32 metadata general.architecture"),
-                cause: None,
-            }),
-        }
+    pub fn quantization_version(&self) -> u32 {
+        self.quantization_version
     }
 
-    pub fn get_metadata(&self, key: &str) -> Result<Option<&GGUFMetadataValue<'a>>> {
-        let key = key.replace("{arch}", self.architecture()?);
-        let val = self.metadata_kv.get(&key);
-        Ok(val)
+    pub fn get_metadata(&self, key: &str) -> Option<&GGUFMetadataValue<'a>> {
+        let val = self.metadata_kv.get(key);
+        val
     }
 }
 
@@ -961,7 +971,7 @@ mod tests {
     fn test_load_metadata() -> Result<()> {
         let loader = GGUFFileLoader::new("testdata/tinyllamas-stories-260k-f32.gguf")?;
         let gf = loader.load()?;
-        assert_eq!(gf.header.architecture()?, "llama");
+        assert_eq!(gf.header.architecture(), "llama");
         assert_eq!(gf.header.alignment(), 32);
 
         let mut keys = gf

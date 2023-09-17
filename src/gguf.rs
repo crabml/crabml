@@ -603,7 +603,6 @@ impl<'a> GGUFHeader<'a> {
             metadata_kv.insert(key.to_string(), value);
         }
 
-
         // load the required fields
         let architecture = match metadata_kv.get(KEY_GENERAL_ARCHITECTURE) {
             Some(GGUFMetadataValue::String(v)) => v.to_string(),

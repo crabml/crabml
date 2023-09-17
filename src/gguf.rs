@@ -606,19 +606,23 @@ impl<'a> GGUFHeader<'a> {
         // load the required fields
         let architecture = match metadata_kv.get(KEY_GENERAL_ARCHITECTURE) {
             Some(GGUFMetadataValue::String(v)) => v.to_string(),
-            _ => return Err(GGUFError {
-                kind: GGUFErrorKind::FormatError,
-                message: format!("Missing string metadata general.architecture"),
-                cause: None,
-            }),
+            _ => {
+                return Err(GGUFError {
+                    kind: GGUFErrorKind::FormatError,
+                    message: format!("Missing string metadata general.architecture"),
+                    cause: None,
+                })
+            }
         };
         let quantization_version = match metadata_kv.get(KEY_GENERAL_QUANTIZATION_VERSION) {
             Some(GGUFMetadataValue::U32(v)) => *v,
-            _ => return Err(GGUFError {
-                kind: GGUFErrorKind::FormatError,
-                message: format!("Missing U32 metadata general.quantization_version"),
-                cause: None,
-            }),
+            _ => {
+                return Err(GGUFError {
+                    kind: GGUFErrorKind::FormatError,
+                    message: format!("Missing U32 metadata general.quantization_version"),
+                    cause: None,
+                })
+            }
         };
 
         Ok(GGUFHeader {
@@ -627,7 +631,7 @@ impl<'a> GGUFHeader<'a> {
             tensor_count,
             metadata_kv,
             architecture,
-            quantization_version
+            quantization_version,
         })
     }
 

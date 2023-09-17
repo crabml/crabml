@@ -239,7 +239,7 @@ impl<'a> GGUFMetadataValue<'a> {
             GGUFMetadataValue::Array(_) => GGUFMetadataValueType::Array,
         }
     }
- 
+
     pub fn as_u64(&self) -> Result<u64> {
         match self {
             GGUFMetadataValue::U8(v) => Ok(*v as u64),
@@ -262,7 +262,7 @@ impl<'a> GGUFMetadataValue<'a> {
         match self {
             GGUFMetadataValue::F32(v) => Ok(*v as f64),
             GGUFMetadataValue::F64(v) => Ok(*v as f64),
-            _ => Err(GGUFError{
+            _ => Err(GGUFError {
                 kind: GGUFErrorKind::DataError,
                 message: format!("failed to convert {:?} to f64", self),
                 cause: None,
@@ -273,7 +273,7 @@ impl<'a> GGUFMetadataValue<'a> {
     pub fn as_str(&self) -> Result<&str> {
         match self {
             GGUFMetadataValue::String(v) => Ok(*v),
-            _ => Err(GGUFError{
+            _ => Err(GGUFError {
                 kind: GGUFErrorKind::DataError,
                 message: format!("failed to convert {:?} to string", self),
                 cause: None,
@@ -284,7 +284,7 @@ impl<'a> GGUFMetadataValue<'a> {
     pub fn as_f64_array(&self) -> Result<&[f64]> {
         match self {
             GGUFMetadataValue::Array(GGUFMetadataArray::F64Array(v)) => Ok(*v),
-            _ => Err(GGUFError{
+            _ => Err(GGUFError {
                 kind: GGUFErrorKind::DataError,
                 message: format!("failed to convert {:?} to f64 array", self),
                 cause: None,
@@ -295,7 +295,7 @@ impl<'a> GGUFMetadataValue<'a> {
     pub fn as_f32_array(&self) -> Result<&[f32]> {
         match self {
             GGUFMetadataValue::Array(GGUFMetadataArray::F32Array(v)) => Ok(*v),
-            _ => Err(GGUFError{
+            _ => Err(GGUFError {
                 kind: GGUFErrorKind::DataError,
                 message: format!("failed to convert {:?} to f32 array", self),
                 cause: None,
@@ -306,7 +306,7 @@ impl<'a> GGUFMetadataValue<'a> {
     pub fn as_str_array(&self) -> Result<&[&str]> {
         match self {
             GGUFMetadataValue::Array(GGUFMetadataArray::StringArray(v)) => Ok(v),
-            _ => Err(GGUFError{
+            _ => Err(GGUFError {
                 kind: GGUFErrorKind::DataError,
                 message: format!("failed to convert {:?} to string array", self),
                 cause: None,
@@ -874,17 +874,87 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_load() -> Result<()> {
+    fn test_load_tensors() -> Result<()> {
         let loader = GGUFFileLoader::new("testdata/tinyllamas-stories-260k-f32.gguf")?;
         let gf = loader.load()?;
-        assert_eq!(gf.header.architecture()?, "llama");
-        assert_eq!(gf.header.alignment(), 32);
+
         assert_eq!(gf.tensor_infos.len(), 48);
         assert_eq!(gf.tensor_infos[0].name(), "token_embd.weight");
         assert_eq!(gf.tensor_infos[0].data().len(), 131072);
         assert_eq!(gf.tensor_infos[0].data().len() % 32, 0);
         assert_eq!(gf.tensor_infos[0].typ().to_string(), "F32");
         assert_eq!(gf.tensor_infos[0].dimensions(), vec![64, 512]);
+
+        let names = gf.tensor_infos.iter().map(|i| i.name()).collect::<Vec<_>>();
+        assert_eq!(
+            names,
+            [
+                "token_embd.weight",
+                "blk.0.attn_q.weight",
+                "blk.0.attn_k.weight",
+                "blk.0.attn_v.weight",
+                "blk.0.attn_output.weight",
+                "blk.0.ffn_gate.weight",
+                "blk.0.ffn_down.weight",
+                "blk.0.ffn_up.weight",
+                "blk.0.attn_norm.weight",
+                "blk.0.ffn_norm.weight",
+                "blk.1.attn_q.weight",
+                "blk.1.attn_k.weight",
+                "blk.1.attn_v.weight",
+                "blk.1.attn_output.weight",
+                "blk.1.ffn_gate.weight",
+                "blk.1.ffn_down.weight",
+                "blk.1.ffn_up.weight",
+                "blk.1.attn_norm.weight",
+                "blk.1.ffn_norm.weight",
+                "blk.2.attn_q.weight",
+                "blk.2.attn_k.weight",
+                "blk.2.attn_v.weight",
+                "blk.2.attn_output.weight",
+                "blk.2.ffn_gate.weight",
+                "blk.2.ffn_down.weight",
+                "blk.2.ffn_up.weight",
+                "blk.2.attn_norm.weight",
+                "blk.2.ffn_norm.weight",
+                "blk.3.attn_q.weight",
+                "blk.3.attn_k.weight",
+                "blk.3.attn_v.weight",
+                "blk.3.attn_output.weight",
+                "blk.3.ffn_gate.weight",
+                "blk.3.ffn_down.weight",
+                "blk.3.ffn_up.weight",
+                "blk.3.attn_norm.weight",
+                "blk.3.ffn_norm.weight",
+                "blk.4.attn_q.weight",
+                "blk.4.attn_k.weight",
+                "blk.4.attn_v.weight",
+                "blk.4.attn_output.weight",
+                "blk.4.ffn_gate.weight",
+                "blk.4.ffn_down.weight",
+                "blk.4.ffn_up.weight",
+                "blk.4.attn_norm.weight",
+                "blk.4.ffn_norm.weight",
+                "output_norm.weight",
+                "output.weight"
+            ]
+        );
+
+        let typs = gf
+            .tensor_infos
+            .iter()
+            .map(|i| i.typ().to_string())
+            .collect::<Vec<_>>();
+        assert_eq!(typs, vec!["F32"; 48]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_load_metadata() -> Result<()> {
+        let loader = GGUFFileLoader::new("testdata/tinyllamas-stories-260k-f32.gguf")?;
+        let gf = loader.load()?;
+        assert_eq!(gf.header.architecture()?, "llama");
+        assert_eq!(gf.header.alignment(), 32);
 
         let mut keys = gf
             .header
@@ -918,44 +988,34 @@ mod tests {
             ]
         );
 
-        assert_eq!(
-            gf.header
-                .get_metadata(KEY_ATTENTION_HEAD_COUNT)?
-                .unwrap()
-                .as_u64()?,
-            8_u64
-        );
-        assert_eq!(
-            gf.header
-                .get_metadata(KEY_ATTENTION_HEAD_COUNT_KV)?
-                .unwrap()
-                .as_u64()?,
-            4_u64
-        );
-        assert_eq!(
-            gf.header.get_metadata(KEY_TOKENIZER_SCORES)?.unwrap().as_f32_array()?.len(),
-            512,
-        );
-        assert_eq!(
-            gf.header.get_metadata(KEY_TOKENIZER_LIST)?.unwrap().as_str_array()?.len(),
-            512,
-        );
-        assert_eq!(
-            gf.header.get_metadata(KEY_TOKENIZER_MODEL)?.unwrap().typ(),
-            GGUFMetadataValueType::String,
-        );
-        assert_eq!(
-            gf.header.get_metadata(KEY_TOKENIZER_MODEL)?.unwrap().as_str()?,
-            "llama",
-        );
-        assert_eq!(
-            gf.header.get_metadata(KEY_TOKENIZER_MERGES)?,
-            None
-        );
-        assert_eq!(
-            gf.header.get_metadata(KEY_TOKENIZER_PAD_ID)?.unwrap().typ(),
-            GGUFMetadataValueType::U32,
-        );
+        let tests = vec![
+            ("general.architecture", "Some(String(\"llama\"))"),
+            ("general.name", "Some(String(\"tinyllamas-stories-260k\"))"),
+            ("llama.attention.head_count", "Some(U32(8))"),
+            ("llama.attention.head_count_kv", "Some(U32(4))"),
+            ("llama.attention.layer_norm_rms_epsilon", "Some(F32(1e-5))"),
+            ("llama.block_count", "Some(U32(5))"),
+            ("llama.context_length", "Some(U32(512))"),
+            ("llama.embedding_length", "Some(U32(64))"),
+            ("llama.feed_forward_length", "Some(U32(172))"),
+            ("llama.rope.dimension_count", "Some(U32(8))"),
+            (
+                "llama.tensor_data_layout",
+                "Some(String(\"Meta AI original pth\"))",
+            ),
+            ("tokenizer.ggml.bos_token_id", "Some(U32(1))"),
+            ("tokenizer.ggml.eos_token_id", "Some(U32(2))"),
+            ("tokenizer.ggml.model", "Some(String(\"llama\"))"),
+            ("tokenizer.ggml.padding_token_id", "Some(U32(0))"),
+            // ("tokenizer.ggml.scores", ""),
+            // ("tokenizer.ggml.token_type", ""),
+            // ("tokenizer.ggml.tokens", ""),
+        ];
+        for (k, v) in tests {
+            let got = gf.header.get_metadata(k).unwrap();
+            assert_eq!(v, format!("{:?}", got));
+        }
+
         Ok(())
     }
 }

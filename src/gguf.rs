@@ -889,67 +889,71 @@ mod tests {
         assert_eq!(gf.tensor_infos[0].typ().to_string(), "F32");
         assert_eq!(gf.tensor_infos[0].dimensions(), vec![64, 512]);
 
-        let names = gf.tensor_infos.iter().map(|i| i.name()).collect::<Vec<_>>();
-        assert_eq!(
-            names,
-            [
-                "token_embd.weight",
-                "blk.0.attn_q.weight",
-                "blk.0.attn_k.weight",
-                "blk.0.attn_v.weight",
-                "blk.0.attn_output.weight",
-                "blk.0.ffn_gate.weight",
-                "blk.0.ffn_down.weight",
-                "blk.0.ffn_up.weight",
-                "blk.0.attn_norm.weight",
-                "blk.0.ffn_norm.weight",
-                "blk.1.attn_q.weight",
-                "blk.1.attn_k.weight",
-                "blk.1.attn_v.weight",
-                "blk.1.attn_output.weight",
-                "blk.1.ffn_gate.weight",
-                "blk.1.ffn_down.weight",
-                "blk.1.ffn_up.weight",
-                "blk.1.attn_norm.weight",
-                "blk.1.ffn_norm.weight",
-                "blk.2.attn_q.weight",
-                "blk.2.attn_k.weight",
-                "blk.2.attn_v.weight",
-                "blk.2.attn_output.weight",
-                "blk.2.ffn_gate.weight",
-                "blk.2.ffn_down.weight",
-                "blk.2.ffn_up.weight",
-                "blk.2.attn_norm.weight",
-                "blk.2.ffn_norm.weight",
-                "blk.3.attn_q.weight",
-                "blk.3.attn_k.weight",
-                "blk.3.attn_v.weight",
-                "blk.3.attn_output.weight",
-                "blk.3.ffn_gate.weight",
-                "blk.3.ffn_down.weight",
-                "blk.3.ffn_up.weight",
-                "blk.3.attn_norm.weight",
-                "blk.3.ffn_norm.weight",
-                "blk.4.attn_q.weight",
-                "blk.4.attn_k.weight",
-                "blk.4.attn_v.weight",
-                "blk.4.attn_output.weight",
-                "blk.4.ffn_gate.weight",
-                "blk.4.ffn_down.weight",
-                "blk.4.ffn_up.weight",
-                "blk.4.attn_norm.weight",
-                "blk.4.ffn_norm.weight",
-                "output_norm.weight",
-                "output.weight"
-            ]
-        );
-
         let typs = gf
             .tensor_infos
             .iter()
             .map(|i| i.typ().to_string())
             .collect::<Vec<_>>();
         assert_eq!(typs, vec!["F32"; 48]);
+
+        let tensor_strs = gf
+            .tensor_infos()
+            .iter()
+            .map(|i| format!("{} - {:?} - {:?}", i.name(), i.typ(), i.dimensions()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            tensor_strs,
+            vec![
+                "token_embd.weight - F32 - [64, 512]",
+                "blk.0.attn_q.weight - F32 - [64, 64]",
+                "blk.0.attn_k.weight - F32 - [64, 32]",
+                "blk.0.attn_v.weight - F32 - [64, 32]",
+                "blk.0.attn_output.weight - F32 - [64, 64]",
+                "blk.0.ffn_gate.weight - F32 - [64, 172]",
+                "blk.0.ffn_down.weight - F32 - [172, 64]",
+                "blk.0.ffn_up.weight - F32 - [64, 172]",
+                "blk.0.attn_norm.weight - F32 - [64]",
+                "blk.0.ffn_norm.weight - F32 - [64]",
+                "blk.1.attn_q.weight - F32 - [64, 64]",
+                "blk.1.attn_k.weight - F32 - [64, 32]",
+                "blk.1.attn_v.weight - F32 - [64, 32]",
+                "blk.1.attn_output.weight - F32 - [64, 64]",
+                "blk.1.ffn_gate.weight - F32 - [64, 172]",
+                "blk.1.ffn_down.weight - F32 - [172, 64]",
+                "blk.1.ffn_up.weight - F32 - [64, 172]",
+                "blk.1.attn_norm.weight - F32 - [64]",
+                "blk.1.ffn_norm.weight - F32 - [64]",
+                "blk.2.attn_q.weight - F32 - [64, 64]",
+                "blk.2.attn_k.weight - F32 - [64, 32]",
+                "blk.2.attn_v.weight - F32 - [64, 32]",
+                "blk.2.attn_output.weight - F32 - [64, 64]",
+                "blk.2.ffn_gate.weight - F32 - [64, 172]",
+                "blk.2.ffn_down.weight - F32 - [172, 64]",
+                "blk.2.ffn_up.weight - F32 - [64, 172]",
+                "blk.2.attn_norm.weight - F32 - [64]",
+                "blk.2.ffn_norm.weight - F32 - [64]",
+                "blk.3.attn_q.weight - F32 - [64, 64]",
+                "blk.3.attn_k.weight - F32 - [64, 32]",
+                "blk.3.attn_v.weight - F32 - [64, 32]",
+                "blk.3.attn_output.weight - F32 - [64, 64]",
+                "blk.3.ffn_gate.weight - F32 - [64, 172]",
+                "blk.3.ffn_down.weight - F32 - [172, 64]",
+                "blk.3.ffn_up.weight - F32 - [64, 172]",
+                "blk.3.attn_norm.weight - F32 - [64]",
+                "blk.3.ffn_norm.weight - F32 - [64]",
+                "blk.4.attn_q.weight - F32 - [64, 64]",
+                "blk.4.attn_k.weight - F32 - [64, 32]",
+                "blk.4.attn_v.weight - F32 - [64, 32]",
+                "blk.4.attn_output.weight - F32 - [64, 64]",
+                "blk.4.ffn_gate.weight - F32 - [64, 172]",
+                "blk.4.ffn_down.weight - F32 - [172, 64]",
+                "blk.4.ffn_up.weight - F32 - [64, 172]",
+                "blk.4.attn_norm.weight - F32 - [64]",
+                "blk.4.ffn_norm.weight - F32 - [64]",
+                "output_norm.weight - F32 - [64]",
+                "output.weight - F32 - [64, 512]"
+            ]
+        );
         Ok(())
     }
 

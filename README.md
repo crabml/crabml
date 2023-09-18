@@ -1,6 +1,6 @@
-# ggml-rs
+# crabml
 
-ggml-rs is an experiment to reimplement GGML in rust, still WIP.
+crabml is an experiment to reimplement GGML in rust, still WIP.
 
 - [x] GGUF Format V1 & V2
 - [ ] parsing quantized data

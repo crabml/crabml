@@ -579,14 +579,15 @@ impl<'a> GGUFHeader<'a> {
                 "Unsupported version number: {}, only 1, 2 is supported yet",
                 version
             ),
-            cause: None,
+            cause: Some(Box::new(err)),
         })?;
         r.version = version;
 
         let tensor_count = r.read_len()?;
         let metadata_kv_count = r.read_len()?;
-        let mut metadata_kv = HashMap::new();
 
+        // load metadata
+        let mut metadata_kv = HashMap::new();
         for _ in 0..metadata_kv_count {
             let key = r.read_string()?;
             let value = r.read_value()?;
@@ -821,6 +822,10 @@ impl<'a> GGUFFile<'a> {
 
     pub fn architecture(&self) -> &str {
         self.header.architecture()
+    }
+
+    pub fn quantization_version(&self) -> Option<u32> {
+        self.header.quantization_version()
     }
 
     pub fn version(&self) -> GGUFVersion {

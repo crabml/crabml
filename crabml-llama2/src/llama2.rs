@@ -14,6 +14,7 @@ use crabml::tensor::Tensor;
 use rayon::prelude::*;
 use std::ops::AddAssign;
 use std::slice;
+use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 use std::vec;
@@ -66,18 +67,20 @@ pub trait Llama2Loader {
 }
 
 pub struct Llama2GgufLoader {
-    inner: GGUFFileLoader,
+    file_loader: Arc<GGUFFileLoader>,
 }
 
 impl Llama2GgufLoader {
     pub fn new(path: &str) -> Result<Self> {
-        let inner = GGUFFileLoader::new(path).map_err(|err| Error {
+        let file_loader = Arc::new(GGUFFileLoader::new(path).map_err(|err| Error {
             kind: ErrorKind::IOError,
             message: format!("failed to open file {}: {}", path, err),
             cause: Some(Box::new(err)),
-        })?;
+        })?);
 
-        Ok(Self { inner })
+        Ok(Self {
+            file_loader: file_loader.clone(),
+        })
     }
 
     fn load_weights<'a>(gf: &GGUFFile<'a>, n_layers: usize) -> Result<Llama2Weights<'a>> {
@@ -158,18 +161,22 @@ impl Llama2GgufLoader {
                     cause: None,
                 })
             }
-            Some(info) => info,
+            Some(info) => info.clone(),
         };
 
-        let len = info.data().len();
-        assert_eq!(
-            len % std::mem::size_of::<f32>(),
-            0,
-            "Length of slice must be multiple of f32 size"
-        );
-        let new_len = len / std::mem::size_of::<f32>();
-        let ptr = info.data().as_ptr() as *const f32;
-        let f32_data = unsafe { slice::from_raw_parts(ptr, new_len) };
+        let f32_data = {
+            let data = info.data();
+            let len = data.len();
+            assert_eq!(
+                len % std::mem::size_of::<f32>(),
+                0,
+                "Length of slice must be multiple of f32 size"
+            );
+            let new_len = len / std::mem::size_of::<f32>();
+            let ptr = data.as_ptr() as *const f32;
+            let f32_data = unsafe { slice::from_raw_parts(ptr, new_len) };
+            f32_data
+        };
 
         // the dimensions stored in GGUF seems in a reverse order of numpy's shape
         let dims = info
@@ -178,7 +185,7 @@ impl Llama2GgufLoader {
             .rev()
             .map(|v| *v)
             .collect::<Vec<_>>();
-        let tensor = Tensor::new(f32_data, dims)?;
+        let tensor = Tensor::new(f32_data, dims)?.with_name(name.to_string());
         Ok(tensor)
     }
 
@@ -238,7 +245,7 @@ impl Llama2GgufLoader {
 
 impl Llama2Loader for Llama2GgufLoader {
     fn load(&self) -> Result<(Llama2Config, Llama2Weights, Llama2Tokenizer)> {
-        let gf = self.inner.load().map_err(|err| Error {
+        let gf = self.file_loader.load().map_err(|err| Error {
             kind: ErrorKind::IOError,
             message: format!("failed to load gguf file"),
             cause: Some(Box::new(err)),

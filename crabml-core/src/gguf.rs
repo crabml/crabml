@@ -695,7 +695,7 @@ impl<'a> GGUFTensorInfo<'a> {
         self.typ
     }
 
-    pub fn data(&self) -> &[u8] {
+    pub fn data(&self) -> &'a [u8] {
         self.data
     }
 }
@@ -821,7 +821,7 @@ impl GGUFFileLoader {
         Ok(Self { mmap })
     }
 
-    pub fn load(&self) -> Result<GGUFFile<'_>> {
+    pub fn load<'a>(&'a self) -> Result<GGUFFile<'a>> {
         let buf = &mut GGUFBufReader::new(&self.mmap[..]);
         GGUFFile::decode(buf)
     }

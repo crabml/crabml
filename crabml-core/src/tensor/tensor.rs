@@ -10,6 +10,7 @@ pub struct Tensor<'a> {
     buf: Cow<'a, [f32]>,
     shape: Vec<usize>,
     strides: Vec<usize>,
+    name: Option<String>,
 }
 
 impl<'a> Tensor<'a> {
@@ -34,8 +35,18 @@ impl<'a> Tensor<'a> {
             buf,
             shape,
             strides,
+            name: None,
         };
         Ok(tensor)
+    }
+
+    pub fn with_name(self, name: String) -> Self {
+        Self {
+            buf: self.buf,
+            shape: self.shape,
+            strides: self.strides,
+            name: Some(name),
+        }
     }
 
     pub fn iter<'b>(&'b self) -> Box<dyn Iterator<Item = f32> + 'b> {
@@ -141,6 +152,7 @@ impl<'a> Tensor<'a> {
             buf: self.buf.clone(),
             shape: new_shape,
             strides: new_strides,
+            name: self.name.clone(),
         };
         Ok(tensor)
     }
@@ -157,6 +169,7 @@ impl<'a> Tensor<'a> {
             buf,
             shape,
             strides: self.strides.clone(),
+            name: self.name.clone(),
         })
     }
 
@@ -176,6 +189,7 @@ impl<'a> Tensor<'a> {
                 buf,
                 shape: self.shape[1..].to_vec(),
                 strides: self.strides[1..].to_vec(),
+                name: self.name.clone(),
             });
         }
 
@@ -187,6 +201,7 @@ impl<'a> Tensor<'a> {
             buf,
             shape: self.shape[1..].to_vec(),
             strides: self.strides[1..].to_vec(),
+            name: self.name.clone(),
         })
     }
 

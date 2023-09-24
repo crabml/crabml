@@ -4,9 +4,13 @@ use crate::error::Result;
 ///! arithmetic.rs contains the tensor arithmetics operations like matmul, accum, etc.
 use crate::tensor::Tensor;
 
+pub fn tensor_copy<'a>(dst: &mut Tensor<'a>, src: &Tensor<'a>) -> Result<()> {
+    Ok(())
+}
+
 // W (w_rows,w_cols) @ x (w_cols,x_cols) -> xout (w_rows,x_cols)
 // W (w_rows,w_cols) @ x (w_cols,) -> xout (w_rows,)
-pub fn matmul_2d<'a>(out: &mut Tensor<'a>, w: &Tensor<'a>, x: &Tensor<'a>) -> Result<()> {
+pub fn tensor_matmul_2d<'a>(out: &mut Tensor<'a>, w: &Tensor<'a>, x: &Tensor<'a>) -> Result<()> {
     require_tensor_dims(w, "w", &[2])?;
     require_tensor_dims(x, "x", &[1, 2])?;
     require_tensor_matmul_2d_shapes(w, x)?;
@@ -103,7 +107,7 @@ mod tests {
         let mut out = Tensor::new(vec![0.0; 2], vec![2])?;
         // 1*1 + 2*2 + 3*3 = 1 + 4 + 9
         // 1*4 + 2*5 + 3*6 = 4 + 10 + 18
-        matmul_2d(&mut out, &w, &b)?;
+        tensor_matmul_2d(&mut out, &w, &b)?;
         assert_eq!(out.flat(), &[14.0, 32.0]);
 
         // 1, 2, 3
@@ -113,10 +117,18 @@ mod tests {
         // 4, 5, 6
         // 7, 8, 9
         // 10, 11, 12
-        let b = Tensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0], vec![3, 4])?;
+        let b = Tensor::new(
+            vec![
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+            ],
+            vec![3, 4],
+        )?;
         let mut out = Tensor::new(vec![0.0; 8], vec![2, 4])?;
-        matmul_2d(&mut out, &w, &b)?;
-        assert_eq!(out.flat(), &[38.0, 44.0, 50.0, 56.0, 83.0, 98.0, 113.0, 128.0]);
+        tensor_matmul_2d(&mut out, &w, &b)?;
+        assert_eq!(
+            out.flat(),
+            &[38.0, 44.0, 50.0, 56.0, 83.0, 98.0, 113.0, 128.0]
+        );
         assert_eq!(out.shape(), vec![2, 4]);
         Ok(())
     }

@@ -1,1 +1,2 @@
+- [ ] add name for each tensor
 - [ ] refactor with tensor arithmetic

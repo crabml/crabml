@@ -110,8 +110,14 @@ impl Llama2GgufLoader {
                 &format!("blk.{}.attn_output.weight", layer),
             )?);
             // (hidden_dim:172, embedding_dim:64)
-            w1.push(Self::load_tensor(gf, &format!("blk.{}.ffn_gate.weight", layer))?);
-            w2.push(Self::load_tensor(gf, &format!("blk.{}.ffn_down.weight", layer))?);
+            w1.push(Self::load_tensor(
+                gf,
+                &format!("blk.{}.ffn_gate.weight", layer),
+            )?);
+            w2.push(Self::load_tensor(
+                gf,
+                &format!("blk.{}.ffn_down.weight", layer),
+            )?);
             w3.push(Self::load_tensor(
                 gf,
                 &format!("blk.{}.ffn_up.weight", layer),

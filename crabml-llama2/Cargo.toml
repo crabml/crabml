@@ -1,0 +1,14 @@
+[package]
+name = "crabml-llama2"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+memmap2 = "0.7.1"
+rand = "0.8.5"
+rayon = "1.7.0"
+num_cpus = "1.16.0"
+crabml = { path = "../crabml-core" }
+
+[dev-dependencies]
+pretty_assertions = "1.2.1"

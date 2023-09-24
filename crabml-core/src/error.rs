@@ -6,6 +6,9 @@ pub enum ErrorKind {
     /// raised on any IO error, like EOF
     IOError,
 
+    /// raised when user supplied invalid input arguments
+    BadInput,
+
     /// raised when parsing GGUF or other kind of model files
     FormatError,
 

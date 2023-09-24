@@ -1,4 +1,5 @@
 [workspace]
 members = [
     "crabml-core",
+    "crabml-llama2",
 ]

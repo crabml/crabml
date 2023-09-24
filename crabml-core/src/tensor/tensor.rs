@@ -49,6 +49,10 @@ impl<'a> Tensor<'a> {
         }
     }
 
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_ref().map(|s| s.as_str())
+    }
+
     pub fn iter<'b>(&'b self) -> Box<dyn Iterator<Item = f32> + 'b> {
         if self.shape.len() == 1 {
             return Box::new(Tensor1DIterator {

@@ -222,6 +222,17 @@ impl<'a> Tensor<'a> {
         &self.buf
     }
 
+    pub fn flat_mut(&mut self) -> Result<&mut [f32]> {
+        match self.buf {
+            Cow::Borrowed(_) => Err(Error {
+                kind: ErrorKind::TensorError,
+                message: "can not mut a borrowed tensor".into(),
+                cause: None,
+            }),
+            Cow::Owned(_) => Ok(self.buf.to_mut()),
+        }
+    }
+
     pub fn shape(&self) -> &[usize] {
         &self.shape
     }

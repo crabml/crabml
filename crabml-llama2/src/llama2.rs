@@ -33,6 +33,10 @@ impl Llama2Config {
     pub fn kv_dim(&self) -> usize {
         (self.embedding_dim * self.n_kv_heads) / self.n_heads
     }
+
+    fn head_size(&self) -> usize {
+        self.embedding_dim / self.n_heads
+    }
 }
 
 #[derive(Default)]
@@ -315,22 +319,14 @@ impl<'a> Llama2Runner<'a> {
         Llama2RunnerOutputGenerator::new(self, sampler, prompt, steps, self.conf.seq_len)
     }
 
-    fn head_size(&self) -> usize {
-        self.conf.embedding_dim / self.conf.n_heads
-    }
-
-    fn kv_dim(&self) -> usize {
-        (self.conf.embedding_dim * self.conf.n_kv_heads) / self.conf.n_heads
-    }
-
     fn rope(&mut self, pos: usize) {
         for i in (0..self.conf.embedding_dim).step_by(2) {
-            let head_dim = i % self.head_size();
-            let freq = 1.0 / 10000_f32.powf(head_dim as f32 / self.head_size() as f32);
+            let head_dim = i % self.conf.head_size();
+            let freq = 1.0 / 10000_f32.powf(head_dim as f32 / self.conf.head_size() as f32);
             let val = pos as f32 * freq;
             let fcr = val.cos();
             let fci = val.sin();
-            let rotn = if i < self.kv_dim() { 2 } else { 1 }; // how many vectors? 2 = q & k, 1 = q only
+            let rotn = if i < self.conf.kv_dim() { 2 } else { 1 }; // how many vectors? 2 = q & k, 1 = q only
             for v in 0..rotn {
                 let vec = if v == 0 {
                     &mut self.state.q
@@ -346,8 +342,9 @@ impl<'a> Llama2Runner<'a> {
     }
 
     fn multi_head_attention(&mut self, l: usize, pos: usize) {
-        let head_size = self.head_size();
+        let head_size = self.conf.head_size();
         let kv_heads_per_head = self.conf.n_heads / self.conf.n_kv_heads;
+
         self.state
             .attn
             .par_iter_mut()

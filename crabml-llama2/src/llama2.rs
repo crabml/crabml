@@ -1,11 +1,6 @@
-use memmap2::Mmap;
-use memmap2::MmapOptions;
 use rand::Rng;
 use rayon::prelude::*;
-use std::borrow::Cow;
 use std::collections::HashMap;
-use std::fs::File;
-use std::mem;
 use std::ops::AddAssign;
 use std::slice;
 use std::time::Duration;
@@ -17,7 +12,6 @@ use crabml::error::ErrorKind;
 use crabml::error::Error;
 use crabml::gguf::GGUFFile;
 use crabml::gguf::GGUFFileLoader;
-use crabml::gguf::GGUFTensorInfo;
 
 fn accum(a: &mut [f32], b: &[f32]) {
     for (a, b) in a.iter_mut().zip(b.iter()) {
@@ -104,51 +98,6 @@ pub struct Llama2Weights<'a> {
     rms_final_weight: Tensor<'a>, // (dim, )
     // (optional) classifier weights for the logits, on the last layer
     wcls: Tensor<'a>, // (vocab_size, dim)
-}
-
-pub struct Llama2CheckpointReader<'a> {
-    buf: &'a [u8],
-    total_bytes: usize,
-}
-
-impl<'a> Llama2CheckpointReader<'a> {
-    #[allow(dead_code)]
-    fn total_bytes(&self) -> usize {
-        self.total_bytes
-    }
-
-    fn read_i32(&mut self) -> Result<i32> {
-        if self.buf.len() < 4 {
-            return Err(Error {
-                kind: ErrorKind::IOError,
-                message: format!("expected 4 bytes, found {}", self.buf.len()),
-                cause: None,
-            });
-        }
-        let (int_bytes, rest) = self.buf.split_at(4);
-        self.total_bytes += 4;
-        self.buf = rest;
-        Ok(i32::from_le_bytes([
-            int_bytes[0],
-            int_bytes[1],
-            int_bytes[2],
-            int_bytes[3],
-        ]))
-    }
-
-    fn read_tensor(&mut self, shape: Vec<usize>) -> Result<Tensor<'a>> {
-        let elems = shape.iter().product::<usize>();
-        let size_f32 = mem::size_of::<f32>();
-        let data = &self.buf[..elems * size_f32];
-        let data_f32: &[f32] = unsafe {
-            assert!(data.len() % size_f32 == 0);
-            let ptr = data.as_ptr();
-            mem::transmute(std::slice::from_raw_parts(ptr, data.len() / size_f32))
-        };
-        self.total_bytes += elems * size_f32;
-        self.buf = &self.buf[elems * size_f32..];
-        return Tensor::new(Cow::from(data_f32), shape);
-    }
 }
 
 pub trait Llama2Loader {
@@ -344,134 +293,6 @@ impl Llama2Loader for Llama2GgufLoader {
     }
 }
 
-pub struct Llama2CheckpointLoader {
-    checkpoint_mmap: Mmap,
-    tokenizer_path: String,
-}
-
-impl Llama2Loader for Llama2CheckpointLoader {
-    fn load(&self) -> Result<(Llama2Config, Llama2Weights, Llama2Tokenizer)> {
-        let mut r = self.reader();
-        let conf = Self::load_config(&mut r)?;
-        let weights = Self::load_weights(&mut r, &conf)?;
-        let mut tokenizer_loader = Llama2TokenizerLoader::new(&self.tokenizer_path)?;
-        let tokenizer = tokenizer_loader.load(conf.vocab_size)?;
-        Ok((conf, weights, tokenizer))
-    }
-}
-
-impl Llama2CheckpointLoader {
-    pub fn new(bin_path: &str, tokenizer_path: &str) -> Result<Self> {
-        // prepare the mmaped checkpoint bin file
-        let file = File::open(bin_path).map_err(|e| Error {
-            kind: ErrorKind::IOError,
-            message: format!("failed to open file {}: {}", bin_path, e),
-            cause: Some(Box::new(e)),
-        })?;
-        let mmap = unsafe {
-            MmapOptions::new().map(&file).map_err(|e| Error {
-                kind: ErrorKind::IOError,
-                message: format!("failed to mmap file {}: {}", bin_path, e),
-                cause: Some(Box::new(e)),
-            })?
-        };
-
-        // prepare the tokenizer loader
-        Ok(Self {
-            checkpoint_mmap: mmap,
-            tokenizer_path: tokenizer_path.to_string(),
-        })
-    }
-
-    fn reader(&self) -> Llama2CheckpointReader {
-        Llama2CheckpointReader {
-            buf: &self.checkpoint_mmap[..],
-            total_bytes: 0,
-        }
-    }
-
-    fn load_config(r: &mut Llama2CheckpointReader<'_>) -> Result<Llama2Config> {
-        let dim = r.read_i32()? as usize;
-        let hidden_dim = r.read_i32()? as usize;
-        let n_layers = r.read_i32()? as usize;
-        let n_heads = r.read_i32()? as usize;
-        let n_kv_heads = r.read_i32()? as usize;
-        let vocab_size = r.read_i32()? as usize;
-        let seq_len = r.read_i32()? as usize;
-        Ok(Llama2Config {
-            embedding_dim: dim,
-            hidden_dim,
-            n_layers,
-            n_heads,
-            n_kv_heads,
-            vocab_size,
-            seq_len,
-        })
-    }
-
-    fn load_weights<'a>(
-        r: &mut Llama2CheckpointReader<'a>,
-        conf: &Llama2Config,
-    ) -> Result<Llama2Weights<'a>> {
-        let shared_weights = conf.vocab_size > 0;
-        let mut weights = Llama2Weights::default();
-        let head_size = conf.embedding_dim / conf.n_heads;
-        weights.token_embedding_table = r.read_tensor(vec![conf.vocab_size, conf.embedding_dim])?;
-        weights.rms_att_weight = r
-            .read_tensor(vec![conf.n_layers, conf.embedding_dim])?
-            .subtensors()?;
-        weights.wq = r
-            .read_tensor(vec![
-                conf.n_layers,
-                conf.embedding_dim,
-                conf.n_heads * head_size,
-            ])?
-            .subtensors()?;
-        weights.wk = r
-            .read_tensor(vec![
-                conf.n_layers,
-                conf.embedding_dim,
-                conf.n_kv_heads * head_size,
-            ])?
-            .subtensors()?;
-        weights.wv = r
-            .read_tensor(vec![
-                conf.n_layers,
-                conf.embedding_dim,
-                conf.n_kv_heads * head_size,
-            ])?
-            .subtensors()?;
-        weights.wo = r
-            .read_tensor(vec![
-                conf.n_layers,
-                conf.n_heads * head_size,
-                conf.embedding_dim,
-            ])?
-            .subtensors()?;
-        weights.rms_ffn_weight = r
-            .read_tensor(vec![conf.n_layers, conf.embedding_dim])?
-            .subtensors()?;
-        weights.w1 = r
-            .read_tensor(vec![conf.n_layers, conf.hidden_dim, conf.embedding_dim])?
-            .subtensors()?;
-        weights.w2 = r
-            .read_tensor(vec![conf.n_layers, conf.embedding_dim, conf.hidden_dim])?
-            .subtensors()?;
-        weights.w3 = r
-            .read_tensor(vec![conf.n_layers, conf.hidden_dim, conf.embedding_dim])?
-            .subtensors()?;
-        weights.rms_final_weight = r.read_tensor(vec![conf.embedding_dim])?;
-        let _ = r.read_tensor(vec![conf.seq_len * head_size / 2])?; // skip what used to be freq_cis_real (for RoPE)
-        let _ = r.read_tensor(vec![conf.seq_len * head_size / 2])?; // skip what used to be freq_cis_imag (for RoPE)
-        weights.wcls = if shared_weights {
-            weights.token_embedding_table.clone()
-        } else {
-            r.read_tensor(vec![conf.vocab_size, conf.embedding_dim])?
-        };
-        Ok(weights)
-    }
-}
-
 pub struct Llama2Tokenizer {
     vocab: Vec<String>,
     vocab_scores: Vec<f32>,
@@ -619,84 +440,6 @@ impl Llama2Tokenizer {
         }
 
         Ok(tokens)
-    }
-}
-
-pub struct Llama2TokenizerLoader {
-    r: Box<dyn std::io::Read>,
-}
-
-impl Llama2TokenizerLoader {
-    pub fn new(path: &str) -> Result<Self> {
-        let f = std::fs::File::open(path).map_err(|e| Error {
-            kind: ErrorKind::IOError,
-            message: format!("failed to open file {}: {}", path, e),
-            cause: Some(Box::new(e)),
-        })?;
-        let f = std::io::BufReader::new(f);
-        Ok(Self { r: Box::new(f) })
-    }
-
-    pub fn load(&mut self, vocab_size: usize) -> Result<Llama2Tokenizer> {
-        let mut vocab = vec![String::new(); vocab_size];
-        let mut vocab_scores = vec![0.0; vocab_size];
-
-        let token_buf_len = self.read_i32()? as usize;
-        for i in 0..vocab_size {
-            vocab_scores[i] = self.read_f32()?;
-            let len = self.read_i32()?;
-            vocab[i] = self.read_string(len as usize)?;
-        }
-
-        let bos_token = 1;
-        let eos_token = 2;
-
-        Ok(Llama2Tokenizer::new(
-            vocab,
-            vocab_scores,
-            token_buf_len,
-            bos_token,
-            eos_token,
-        ))
-    }
-
-    fn read_i32(&mut self) -> Result<i32> {
-        let mut buf = [0u8; 4];
-        self.r.read_exact(&mut buf).map_err(|e| Error {
-            kind: ErrorKind::IOError,
-            message: format!("failed to read i32: {}", e),
-            cause: Some(Box::new(e)),
-        })?;
-        Ok(i32::from_le_bytes(buf))
-    }
-
-    fn read_f32(&mut self) -> Result<f32> {
-        let mut buf = [0u8; 4];
-        self.r.read_exact(&mut buf).map_err(|e| Error {
-            kind: ErrorKind::IOError,
-            message: format!("failed to read f32: {}", e),
-            cause: Some(Box::new(e)),
-        })?;
-        Ok(f32::from_le_bytes(buf))
-    }
-
-    fn read_bytes(&mut self, len: usize) -> Result<Vec<u8>> {
-        let mut buf = vec![0u8; len];
-        self.r.read_exact(&mut buf).map_err(|e| Error {
-            kind: ErrorKind::IOError,
-            message: format!("failed to read bytes: {}", e),
-            cause: Some(Box::new(e)),
-        })?;
-        Ok(buf)
-    }
-
-    fn read_string(&mut self, len: usize) -> Result<String> {
-        let buf = self.read_bytes(len)?;
-        String::from_utf8(buf).map_err(|e| Error {
-            kind: ErrorKind::IOError,
-            message: format!("failed to read string: {}", e),
-            cause: Some(Box::new(e)),
-        })
     }
 }
 
@@ -1177,7 +920,6 @@ impl<'a> Iterator for Llama2RunnerOutputGenerator<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pretty_assertions::assert_eq;
 
     #[test]
     fn test_accum() {
@@ -1200,110 +942,8 @@ mod tests {
     }
 
     #[test]
-    fn test_checkpoint_loader() -> Result<()> {
-        let loader =
-            Llama2CheckpointLoader::new("testdata/stories15M.bin", "testdata/tokenizer.bin")?;
-        let mut r = loader.reader();
-        let conf = Llama2CheckpointLoader::load_config(&mut r)?;
-        assert_eq!(conf.embedding_dim, 288);
-        assert_eq!(conf.hidden_dim, 768);
-        assert_eq!(conf.n_heads, 6);
-        assert_eq!(conf.n_kv_heads, 6);
-        assert_eq!(conf.vocab_size, 32000);
-        assert_eq!(conf.n_layers, 6);
-        assert_eq!(conf.seq_len, 256);
-        assert_eq!(r.total_bytes(), 7 * 4);
-        let weights = Llama2CheckpointLoader::load_weights(&mut r, &conf)?;
-        assert_eq!(weights.token_embedding_table.shape(), &[32000, 288]);
-        assert_eq!(weights.rms_att_weight[0].shape(), &[288]);
-        assert_eq!(weights.rms_ffn_weight[0].shape(), &[288]);
-        assert_eq!(weights.wq[0].shape(), &[288, 288]);
-        assert_eq!(weights.wk[0].shape(), &[288, 288]);
-        assert_eq!(weights.wv[0].shape(), &[288, 288]);
-        assert_eq!(weights.wo[0].shape(), &[288, 288]);
-        assert_eq!(weights.w1[0].shape(), &[768, 288]);
-        assert_eq!(weights.w2[0].shape(), &[288, 768]);
-        assert_eq!(weights.w3[0].shape(), &[768, 288]);
-        assert_eq!(weights.rms_final_weight.shape(), &[288]);
-        assert_eq!(weights.wcls.shape(), &[32000, 288]);
-        assert_eq!(r.total_bytes(), 60816028);
-        Ok(())
-    }
-
-    #[test]
-    fn test_tokenizer_decode() -> Result<()> {
-        // all the tokens are in utf-8
-        let mut loader = Llama2TokenizerLoader::new("testdata/tokenizer.bin")?;
-        let tk = loader.load(32000)?;
-        assert_eq!(tk.vocab.len(), 32000);
-        assert_eq!(tk.vocab_scores[0], 0.0);
-        assert_eq!(tk.decode(2, 0)?, "<unk>");
-        assert_eq!(tk.decode(2, 1)?, "\n<s>\n");
-        assert_eq!(tk.decode(2, 2)?, "\n</s>\n");
-        assert_eq!(tk.decode(2, 3)?, "\u{0}");
-        assert_eq!(tk.decode(2, 5)?, "\u{2}");
-        assert_eq!(tk.decode(2, 6)?, "\u{3}");
-        assert_eq!(tk.decode(2, 1000)?, "ied");
-        assert_eq!(tk.decode(2, 1001)?, "ER");
-        assert_eq!(tk.vocab_scores[1000], -741.0);
-        let max_token_len = tk.vocab.iter().map(|v| v.len()).max().unwrap();
-        assert_eq!(max_token_len, 27);
-        assert_eq!(tk.token_buf_len, 27);
-        Ok(())
-    }
-
-    #[test]
-    fn test_tokenizer_encode() -> Result<()> {
-        // all the tokens are in utf-8
-        let mut loader = Llama2TokenizerLoader::new("testdata/tokenizer.bin")?;
-        let tk = loader.load(32000)?;
-        let tests = vec![
-            ("hello, world", "\n<s>\n -  hello - , -  world - \n</s>\n"),
-            (
-                "i'm 4 years old",
-                "\n<s>\n -  i - ' - m -   - 4 -  years -  old - \n</s>\n",
-            ),
-            ("tiktok", "\n<s>\n -  t - ik - tok - \n</s>\n"),
-            (
-                "wake up september",
-                "\n<s>\n -  w - ake -  up -  september - \n</s>\n",
-            ),
-            ("boy", "\n<s>\n -  boy - \n</s>\n"),
-            ("fan girl", "\n<s>\n -  fan -  girl - \n</s>\n"),
-        ];
-        for tt in tests {
-            let tokens = tk.encode(tt.0, true, true)?;
-            let tokens_in_string = tokens
-                .iter()
-                .map(|t| tk.vocab[*t].clone())
-                .collect::<Vec<String>>()
-                .join(" - ");
-            assert_eq!(tokens_in_string, tt.1, "failed to encode {}", tt.0);
-        }
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_generate() -> Result<()> {
-        let checkpoint_loader =
-            Llama2CheckpointLoader::new("testdata/stories15M.bin", "testdata/tokenizer.bin")?;
-
-        let (conf, weights, tokenizer) = checkpoint_loader.load()?;
-        let mut sampler = Llama2Sampler::new(conf.vocab_size, 0.0, 0.0);
-        let mut runner = Llama2Runner::new(&conf, weights, tokenizer);
-        let output = runner.generate("big rat lives", 15, &mut sampler)?;
-        let s = output.collect::<Result<Vec<String>>>()?.join("");
-        assert_eq!(
-            s,
-            " in the forest. He likes to eat cheese and bread. He has"
-        );
-        Ok(())
-    }
-
-    #[test]
     fn test_generate_gguf() -> Result<()> {
-        let gguf_loader = Llama2GgufLoader::new("testdata/tinyllamas-stories-15M-f32.gguf")?;
+        let gguf_loader = Llama2GgufLoader::new("../testdata/tinyllamas-stories-260k-f32.gguf")?;
 
         let (conf, weights, tokenizer) = gguf_loader.load()?;
         let mut sampler = Llama2Sampler::new(conf.vocab_size, 0.0, 0.0);
@@ -1312,36 +952,24 @@ mod tests {
         let s = output.collect::<Result<Vec<String>>>()?.join("");
         assert_eq!(
             s,
-            ", a little girl named Lily was playing in her backyard. She saw"
+            "s \nOn a little by and waly. She want"
         );
         Ok(())
     }
 
     #[test]
     fn test_gguf_tokenizer() -> Result<()> {
-        let loader = Llama2GgufLoader::new("testdata/tinyllamas-stories-15m-f32.gguf")?;
+        let loader = Llama2GgufLoader::new("../testdata/tinyllamas-stories-260k-f32.gguf")?;
         let (_, _, tk) = loader.load()?;
 
         assert_eq!(tk.decode(2, 3)?, "\u{0}");
         assert_eq!(tk.decode(2, 5)?, "\u{2}");
         assert_eq!(tk.decode(2, 6)?, "\u{3}");
-        assert_eq!(tk.decode(2, 1000)?, "ied");
-        assert_eq!(tk.decode(2, 1001)?, "ER");
-        assert_eq!(tk.vocab_scores[1000], -741.0);
+        assert_eq!(tk.decode(2, 100)?, "a");
 
         let tests = vec![
-            ("hello, world", "<s> - hello - , - <0x20> - world - </s>"),
-            (
-                "i'm 4 years old",
-                "<s> - i - ' - m - <0x20> - 4 - <0x20> - year - s - <0x20> - old - </s>",
-            ),
-            ("tiktok", "<s> - t - ik - tok - </s>"),
-            (
-                "wake up september",
-                "<s> - w - ake - <0x20> - up - <0x20> - se - ptember - </s>",
-            ),
-            ("boy", "<s> - boy - </s>"),
-            ("fan girl", "<s> - fan - <0x20> - g - irl - </s>"),
+            ("hello, world", "<s> - he - ll - o - , - <0x20> - w - or - ld - </s>"),
+            ("tiktok", "<s> - t - i - k - t - o - k - </s>"),
         ];
 
         for tt in tests {

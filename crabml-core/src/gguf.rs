@@ -4,9 +4,11 @@ use std::collections::HashMap;
 use std::fmt::Display;
 use std::fs::File;
 use std::mem;
+use crate::error::Error;
+use crate::error::ErrorKind;
+use crate::error::Result;
 
 const GGUF_MAGIC: u32 = 0x46554747;
-const GGUF_VERSION: u64 = 2;
 const GGUF_DEFAULT_ALIGNMENT: u64 = 32;
 
 // General
@@ -146,11 +148,11 @@ impl Display for GGMLType {
 }
 
 impl TryFrom<u32> for GGMLType {
-    type Error = GGUFError;
+    type Error = Error;
 
     fn try_from(v: u32) -> std::result::Result<Self, Self::Error> {
-        Self::from_int(v).map_err(|err| GGUFError {
-            kind: GGUFErrorKind::FormatError,
+        Self::from_int(v).map_err(|err| Error {
+            kind: ErrorKind::FormatError,
             message: format!("failed to decode the ggml type for {}", v),
             cause: Some(Box::new(err)),
         })
@@ -193,11 +195,11 @@ pub enum GGUFMetadataValueType {
 }
 
 impl TryFrom<u32> for GGUFMetadataValueType {
-    type Error = GGUFError;
+    type Error = Error;
 
     fn try_from(v: u32) -> std::result::Result<Self, Self::Error> {
-        Self::from_int(v).map_err(|err| GGUFError {
-            kind: GGUFErrorKind::FormatError,
+        Self::from_int(v).map_err(|err| Error {
+            kind: ErrorKind::FormatError,
             message: format!("failed to decode the value type for {}", v),
             cause: Some(Box::new(err)),
         })
@@ -258,34 +260,7 @@ pub enum GGUFMetadataArray<'a> {
     NestedArray(Vec<GGUFMetadataArray<'a>>),
 }
 
-#[derive(Debug, Eq, PartialEq, Clone, Copy)]
-pub enum GGUFErrorKind {
-    Unexpected,
-    IOError,
-    FormatError,
-    DataError,
-}
 
-#[derive(Debug)]
-pub struct GGUFError {
-    kind: GGUFErrorKind,
-    message: String,
-    cause: Option<Box<dyn std::error::Error>>,
-}
-
-impl std::fmt::Display for GGUFError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{:?}: {}", self.kind, self.message);
-        if let Some(cause) = self.cause.as_ref() {
-            write!(f, "\ncaused by: {}", cause);
-        }
-        Ok(())
-    }
-}
-
-impl std::error::Error for GGUFError {}
-
-pub type Result<T> = std::result::Result<T, GGUFError>;
 
 pub struct GGUFBufReader<'a> {
     cursor: &'a [u8],
@@ -302,8 +277,8 @@ impl<'a> GGUFBufReader<'a> {
 
     pub fn read(&mut self, n: usize) -> Result<&'a [u8]> {
         if n > self.cursor.len() {
-            return Err(GGUFError {
-                kind: GGUFErrorKind::FormatError,
+            return Err(Error {
+                kind: ErrorKind::FormatError,
                 message: format!(
                     "failed to read {} bytes from the buffer, only {} bytes left",
                     n,
@@ -429,8 +404,8 @@ impl<'a, 'b> GGUFMetadataReader<'a, 'b> {
     pub fn read_string(&mut self) -> Result<&'a str> {
         let len = self.read_len()?;
         let buf = self.buf.read(len)?;
-        let s = std::str::from_utf8(buf).map_err(|e| GGUFError {
-            kind: GGUFErrorKind::FormatError,
+        let s = std::str::from_utf8(buf).map_err(|e| Error {
+            kind: ErrorKind::FormatError,
             message: format!("Invalid UTF-8 string"),
             cause: Some(Box::new(e)),
         });
@@ -565,16 +540,16 @@ impl<'a> GGUFHeader<'a> {
         let mut r = GGUFMetadataReader::new(buf, GGUFVersion::V2);
         let magic = r.read_u32()?;
         if magic != GGUF_MAGIC {
-            return Err(GGUFError {
-                kind: GGUFErrorKind::FormatError,
+            return Err(Error {
+                kind: ErrorKind::FormatError,
                 message: format!("Invalid magic number: {}", magic),
                 cause: None,
             });
         }
 
         let version = r.read_u32()?;
-        let version = GGUFVersion::from_int(version).map_err(|err| GGUFError {
-            kind: GGUFErrorKind::FormatError,
+        let version = GGUFVersion::from_int(version).map_err(|err| Error {
+            kind: ErrorKind::FormatError,
             message: format!(
                 "Unsupported version number: {}, only 1, 2 is supported yet",
                 version
@@ -599,8 +574,8 @@ impl<'a> GGUFHeader<'a> {
         let architecture = match metadata.get_string(KEY_GENERAL_ARCHITECTURE) {
             Some(s) => s.to_string(),
             _ => {
-                return Err(GGUFError {
-                    kind: GGUFErrorKind::FormatError,
+                return Err(Error {
+                    kind: ErrorKind::FormatError,
                     message: format!("Missing string metadata general.architecture"),
                     cause: None,
                 })
@@ -851,15 +826,15 @@ pub struct GGUFFileLoader {
 
 impl GGUFFileLoader {
     pub fn new(path: &str) -> Result<Self> {
-        let file = File::open(path).map_err(|err| GGUFError {
-            kind: GGUFErrorKind::IOError,
+        let file = File::open(path).map_err(|err| Error {
+            kind: ErrorKind::IOError,
             message: format!("failed to open the file: {}", path),
             cause: Some(Box::new(err)),
         })?;
 
         let mmap = unsafe {
-            Mmap::map(&file).map_err(|err| GGUFError {
-                kind: GGUFErrorKind::IOError,
+            Mmap::map(&file).map_err(|err| Error {
+                kind: ErrorKind::IOError,
                 message: format!("failed to mmap file: {}", path),
                 cause: Some(Box::new(err)),
             })?

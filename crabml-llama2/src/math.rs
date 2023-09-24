@@ -45,7 +45,6 @@ pub fn matmul(xout: &mut [f32], x: &[f32], w: &[f32]) {
     });
 }
 
-
 mod tests {
     use super::*;
 

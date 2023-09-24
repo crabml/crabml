@@ -1,9 +1,9 @@
+use crate::error::Error;
+use crate::error::ErrorKind;
+use crate::error::Result;
 use std::borrow::Cow;
 use std::fmt::Display;
 use std::ops::Range;
-use crate::error::Result;
-use crate::error::ErrorKind;
-use crate::error::Error;
 
 #[derive(Debug, Default, Clone)]
 pub struct Tensor<'a> {
@@ -393,10 +393,7 @@ mod tests {
         assert_eq!(t.at(&[0, 0])?, 1.0);
         assert_eq!(t.at(&[0, 1])?, 2.0);
         assert_eq!(t.at(&[0, 2])?, 3.0);
-        assert_eq!(
-            t.at(&[0, 4]).unwrap_err().kind,
-            ErrorKind::TensorError
-        );
+        assert_eq!(t.at(&[0, 4]).unwrap_err().kind, ErrorKind::TensorError);
         assert_eq!(t.at(&[1, 0])?, 4.0); // offset = 1 * 3 + 0 * 1 = 2
         assert_eq!(t.at(&[1, 1])?, 5.0);
         assert_eq!(t.at(&[1, 2])?, 6.0);
@@ -406,10 +403,7 @@ mod tests {
         assert_eq!(t.at(&[0, 0])?, 1.0);
         assert_eq!(t.at(&[1, 0])?, 2.0);
         assert_eq!(t.at(&[2, 0])?, 3.0);
-        assert_eq!(
-            t.at(&[4, 0]).unwrap_err().kind,
-            ErrorKind::TensorError
-        );
+        assert_eq!(t.at(&[4, 0]).unwrap_err().kind, ErrorKind::TensorError);
         assert_eq!(t.at(&[0, 1])?, 4.0);
         assert_eq!(t.at(&[1, 1])?, 5.0);
         assert_eq!(t.at(&[2, 1])?, 6.0);

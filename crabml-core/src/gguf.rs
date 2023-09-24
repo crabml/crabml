@@ -1,12 +1,12 @@
+use crate::error::Error;
+use crate::error::ErrorKind;
+use crate::error::Result;
 use int_enum::IntEnum;
 use memmap2::Mmap;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::fs::File;
 use std::mem;
-use crate::error::Error;
-use crate::error::ErrorKind;
-use crate::error::Result;
 
 const GGUF_MAGIC: u32 = 0x46554747;
 const GGUF_DEFAULT_ALIGNMENT: u64 = 32;
@@ -238,8 +238,6 @@ pub enum GGUFMetadataArray<'a> {
     StringArray(Vec<&'a str>),
     NestedArray(Vec<GGUFMetadataArray<'a>>),
 }
-
-
 
 pub struct GGUFBufReader<'a> {
     cursor: &'a [u8],
@@ -922,7 +920,8 @@ mod tests {
 
         let mut keys = gf
             .header
-            .metadata.as_hashmap()
+            .metadata
+            .as_hashmap()
             .keys()
             .into_iter()
             .map(|i| i.to_string())

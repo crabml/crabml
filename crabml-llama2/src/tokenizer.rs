@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use crabml::error::Result;
+use std::collections::HashMap;
 
 pub struct Llama2Tokenizer {
     vocab: Vec<String>,

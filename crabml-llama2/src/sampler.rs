@@ -1,8 +1,8 @@
-use rand::Rng;
-use crabml::error::Result;
+use crate::math::softmax;
 use crabml::error::Error;
 use crabml::error::ErrorKind;
-use crate::math::softmax;
+use crabml::error::Result;
+use rand::Rng;
 
 pub struct Llama2Sampler {
     prob_index: Vec<(f32, usize)>,
@@ -115,4 +115,3 @@ impl Llama2Sampler {
             })
     }
 }
-

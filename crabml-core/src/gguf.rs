@@ -646,6 +646,7 @@ impl GGUFOnDiskTensorInfo {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct GGUFTensorInfo<'a> {
     // The name of the tensor. It is a standard GGUF string, with the caveat that
     // it must be at most 64 bytes long.
@@ -793,8 +794,8 @@ impl<'a> GGUFFile<'a> {
         &self.tensor_infos
     }
 
-    pub fn get_tensor_info(&self, name: &str) -> Option<&GGUFTensorInfo> {
-        self.tensor_infos.iter().find(|ti| ti.name() == name)
+    pub fn get_tensor_info(&self, name: &str) -> Option<GGUFTensorInfo> {
+        self.tensor_infos.iter().find(|ti| ti.name() == name).cloned()
     }
 }
 

@@ -4,6 +4,7 @@ use crate::math::rmsnorm;
 use crate::math::rmsnorm_inplace;
 use crate::math::softmax;
 use crate::sampler::Llama2Sampler;
+use crate::tokenizer;
 use crate::tokenizer::Llama2Tokenizer;
 use crabml::error::Error;
 use crabml::error::ErrorKind;
@@ -62,28 +63,25 @@ pub struct Llama2Weights<'a> {
     wcls: Tensor<'a>, // (vocab_size, dim)
 }
 
-pub trait Llama2Loader {
-    fn load(&self) -> Result<(Llama2Config, Llama2Weights, Llama2Tokenizer)>;
+pub struct Llama2Model<'a> {
+    conf: Llama2Config,
+    weights: Llama2Weights<'a>,
+    tokenizer: Llama2Tokenizer,
 }
 
-pub struct Llama2GgufLoader {
-    file_loader: Arc<GGUFFileLoader>,
-}
-
-impl Llama2GgufLoader {
-    pub fn new(path: &str) -> Result<Self> {
-        let file_loader = Arc::new(GGUFFileLoader::new(path).map_err(|err| Error {
-            kind: ErrorKind::IOError,
-            message: format!("failed to open file {}: {}", path, err),
-            cause: Some(Box::new(err)),
-        })?);
-
+impl<'a> Llama2Model<'a> {
+    pub fn open(gf: &'a GGUFFile<'a>) -> Result<Self> {
+        let conf = Self::load_config(gf);
+        let weights = Self::load_weights(gf, conf.n_layers)?;
+        let tokenizer = Self::load_tokenizer(gf);
         Ok(Self {
-            file_loader: file_loader.clone(),
+            conf,
+            weights,
+            tokenizer,
         })
     }
 
-    fn load_weights<'a>(gf: &GGUFFile<'a>, n_layers: usize) -> Result<Llama2Weights<'a>> {
+    fn load_weights(gf: &'a GGUFFile<'a>, n_layers: usize) -> Result<Llama2Weights<'a>> {
         // [64 (dim), 512 (vocab_size)]
         let token_embedding_table = Self::load_tensor(gf, "token_embd.weight")?;
         let mut wq = vec![];
@@ -152,7 +150,7 @@ impl Llama2GgufLoader {
         })
     }
 
-    pub(crate) fn load_tensor<'a>(gf: &GGUFFile<'a>, name: &str) -> Result<Tensor<'a>> {
+    pub(crate) fn load_tensor(gf: &'a GGUFFile<'a>, name: &str) -> Result<Tensor<'a>> {
         let info = match gf.get_tensor_info(name) {
             None => {
                 return Err(Error {
@@ -164,20 +162,6 @@ impl Llama2GgufLoader {
             Some(info) => info.clone(),
         };
 
-        let f32_data = {
-            let data = info.data();
-            let len = data.len();
-            assert_eq!(
-                len % std::mem::size_of::<f32>(),
-                0,
-                "Length of slice must be multiple of f32 size"
-            );
-            let new_len = len / std::mem::size_of::<f32>();
-            let ptr = data.as_ptr() as *const f32;
-            let f32_data = unsafe { slice::from_raw_parts(ptr, new_len) };
-            f32_data
-        };
-
         // the dimensions stored in GGUF seems in a reverse order of numpy's shape
         let dims = info
             .dimensions()
@@ -185,7 +169,8 @@ impl Llama2GgufLoader {
             .rev()
             .map(|v| *v)
             .collect::<Vec<_>>();
-        let tensor = Tensor::new(f32_data, dims)?.with_name(name.to_string());
+
+        let tensor = Tensor::from_raw_bytes(info.data(), dims)?.with_name(name.to_string());
         Ok(tensor)
     }
 
@@ -243,20 +228,6 @@ impl Llama2GgufLoader {
     }
 }
 
-impl Llama2Loader for Llama2GgufLoader {
-    fn load(&self) -> Result<(Llama2Config, Llama2Weights, Llama2Tokenizer)> {
-        let gf = self.file_loader.load().map_err(|err| Error {
-            kind: ErrorKind::IOError,
-            message: format!("failed to load gguf file"),
-            cause: Some(Box::new(err)),
-        })?;
-        let config = Self::load_config(&gf);
-        let tokenizer = Self::load_tokenizer(&gf);
-        let weights = Self::load_weights(&gf, config.n_layers)?;
-        Ok((config, weights, tokenizer))
-    }
-}
-
 struct Llama2State {
     x: Vec<f32>,         // activation at current time stamp (embedding_dim,)
     xb: Vec<f32>,        // same, but inside a residual branch (embedding_dim,)
@@ -277,14 +248,14 @@ pub struct Llama2Runner<'a> {
     conf: Llama2Config,
     state: Llama2State,
     weights: Llama2Weights<'a>,
-    tokenizer: Llama2Tokenizer,
+    tokenizer: &'a Llama2Tokenizer,
 }
 
 impl<'a> Llama2Runner<'a> {
     pub fn new(
         conf: &Llama2Config,
         weights: Llama2Weights<'a>,
-        tokenizer: Llama2Tokenizer,
+        tokenizer: &'a Llama2Tokenizer,
     ) -> Self {
         let state = Llama2State {
             x: vec![0.0; conf.embedding_dim],
@@ -640,8 +611,10 @@ mod tests {
 
     #[test]
     fn test_gguf_tokenizer() -> Result<()> {
-        let loader = Llama2GgufLoader::new("../testdata/tinyllamas-stories-260k-f32.gguf")?;
-        let (_, _, tk) = loader.load()?;
+        let gf_loader = GGUFFileLoader::new("../testdata/tinyllamas-stories-260k-f32.gguf")?;
+        let gf = gf_loader.load()?;
+        let lm = Llama2Model::open(&gf)?;
+        let tk = lm.tokenizer;
 
         assert_eq!(tk.decode(2, 3)?, "\u{0}");
         assert_eq!(tk.decode(2, 5)?, "\u{2}");
@@ -670,11 +643,12 @@ mod tests {
 
     #[test]
     fn test_generate_gguf() -> Result<()> {
-        let gguf_loader = Llama2GgufLoader::new("../testdata/tinyllamas-stories-260k-f32.gguf")?;
+        let gf_loader = GGUFFileLoader::new("../testdata/tinyllamas-stories-260k-f32.gguf")?;
+        let gf = gf_loader.load()?;
+        let lm = Llama2Model::open(&gf)?;
 
-        let (conf, weights, tokenizer) = gguf_loader.load()?;
-        let mut sampler = Llama2Sampler::new(conf.vocab_size, 0.0, 0.0);
-        let mut runner = Llama2Runner::new(&conf, weights, tokenizer);
+        let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0);
+        let mut runner = Llama2Runner::new(&lm.conf, lm.weights, &lm.tokenizer);
         let output = runner.generate("Hello world", 15, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
         assert_eq!(s, "s \nOn a little by and waly. She want");

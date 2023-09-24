@@ -822,7 +822,7 @@ impl GGUFFileLoader {
         Ok(Self { mmap })
     }
 
-    pub fn load<'a>(&'a self) -> Result<GGUFFile<'a>> {
+    pub fn open<'a>(&'a self) -> Result<GGUFFile<'a>> {
         let buf = &mut GGUFBufReader::new(&self.mmap[..]);
         GGUFFile::decode(buf)
     }
@@ -835,7 +835,7 @@ mod tests {
     #[test]
     fn test_load_tensors() -> Result<()> {
         let loader = GGUFFileLoader::new("testdata/tinyllamas-stories-260k-f32.gguf")?;
-        let gf = loader.load()?;
+        let gf = loader.open()?;
 
         assert_eq!(gf.tensor_infos.len(), 48);
         assert_eq!(gf.tensor_infos[0].name(), "token_embd.weight");
@@ -915,7 +915,7 @@ mod tests {
     #[test]
     fn test_load_metadata() -> Result<()> {
         let loader = GGUFFileLoader::new("testdata/tinyllamas-stories-260k-f32.gguf")?;
-        let gf = loader.load()?;
+        let gf = loader.open()?;
         assert_eq!(gf.header.architecture(), "llama");
         assert_eq!(gf.header.alignment(), 32);
 

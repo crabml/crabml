@@ -70,7 +70,7 @@ pub struct Llama2Model<'a> {
 }
 
 impl<'a> Llama2Model<'a> {
-    pub fn open(gf: &'a GGUFFile<'a>) -> Result<Self> {
+    pub fn from(gf: &'a GGUFFile<'a>) -> Result<Self> {
         let conf = Self::load_config(gf);
         let weights = Self::load_weights(gf, conf.n_layers)?;
         let tokenizer = Self::load_tokenizer(gf);
@@ -612,8 +612,8 @@ mod tests {
     #[test]
     fn test_gguf_tokenizer() -> Result<()> {
         let gf_loader = GGUFFileLoader::new("../testdata/tinyllamas-stories-260k-f32.gguf")?;
-        let gf = gf_loader.load()?;
-        let lm = Llama2Model::open(&gf)?;
+        let gf = gf_loader.open()?;
+        let lm = Llama2Model::from(&gf)?;
         let tk = lm.tokenizer;
 
         assert_eq!(tk.decode(2, 3)?, "\u{0}");
@@ -643,9 +643,9 @@ mod tests {
 
     #[test]
     fn test_generate_gguf() -> Result<()> {
-        let gf_loader = GGUFFileLoader::new("../testdata/tinyllamas-stories-260k-f32.gguf")?;
-        let gf = gf_loader.load()?;
-        let lm = Llama2Model::open(&gf)?;
+        let gl = GGUFFileLoader::new("../testdata/tinyllamas-stories-260k-f32.gguf")?;
+        let gf = gl.open()?;
+        let lm = Llama2Model::from(&gf)?;
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0);
         let mut runner = Llama2Runner::new(&lm.conf, lm.weights, &lm.tokenizer);

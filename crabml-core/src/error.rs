@@ -8,6 +8,9 @@ pub enum ErrorKind {
 
     /// raised when parsing GGUF or other kind of model files
     FormatError,
+
+    /// raised on manuplating tensors, like dimension mismatch
+    TensorError,
 }
 
 #[derive(Debug)]

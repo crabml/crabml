@@ -75,27 +75,6 @@ impl Display for GGUFVersion {
     }
 }
 
-#[derive(Debug)]
-pub enum GGUFTensorKey {
-    TOKEN_EMBD = 0,
-    POS_EMBD = 1,
-    OUTPUT = 2,
-    OUTPUT_NORM = 3,
-    ROPE_FREQS = 4,
-    ATTN_Q = 5,
-    ATTN_K = 6,
-    ATTN_V = 7,
-    ATTN_QKV = 8,
-    ATTN_OUT = 9,
-    ATTN_NORM = 10,
-    ATTN_NORM_2 = 11,
-    ATTN_ROT_EMBD = 12,
-    FFN_GATE = 13,
-    FFN_DOWN = 14,
-    FFN_UP = 15,
-    FFN_NORM = 16,
-}
-
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, IntEnum)]
 pub enum GGMLType {
@@ -513,6 +492,7 @@ struct GGUFHeader<'a> {
     // Your executor might do little-endian byte order, so it might be
     // check for 0x46554747 and letting the endianness cancel out.
     // Consider being *very* explicit about the byte order here.
+    #[allow(dead_code)]
     magic: u32,
 
     // The version of the format implemented.

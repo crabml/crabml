@@ -795,7 +795,10 @@ impl<'a> GGUFFile<'a> {
     }
 
     pub fn get_tensor_info(&self, name: &str) -> Option<GGUFTensorInfo> {
-        self.tensor_infos.iter().find(|ti| ti.name() == name).cloned()
+        self.tensor_infos
+            .iter()
+            .find(|ti| ti.name() == name)
+            .cloned()
     }
 }
 

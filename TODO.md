@@ -1,2 +1,7 @@
-- [ ] add name for each tensor
+- [x] add name for each tensor
 - [ ] refactor with tensor arithmetic
+  - [ ] rnsnorm
+  - [ ] rope
+  - [ ] kvcache
+  - [ ] mha
+  - [ ] ffn

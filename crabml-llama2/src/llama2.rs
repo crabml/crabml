@@ -12,6 +12,9 @@ use crabml::error::Result;
 use crabml::gguf::GGUFFile;
 use crabml::gguf::GGUFFileLoader;
 use crabml::tensor::Tensor;
+use crabml::tensor::arithmetic::tensor_2d_matmul;
+use crabml::tensor::arithmetic::tensor_2d_rms_norm;
+use crabml::tensor::arithmetic::tensor_mul;
 use rayon::prelude::*;
 use std::ops::AddAssign;
 use std::slice;
@@ -429,12 +432,21 @@ impl<'a> Llama2Runner<'a> {
 
         // forward all the layers
         for l in 0..self.conf.n_layers {
+            let x_t= Tensor::new(&self.state.x, vec![self.state.x.len()])?;
+
             // attention rnsnorm
-            rmsnorm(
-                &mut self.state.xb,
-                &self.state.x,
-                self.weights.rms_att_weight[l].flat(),
-            );
+            {
+                let mut x_tmp1_t = Tensor::new(vec![0.0; self.state.x.len()], vec![self.state.x.len()])?;
+                let mut x_tmp2_t = Tensor::new(vec![0.0; self.state.x.len()], vec![self.state.x.len()])?;
+
+                tensor_2d_rms_norm(&mut x_tmp1_t, &x_t, 1e-5)?;
+                x_tmp1_t = x_tmp1_t.with_name("x_with_rms_norm");
+
+                tensor_mul(&mut x_tmp2_t, &self.weights.rms_att_weight[l], &x_tmp1_t)?;
+                x_tmp2_t = x_tmp2_t.with_name("x_with_rms_norm_att");
+
+                self.state.xb.copy_from_slice(x_tmp2_t.flat());
+            }
 
             // matmul qkv for every head
             // .q(embedding_dim, ) = xb(embedding_dim, ) * wq(embedding_dim, embedding_dim)

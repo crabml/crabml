@@ -54,12 +54,12 @@ impl<'a> Tensor<'a> {
         Self::new(f32_buf, shape)
     }
 
-    pub fn with_name(self, name: String) -> Self {
+    pub fn with_name(self, name: impl Into<String>) -> Self {
         Self {
             buf: self.buf,
             shape: self.shape,
             strides: self.strides,
-            name: Some(name),
+            name: Some(name.into()),
         }
     }
 

@@ -35,6 +35,20 @@ pub fn tensor_2d_rms_norm<'a>(out: &mut Tensor<'a>, xs: &Tensor<'a>, eps: f32) -
     Ok(())
 }
 
+pub fn tensor_mul<'a>(out: &mut Tensor<'a>, a: &Tensor<'a>, b: &Tensor<'a>) -> Result<()> {
+    require_tensor_shape(a, b.shape())?;
+    require_tensor_shape(out, b.shape())?;
+
+    let out_buf = out.flat_mut()?;
+    let a_buf = a.flat();
+    let b_buf = b.flat();
+
+    for (i, (a, b)) in a_buf.iter().zip(b_buf.iter()).enumerate() {
+        out_buf[i] = a * b;
+    }
+    Ok(())
+}
+
 // W (w_rows,w_cols) @ x (w_cols,x_cols) -> xout (w_rows,x_cols)
 // W (w_rows,w_cols) @ x (w_cols,) -> xout (w_rows,)
 pub fn tensor_2d_matmul<'a>(out: &mut Tensor<'a>, w: &Tensor<'a>, x: &Tensor<'a>) -> Result<()> {
@@ -90,7 +104,7 @@ fn require_tensor_dims(t: &Tensor, dims: &[usize]) -> Result<()> {
         return Err(Error {
             kind: ErrorKind::TensorError,
             message: format!(
-                "tensor ~{} is available for {} dimension, but got {}",
+                "tensor ~{} is required for {} dimensions, but got {}",
                 t.name().unwrap_or_default(),
                 dims.iter()
                     .map(|d| d.to_string())

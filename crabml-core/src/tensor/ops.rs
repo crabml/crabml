@@ -18,20 +18,23 @@ impl<'a> TensorVar<'a> {
     }
 }
 
-pub struct TensorOpsIter<'a> {
-    preallocated_tensors: Vec<Option<Tensor<'a>>>,
+pub struct TensorOps<'a> {
     preallocated_sizes: Vec<usize>,
     ops: Vec<TensorLogicalOp<'a>>,
 }
 
-impl<'a> TensorOpsIter<'a> {
+impl<'a> TensorOps<'a> {
 }
 
-pub trait TensorOpsRunner<'a, 'b> where 'a: 'b {
-    fn run(&self, ops: impl Iterator<Item=TensorOp<'a, 'b>>, input: &Tensor<'a>) -> Result<Tensor<'a>>;
+pub trait TensorOpsRunner<'a> {
+    fn new(&self, compute: TensorOps<'a>) -> Result<Box<Self>>;
+
+    fn run(&mut self, input: Tensor<'a>) -> Result<()>;
 }
 
-pub struct TensorOpsRunnerCPU {}
+pub struct TensorOpsRunnerCPU<'a> {
+    preallocated_tensors: Vec<Option<Tensor<'a>>>,
+}
 
 pub enum TensorOp<'a, 'b> where 'a: 'b {
     Nop,
@@ -100,12 +103,12 @@ pub struct TensorVarDef {
     buf_size: usize,
 }
 
-pub struct TensorComputeBuilder<'a> {
+pub struct TensorOpsBuilder<'a> {
     ops: Vec<TensorLogicalOp<'a>>,
     defined_vars: Vec<TensorVarDef>,
 }
 
-impl<'a> TensorComputeBuilder<'a> {
+impl<'a> TensorOpsBuilder<'a> {
     fn new() -> Self {
         Self {
             ops: vec![],
@@ -174,7 +177,7 @@ impl<'a> TensorComputeBuilder<'a> {
         dst
     }
 
-    fn finish(mut self, ret: TensorVar<'a>) -> TensorOpsIter<'a> {
+    fn finish(mut self, ret: TensorVar<'a>) -> TensorOps<'a> {
         self.ops.push(
             TensorLogicalOp::Return { ret }
         );
@@ -187,8 +190,7 @@ impl<'a> TensorComputeBuilder<'a> {
             n
         }).collect::<Vec<_>>();
 
-        TensorOpsIter {
-            preallocated_tensors: vec![],
+        TensorOps {
             preallocated_sizes,
             ops: self.ops,
         }
@@ -246,7 +248,7 @@ mod tests {
 
     #[test]
     fn test_tensor_compute_builder() -> Result<()> {
-        let mut b = TensorComputeBuilder::new();
+        let mut b = TensorOpsBuilder::new();
 
         let t1 = b.new_tensor(vec![2, 3], &vec![]);
         let t2 = b.new_tensor(vec![3, 2], &vec![]);
@@ -255,7 +257,7 @@ mod tests {
         let m = b.assign_physical_tensor_var_ids();
         assert_eq!(format!("{:?}", m), "[0, 1, 2, 3]");
 
-        let mut b = TensorComputeBuilder::new();
+        let mut b = TensorOpsBuilder::new();
         let t0 = b.new_tensor(vec![2, 2], &vec![]);
         let t1 = b.new_tensor(vec![2, 2], &vec![]);
         let t2 = b.matmul(t0, t1);

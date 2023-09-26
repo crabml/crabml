@@ -11,10 +11,10 @@ use crabml::error::ErrorKind;
 use crabml::error::Result;
 use crabml::gguf::GGUFFile;
 use crabml::gguf::GGUFFileLoader;
-use crabml::tensor::Tensor;
 use crabml::tensor::arithmetic::tensor_2d_matmul;
 use crabml::tensor::arithmetic::tensor_2d_rms_norm;
 use crabml::tensor::arithmetic::tensor_mul;
+use crabml::tensor::Tensor;
 use rayon::prelude::*;
 use std::ops::AddAssign;
 use std::slice;
@@ -432,12 +432,14 @@ impl<'a> Llama2Runner<'a> {
 
         // forward all the layers
         for l in 0..self.conf.n_layers {
-            let x_t= Tensor::new(&self.state.x, vec![self.state.x.len()])?;
+            let x_t = Tensor::new(&self.state.x, vec![self.state.x.len()])?;
 
             // attention rnsnorm
             {
-                let mut x_tmp1_t = Tensor::new(vec![0.0; self.state.x.len()], vec![self.state.x.len()])?;
-                let mut x_tmp2_t = Tensor::new(vec![0.0; self.state.x.len()], vec![self.state.x.len()])?;
+                let mut x_tmp1_t =
+                    Tensor::new(vec![0.0; self.state.x.len()], vec![self.state.x.len()])?;
+                let mut x_tmp2_t =
+                    Tensor::new(vec![0.0; self.state.x.len()], vec![self.state.x.len()])?;
 
                 tensor_2d_rms_norm(&mut x_tmp1_t, &x_t, 1e-5)?;
                 x_tmp1_t = x_tmp1_t.with_name("x_with_rms_norm");

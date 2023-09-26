@@ -14,6 +14,11 @@ pub struct Tensor<'a> {
     name: Option<String>,
 }
 
+// A tensor contains a buffer of f32, a shape and a strides. We may refer to 
+// https://ajcr.net/stride-guide-part-1/ to learn more about how strides works.
+// The buffer may be owned in a Vec or an ref to a part of shared memory. Any 
+// change on the tensor is considered as a move operation, to reduce the need on
+// copying the owned buffer. Feel free to clone() the tensor.
 impl<'a> Tensor<'a> {
     pub fn new(buf: impl Into<Cow<'a, [f32]>>, shape: Vec<usize>) -> Result<Self> {
         let buf = buf.into();
@@ -112,7 +117,7 @@ impl<'a> Tensor<'a> {
         self.shape.iter().product()
     }
 
-    pub fn view(&self, shape: &[usize]) -> Result<Self> {
+    pub fn view(self, shape: &[usize]) -> Result<Self> {
         if shape.iter().product::<usize>() != self.len() {
             return Err(Error {
                 kind: ErrorKind::TensorError,
@@ -131,7 +136,10 @@ impl<'a> Tensor<'a> {
                 cause: None,
             });
         }
-        Self::new(self.buf.clone(), shape.to_vec())
+        match self.buf {
+            Cow::Owned(buf) => Self::new(buf, shape.to_vec()),
+            Cow::Borrowed(buf) => Self::new(buf, shape.to_vec()),
+        }
     }
 
     pub fn at_unchecked(&self, idx: &[usize]) -> f32 {
@@ -147,7 +155,7 @@ impl<'a> Tensor<'a> {
         offset
     }
 
-    pub fn transpose(&self, perm: &[usize]) -> Result<Self> {
+    pub fn transpose(self, perm: &[usize]) -> Result<Self> {
         if perm.len() != self.shape.len() {
             return Err(Error {
                 kind: ErrorKind::TensorError,
@@ -221,6 +229,13 @@ impl<'a> Tensor<'a> {
             strides: self.strides[1..].to_vec(),
             name: self.name.clone(),
         })
+    }
+
+    pub fn is_owned(&self) -> bool {
+        match self.buf {
+            Cow::Owned(_) => true,
+            _ => false,
+        }
     }
 
     pub fn is_contiguous(&self) -> bool {
@@ -459,7 +474,7 @@ mod tests {
         assert_eq!(t1.at(&[0])?, 1.0); // offset = 1 * 3 + 0 * 1 = 2
         assert_eq!(t1.at(&[1])?, 2.0);
         assert_eq!(t1.at(&[2])?, 3.0);
-        let t2 = t.transpose(&[1, 0])?;
+        let t2 = t.clone().transpose(&[1, 0])?;
         assert_eq!(t2.shape.to_vec(), vec![3, 2]);
         let t3 = t.subtensor(1)?; // (2, )
         assert_eq!(t3.at(&[0])?, 4.0);

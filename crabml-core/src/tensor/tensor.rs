@@ -14,9 +14,9 @@ pub struct Tensor<'a> {
     name: Option<String>,
 }
 
-// A tensor contains a buffer of f32, a shape and a strides. We may refer to 
+// A tensor contains a buffer of f32, a shape and a strides. We may refer to
 // https://ajcr.net/stride-guide-part-1/ to learn more about how strides works.
-// The buffer may be owned in a Vec or an ref to a part of shared memory. Any 
+// The buffer may be owned in a Vec or an ref to a part of shared memory. Any
 // change on the tensor is considered as a move operation, to reduce the need on
 // copying the owned buffer. Feel free to clone() the tensor.
 impl<'a> Tensor<'a> {
@@ -30,6 +30,10 @@ impl<'a> Tensor<'a> {
             });
         }
 
+       Ok(Self::new_unchecked(buf, shape))
+    }
+
+    pub fn new_unchecked(buf: impl Into<Cow<'a, [f32]>>, shape: Vec<usize>) -> Self {
         let mut strides = Vec::with_capacity(shape.len());
         strides.push(1);
         for i in 0..shape.len() - 1 {
@@ -37,13 +41,12 @@ impl<'a> Tensor<'a> {
         }
         strides.reverse();
 
-        let tensor = Self {
-            buf,
+        Self {
+            buf: buf.into(),
             shape,
             strides,
             name: None,
-        };
-        Ok(tensor)
+        }
     }
 
     pub fn from_raw_bytes(buf: &'a [u8], shape: Vec<usize>) -> Result<Self> {

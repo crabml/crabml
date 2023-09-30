@@ -84,25 +84,18 @@ pub fn tensor_2d_matmul<'a>(out: &mut Tensor<'a>, w: &Tensor<'a>, x: &Tensor<'a>
 }
 
 // t: (rows, cols)
-pub fn tensor_2d_softmax_inplace<'a>(t: &mut Tensor<'a>) -> Result<()> {
-    require_tensor_dims(t, &[2])?;
-
-    let rows = t.shape()[0];
-    let cols = t.shape()[1];
+pub fn tensor_1d_softmax_inplace<'a>(t: &mut Tensor<'a>, pos: usize) -> Result<()> {
+    require_tensor_dims(t, &[1])?;
     let buf = t.flat_mut()?;
-
-    for row in 0..rows {
-        let row_buf = &mut buf[row * cols..(row + 1) * cols];
-
-        let max = row_buf.iter().fold(f32::NAN, |a, b| a.max(*b));
-        let mut sum = 0.0;
-        for val in row_buf.iter_mut() {
-            *val = (*val - max).exp();
-            sum += *val;
-        }
-        for val in row_buf.iter_mut() {
-            *val /= sum;
-        }
+    let buf = &mut buf[0..pos+1];
+    let max = buf.iter().fold(f32::NAN, |a, b| a.max(*b));
+    let mut sum = 0.0;
+    for val in buf.iter_mut() {
+        *val = (*val - max).exp();
+        sum += *val;
+    }
+    for val in buf.iter_mut() {
+        *val /= sum;
     }
     Ok(())
 }
@@ -110,7 +103,7 @@ pub fn tensor_2d_softmax_inplace<'a>(t: &mut Tensor<'a>) -> Result<()> {
 // q: (n_heads, head_size)
 // k_cache: (n_seq, n_kv_heads, head_size)
 // v_cache: (n_seq, n_kv_heads, head_size)
-// attn: (n_heads, n_seq)
+// attn: (n_seq, )
 // out: (n_heads, head_size)
 pub fn tensor_mha<'a>(
     out: &mut Tensor<'a>,
@@ -119,6 +112,7 @@ pub fn tensor_mha<'a>(
     k_cache: &Tensor<'a>,
     v_cache: &Tensor<'a>,
     pos: usize,
+    layer: usize,
 ) -> Result<()> {
     require_tensor_contiguous(q)?;
     require_tensor_contiguous(k_cache)?;
@@ -132,20 +126,18 @@ pub fn tensor_mha<'a>(
     // get attention scores
     for h in 0..n_heads {
         let kvh = h / (n_heads / n_kv_heads);
-        let attn_buf = attn.mut_chunk(&[h])?; // (n_seq, )
+        let attn_buf = attn.flat_mut()?; // (n_seq, )
         let q_head = q.ref_chunk(&[h])?; // (head_size, )
         for tok in 0..pos + 1 {
             let k_head = k_cache.ref_chunk(&[tok, kvh])?; // (head_size, )
             let score = (0..head_size).map(|i| q_head[i] * k_head[i]).sum::<f32>();
-            attn_buf[tok] = score;
+            attn_buf[tok] = score / (head_size as f32).sqrt();
         }
-    }
-    tensor_2d_softmax_inplace(attn)?;
+        tensor_1d_softmax_inplace(attn, pos)?;
 
-    for h in 0..n_heads {
         let kvh = h / (n_heads / n_kv_heads);
+        let attn_buf = attn.flat(); // (n_seq, )
         let out_buf = out.mut_chunk(&[h])?; // (head_size, )
-        let attn_buf = attn.ref_chunk(&[h])?; // (n_seq, )
         for tok in 0..pos + 1 {
             let v_head = v_cache.ref_chunk(&[tok, kvh])?; // (head_size, )
             for i in 0..head_size {

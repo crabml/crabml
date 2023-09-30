@@ -11,9 +11,9 @@ use crabml::error::ErrorKind;
 use crabml::error::Result;
 use crabml::gguf::GGUFFile;
 use crabml::gguf::GGUFFileLoader;
+use crabml::tensor::arithmetic::tensor_1d_softmax_inplace;
 use crabml::tensor::arithmetic::tensor_2d_matmul;
 use crabml::tensor::arithmetic::tensor_2d_rms_norm;
-use crabml::tensor::arithmetic::tensor_2d_softmax_inplace;
 use crabml::tensor::arithmetic::tensor_copy_chunk;
 use crabml::tensor::arithmetic::tensor_mha;
 use crabml::tensor::arithmetic::tensor_mul;
@@ -336,7 +336,7 @@ impl<'a> Llama2Runner<'a> {
             .for_each(|(h, (attn, xb))| {
                 let kvh = h / kv_heads_per_head;
                 // get the query vector for this head
-                let q = &self.state.q[kvh * head_size..kvh * head_size + head_size];
+                let q = &self.state.q[h * head_size..h * head_size + head_size];
                 // iterate over all timesteps, including the current one
                 for t in 0..(pos + 1) {
                     let key_cache_tensor = self.state.key_cache[l].subtensor(t).unwrap();
@@ -347,9 +347,6 @@ impl<'a> Llama2Runner<'a> {
                     // save the score to the attention buffer
                     attn[t] = score;
                 }
-
-                // softmax the scores to get attention weights, from 0..pos inclusively
-                softmax(&mut attn[0..pos + 1]);
 
                 // weighted sum of the values, store back into xb
                 xb.fill(0.0);
@@ -493,8 +490,9 @@ impl<'a> Llama2Runner<'a> {
             {
                 let q = q.view(&[n_heads, head_size])?;
                 let mut attn_scores =
-                    Tensor::zeros(vec![n_heads, self.conf.seq_len])?.with_name("attn_scores");
-                let mut x_with_attn = Tensor::zeros(vec![n_heads, head_size])?.with_name("x_with_attn");
+                    Tensor::zeros(vec![self.conf.seq_len])?.with_name("attn_scores");
+                let mut x_with_attn =
+                    Tensor::zeros(vec![n_heads, head_size])?.with_name("x_with_attn");
                 tensor_mha(
                     &mut x_with_attn,
                     &mut attn_scores,
@@ -502,10 +500,12 @@ impl<'a> Llama2Runner<'a> {
                     &self.state.key_cache[l],
                     &self.state.value_cache[l],
                     pos,
+                    l,
                 )?;
 
                 self.state.xb.copy_from_slice(x_with_attn.flat());
             }
+            // self.multi_head_attention(l, pos)?;
 
             // final matmul to get the output of the attention
             matmul(
@@ -701,9 +701,9 @@ mod tests {
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0);
         let mut runner = Llama2Runner::new(&lm.conf, lm.weights, &lm.tokenizer)?;
-        let output = runner.generate("Hello world", 15, &mut sampler)?;
+        let output = runner.generate("Lily is a cat ", 30, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
-        assert_eq!(s, "s \nOn a little by and waly. She want");
+        assert_eq!(s, ". She was a shals to almals. She loved to shals to her mommy.");
         Ok(())
     }
 }

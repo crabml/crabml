@@ -426,37 +426,45 @@ impl<'a> Llama2Runner<'a> {
     }
 
     pub fn forward(&mut self, token: usize, pos: usize) -> Result<&mut [f32]> {
+        let embed_dim = self.conf.embedding_dim;
+        let kv_dim = self.conf.kv_dim();
+
         // copy the token embedding into x
         let content_row = self.weights.token_embedding_table.subtensor(token)?;
         self.state.x.copy_from_slice(content_row.flat());
 
         // forward all the layers
         for l in 0..self.conf.n_layers {
-            let x_t = Tensor::new(&self.state.x, vec![self.state.x.len()])?;
+            let x_t = Tensor::new(&self.state.x, vec![embed_dim])?;
 
             // attention rnsnorm
             {
-                let mut x_tmp1_t =
-                    Tensor::new(vec![0.0; self.state.x.len()], vec![self.state.x.len()])?;
-                let mut x_tmp2_t =
-                    Tensor::new(vec![0.0; self.state.x.len()], vec![self.state.x.len()])?;
+                let mut x_with_rms_norm = Tensor::new(vec![0.0; embed_dim], vec![embed_dim])?.with_name("x_with_rms_norm");
+                tensor_2d_rms_norm(&mut x_with_rms_norm, &x_t, 1e-5)?;
 
-                tensor_2d_rms_norm(&mut x_tmp1_t, &x_t, 1e-5)?;
-                x_tmp1_t = x_tmp1_t.with_name("x_with_rms_norm");
+                let mut x_with_rms_norm_att = Tensor::new(vec![0.0; embed_dim], vec![embed_dim])?.with_name("x_with_rms_norm_att");
+                tensor_mul(&mut x_with_rms_norm_att, &self.weights.rms_att_weight[l], &x_with_rms_norm)?;
 
-                tensor_mul(&mut x_tmp2_t, &self.weights.rms_att_weight[l], &x_tmp1_t)?;
-                x_tmp2_t = x_tmp2_t.with_name("x_with_rms_norm_att");
+                // matmul qkv for every head
+                // .q(embedding_dim, ) = (xb(1, embedding_dim) * wq(embedding_dim, embedding_dim)).T
+                // .k(kv_dim, ) = (xb(1, embedding_dim) * wq(embedding_dim, kv_dim)).T
+                // .v(kv_dim, ) = (xb(1, embedding_dim) * wv(embedding_dim, kv_dim)).T
+                matmul(&mut self.state.q, &self.state.xb, self.weights.wq[l].flat());
+                matmul(&mut self.state.k, &self.state.xb, self.weights.wk[l].flat());
+                matmul(&mut self.state.v, &self.state.xb, self.weights.wv[l].flat());
 
-                self.state.xb.copy_from_slice(x_tmp2_t.flat());
+                let mut q = Tensor::new(vec![0.0; embed_dim], vec![embed_dim])?.with_name("q");
+                let mut k = Tensor::new(vec![0.0; kv_dim], vec![kv_dim])?.with_name("k");
+                let mut v = Tensor::new(vec![0.0; kv_dim], vec![kv_dim])?.with_name("v");
+                tensor_2d_matmul(&mut q, &self.weights.wq[l], &x_with_rms_norm_att)?;
+                tensor_2d_matmul(&mut k, &self.weights.wk[l], &x_with_rms_norm_att)?;
+                tensor_2d_matmul(&mut v, &self.weights.wv[l], &x_with_rms_norm_att)?;
+
+                self.state.q.copy_from_slice(q.flat());
+                self.state.k.copy_from_slice(k.flat());
+                self.state.v.copy_from_slice(v.flat());
+                self.state.xb.copy_from_slice(x_with_rms_norm_att.flat());
             }
-
-            // matmul qkv for every head
-            // .q(embedding_dim, ) = xb(embedding_dim, ) * wq(embedding_dim, embedding_dim)
-            // .k(kv_dim, ) = xb(embedding_dim, ) * wq(embedding_dim, kv_dim)
-            // .v(kv_dim, ) = xb(embedding_dim, ) * wv(embedding_dim, kv_dim)
-            matmul(&mut self.state.q, &self.state.xb, self.weights.wq[l].flat());
-            matmul(&mut self.state.k, &self.state.xb, self.weights.wk[l].flat());
-            matmul(&mut self.state.v, &self.state.xb, self.weights.wv[l].flat());
 
             // RoPE relative positional encoding: complex-valued rotate q and k by freq_cis in each head
             self.rope(pos);

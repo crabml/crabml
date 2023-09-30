@@ -438,14 +438,23 @@ impl<'a> Llama2Runner<'a> {
             let x_t = Tensor::new(&self.state.x, vec![embed_dim])?;
 
             // attention rnsnorm
-            {
-                let mut x_with_rms_norm = Tensor::new(vec![0.0; embed_dim], vec![embed_dim])?.with_name("x_with_rms_norm");
+            let x_with_rms_norm_att = {
+                let mut x_with_rms_norm =
+                    Tensor::zeros(vec![embed_dim])?.with_name("x_with_rms_norm");
                 tensor_2d_rms_norm(&mut x_with_rms_norm, &x_t, 1e-5)?;
 
-                let mut x_with_rms_norm_att = Tensor::new(vec![0.0; embed_dim], vec![embed_dim])?.with_name("x_with_rms_norm_att");
-                tensor_mul(&mut x_with_rms_norm_att, &self.weights.rms_att_weight[l], &x_with_rms_norm)?;
+                let mut x_with_rms_norm_att =
+                    Tensor::zeros(vec![embed_dim])?.with_name("x_with_rms_norm_att");
+                tensor_mul(
+                    &mut x_with_rms_norm_att,
+                    &self.weights.rms_att_weight[l],
+                    &x_with_rms_norm,
+                )?;
+                x_with_rms_norm_att
+            };
 
-                // matmul qkv for every head
+            // matmul qkv for every head
+            {
                 // .q(embedding_dim, ) = (xb(1, embedding_dim) * wq(embedding_dim, embedding_dim)).T
                 // .k(kv_dim, ) = (xb(1, embedding_dim) * wq(embedding_dim, kv_dim)).T
                 // .v(kv_dim, ) = (xb(1, embedding_dim) * wv(embedding_dim, kv_dim)).T
@@ -453,9 +462,9 @@ impl<'a> Llama2Runner<'a> {
                 matmul(&mut self.state.k, &self.state.xb, self.weights.wk[l].flat());
                 matmul(&mut self.state.v, &self.state.xb, self.weights.wv[l].flat());
 
-                let mut q = Tensor::new(vec![0.0; embed_dim], vec![embed_dim])?.with_name("q");
-                let mut k = Tensor::new(vec![0.0; kv_dim], vec![kv_dim])?.with_name("k");
-                let mut v = Tensor::new(vec![0.0; kv_dim], vec![kv_dim])?.with_name("v");
+                let mut q = Tensor::zeros(vec![embed_dim])?.with_name("q");
+                let mut k = Tensor::zeros(vec![kv_dim])?.with_name("k");
+                let mut v = Tensor::zeros(vec![kv_dim])?.with_name("v");
                 tensor_2d_matmul(&mut q, &self.weights.wq[l], &x_with_rms_norm_att)?;
                 tensor_2d_matmul(&mut k, &self.weights.wk[l], &x_with_rms_norm_att)?;
                 tensor_2d_matmul(&mut v, &self.weights.wv[l], &x_with_rms_norm_att)?;

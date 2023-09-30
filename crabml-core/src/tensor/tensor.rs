@@ -30,7 +30,12 @@ impl<'a> Tensor<'a> {
             });
         }
 
-       Ok(Self::new_unchecked(buf, shape))
+        Ok(Self::new_unchecked(buf, shape))
+    }
+
+    pub fn zeros(shape: Vec<usize>) -> Result<Self> {
+        let buf = vec![0.0; shape.iter().product()];
+        Self::new(buf, shape)
     }
 
     pub fn new_unchecked(buf: impl Into<Cow<'a, [f32]>>, shape: Vec<usize>) -> Self {

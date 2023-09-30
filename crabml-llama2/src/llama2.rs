@@ -15,8 +15,8 @@ use crabml::tensor::arithmetic::tensor_1d_softmax_inplace;
 use crabml::tensor::arithmetic::tensor_2d_matmul;
 use crabml::tensor::arithmetic::tensor_2d_rms_norm;
 use crabml::tensor::arithmetic::tensor_copy_chunk;
-use crabml::tensor::arithmetic::tensor_mha;
 use crabml::tensor::arithmetic::tensor_mul;
+use crabml::tensor::arithmetic::tensor_multi_query_attention;
 use crabml::tensor::arithmetic::tensor_rope_inplace;
 use crabml::tensor::Tensor;
 use rayon::prelude::*;
@@ -302,69 +302,6 @@ impl<'a> Llama2Runner<'a> {
         Llama2RunnerOutputGenerator::new(self, sampler, prompt, steps, self.conf.seq_len)
     }
 
-    fn rope(&mut self, pos: usize, kv_dim: usize, head_size: usize) {
-        for i in (0..kv_dim).step_by(2) {
-            let head_dim = i % head_size;
-            let freq = 1.0 / 10000_f32.powf(head_dim as f32 / head_size as f32);
-            let val = pos as f32 * freq;
-            let fcr = val.cos();
-            let fci = val.sin();
-            let rotn = if i < kv_dim { 2 } else { 1 }; // how many vectors? 2 = q & k, 1 = q only
-            for v in 0..rotn {
-                let vec = if v == 0 {
-                    &mut self.state.q
-                } else {
-                    &mut self.state.k
-                };
-                let v0 = vec[i];
-                let v1 = vec[i + 1];
-                vec[i] = v0 * fcr - v1 * fci;
-                vec[i + 1] = v0 * fci + v1 * fcr;
-            }
-        }
-    }
-
-    fn multi_head_attention(&mut self, l: usize, pos: usize) -> Result<()> {
-        let head_size = self.conf.head_size();
-        let kv_heads_per_head = self.conf.n_heads / self.conf.n_kv_heads;
-
-        self.state
-            .attn
-            .par_iter_mut()
-            .zip(self.state.xb.par_chunks_exact_mut(head_size))
-            .enumerate()
-            .for_each(|(h, (attn, xb))| {
-                let kvh = h / kv_heads_per_head;
-                // get the query vector for this head
-                let q = &self.state.q[h * head_size..h * head_size + head_size];
-                // iterate over all timesteps, including the current one
-                for t in 0..(pos + 1) {
-                    let key_cache_tensor = self.state.key_cache[l].subtensor(t).unwrap();
-                    let k = &key_cache_tensor.flat()[kvh * head_size..kvh * head_size + head_size];
-                    // calculate the attention score as the dot product of q and k
-                    let mut score = (0..head_size).map(|i| q[i] * k[i]).sum::<f32>();
-                    score /= (head_size as f32).sqrt();
-                    // save the score to the attention buffer
-                    attn[t] = score;
-                }
-
-                // weighted sum of the values, store back into xb
-                xb.fill(0.0);
-                for t in 0..pos + 1 {
-                    let value_cache_tensor = self.state.value_cache[l].subtensor(t).unwrap();
-                    let v =
-                        &value_cache_tensor.flat()[kvh * head_size..kvh * head_size + head_size];
-                    // get the attention weight for this timestep
-                    let a = attn[t];
-                    // accumulate the weighted value into xb
-                    for i in 0..head_size {
-                        xb[i] += a * v[i]
-                    }
-                }
-            });
-        Ok(())
-    }
-
     // input: self.state.x
     // output: self.state.xb
     fn ffn(&mut self, l: usize) -> Result<()> {
@@ -374,7 +311,7 @@ impl<'a> Llama2Runner<'a> {
         rmsnorm(
             &mut self.state.xb,
             &self.state.x,
-            self.weights.rms_ffn_weight[l].flat(),
+            self.weights.rms_ffn_weight[l].ref_buf(),
         );
 
         // Now for FFN in PyTorch we have: self.w2(F.silu(self.w1(x)) * self.w3(x))
@@ -382,12 +319,12 @@ impl<'a> Llama2Runner<'a> {
         matmul(
             &mut self.state.hb,
             &self.state.xb,
-            self.weights.w1[l].flat(),
+            self.weights.w1[l].ref_buf(),
         );
         matmul(
             &mut self.state.hb2,
             &self.state.xb,
-            self.weights.w3[l].flat(),
+            self.weights.w3[l].ref_buf(),
         );
 
         // F.silu; silu(x)=x*σ(x),where σ(x) is the logistic sigmoid
@@ -404,7 +341,7 @@ impl<'a> Llama2Runner<'a> {
         matmul(
             &mut self.state.xb,
             &self.state.hb,
-            &self.weights.w2[l].flat(),
+            &self.weights.w2[l].ref_buf(),
         );
 
         // residual connection
@@ -422,7 +359,7 @@ impl<'a> Llama2Runner<'a> {
 
         // copy the token embedding into x
         let content_row = self.weights.token_embedding_table.subtensor(token)?;
-        self.state.x.copy_from_slice(content_row.flat());
+        self.state.x.copy_from_slice(content_row.ref_buf());
 
         // forward all the layers
         for l in 0..self.conf.n_layers {
@@ -456,8 +393,8 @@ impl<'a> Llama2Runner<'a> {
                 tensor_2d_matmul(&mut k, &self.weights.wk[l], &x_with_rms_norm_att)?;
                 tensor_2d_matmul(&mut v, &self.weights.wv[l], &x_with_rms_norm_att)?;
 
-                self.state.v.copy_from_slice(v.flat());
-                self.state.xb.copy_from_slice(x_with_rms_norm_att.flat());
+                self.state.v.copy_from_slice(v.ref_buf());
+                self.state.xb.copy_from_slice(x_with_rms_norm_att.ref_buf());
 
                 (q, k, v)
             };
@@ -469,7 +406,7 @@ impl<'a> Llama2Runner<'a> {
                 let mut q = q.view(&[n_heads, head_size])?;
                 tensor_rope_inplace(&mut q, &mut k, pos, 1.0, 10000_f32)?;
 
-                self.state.q.copy_from_slice(q.flat());
+                self.state.q.copy_from_slice(q.ref_buf());
                 (k, q)
             };
 
@@ -487,32 +424,29 @@ impl<'a> Llama2Runner<'a> {
             // key_cache: (seq, n_kv_heads, head_size)
             // attn_scores: (n_heads, seq)
             // value_cache: (seq, kv_heads, head_size)
-            {
+            let x_with_attn_wo = {
                 let q = q.view(&[n_heads, head_size])?;
                 let mut attn_scores =
                     Tensor::zeros(vec![self.conf.seq_len])?.with_name("attn_scores");
                 let mut x_with_attn =
                     Tensor::zeros(vec![n_heads, head_size])?.with_name("x_with_attn");
-                tensor_mha(
+                tensor_multi_query_attention(
                     &mut x_with_attn,
                     &mut attn_scores,
                     &q,
                     &self.state.key_cache[l],
                     &self.state.value_cache[l],
                     pos,
-                    l,
                 )?;
 
-                self.state.xb.copy_from_slice(x_with_attn.flat());
-            }
-            // self.multi_head_attention(l, pos)?;
-
-            // final matmul to get the output of the attention
-            matmul(
-                &mut self.state.xb2,
-                &self.state.xb,
-                self.weights.wo[l].flat(),
-            );
+                // final matmul to get the output of the attention
+                let x_with_attn = x_with_attn.view(&[embed_dim])?;
+                let mut x_with_attn_wo =
+                    Tensor::zeros(vec![embed_dim])?.with_name("x_with_attn_wo");
+                tensor_2d_matmul(&mut x_with_attn_wo, &self.weights.wo[l], &x_with_attn)?;
+                x_with_attn_wo
+            };
+            self.state.xb2.copy_from_slice(x_with_attn_wo.ref_buf());
 
             // residual connection back into x
             accum(&mut self.state.x, &self.state.xb2);
@@ -522,13 +456,13 @@ impl<'a> Llama2Runner<'a> {
         }
 
         // final rmsnorm
-        rmsnorm_inplace(&mut self.state.x, self.weights.rms_final_weight.flat());
+        rmsnorm_inplace(&mut self.state.x, self.weights.rms_final_weight.ref_buf());
 
         // classifier into logits
         matmul(
             &mut self.state.logits,
             &self.state.x,
-            self.weights.wcls.flat(),
+            self.weights.wcls.ref_buf(),
         );
 
         Ok(&mut self.state.logits)
@@ -656,7 +590,7 @@ mod tests {
         let w = Tensor::new(&wvec, vec![2, 3]).unwrap(); // (2,3)
         let x = [2.0, 4.0, 8.0]; // (3,)
         let out: &mut [f32; 2] = &mut [0.0, 0.0]; // (2, )
-        matmul(out, &x, w.flat());
+        matmul(out, &x, w.ref_buf());
         assert_eq!(out[0], 34.0);
         assert_eq!(out[1], 30.0);
     }
@@ -703,7 +637,10 @@ mod tests {
         let mut runner = Llama2Runner::new(&lm.conf, lm.weights, &lm.tokenizer)?;
         let output = runner.generate("Lily is a cat ", 30, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
-        assert_eq!(s, ". She was a shals to almals. She loved to shals to her mommy.");
+        assert_eq!(
+            s,
+            ". She was a shals to almals. She loved to shals to her mommy."
+        );
         Ok(())
     }
 }

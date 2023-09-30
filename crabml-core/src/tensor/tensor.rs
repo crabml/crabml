@@ -326,11 +326,11 @@ impl<'a> Tensor<'a> {
         Self::new(buf, self.shape.clone())
     }
 
-    pub fn flat(&self) -> &[f32] {
+    pub fn ref_buf(&self) -> &[f32] {
         &self.buf
     }
 
-    pub fn flat_mut(&mut self) -> Result<&mut [f32]> {
+    pub fn mut_buf(&mut self) -> Result<&mut [f32]> {
         match self.buf {
             Cow::Borrowed(_) => Err(Error {
                 kind: ErrorKind::TensorError,
@@ -481,12 +481,12 @@ mod tests {
         let t = Tensor::new(&v, vec![2, 3, 1]).unwrap();
         assert_eq!(format!("{:?}", t.strides), "[3, 1, 1]");
         assert_eq!(t.is_contiguous(), true);
-        assert_eq!(t.subtensor(0)?.flat().to_vec(), vec![1.0, 2.0, 3.0]);
-        assert_eq!(t.subtensor(1)?.flat().to_vec(), vec![4.0, 5.0, 6.0]);
-        assert_eq!(t.subtensor(0)?.subtensor(0)?.flat().to_vec(), vec![1.0]);
-        assert_eq!(t.subtensor(0)?.subtensor(1)?.flat().to_vec(), vec![2.0]);
-        assert_eq!(t.subtensor(0)?.subtensor(2)?.flat().to_vec(), vec![3.0]);
-        assert_eq!(t.subtensor(1)?.subtensor(0)?.flat().to_vec(), vec![4.0]);
+        assert_eq!(t.subtensor(0)?.ref_buf().to_vec(), vec![1.0, 2.0, 3.0]);
+        assert_eq!(t.subtensor(1)?.ref_buf().to_vec(), vec![4.0, 5.0, 6.0]);
+        assert_eq!(t.subtensor(0)?.subtensor(0)?.ref_buf().to_vec(), vec![1.0]);
+        assert_eq!(t.subtensor(0)?.subtensor(1)?.ref_buf().to_vec(), vec![2.0]);
+        assert_eq!(t.subtensor(0)?.subtensor(2)?.ref_buf().to_vec(), vec![3.0]);
+        assert_eq!(t.subtensor(1)?.subtensor(0)?.ref_buf().to_vec(), vec![4.0]);
         assert_eq!(t.subtensor(1)?.shape().to_vec(), vec![3, 1]);
 
         let v = vec![
@@ -494,11 +494,11 @@ mod tests {
         ];
         let t = Tensor::new(&v, vec![2, 3, 2, 1]).unwrap();
         assert_eq!(
-            t.subtensor(0)?.flat().to_vec(),
+            t.subtensor(0)?.ref_buf().to_vec(),
             vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         );
         assert_eq!(
-            t.subtensor(1)?.flat().to_vec(),
+            t.subtensor(1)?.ref_buf().to_vec(),
             vec![7.0, 8.0, 9.0, 10.0, 11.0, 12.0]
         );
         Ok(())
@@ -575,13 +575,13 @@ mod tests {
         // 3, 6,
         let t = t.transpose(&[1, 0])?;
         let t = t.contiguous()?;
-        assert_eq!(t.flat(), &[1.0, 4.0, 2.0, 5.0, 3.0, 6.0]);
+        assert_eq!(t.ref_buf(), &[1.0, 4.0, 2.0, 5.0, 3.0, 6.0]);
 
         // 1, 2, 3
         // 4, 5, 6
         let t = t.transpose(&[1, 0])?;
         let t = t.contiguous()?;
-        assert_eq!(t.flat(), &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+        assert_eq!(t.ref_buf(), &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
 
         Ok(())
     }

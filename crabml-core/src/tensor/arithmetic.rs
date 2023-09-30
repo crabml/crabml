@@ -22,9 +22,9 @@ pub fn tensor_2d_rms_norm<'a>(out: &mut Tensor<'a>, xs: &Tensor<'a>, eps: f32) -
         xs.clone()
     };
 
-    let out_buf = out.flat_mut()?;
+    let out_buf = out.mut_buf()?;
     for (i, x) in xs.subtensors()?.iter().enumerate() {
-        let x_buf = x.flat();
+        let x_buf = x.ref_buf();
         let sum = x_buf.iter().fold(0.0, |s, n| s + n * n);
         let rms = ((sum / x.len() as f32) + eps).sqrt();
         for j in 0..x_buf.len() {
@@ -39,9 +39,9 @@ pub fn tensor_mul<'a>(out: &mut Tensor<'a>, a: &Tensor<'a>, b: &Tensor<'a>) -> R
     require_tensor_shape(a, b.shape())?;
     require_tensor_shape(out, b.shape())?;
 
-    let out_buf = out.flat_mut()?;
-    let a_buf = a.flat();
-    let b_buf = b.flat();
+    let out_buf = out.mut_buf()?;
+    let a_buf = a.ref_buf();
+    let b_buf = b.ref_buf();
 
     for (i, (a, b)) in a_buf.iter().zip(b_buf.iter()).enumerate() {
         out_buf[i] = a * b;
@@ -67,9 +67,9 @@ pub fn tensor_2d_matmul<'a>(out: &mut Tensor<'a>, w: &Tensor<'a>, x: &Tensor<'a>
         1
     };
 
-    let obuf = out.flat_mut()?;
-    let wbuf = w.flat();
-    let xbuf = x.flat();
+    let obuf = out.mut_buf()?;
+    let wbuf = w.ref_buf();
+    let xbuf = x.ref_buf();
 
     for w_row in 0..w_rows {
         for x_col in 0..x_cols {
@@ -86,8 +86,8 @@ pub fn tensor_2d_matmul<'a>(out: &mut Tensor<'a>, w: &Tensor<'a>, x: &Tensor<'a>
 // t: (rows, cols)
 pub fn tensor_1d_softmax_inplace<'a>(t: &mut Tensor<'a>, pos: usize) -> Result<()> {
     require_tensor_dims(t, &[1])?;
-    let buf = t.flat_mut()?;
-    let buf = &mut buf[0..pos+1];
+    let buf = t.mut_buf()?;
+    let buf = &mut buf[0..pos + 1];
     let max = buf.iter().fold(f32::NAN, |a, b| a.max(*b));
     let mut sum = 0.0;
     for val in buf.iter_mut() {
@@ -105,14 +105,13 @@ pub fn tensor_1d_softmax_inplace<'a>(t: &mut Tensor<'a>, pos: usize) -> Result<(
 // v_cache: (n_seq, n_kv_heads, head_size)
 // attn: (n_seq, )
 // out: (n_heads, head_size)
-pub fn tensor_mha<'a>(
+pub fn tensor_multi_query_attention<'a>(
     out: &mut Tensor<'a>,
     attn: &mut Tensor<'a>,
     q: &Tensor<'a>,
     k_cache: &Tensor<'a>,
     v_cache: &Tensor<'a>,
     pos: usize,
-    layer: usize,
 ) -> Result<()> {
     require_tensor_contiguous(q)?;
     require_tensor_contiguous(k_cache)?;
@@ -126,7 +125,7 @@ pub fn tensor_mha<'a>(
     // get attention scores
     for h in 0..n_heads {
         let kvh = h / (n_heads / n_kv_heads);
-        let attn_buf = attn.flat_mut()?; // (n_seq, )
+        let attn_buf = attn.mut_buf()?; // (n_seq, )
         let q_head = q.ref_chunk(&[h])?; // (head_size, )
         for tok in 0..pos + 1 {
             let k_head = k_cache.ref_chunk(&[tok, kvh])?; // (head_size, )
@@ -136,7 +135,7 @@ pub fn tensor_mha<'a>(
         tensor_1d_softmax_inplace(attn, pos)?;
 
         let kvh = h / (n_heads / n_kv_heads);
-        let attn_buf = attn.flat(); // (n_seq, )
+        let attn_buf = attn.ref_buf(); // (n_seq, )
         let out_buf = out.mut_chunk(&[h])?; // (head_size, )
         for tok in 0..pos + 1 {
             let v_head = v_cache.ref_chunk(&[tok, kvh])?; // (head_size, )
@@ -173,7 +172,7 @@ pub fn tensor_rope_inplace<'a>(
         let fci = val.sin();
         let rotn = if i < kv_dim { 2 } else { 1 }; // how many vectors? 2 = q & k, 1 = q only
         for v in 0..rotn {
-            let vec = if v == 0 { q.flat_mut()? } else { k.flat_mut()? };
+            let vec = if v == 0 { q.mut_buf()? } else { k.mut_buf()? };
             let v0 = vec[i];
             let v1 = vec[i + 1];
             vec[i] = v0 * fcr - v1 * fci;
@@ -200,8 +199,8 @@ pub fn tensor_copy_chunk<'a>(out: &mut Tensor<'_>, n: usize, row: &Tensor<'a>) -
     }
 
     let row_size = row.len();
-    let target_buf = &mut out.flat_mut()?[row_size * n..row_size * (n + 1)];
-    target_buf.copy_from_slice(row.flat());
+    let target_buf = &mut out.mut_buf()?[row_size * n..row_size * (n + 1)];
+    target_buf.copy_from_slice(row.ref_buf());
     Ok(())
 }
 
@@ -314,7 +313,7 @@ mod tests {
         let xs = Tensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![6])?;
         tensor_2d_rms_norm(&mut out, &xs, 1e-5)?;
         assert_eq!(
-            out.flat(),
+            out.ref_buf(),
             &[0.2567762, 0.5135524, 0.77032864, 1.0271049, 1.2838811, 1.5406573]
         );
 
@@ -325,7 +324,7 @@ mod tests {
         )?;
         tensor_2d_rms_norm(&mut out, &xs, 1e-5)?;
         assert_eq!(
-            out.flat(),
+            out.ref_buf(),
             &[
                 0.2567762, 0.5135524, 0.77032864, 1.0271049, 1.2838811, 1.5406573, 0.999995,
                 0.999995, 0.999995, 0.999995, 0.999995, 0.999995
@@ -350,7 +349,7 @@ mod tests {
         // 1*1 + 2*2 + 3*3 = 1 + 4 + 9
         // 1*4 + 2*5 + 3*6 = 4 + 10 + 18
         tensor_2d_matmul(&mut out, &w, &b)?;
-        assert_eq!(out.flat(), &[14.0, 32.0]);
+        assert_eq!(out.ref_buf(), &[14.0, 32.0]);
 
         // 1, 2, 3
         // 4, 5, 6
@@ -368,7 +367,7 @@ mod tests {
         let mut out = Tensor::new(vec![0.0; 8], vec![2, 4])?;
         tensor_2d_matmul(&mut out, &w, &b)?;
         assert_eq!(
-            out.flat(),
+            out.ref_buf(),
             &[38.0, 44.0, 50.0, 56.0, 83.0, 98.0, 113.0, 128.0]
         );
         assert_eq!(out.shape(), vec![2, 4]);

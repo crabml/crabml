@@ -191,20 +191,68 @@ impl<'a> Tensor<'a> {
         Ok(tensor)
     }
 
-    // todo: test it
-    pub fn crop(&self, limits: &[(usize, usize)]) -> Result<Self> {
-        let offset = self.buf_offset(&limits.iter().map(|&(start, _)| start).collect::<Vec<_>>());
-        let buf = self.slice_buf(offset..self.buf.len());
-        let shape = limits
-            .iter()
-            .map(|&(start, end)| end - start)
-            .collect::<Vec<_>>();
-        Ok(Self {
-            buf,
-            shape,
-            strides: self.strides.clone(),
-            name: self.name.clone(),
-        })
+    pub fn ref_chunk(&self, pos: &[usize]) -> Result<&[f32]> {
+        if !self.is_contiguous() {
+            return Err(Error {
+                kind: ErrorKind::TensorError,
+                message: format!(
+                    "tensor have to be contiguous to get chunk",
+                ),
+                cause: None,
+            });
+        }
+        if pos.len() >= self.shape.len() - 1 {
+            return Err(Error {
+                kind: ErrorKind::TensorError,
+                message: format!(
+                    "invalid chunk position {:?} for tensor of shape {:?}",
+                    pos, self.shape
+                ),
+                cause: None,
+            });
+        }
+        let offset_start = pos.iter().zip(self.strides.iter()).map(|(&p, &s)| p * s).sum();
+        let offset_end = offset_start + self.strides[pos.len()];
+        Ok(&self.buf[offset_start..offset_end])
+    }
+
+    pub fn mut_chunk(&mut self, pos: &[usize]) -> Result<&mut [f32]> {
+        if !self.is_contiguous() {
+            return Err(Error {
+                kind: ErrorKind::TensorError,
+                message: format!(
+                    "tensor have to be contiguous to get chunk",
+                ),
+                cause: None,
+            });
+        }
+        if !self.is_owned() {
+            return Err(Error {
+                    kind: ErrorKind::TensorError,
+                    message: format!("only owned tensor can be mut"),
+                    cause: None,
+            })
+        }
+        if pos.len() >= self.shape.len() - 1 {
+            return Err(Error {
+                kind: ErrorKind::TensorError,
+                message: format!(
+                    "invalid chunk position {:?} for tensor of shape {:?}",
+                    pos, self.shape
+                ),
+                cause: None,
+            });
+        }
+        let offset_start = pos.iter().zip(self.strides.iter()).map(|(&p, &s)| p * s).sum();
+        let offset_end = offset_start + self.strides[pos.len()];
+        match self.buf {
+            Cow::Borrowed(_) => Err(Error {
+                kind: ErrorKind::TensorError,
+                message: "can not mut a borrowed tensor".into(),
+                cause: None,
+            }),
+            Cow::Owned(ref mut data) => Ok(&mut data[offset_start..offset_end]),
+        }
     }
 
     pub fn subtensor(&self, row: usize) -> Result<Self> {

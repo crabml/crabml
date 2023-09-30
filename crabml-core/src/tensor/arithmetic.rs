@@ -110,32 +110,36 @@ pub fn tensor_2d_softmax_inplace<'a>(t: &mut Tensor<'a>) -> Result<()> {
 // q: (n_heads, head_size)
 // k: (n_seq, n_kv_heads, head_size)
 // v: (n_seq, n_hv_heads, head_size)
-// out: (n_heads, n_seq)
-pub fn tensor_qk_mul<'a>(out: &mut Tensor<'a>, q: &Tensor<'a>, k_cache: &Tensor<'a>, pos: usize) -> Result<()> {
+// attn: (n_heads, n_seq)
+// out: (n_heads, head_size)
+pub fn tensor_mha<'a>(out: &mut Tensor<'a>, attn: &mut Tensor<'a>, q: &Tensor<'a>, k_cache: &Tensor<'a>, v_cache: &Tensor<'a>, pos: usize) -> Result<()> {
     require_tensor_contiguous(q)?;
     require_tensor_contiguous(k_cache)?;
-    require_tensor_contiguous(out)?;
+    require_tensor_contiguous(attn)?;
     require_tensor_dims(k_cache, &[3])?;
 
     let n_heads = q.shape()[0];
     let n_kv_heads = k_cache.shape()[1];
     let head_size = q.shape()[1];
-    let out_buf = out.flat_mut()?;
+    let attn_buf = attn.flat_mut()?;
     let n_seq = k_cache.shape()[0];
 
     // get attention scores
     for tok in 0..pos+1 {
-        let k = k_cache.subtensor(tok)?; // (n_kv_heads, head_size)
+        let k_tok = k_cache.subtensor(tok)?; // (n_kv_heads, head_size)
         for h in 0..n_heads {
             let kvh = h / (n_heads / n_kv_heads);
             let q_head = q.subtensor(h)?; // (head_size, )
-            let k_head = k.subtensor(kvh)?; // (head_size, )
+            let k_head = k_tok.subtensor(kvh)?; // (head_size, )
             let q_buf = q_head.flat();
             let k_buf = k_head.flat();
             let score = (0..head_size).map(|i| q_buf[i] * k_buf[i]).sum::<f32>();
-            out_buf[h * n_seq + tok] = score / (head_size as f32).sqrt();
+            attn_buf[h * n_seq + tok] = score / (head_size as f32).sqrt();
         }
     }
+    tensor_2d_softmax_inplace(attn)?;
+
+    todo!();
 
     Ok(())
 }

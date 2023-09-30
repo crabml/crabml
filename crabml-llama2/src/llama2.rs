@@ -17,7 +17,7 @@ use crabml::tensor::arithmetic::tensor_2d_matmul;
 use crabml::tensor::arithmetic::tensor_2d_rms_norm;
 use crabml::tensor::arithmetic::tensor_mul;
 use crabml::tensor::Tensor;
-use crabml::tensor::arithmetic::tensor_qk_mul;
+use crabml::tensor::arithmetic::tensor_mha;
 use crabml::tensor::arithmetic::tensor_rope_inplace;
 use rayon::prelude::*;
 use std::ops::AddAssign;
@@ -432,13 +432,13 @@ impl<'a> Llama2Runner<'a> {
 
         // forward all the layers
         for l in 0..self.conf.n_layers {
-            let x_t = Tensor::new(&self.state.x, vec![embed_dim])?;
+            let x_orig = Tensor::new(&self.state.x, vec![embed_dim])?;
 
             // attention rnsnorm
             let x_with_rms_norm_att = {
                 let mut x_with_rms_norm =
                     Tensor::zeros(vec![embed_dim])?.with_name("x_with_rms_norm");
-                tensor_2d_rms_norm(&mut x_with_rms_norm, &x_t, 1e-5)?;
+                tensor_2d_rms_norm(&mut x_with_rms_norm, &x_orig, 1e-5)?;
 
                 let mut x_with_rms_norm_att =
                     Tensor::zeros(vec![embed_dim])?.with_name("x_with_rms_norm_att");
@@ -491,14 +491,16 @@ impl<'a> Llama2Runner<'a> {
             // output to self.state.xb
             // q: (n_heads, head_size)
             // key_cache: (seq, n_kv_heads, head_size)
-            // attn_scores: (seq, n_heads)
+            // attn_scores: (n_heads, seq)
+            // value_cache: (seq, kv_heads, head_size)
             {
                 let q = q.view(&[n_heads, head_size])?;
-                let mut qk_attn = Tensor::zeros(vec![self.conf.seq_len, n_heads])?.with_name("qk_attn");
-                tensor_qk_mul(&mut qk_attn, &q, &self.state.key_cache[l], pos)?;
-                tensor_2d_softmax_inplace(&mut qk_attn)?;
+                let mut attn_scores = Tensor::zeros(vec![n_heads, self.conf.seq_len])?.with_name("attn_scores");
+                let mut x_with_attn = Tensor::zeros(vec![embed_dim])?.with_name("x_with_attn");
+                tensor_mha(&mut x_with_attn, &mut attn_scores, &q, &self.state.key_cache[l], &self.state.value_cache[l], pos)?;
+
+                self.state.xb.copy_from_slice(x_with_attn.flat());
             }
-            self.multi_head_attention(l, pos)?;
 
             // final matmul to get the output of the attention
             matmul(

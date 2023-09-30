@@ -44,6 +44,8 @@ pub enum TensorOp<'a, 'b> where 'a: 'b {
     }
 }
 
+// TODO: use TensorVarID instead of TensorVar here
+// get_recycleable_tensor_ids(op_pos)
 pub enum TensorLogicalOp<'a> {
     Nop,
 

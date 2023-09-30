@@ -5,3 +5,4 @@
   - [ ] kvcache
   - [ ] mha
   - [ ] ffn
+- [ ] wgpu tensor support

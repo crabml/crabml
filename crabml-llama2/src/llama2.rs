@@ -11,11 +11,12 @@ use crabml::error::ErrorKind;
 use crabml::error::Result;
 use crabml::gguf::GGUFFile;
 use crabml::gguf::GGUFFileLoader;
-use crabml::tensor::arithmetic::tensor_2d_copy_row;
+use crabml::tensor::arithmetic::tensor_copy_row;
 use crabml::tensor::arithmetic::tensor_2d_matmul;
 use crabml::tensor::arithmetic::tensor_2d_rms_norm;
 use crabml::tensor::arithmetic::tensor_mul;
 use crabml::tensor::Tensor;
+use crabml::tensor::arithmetic::tensor_qk_attention;
 use crabml::tensor::arithmetic::tensor_rope_inplace;
 use rayon::prelude::*;
 use std::ops::AddAssign;
@@ -277,12 +278,12 @@ impl<'a> Llama2Runner<'a> {
             logits: vec![0.0; conf.vocab_size],
             key_cache: (0..conf.n_layers)
                 .map(|_| {
-                    Tensor::zeros(vec![conf.seq_len, conf.kv_dim()])
+                    Tensor::zeros(vec![conf.seq_len, conf.n_kv_heads, conf.head_size()])
                 })
                 .collect::<Result<Vec<_>>>()?,
             value_cache: (0..conf.n_layers)
                 .map(|_| {
-                    Tensor::zeros(vec![conf.seq_len, conf.kv_dim()])
+                    Tensor::zeros(vec![conf.seq_len, conf.n_kv_heads, conf.head_size()])
                 })
                 .collect::<Result<Vec<_>>>()?,
         };
@@ -481,12 +482,20 @@ impl<'a> Llama2Runner<'a> {
             {
                 let k = k.view(&[kv_dim])?;
                 let v = v.view(&[kv_dim])?;
-                tensor_2d_copy_row(&mut self.state.key_cache[l], pos, &k)?;
-                tensor_2d_copy_row(&mut self.state.value_cache[l], pos, &v)?;
-            }
+                tensor_copy_row(&mut self.state.key_cache[l], pos, &k)?;
+                tensor_copy_row(&mut self.state.value_cache[l], pos, &v)?;
+            };
 
             // multihead attention. iterate over all heads
             // output to self.state.xb
+            // q: (n_heads, head_size)
+            // key_cache: (seq, n_kv_heads, head_size)
+            // attn_scores: (seq, n_heads)
+            {
+                let q = q.view(&[n_heads, head_size])?;
+                let mut qk_attn = Tensor::zeros(vec![self.conf.seq_len, n_heads])?.with_name("qk_attn");
+                tensor_qk_attention(&mut qk_attn, &q, &self.state.key_cache[l], pos)?;
+            }
             self.multi_head_attention(l, pos)?;
 
             // final matmul to get the output of the attention

@@ -83,6 +83,39 @@ pub fn tensor_2d_matmul<'a>(out: &mut Tensor<'a>, w: &Tensor<'a>, x: &Tensor<'a>
     Ok(())
 }
 
+// q: (n_heads, head_size)
+// k: (n_seq, n_kv_heads, head_size)
+// v: (n_seq, n_hv_heads, head_size)
+// out: (n_heads, n_seq)
+pub fn tensor_qk_attention<'a>(out: &mut Tensor<'a>, q: &Tensor<'a>, k_cache: &Tensor<'a>, pos: usize) -> Result<()> {
+    require_tensor_contiguous(q)?;
+    require_tensor_contiguous(k_cache)?;
+    require_tensor_contiguous(out)?;
+    require_tensor_dims(k_cache, &[3])?;
+
+    let n_heads = q.shape()[0];
+    let n_kv_heads = k_cache.shape()[1];
+    let head_size = q.shape()[1];
+    let out_buf = out.flat_mut()?;
+    let n_seq = k_cache.shape()[0];
+
+    // get attention scores
+    for tok in 0..pos+1 {
+        let k = k_cache.subtensor(tok)?; // (n_kv_heads, head_size)
+        for h in 0..n_heads {
+            let kvh = h / (n_heads / n_kv_heads);
+            let q_head = q.subtensor(h)?; // (head_size, )
+            let k_head = k.subtensor(kvh)?; // (head_size, )
+            let q_buf = q_head.flat();
+            let k_buf = k_head.flat();
+            let score = (0..head_size).map(|i| q_buf[i] * k_buf[i]).sum::<f32>();
+            out_buf[h * n_seq + tok] = score / (head_size as f32).sqrt();
+        }
+    }
+
+    Ok(())
+}
+
 // t: (n_heads, head_size)
 pub fn tensor_rope_inplace<'a>(q: &mut Tensor<'a>, k: &mut Tensor<'a>, pos: usize, freq_base: f32, freq_scale: f32) -> Result<()> {
     require_tensor_contiguous(q)?;
@@ -115,10 +148,10 @@ pub fn tensor_rope_inplace<'a>(q: &mut Tensor<'a>, k: &mut Tensor<'a>, pos: usiz
     Ok(())
 }
 
-pub fn tensor_2d_copy_row<'a>(out: &mut Tensor<'_>, n: usize, row: &Tensor<'a>) -> Result<()> {
+pub fn tensor_copy_row<'a>(out: &mut Tensor<'_>, n: usize, row: &Tensor<'a>) -> Result<()> {
     require_tensor_owned(out)?;
     require_tensor_contiguous(row)?;
-    require_tensor_shape(row, &[out.shape()[1]])?;
+
     if n >= out.shape()[0] {
         return Err(Error {
             kind: ErrorKind::TensorError,
@@ -131,7 +164,7 @@ pub fn tensor_2d_copy_row<'a>(out: &mut Tensor<'_>, n: usize, row: &Tensor<'a>) 
         });
     }
 
-    let row_size = row.shape()[0];
+    let row_size = row.len();
     let target_buf = &mut out.flat_mut()?[row_size * n.. row_size * (n+1)];
     target_buf.copy_from_slice(row.flat());
     Ok(())

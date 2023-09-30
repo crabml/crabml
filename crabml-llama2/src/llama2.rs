@@ -306,14 +306,14 @@ impl<'a> Llama2Runner<'a> {
         Llama2RunnerOutputGenerator::new(self, sampler, prompt, steps, self.conf.seq_len)
     }
 
-    fn rope(&mut self, pos: usize) {
-        for i in (0..self.conf.embedding_dim).step_by(2) {
-            let head_dim = i % self.conf.head_size();
-            let freq = 1.0 / 10000_f32.powf(head_dim as f32 / self.conf.head_size() as f32);
+    fn rope(&mut self, pos: usize, kv_dim: usize, head_size: usize) {
+        for i in (0..kv_dim).step_by(2) {
+            let head_dim = i % head_size;
+            let freq = 1.0 / 10000_f32.powf(head_dim as f32 / head_size as f32);
             let val = pos as f32 * freq;
             let fcr = val.cos();
             let fci = val.sin();
-            let rotn = if i < self.conf.kv_dim() { 2 } else { 1 }; // how many vectors? 2 = q & k, 1 = q only
+            let rotn = if i < kv_dim { 2 } else { 1 }; // how many vectors? 2 = q & k, 1 = q only
             for v in 0..rotn {
                 let vec = if v == 0 {
                     &mut self.state.q
@@ -428,6 +428,9 @@ impl<'a> Llama2Runner<'a> {
     pub fn forward(&mut self, token: usize, pos: usize) -> Result<&mut [f32]> {
         let embed_dim = self.conf.embedding_dim;
         let kv_dim = self.conf.kv_dim();
+        let n_heads = self.conf.n_heads;
+        let n_kv_heads = self.conf.n_kv_heads;
+        let head_size = self.conf.head_size();
 
         // copy the token embedding into x
         let content_row = self.weights.token_embedding_table.subtensor(token)?;
@@ -454,7 +457,7 @@ impl<'a> Llama2Runner<'a> {
             };
 
             // matmul qkv for every head
-            {
+            let (q, k, v) = {
                 // .q(embedding_dim, ) = (xb(1, embedding_dim) * wq(embedding_dim, embedding_dim)).T
                 // .k(kv_dim, ) = (xb(1, embedding_dim) * wq(embedding_dim, kv_dim)).T
                 // .v(kv_dim, ) = (xb(1, embedding_dim) * wv(embedding_dim, kv_dim)).T
@@ -473,10 +476,19 @@ impl<'a> Llama2Runner<'a> {
                 self.state.k.copy_from_slice(k.flat());
                 self.state.v.copy_from_slice(v.flat());
                 self.state.xb.copy_from_slice(x_with_rms_norm_att.flat());
+                
+                (q, k, v)
+            };
+
+            // ROPE
+            {
+                // k (kv_dim, ) => k (n_kv_head, head_size)
+                let k = k.view(&[n_kv_heads, head_size])?;
+                let v = v.view(&[n_kv_heads, head_size])?;
             }
 
             // RoPE relative positional encoding: complex-valued rotate q and k by freq_cis in each head
-            self.rope(pos);
+            self.rope(pos, self.conf.kv_dim(), self.conf.head_size());
 
             // save key,value at this time step (pos) to our kv cache
             // save .k, .v to kv_cache[l][pos]

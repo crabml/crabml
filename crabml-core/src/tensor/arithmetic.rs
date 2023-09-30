@@ -83,6 +83,17 @@ pub fn tensor_2d_matmul<'a>(out: &mut Tensor<'a>, w: &Tensor<'a>, x: &Tensor<'a>
     Ok(())
 }
 
+// t: (n_heads, head_size)
+pub fn tensor_rope_inplace<'a>(t: &mut Tensor<'a>, freq_base: f32, freq_scale: f32) -> Result<()> {
+    require_tensor_contiguous(t)?;
+    require_tensor_dims(t, &[2])?;
+
+    let t_rows = t.shape()[0];
+    let t_cols = t.shape()[1];
+
+    todo!();
+}
+
 fn require_tensor_shape(t: &Tensor, shape: &[usize]) -> Result<()> {
     if !t.shape().eq(shape) {
         return Err(Error {

@@ -115,7 +115,7 @@ pub fn tensor_rope_inplace<'a>(q: &mut Tensor<'a>, k: &mut Tensor<'a>, pos: usiz
     Ok(())
 }
 
-pub fn tensor_2d_copy_row<'a, 'b>(out: &'b mut Tensor<'a>, n: usize, row: &'b Tensor<'a>) -> Result<()> where 'a: 'b {
+pub fn tensor_2d_copy_row<'a>(out: &mut Tensor<'_>, n: usize, row: &Tensor<'a>) -> Result<()> {
     require_tensor_owned(out)?;
     require_tensor_contiguous(row)?;
     require_tensor_shape(row, &[out.shape()[1]])?;

@@ -11,6 +11,7 @@ use crabml::error::ErrorKind;
 use crabml::error::Result;
 use crabml::gguf::GGUFFile;
 use crabml::gguf::GGUFFileLoader;
+use crabml::tensor::arithmetic::tensor_2d_copy_row;
 use crabml::tensor::arithmetic::tensor_2d_matmul;
 use crabml::tensor::arithmetic::tensor_2d_rms_norm;
 use crabml::tensor::arithmetic::tensor_mul;
@@ -232,7 +233,7 @@ impl<'a> Llama2Model<'a> {
     }
 }
 
-struct Llama2State {
+struct Llama2State<'a> {
     x: Vec<f32>,         // activation at current time stamp (embedding_dim,)
     xb: Vec<f32>,        // same, but inside a residual branch (embedding_dim,)
     xb2: Vec<f32>,       // an additional buffer just for convenience (dim,)
@@ -244,13 +245,13 @@ struct Llama2State {
     attn: Vec<Vec<f32>>, // buffer for scores/attention values (n_heads, seq_len)
     logits: Vec<f32>,    // output logits (vocab_size, )
     // ProbIndex *probindex; // buffer used in top-p sampling
-    key_cache: Vec<Vec<Vec<f32>>>,   // (layer, seq_len, kv_dim)
-    value_cache: Vec<Vec<Vec<f32>>>, // (layer, seq_len, kv_dim)
+    key_cache: Vec<Tensor<'a>>,   // (layer, seq_len, kv_dim)
+    value_cache: Vec<Tensor<'a>>, // (layer, seq_len, kv_dim)
 }
 
-pub struct Llama2Runner<'a> {
+pub struct Llama2Runner<'a>{
     conf: Llama2Config,
-    state: Llama2State,
+    state: Llama2State<'a>,
     weights: Llama2Weights<'a>,
     tokenizer: &'a Llama2Tokenizer,
 }
@@ -260,7 +261,7 @@ impl<'a> Llama2Runner<'a> {
         conf: &Llama2Config,
         weights: Llama2Weights<'a>,
         tokenizer: &'a Llama2Tokenizer,
-    ) -> Self {
+    ) -> Result<Self> {
         let state = Llama2State {
             x: vec![0.0; conf.embedding_dim],
             xb: vec![0.0; conf.embedding_dim],
@@ -276,26 +277,22 @@ impl<'a> Llama2Runner<'a> {
             logits: vec![0.0; conf.vocab_size],
             key_cache: (0..conf.n_layers)
                 .map(|_| {
-                    (0..conf.seq_len)
-                        .map(|_| vec![0.0; conf.kv_dim()])
-                        .collect()
+                    Tensor::zeros(vec![conf.seq_len, conf.kv_dim()])
                 })
-                .collect(),
+                .collect::<Result<Vec<_>>>()?,
             value_cache: (0..conf.n_layers)
                 .map(|_| {
-                    (0..conf.seq_len)
-                        .map(|_| vec![0.0; conf.kv_dim()])
-                        .collect()
+                    Tensor::zeros(vec![conf.seq_len, conf.kv_dim()])
                 })
-                .collect(),
+                .collect::<Result<Vec<_>>>()?,
         };
 
-        Self {
+        Ok(Self {
             conf: *conf,
             state,
             weights,
             tokenizer,
-        }
+        })
     }
 
     pub fn generate(
@@ -329,7 +326,7 @@ impl<'a> Llama2Runner<'a> {
         }
     }
 
-    fn multi_head_attention(&mut self, l: usize, pos: usize) {
+    fn multi_head_attention(&mut self, l: usize, pos: usize) -> Result<()> {
         let head_size = self.conf.head_size();
         let kv_heads_per_head = self.conf.n_heads / self.conf.n_kv_heads;
 
@@ -344,8 +341,8 @@ impl<'a> Llama2Runner<'a> {
                 let q = &self.state.q[kvh * head_size..kvh * head_size + head_size];
                 // iterate over all timesteps, including the current one
                 for t in 0..(pos + 1) {
-                    let k =
-                        &self.state.key_cache[l][t][kvh * head_size..kvh * head_size + head_size];
+                    let key_cache_tensor = self.state.key_cache[l].subtensor(t).unwrap();
+                    let k = &key_cache_tensor.flat()[kvh * head_size..kvh * head_size + head_size];
                     // calculate the attention score as the dot product of q and k
                     let mut score = (0..head_size).map(|i| q[i] * k[i]).sum::<f32>();
                     score /= (head_size as f32).sqrt();
@@ -359,8 +356,8 @@ impl<'a> Llama2Runner<'a> {
                 // weighted sum of the values, store back into xb
                 xb.fill(0.0);
                 for t in 0..pos + 1 {
-                    let v =
-                        &self.state.value_cache[l][t][kvh * head_size..kvh * head_size + head_size];
+                    let value_cache_tensor = self.state.value_cache[l].subtensor(t).unwrap();
+                    let v = &value_cache_tensor.flat()[kvh * head_size..kvh * head_size + head_size];
                     // get the attention weight for this timestep
                     let a = attn[t];
                     // accumulate the weighted value into xb
@@ -369,6 +366,7 @@ impl<'a> Llama2Runner<'a> {
                     }
                 }
             });
+        Ok(())
     }
 
     // input: self.state.x
@@ -419,13 +417,6 @@ impl<'a> Llama2Runner<'a> {
         Ok(())
     }
 
-    fn kv_cache(&mut self, l: usize, pos: usize) {
-        let key_cache_row = &mut self.state.key_cache[l][pos];
-        let value_cache_row = &mut self.state.value_cache[l][pos];
-        key_cache_row.copy_from_slice(&self.state.k);
-        value_cache_row.copy_from_slice(&self.state.v);
-    }
-
     pub fn forward(&mut self, token: usize, pos: usize) -> Result<&mut [f32]> {
         let embed_dim = self.conf.embedding_dim;
         let kv_dim = self.conf.kv_dim();
@@ -462,10 +453,6 @@ impl<'a> Llama2Runner<'a> {
                 // .q(embedding_dim, ) = (xb(1, embedding_dim) * wq(embedding_dim, embedding_dim)).T
                 // .k(kv_dim, ) = (xb(1, embedding_dim) * wq(embedding_dim, kv_dim)).T
                 // .v(kv_dim, ) = (xb(1, embedding_dim) * wv(embedding_dim, kv_dim)).T
-                matmul(&mut self.state.q, &self.state.xb, self.weights.wq[l].flat());
-                matmul(&mut self.state.k, &self.state.xb, self.weights.wk[l].flat());
-                matmul(&mut self.state.v, &self.state.xb, self.weights.wv[l].flat());
-
                 let mut q = Tensor::zeros(vec![embed_dim])?.with_name("q");
                 let mut k = Tensor::zeros(vec![kv_dim])?.with_name("k");
                 let mut v = Tensor::zeros(vec![kv_dim])?.with_name("v");
@@ -480,22 +467,27 @@ impl<'a> Llama2Runner<'a> {
             };
 
             // ROPE
-            {
+            let (k, q) = {
                 // k (kv_dim, ) => k (n_kv_head, head_size)
                 let mut k = k.view(&[n_kv_heads, head_size])?;
                 let mut q = q.view(&[n_heads, head_size])?;
                 tensor_rope_inplace(&mut q, &mut k, pos, 1.0, 10000_f32)?;
-                self.state.q.copy_from_slice(q.flat());
-                self.state.k.copy_from_slice(k.flat());
-            }
 
-            // save key,value at this time step (pos) to our kv cache
-            // save .k, .v to kv_cache[l][pos]
-            self.kv_cache(l, pos);
+                self.state.q.copy_from_slice(q.flat());
+                (k, q)
+            };
+
+            // save to kv cache
+            {
+                let k = k.view(&[kv_dim])?;
+                let v = v.view(&[kv_dim])?;
+                tensor_2d_copy_row(&mut self.state.key_cache[l], pos, &k)?;
+                tensor_2d_copy_row(&mut self.state.value_cache[l], pos, &v)?;
+            }
 
             // multihead attention. iterate over all heads
             // output to self.state.xb
-            self.multi_head_attention(l, pos);
+            self.multi_head_attention(l, pos)?;
 
             // final matmul to get the output of the attention
             matmul(
@@ -690,7 +682,7 @@ mod tests {
         let lm = Llama2Model::from(&gf)?;
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0);
-        let mut runner = Llama2Runner::new(&lm.conf, lm.weights, &lm.tokenizer);
+        let mut runner = Llama2Runner::new(&lm.conf, lm.weights, &lm.tokenizer)?;
         let output = runner.generate("Hello world", 15, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
         assert_eq!(s, "s \nOn a little by and waly. She want");

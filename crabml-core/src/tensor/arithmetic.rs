@@ -115,6 +115,28 @@ pub fn tensor_rope_inplace<'a>(q: &mut Tensor<'a>, k: &mut Tensor<'a>, pos: usiz
     Ok(())
 }
 
+pub fn tensor_2d_copy_row<'a, 'b>(out: &'b mut Tensor<'a>, n: usize, row: &'b Tensor<'a>) -> Result<()> where 'a: 'b {
+    require_tensor_owned(out)?;
+    require_tensor_contiguous(row)?;
+    require_tensor_shape(row, &[out.shape()[1]])?;
+    if n >= out.shape()[0] {
+        return Err(Error {
+            kind: ErrorKind::TensorError,
+            message: format!(
+                "tensor ~{} row {} is out of bounds",
+                out.name().unwrap_or_default(),
+                n,
+            ),
+            cause: None,
+        });
+    }
+
+    let row_size = row.shape()[0];
+    let target_buf = &mut out.flat_mut()?[row_size * n.. row_size * (n+1)];
+    target_buf.copy_from_slice(row.flat());
+    Ok(())
+}
+
 fn require_tensor_shape(t: &Tensor, shape: &[usize]) -> Result<()> {
     if !t.shape().eq(shape) {
         return Err(Error {
@@ -127,6 +149,20 @@ fn require_tensor_shape(t: &Tensor, shape: &[usize]) -> Result<()> {
             ),
             cause: None,
         });
+    }
+    Ok(())
+}
+
+fn require_tensor_owned(t: &Tensor) -> Result<()> {
+    if !t.is_owned() {
+        return Err(Error {
+            kind: ErrorKind::TensorError,
+            message: format!(
+                "tensor {} is not owned",
+                t.name().unwrap_or_default(),
+            ),
+            cause: None,
+        })
     }
     Ok(())
 }

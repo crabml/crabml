@@ -201,7 +201,7 @@ impl<'a> Tensor<'a> {
                 cause: None,
             });
         }
-        if pos.len() >= self.shape.len() - 1 {
+        if pos.len() >= self.shape.len() {
             return Err(Error {
                 kind: ErrorKind::TensorError,
                 message: format!(
@@ -212,7 +212,7 @@ impl<'a> Tensor<'a> {
             });
         }
         let offset_start = pos.iter().zip(self.strides.iter()).map(|(&p, &s)| p * s).sum();
-        let offset_end = offset_start + self.strides[pos.len()];
+        let offset_end = offset_start + self.strides[pos.len()-1];
         Ok(&self.buf[offset_start..offset_end])
     }
 
@@ -233,7 +233,7 @@ impl<'a> Tensor<'a> {
                     cause: None,
             })
         }
-        if pos.len() >= self.shape.len() - 1 {
+        if pos.len() >= self.shape.len() {
             return Err(Error {
                 kind: ErrorKind::TensorError,
                 message: format!(
@@ -244,7 +244,7 @@ impl<'a> Tensor<'a> {
             });
         }
         let offset_start = pos.iter().zip(self.strides.iter()).map(|(&p, &s)| p * s).sum();
-        let offset_end = offset_start + self.strides[pos.len()];
+        let offset_end = offset_start + self.strides[pos.len()-1];
         match self.buf {
             Cow::Borrowed(_) => Err(Error {
                 kind: ErrorKind::TensorError,
@@ -578,6 +578,31 @@ mod tests {
         let t = t.transpose(&[1, 0])?;
         let t = t.contiguous()?;
         assert_eq!(t.flat(), &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_ref_chunk() -> Result<()> {
+        let v = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+
+        // 1, 2, 3
+        // 4, 5, 6
+        let mut t = Tensor::new(v, vec![2, 3]).unwrap();
+        assert_eq!(t.to_string(), "[[1, 2, 3]\n,[4, 5, 6]]");
+        assert_eq!(t.strides, vec![3, 1]);
+
+        {
+            let chunk = t.ref_chunk(&[1])?;
+            assert_eq!(chunk, &[4.0, 5.0, 6.0]);
+        }
+
+        {
+            let chunk = t.mut_chunk(&[0])?;
+            assert_eq!(chunk, &[1.0, 2.0, 3.0]);
+            chunk[0] = 9.0;
+            assert_eq!(chunk, &[9.0, 2.0, 3.0]);
+        }
 
         Ok(())
     }

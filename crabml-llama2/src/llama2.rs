@@ -11,12 +11,13 @@ use crabml::error::ErrorKind;
 use crabml::error::Result;
 use crabml::gguf::GGUFFile;
 use crabml::gguf::GGUFFileLoader;
-use crabml::tensor::arithmetic::tensor_copy_row;
+use crabml::tensor::arithmetic::tensor_2d_softmax_inplace;
+use crabml::tensor::arithmetic::tensor_copy_chunk;
 use crabml::tensor::arithmetic::tensor_2d_matmul;
 use crabml::tensor::arithmetic::tensor_2d_rms_norm;
 use crabml::tensor::arithmetic::tensor_mul;
 use crabml::tensor::Tensor;
-use crabml::tensor::arithmetic::tensor_qk_attention;
+use crabml::tensor::arithmetic::tensor_qk_mul;
 use crabml::tensor::arithmetic::tensor_rope_inplace;
 use rayon::prelude::*;
 use std::ops::AddAssign;
@@ -482,8 +483,8 @@ impl<'a> Llama2Runner<'a> {
             {
                 let k = k.view(&[kv_dim])?;
                 let v = v.view(&[kv_dim])?;
-                tensor_copy_row(&mut self.state.key_cache[l], pos, &k)?;
-                tensor_copy_row(&mut self.state.value_cache[l], pos, &v)?;
+                tensor_copy_chunk(&mut self.state.key_cache[l], pos, &k)?;
+                tensor_copy_chunk(&mut self.state.value_cache[l], pos, &v)?;
             };
 
             // multihead attention. iterate over all heads
@@ -494,7 +495,8 @@ impl<'a> Llama2Runner<'a> {
             {
                 let q = q.view(&[n_heads, head_size])?;
                 let mut qk_attn = Tensor::zeros(vec![self.conf.seq_len, n_heads])?.with_name("qk_attn");
-                tensor_qk_attention(&mut qk_attn, &q, &self.state.key_cache[l], pos)?;
+                tensor_qk_mul(&mut qk_attn, &q, &self.state.key_cache[l], pos)?;
+                tensor_2d_softmax_inplace(&mut qk_attn)?;
             }
             self.multi_head_attention(l, pos)?;
 

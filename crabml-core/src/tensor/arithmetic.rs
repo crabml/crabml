@@ -83,11 +83,35 @@ pub fn tensor_2d_matmul<'a>(out: &mut Tensor<'a>, w: &Tensor<'a>, x: &Tensor<'a>
     Ok(())
 }
 
+// t: (rows, cols)
+pub fn tensor_2d_softmax_inplace<'a>(t: &mut Tensor<'a>) -> Result<()> {
+    require_tensor_dims(t, &[2])?;
+
+    let rows = t.shape()[0];
+    let cols = t.shape()[1];
+    let buf = t.flat_mut()?;
+
+    for row in 0..rows {
+        let row_buf = &mut buf[row * cols..(row + 1) * cols];
+
+        let max = row_buf.iter().fold(f32::NAN, |a, b| a.max(*b));
+        let mut sum = 0.0;
+        for val in row_buf.iter_mut() {
+            *val = (*val - max).exp();
+            sum += *val;
+        }
+        for val in row_buf.iter_mut() {
+            *val /= sum;
+        }
+    }
+    Ok(())
+}
+
 // q: (n_heads, head_size)
 // k: (n_seq, n_kv_heads, head_size)
 // v: (n_seq, n_hv_heads, head_size)
 // out: (n_heads, n_seq)
-pub fn tensor_qk_attention<'a>(out: &mut Tensor<'a>, q: &Tensor<'a>, k_cache: &Tensor<'a>, pos: usize) -> Result<()> {
+pub fn tensor_qk_mul<'a>(out: &mut Tensor<'a>, q: &Tensor<'a>, k_cache: &Tensor<'a>, pos: usize) -> Result<()> {
     require_tensor_contiguous(q)?;
     require_tensor_contiguous(k_cache)?;
     require_tensor_contiguous(out)?;
@@ -148,7 +172,7 @@ pub fn tensor_rope_inplace<'a>(q: &mut Tensor<'a>, k: &mut Tensor<'a>, pos: usiz
     Ok(())
 }
 
-pub fn tensor_copy_row<'a>(out: &mut Tensor<'_>, n: usize, row: &Tensor<'a>) -> Result<()> {
+pub fn tensor_copy_chunk<'a>(out: &mut Tensor<'_>, n: usize, row: &Tensor<'a>) -> Result<()> {
     require_tensor_owned(out)?;
     require_tensor_contiguous(row)?;
 

@@ -195,9 +195,7 @@ impl<'a> Tensor<'a> {
         if !self.is_contiguous() {
             return Err(Error {
                 kind: ErrorKind::TensorError,
-                message: format!(
-                    "tensor have to be contiguous to get chunk",
-                ),
+                message: format!("tensor have to be contiguous to get chunk",),
                 cause: None,
             });
         }
@@ -211,8 +209,12 @@ impl<'a> Tensor<'a> {
                 cause: None,
             });
         }
-        let offset_start = pos.iter().zip(self.strides.iter()).map(|(&p, &s)| p * s).sum();
-        let offset_end = offset_start + self.strides[pos.len()-1];
+        let offset_start = pos
+            .iter()
+            .zip(self.strides.iter())
+            .map(|(&p, &s)| p * s)
+            .sum();
+        let offset_end = offset_start + self.strides[pos.len() - 1];
         Ok(&self.buf[offset_start..offset_end])
     }
 
@@ -220,31 +222,33 @@ impl<'a> Tensor<'a> {
         if !self.is_contiguous() {
             return Err(Error {
                 kind: ErrorKind::TensorError,
-                message: format!(
-                    "tensor have to be contiguous to get chunk",
-                ),
+                message: format!("tensor have to be contiguous to get chunk",),
                 cause: None,
             });
         }
         if !self.is_owned() {
             return Err(Error {
-                    kind: ErrorKind::TensorError,
-                    message: format!("only owned tensor can be mut"),
-                    cause: None,
-            })
+                kind: ErrorKind::TensorError,
+                message: format!("only owned tensor can be mut"),
+                cause: None,
+            });
         }
         if pos.len() >= self.shape.len() {
             return Err(Error {
                 kind: ErrorKind::TensorError,
                 message: format!(
-                    "invalid chunk position {:?} for tensor of shape {:?}",
+                    "invalid mut chunk position {:?} for tensor of shape {:?}",
                     pos, self.shape
                 ),
                 cause: None,
             });
         }
-        let offset_start = pos.iter().zip(self.strides.iter()).map(|(&p, &s)| p * s).sum();
-        let offset_end = offset_start + self.strides[pos.len()-1];
+        let offset_start = pos
+            .iter()
+            .zip(self.strides.iter())
+            .map(|(&p, &s)| p * s)
+            .sum();
+        let offset_end = offset_start + self.strides[pos.len() - 1];
         match self.buf {
             Cow::Borrowed(_) => Err(Error {
                 kind: ErrorKind::TensorError,

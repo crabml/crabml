@@ -11,14 +11,14 @@ use crabml::error::ErrorKind;
 use crabml::error::Result;
 use crabml::gguf::GGUFFile;
 use crabml::gguf::GGUFFileLoader;
-use crabml::tensor::arithmetic::tensor_2d_softmax_inplace;
-use crabml::tensor::arithmetic::tensor_copy_chunk;
 use crabml::tensor::arithmetic::tensor_2d_matmul;
 use crabml::tensor::arithmetic::tensor_2d_rms_norm;
-use crabml::tensor::arithmetic::tensor_mul;
-use crabml::tensor::Tensor;
+use crabml::tensor::arithmetic::tensor_2d_softmax_inplace;
+use crabml::tensor::arithmetic::tensor_copy_chunk;
 use crabml::tensor::arithmetic::tensor_mha;
+use crabml::tensor::arithmetic::tensor_mul;
 use crabml::tensor::arithmetic::tensor_rope_inplace;
+use crabml::tensor::Tensor;
 use rayon::prelude::*;
 use std::ops::AddAssign;
 use std::slice;
@@ -251,7 +251,7 @@ struct Llama2State<'a> {
     value_cache: Vec<Tensor<'a>>, // (layer, seq_len, kv_dim)
 }
 
-pub struct Llama2Runner<'a>{
+pub struct Llama2Runner<'a> {
     conf: Llama2Config,
     state: Llama2State<'a>,
     weights: Llama2Weights<'a>,
@@ -278,14 +278,10 @@ impl<'a> Llama2Runner<'a> {
                 .collect(),
             logits: vec![0.0; conf.vocab_size],
             key_cache: (0..conf.n_layers)
-                .map(|_| {
-                    Tensor::zeros(vec![conf.seq_len, conf.n_kv_heads, conf.head_size()])
-                })
+                .map(|_| Tensor::zeros(vec![conf.seq_len, conf.n_kv_heads, conf.head_size()]))
                 .collect::<Result<Vec<_>>>()?,
             value_cache: (0..conf.n_layers)
-                .map(|_| {
-                    Tensor::zeros(vec![conf.seq_len, conf.n_kv_heads, conf.head_size()])
-                })
+                .map(|_| Tensor::zeros(vec![conf.seq_len, conf.n_kv_heads, conf.head_size()]))
                 .collect::<Result<Vec<_>>>()?,
         };
 
@@ -359,7 +355,8 @@ impl<'a> Llama2Runner<'a> {
                 xb.fill(0.0);
                 for t in 0..pos + 1 {
                     let value_cache_tensor = self.state.value_cache[l].subtensor(t).unwrap();
-                    let v = &value_cache_tensor.flat()[kvh * head_size..kvh * head_size + head_size];
+                    let v =
+                        &value_cache_tensor.flat()[kvh * head_size..kvh * head_size + head_size];
                     // get the attention weight for this timestep
                     let a = attn[t];
                     // accumulate the weighted value into xb
@@ -464,7 +461,7 @@ impl<'a> Llama2Runner<'a> {
 
                 self.state.v.copy_from_slice(v.flat());
                 self.state.xb.copy_from_slice(x_with_rms_norm_att.flat());
-                
+
                 (q, k, v)
             };
 
@@ -495,9 +492,17 @@ impl<'a> Llama2Runner<'a> {
             // value_cache: (seq, kv_heads, head_size)
             {
                 let q = q.view(&[n_heads, head_size])?;
-                let mut attn_scores = Tensor::zeros(vec![n_heads, self.conf.seq_len])?.with_name("attn_scores");
-                let mut x_with_attn = Tensor::zeros(vec![embed_dim])?.with_name("x_with_attn");
-                tensor_mha(&mut x_with_attn, &mut attn_scores, &q, &self.state.key_cache[l], &self.state.value_cache[l], pos)?;
+                let mut attn_scores =
+                    Tensor::zeros(vec![n_heads, self.conf.seq_len])?.with_name("attn_scores");
+                let mut x_with_attn = Tensor::zeros(vec![n_heads, head_size])?.with_name("x_with_attn");
+                tensor_mha(
+                    &mut x_with_attn,
+                    &mut attn_scores,
+                    &q,
+                    &self.state.key_cache[l],
+                    &self.state.value_cache[l],
+                    pos,
+                )?;
 
                 self.state.xb.copy_from_slice(x_with_attn.flat());
             }

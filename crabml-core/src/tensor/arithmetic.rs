@@ -108,11 +108,18 @@ pub fn tensor_2d_softmax_inplace<'a>(t: &mut Tensor<'a>) -> Result<()> {
 }
 
 // q: (n_heads, head_size)
-// k: (n_seq, n_kv_heads, head_size)
-// v: (n_seq, n_hv_heads, head_size)
+// k_cache: (n_seq, n_kv_heads, head_size)
+// v_cache: (n_seq, n_kv_heads, head_size)
 // attn: (n_heads, n_seq)
 // out: (n_heads, head_size)
-pub fn tensor_mha<'a>(out: &mut Tensor<'a>, attn: &mut Tensor<'a>, q: &Tensor<'a>, k_cache: &Tensor<'a>, v_cache: &Tensor<'a>, pos: usize) -> Result<()> {
+pub fn tensor_mha<'a>(
+    out: &mut Tensor<'a>,
+    attn: &mut Tensor<'a>,
+    q: &Tensor<'a>,
+    k_cache: &Tensor<'a>,
+    v_cache: &Tensor<'a>,
+    pos: usize,
+) -> Result<()> {
     require_tensor_contiguous(q)?;
     require_tensor_contiguous(k_cache)?;
     require_tensor_contiguous(attn)?;
@@ -121,31 +128,43 @@ pub fn tensor_mha<'a>(out: &mut Tensor<'a>, attn: &mut Tensor<'a>, q: &Tensor<'a
     let n_heads = q.shape()[0];
     let n_kv_heads = k_cache.shape()[1];
     let head_size = q.shape()[1];
-    let attn_buf = attn.flat_mut()?;
-    let n_seq = k_cache.shape()[0];
 
     // get attention scores
-    for tok in 0..pos+1 {
-        let k_tok = k_cache.subtensor(tok)?; // (n_kv_heads, head_size)
-        for h in 0..n_heads {
-            let kvh = h / (n_heads / n_kv_heads);
-            let q_head = q.subtensor(h)?; // (head_size, )
-            let k_head = k_tok.subtensor(kvh)?; // (head_size, )
-            let q_buf = q_head.flat();
-            let k_buf = k_head.flat();
-            let score = (0..head_size).map(|i| q_buf[i] * k_buf[i]).sum::<f32>();
-            attn_buf[h * n_seq + tok] = score / (head_size as f32).sqrt();
+    for h in 0..n_heads {
+        let kvh = h / (n_heads / n_kv_heads);
+        let attn_buf = attn.mut_chunk(&[h])?; // (n_seq, )
+        let q_head = q.ref_chunk(&[h])?; // (head_size, )
+        for tok in 0..pos + 1 {
+            let k_head = k_cache.ref_chunk(&[tok, kvh])?; // (head_size, )
+            let score = (0..head_size).map(|i| q_head[i] * k_head[i]).sum::<f32>();
+            attn_buf[tok] = score;
         }
     }
     tensor_2d_softmax_inplace(attn)?;
 
-    todo!();
+    for h in 0..n_heads {
+        let kvh = h / (n_heads / n_kv_heads);
+        let out_buf = out.mut_chunk(&[h])?; // (head_size, )
+        let attn_buf = attn.ref_chunk(&[h])?; // (n_seq, )
+        for tok in 0..pos + 1 {
+            let v_head = v_cache.ref_chunk(&[tok, kvh])?; // (head_size, )
+            for i in 0..head_size {
+                out_buf[i] += attn_buf[tok] * v_head[i];
+            }
+        }
+    }
 
     Ok(())
 }
 
 // t: (n_heads, head_size)
-pub fn tensor_rope_inplace<'a>(q: &mut Tensor<'a>, k: &mut Tensor<'a>, pos: usize, freq_base: f32, freq_scale: f32) -> Result<()> {
+pub fn tensor_rope_inplace<'a>(
+    q: &mut Tensor<'a>,
+    k: &mut Tensor<'a>,
+    pos: usize,
+    freq_base: f32,
+    freq_scale: f32,
+) -> Result<()> {
     require_tensor_contiguous(q)?;
     require_tensor_contiguous(k)?;
     require_tensor_dims(q, &[2])?;
@@ -162,11 +181,7 @@ pub fn tensor_rope_inplace<'a>(q: &mut Tensor<'a>, k: &mut Tensor<'a>, pos: usiz
         let fci = val.sin();
         let rotn = if i < kv_dim { 2 } else { 1 }; // how many vectors? 2 = q & k, 1 = q only
         for v in 0..rotn {
-            let vec = if v == 0 {
-                q.flat_mut()?
-            } else {
-                k.flat_mut()?
-            };
+            let vec = if v == 0 { q.flat_mut()? } else { k.flat_mut()? };
             let v0 = vec[i];
             let v1 = vec[i + 1];
             vec[i] = v0 * fcr - v1 * fci;
@@ -193,7 +208,7 @@ pub fn tensor_copy_chunk<'a>(out: &mut Tensor<'_>, n: usize, row: &Tensor<'a>) -
     }
 
     let row_size = row.len();
-    let target_buf = &mut out.flat_mut()?[row_size * n.. row_size * (n+1)];
+    let target_buf = &mut out.flat_mut()?[row_size * n..row_size * (n + 1)];
     target_buf.copy_from_slice(row.flat());
     Ok(())
 }
@@ -218,12 +233,9 @@ fn require_tensor_owned(t: &Tensor) -> Result<()> {
     if !t.is_owned() {
         return Err(Error {
             kind: ErrorKind::TensorError,
-            message: format!(
-                "tensor {} is not owned",
-                t.name().unwrap_or_default(),
-            ),
+            message: format!("tensor {} is not owned", t.name().unwrap_or_default(),),
             cause: None,
-        })
+        });
     }
     Ok(())
 }

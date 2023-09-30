@@ -84,14 +84,35 @@ pub fn tensor_2d_matmul<'a>(out: &mut Tensor<'a>, w: &Tensor<'a>, x: &Tensor<'a>
 }
 
 // t: (n_heads, head_size)
-pub fn tensor_rope_inplace<'a>(t: &mut Tensor<'a>, freq_base: f32, freq_scale: f32) -> Result<()> {
-    require_tensor_contiguous(t)?;
-    require_tensor_dims(t, &[2])?;
+pub fn tensor_rope_inplace<'a>(q: &mut Tensor<'a>, k: &mut Tensor<'a>, pos: usize, freq_base: f32, freq_scale: f32) -> Result<()> {
+    require_tensor_contiguous(q)?;
+    require_tensor_contiguous(k)?;
+    require_tensor_dims(q, &[2])?;
+    require_tensor_dims(k, &[2])?;
 
-    let t_rows = t.shape()[0];
-    let t_cols = t.shape()[1];
+    let kv_dim: usize = k.shape().iter().product();
+    let head_size = q.shape()[1];
 
-    todo!();
+    for i in (0..kv_dim).step_by(2) {
+        let head_dim = i % head_size;
+        let freq = freq_base / freq_scale.powf(head_dim as f32 / head_size as f32);
+        let val = pos as f32 * freq;
+        let fcr = val.cos();
+        let fci = val.sin();
+        let rotn = if i < kv_dim { 2 } else { 1 }; // how many vectors? 2 = q & k, 1 = q only
+        for v in 0..rotn {
+            let vec = if v == 0 {
+                q.flat_mut()?
+            } else {
+                k.flat_mut()?
+            };
+            let v0 = vec[i];
+            let v1 = vec[i + 1];
+            vec[i] = v0 * fcr - v1 * fci;
+            vec[i + 1] = v0 * fci + v1 * fcr;
+        }
+    }
+    Ok(())
 }
 
 fn require_tensor_shape(t: &Tensor, shape: &[usize]) -> Result<()> {

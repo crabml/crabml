@@ -15,6 +15,7 @@ use crabml::tensor::arithmetic::tensor_2d_matmul;
 use crabml::tensor::arithmetic::tensor_2d_rms_norm;
 use crabml::tensor::arithmetic::tensor_mul;
 use crabml::tensor::Tensor;
+use crabml::tensor::arithmetic::tensor_rope_inplace;
 use rayon::prelude::*;
 use std::ops::AddAssign;
 use std::slice;
@@ -472,8 +473,6 @@ impl<'a> Llama2Runner<'a> {
                 tensor_2d_matmul(&mut k, &self.weights.wk[l], &x_with_rms_norm_att)?;
                 tensor_2d_matmul(&mut v, &self.weights.wv[l], &x_with_rms_norm_att)?;
 
-                self.state.q.copy_from_slice(q.flat());
-                self.state.k.copy_from_slice(k.flat());
                 self.state.v.copy_from_slice(v.flat());
                 self.state.xb.copy_from_slice(x_with_rms_norm_att.flat());
                 
@@ -483,12 +482,12 @@ impl<'a> Llama2Runner<'a> {
             // ROPE
             {
                 // k (kv_dim, ) => k (n_kv_head, head_size)
-                let k = k.view(&[n_kv_heads, head_size])?;
-                let v = v.view(&[n_kv_heads, head_size])?;
+                let mut k = k.view(&[n_kv_heads, head_size])?;
+                let mut q = q.view(&[n_heads, head_size])?;
+                tensor_rope_inplace(&mut q, &mut k, pos, 1.0, 10000_f32)?;
+                self.state.q.copy_from_slice(q.flat());
+                self.state.k.copy_from_slice(k.flat());
             }
-
-            // RoPE relative positional encoding: complex-valued rotate q and k by freq_cis in each head
-            self.rope(pos, self.conf.kv_dim(), self.conf.head_size());
 
             // save key,value at this time step (pos) to our kv cache
             // save .k, .v to kv_cache[l][pos]

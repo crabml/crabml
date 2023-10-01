@@ -357,6 +357,7 @@ impl<'a> Llama2Runner<'a> {
         let n_heads = self.conf.n_heads;
         let n_kv_heads = self.conf.n_kv_heads;
         let head_size = self.conf.head_size();
+        let hidden_dim = self.conf.hidden_dim;
 
         // copy the token embedding into x
         let content_row = self.weights.token_embedding_table.subtensor(token)?;
@@ -448,7 +449,47 @@ impl<'a> Llama2Runner<'a> {
             self.state.x.copy_from_slice(x.ref_buf());
 
             // ffn
-            self.ffn(l)?;
+            {
+                // ffn rmsnorm
+                rmsnorm(
+                    &mut self.state.xb,
+                    &self.state.x,
+                    self.weights.rms_ffn_weight[l].ref_buf(),
+                );
+
+                // Now for FFN in PyTorch we have: self.w2(F.silu(self.w1(x)) * self.w3(x))
+                // first calculate self.w1(x) and self.w3(x)
+                matmul(
+                    &mut self.state.hb,
+                    &self.state.xb,
+                    self.weights.w1[l].ref_buf(),
+                );
+                matmul(
+                    &mut self.state.hb2,
+                    &self.state.xb,
+                    self.weights.w3[l].ref_buf(),
+                );
+
+                // F.silu; silu(x)=x*σ(x),where σ(x) is the logistic sigmoid
+                for i in 0..hidden_dim {
+                    self.state.hb[i] = self.state.hb[i] * (1.0 / (1.0 + (-self.state.hb[i]).exp()));
+                }
+
+                // elementwise multiply with w3(x)
+                for i in 0..hidden_dim {
+                    self.state.hb[i] *= self.state.hb2[i];
+                }
+
+                // final matmul to get the output of the ffn
+                matmul(
+                    &mut self.state.xb,
+                    &self.state.hb,
+                    &self.weights.w2[l].ref_buf(),
+                );
+
+                // residual connection
+                accum(&mut self.state.x, &self.state.xb);
+            }
         }
 
         // final rmsnorm

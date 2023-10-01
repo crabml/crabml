@@ -467,18 +467,15 @@ impl<'a> Llama2Runner<'a> {
                 };
                 self.state.xb.copy_from_slice(x_with_rms_norm_ffn.ref_buf());
 
+                let mut h1 = Tensor::zeros(vec![hidden_dim])?.with_name("h1");
+                let mut h2 = Tensor::zeros(vec![hidden_dim])?.with_name("h2");
+
                 // Now for FFN in PyTorch we have: self.w2(F.silu(self.w1(x)) * self.w3(x))
                 // first calculate self.w1(x) and self.w3(x)
-                matmul(
-                    &mut self.state.hb,
-                    &self.state.xb,
-                    self.weights.w1[l].ref_buf(),
-                );
-                matmul(
-                    &mut self.state.hb2,
-                    &self.state.xb,
-                    self.weights.w3[l].ref_buf(),
-                );
+                tensor_2d_matmul(&mut h1, &self.weights.w1[l], &x_with_rms_norm_ffn)?;
+                tensor_2d_matmul(&mut h2, &self.weights.w3[l], &x_with_rms_norm_ffn)?;
+                self.state.hb.copy_from_slice(h1.ref_buf());
+                self.state.hb2.copy_from_slice(h2.ref_buf());
 
                 // F.silu; silu(x)=x*σ(x),where σ(x) is the logistic sigmoid
                 for i in 0..hidden_dim {

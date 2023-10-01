@@ -14,6 +14,7 @@ use crabml::gguf::GGUFFileLoader;
 use crabml::tensor::arithmetic::tensor_1d_softmax_inplace;
 use crabml::tensor::arithmetic::tensor_2d_matmul;
 use crabml::tensor::arithmetic::tensor_2d_rms_norm;
+use crabml::tensor::arithmetic::tensor_add_inplace;
 use crabml::tensor::arithmetic::tensor_copy_chunk;
 use crabml::tensor::arithmetic::tensor_mul;
 use crabml::tensor::arithmetic::tensor_multi_query_attention;
@@ -363,13 +364,13 @@ impl<'a> Llama2Runner<'a> {
 
         // forward all the layers
         for l in 0..self.conf.n_layers {
-            let x_orig = Tensor::new(&self.state.x, vec![embed_dim])?;
+            let mut x = Tensor::new(self.state.x.to_vec(), vec![embed_dim])?;
 
             // attention rnsnorm
             let x_with_rms_norm_att = {
                 let mut x_with_rms_norm =
                     Tensor::zeros(vec![embed_dim])?.with_name("x_with_rms_norm");
-                tensor_2d_rms_norm(&mut x_with_rms_norm, &x_orig, 1e-5)?;
+                tensor_2d_rms_norm(&mut x_with_rms_norm, &x, 1e-5)?;
 
                 let mut x_with_rms_norm_att =
                     Tensor::zeros(vec![embed_dim])?.with_name("x_with_rms_norm_att");
@@ -422,7 +423,7 @@ impl<'a> Llama2Runner<'a> {
             // output to self.state.xb
             // q: (n_heads, head_size)
             // key_cache: (seq, n_kv_heads, head_size)
-            // attn_scores: (n_heads, seq)
+            // attn_scores: (seq, )
             // value_cache: (seq, kv_heads, head_size)
             let x_with_attn_wo = {
                 let q = q.view(&[n_heads, head_size])?;
@@ -446,10 +447,10 @@ impl<'a> Llama2Runner<'a> {
                 tensor_2d_matmul(&mut x_with_attn_wo, &self.weights.wo[l], &x_with_attn)?;
                 x_with_attn_wo
             };
-            self.state.xb2.copy_from_slice(x_with_attn_wo.ref_buf());
 
             // residual connection back into x
-            accum(&mut self.state.x, &self.state.xb2);
+            tensor_add_inplace(&mut x, &x_with_attn_wo)?;
+            self.state.x.copy_from_slice(x.ref_buf());
 
             // ffn
             self.ffn(l)?;

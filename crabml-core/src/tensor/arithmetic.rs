@@ -49,6 +49,20 @@ pub fn tensor_mul<'a>(out: &mut Tensor<'a>, a: &Tensor<'a>, b: &Tensor<'a>) -> R
     Ok(())
 }
 
+pub fn tensor_add_inplace<'a>(a: &mut Tensor<'a>, b: &Tensor<'a>) -> Result<()> {
+    require_tensor_shape(a, b.shape())?;
+    require_tensor_contiguous(a)?;
+    require_tensor_contiguous(b)?;
+
+    let a_buf = a.mut_buf()?;
+    let b_buf = b.ref_buf();
+
+    for (a, b) in a_buf.iter_mut().zip(b_buf.iter()) {
+        *a += *b;
+    }
+    Ok(())
+}
+
 // W (w_rows,w_cols) @ x (w_cols,x_cols) -> xout (w_rows,x_cols)
 // W (w_rows,w_cols) @ x (w_cols,) -> xout (w_rows,)
 pub fn tensor_2d_matmul<'a>(out: &mut Tensor<'a>, w: &Tensor<'a>, x: &Tensor<'a>) -> Result<()> {

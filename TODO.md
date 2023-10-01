@@ -1,8 +1,4 @@
 - [x] add name for each tensor
-- [ ] refactor with tensor arithmetic
-  - [ ] rnsnorm
-  - [ ] rope
-  - [ ] kvcache
-  - [ ] mha
-  - [ ] ffn
+- [x] refactor with tensor arithmetic
+- [ ] refactor tensor arithmetic with return values
 - [ ] wgpu tensor support

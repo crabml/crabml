@@ -300,20 +300,17 @@ impl<'a> Llama2Runner<'a> {
 
         // forward all the layers
         for l in 0..self.conf.n_layers {
-            // attention rnsnorm
-            let x_with_rms_norm_att = {
-                let mut x_with_rms_norm =
-                    Tensor::zeros(vec![embed_dim])?.with_name("x_with_rms_norm");
-                tensor_2d_rms_norm(&mut x_with_rms_norm, &x, 1e-5)?;
+            let x_orig_attn = x.clone();
 
-                let mut x_with_rms_norm_att =
-                    Tensor::zeros(vec![embed_dim])?.with_name("x_with_rms_norm_att");
-                tensor_mul(
-                    &mut x_with_rms_norm_att,
+            // attention rnsnorm
+            x = {
+                tensor_rms_norm_inplace(&mut x, 1e-5)?;
+
+                tensor_mul_inplace(
+                    &mut x,
                     &self.weights.rms_att_weight[l],
-                    &x_with_rms_norm,
                 )?;
-                x_with_rms_norm_att
+                x
             };
 
             // matmul qkv for every head
@@ -324,9 +321,10 @@ impl<'a> Llama2Runner<'a> {
                 let mut q = Tensor::zeros(vec![embed_dim])?.with_name("q");
                 let mut k = Tensor::zeros(vec![kv_dim])?.with_name("k");
                 let mut v = Tensor::zeros(vec![kv_dim])?.with_name("v");
-                tensor_2d_matmul(&mut q, &self.weights.wq[l], &x_with_rms_norm_att)?;
-                tensor_2d_matmul(&mut k, &self.weights.wk[l], &x_with_rms_norm_att)?;
-                tensor_2d_matmul(&mut v, &self.weights.wv[l], &x_with_rms_norm_att)?;
+
+                tensor_2d_matmul(&mut q, &self.weights.wq[l], &x)?;
+                tensor_2d_matmul(&mut k, &self.weights.wk[l], &x)?;
+                tensor_2d_matmul(&mut v, &self.weights.wv[l], &x)?;
 
                 (q, k, v)
             };
@@ -336,6 +334,7 @@ impl<'a> Llama2Runner<'a> {
                 // k (kv_dim, ) => k (n_kv_head, head_size)
                 let mut k = k.view(&[n_kv_heads, head_size])?;
                 let mut q = q.view(&[n_heads, head_size])?;
+
                 tensor_rope_inplace(&mut q, &mut k, pos, 1.0, 10000_f32)?;
                 (k, q)
             };
@@ -344,6 +343,7 @@ impl<'a> Llama2Runner<'a> {
             {
                 let k = k.view(&[kv_dim])?;
                 let v = v.view(&[kv_dim])?;
+
                 tensor_copy_chunk(&mut self.state.key_cache[l], pos, &k)?;
                 tensor_copy_chunk(&mut self.state.value_cache[l], pos, &v)?;
             };
@@ -354,12 +354,14 @@ impl<'a> Llama2Runner<'a> {
             // key_cache: (seq, n_kv_heads, head_size)
             // attn_scores: (seq, )
             // value_cache: (seq, kv_heads, head_size)
-            let x_with_attn_wo = {
+            x = {
                 let q = q.view(&[n_heads, head_size])?;
+
                 let mut attn_scores =
                     Tensor::zeros(vec![self.conf.seq_len])?.with_name("attn_scores");
                 let mut x_with_attn =
                     Tensor::zeros(vec![n_heads, head_size])?.with_name("x_with_attn");
+
                 tensor_multi_query_attention(
                     &mut x_with_attn,
                     &mut attn_scores,
@@ -373,29 +375,27 @@ impl<'a> Llama2Runner<'a> {
                 // final matmul to get the output of the attention
                 let mut x_with_attn_wo =
                     Tensor::zeros(vec![embed_dim])?.with_name("x_with_attn_wo");
+
                 tensor_2d_matmul(&mut x_with_attn_wo, &self.weights.wo[l], &x_with_attn)?;
                 x_with_attn_wo
             };
 
             // residual connection back into x
-            tensor_add_inplace(&mut x, &x_with_attn_wo)?;
+            tensor_add_inplace(&mut x, &x_orig_attn)?;
 
             // ffn
             {
-                // ffn rmsnorm
-                let x_with_rms_norm_ffn = {
-                    let mut x_with_rms_norm =
-                        Tensor::zeros(vec![embed_dim])?.with_name("x_with_rms_norm");
-                    tensor_2d_rms_norm(&mut x_with_rms_norm, &x, 1e-5)?;
+                // save for redidual connection
+                let x_orig_ffn = x.clone();
 
-                    let mut x_with_rms_norm_ffn =
-                        Tensor::zeros(vec![embed_dim])?.with_name("x_with_rms_norm_ffn");
-                    tensor_mul(
-                        &mut x_with_rms_norm_ffn,
+                // ffn rmsnorm
+                x = {
+                    tensor_rms_norm_inplace(&mut x, 1e-5)?;
+                    tensor_mul_inplace(
+                        &mut x,
                         &self.weights.rms_ffn_weight[l],
-                        &x_with_rms_norm,
                     )?;
-                    x_with_rms_norm_ffn
+                    x
                 };
 
                 let mut h1 = Tensor::zeros(vec![hidden_dim])?.with_name("h1");
@@ -403,8 +403,8 @@ impl<'a> Llama2Runner<'a> {
 
                 // Now for FFN in PyTorch we have: self.w2(F.silu(self.w1(x)) * self.w3(x))
                 // first calculate self.w1(x) and self.w3(x)
-                tensor_2d_matmul(&mut h1, &self.weights.w1[l], &x_with_rms_norm_ffn)?;
-                tensor_2d_matmul(&mut h2, &self.weights.w3[l], &x_with_rms_norm_ffn)?;
+                tensor_2d_matmul(&mut h1, &self.weights.w1[l], &x)?;
+                tensor_2d_matmul(&mut h2, &self.weights.w3[l], &x)?;
 
                 // F.silu; silu(x)=x*σ(x),where σ(x) is the logistic sigmoid
                 tensor_silu_inplace(&mut h1)?;
@@ -413,20 +413,19 @@ impl<'a> Llama2Runner<'a> {
                 tensor_mul_inplace(&mut h1, &h2)?;
 
                 // final matmul to get the output of the ffn
-                let mut x_ffn_out = Tensor::zeros(vec![embed_dim])?.with_name("x_ffn_out");
-                tensor_2d_matmul(&mut x_ffn_out, &self.weights.w2[l], &h1)?;
+                x = Tensor::zeros(vec![embed_dim])?.with_name("x_ffn_out");
+                tensor_2d_matmul(&mut x, &self.weights.w2[l], &h1)?;
 
                 // residual connection
-                tensor_add_inplace(&mut x, &x_ffn_out)?;
+                tensor_add_inplace(&mut x, &x_orig_ffn)?;
             }
         }
 
         // final rmsnorm
-        let x = {
+        x = {
             tensor_rms_norm_inplace(&mut x, 1e-5)?;
-            let mut x_final_rms_norm = Tensor::zeros(vec![embed_dim])?.with_name("x_final_rms_norm");
-            tensor_mul(&mut x_final_rms_norm, &self.weights.rms_final_weight, &x)?;
-            x_final_rms_norm
+            tensor_mul_inplace(&mut x, &self.weights.rms_final_weight)?;
+            x
         };
 
         // classifier into logits
@@ -435,6 +434,7 @@ impl<'a> Llama2Runner<'a> {
             tensor_2d_matmul(&mut logits, &self.weights.wcls, &x)?; // (vocab_size,
             logits
         };
+
         self.state.logits.copy_from_slice(logits.ref_buf());
 
         Ok(&mut self.state.logits)

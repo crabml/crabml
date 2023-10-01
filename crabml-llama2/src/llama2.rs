@@ -364,10 +364,10 @@ impl<'a> Llama2Runner<'a> {
         // copy the token embedding into x
         let content_row = self.weights.token_embedding_table.subtensor(token)?;
         self.state.x.copy_from_slice(content_row.ref_buf());
+        let mut x = Tensor::new(self.state.x.to_vec(), vec![embed_dim])?;
 
         // forward all the layers
         for l in 0..self.conf.n_layers {
-            let mut x = Tensor::new(self.state.x.to_vec(), vec![embed_dim])?;
 
             // attention rnsnorm
             let x_with_rms_norm_att = {
@@ -467,7 +467,6 @@ impl<'a> Llama2Runner<'a> {
                     )?;
                     x_with_rms_norm_ffn
                 };
-                self.state.xb.copy_from_slice(x_with_rms_norm_ffn.ref_buf());
 
                 let mut h1 = Tensor::zeros(vec![hidden_dim])?.with_name("h1");
                 let mut h2 = Tensor::zeros(vec![hidden_dim])?.with_name("h2");
@@ -481,17 +480,17 @@ impl<'a> Llama2Runner<'a> {
                 tensor_silu_inplace(&mut h1)?;
 
                 // elementwise multiply with w3(x)
-                tensor_mul_inplace(&mut h2, &h1)?;
+                tensor_mul_inplace(&mut h1, &h2)?;
 
                 // final matmul to get the output of the ffn
                 let mut x_ffn_out = Tensor::zeros(vec![embed_dim])?.with_name("x_ffn_out");
-                tensor_2d_matmul(&mut x_ffn_out, &self.weights.w2[l], &h2)?;
+                tensor_2d_matmul(&mut x_ffn_out, &self.weights.w2[l], &h1)?;
 
                 // residual connection
                 tensor_add_inplace(&mut x, &x_ffn_out)?;
-                self.state.x.copy_from_slice(x.ref_buf());
             }
         }
+        self.state.x.copy_from_slice(x.ref_buf());
 
         // final rmsnorm
         rmsnorm_inplace(&mut self.state.x, self.weights.rms_final_weight.ref_buf());

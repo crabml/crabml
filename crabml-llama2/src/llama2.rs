@@ -394,9 +394,6 @@ impl<'a> Llama2Runner<'a> {
                 tensor_2d_matmul(&mut k, &self.weights.wk[l], &x_with_rms_norm_att)?;
                 tensor_2d_matmul(&mut v, &self.weights.wv[l], &x_with_rms_norm_att)?;
 
-                self.state.v.copy_from_slice(v.ref_buf());
-                self.state.xb.copy_from_slice(x_with_rms_norm_att.ref_buf());
-
                 (q, k, v)
             };
 
@@ -406,8 +403,6 @@ impl<'a> Llama2Runner<'a> {
                 let mut k = k.view(&[n_kv_heads, head_size])?;
                 let mut q = q.view(&[n_heads, head_size])?;
                 tensor_rope_inplace(&mut q, &mut k, pos, 1.0, 10000_f32)?;
-
-                self.state.q.copy_from_slice(q.ref_buf());
                 (k, q)
             };
 
@@ -439,9 +434,9 @@ impl<'a> Llama2Runner<'a> {
                     &self.state.value_cache[l],
                     pos,
                 )?;
+                let x_with_attn = x_with_attn.view(&[embed_dim])?;
 
                 // final matmul to get the output of the attention
-                let x_with_attn = x_with_attn.view(&[embed_dim])?;
                 let mut x_with_attn_wo =
                     Tensor::zeros(vec![embed_dim])?.with_name("x_with_attn_wo");
                 tensor_2d_matmul(&mut x_with_attn_wo, &self.weights.wo[l], &x_with_attn)?;

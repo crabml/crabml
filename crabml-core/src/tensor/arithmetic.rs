@@ -22,12 +22,24 @@ pub fn tensor_2d_rms_norm<'a>(out: &mut Tensor<'a>, xs: &Tensor<'a>, eps: f32) -
     for (i, x) in xs.subtensors()?.iter().enumerate() {
         let x_buf = x.ref_buf();
         let sum = x_buf.iter().fold(0.0, |s, n| s + n * n);
-        let rms = ((sum / x.len() as f32) + eps).sqrt();
+        let rms = ((sum / x_buf.len() as f32) + eps).sqrt();
         for j in 0..x_buf.len() {
             out_buf[i * x_buf.len() + j] = x_buf[j] / rms;
         }
     }
 
+    Ok(())
+}
+
+pub fn tensor_rms_norm_inplace<'a>(x: &mut Tensor<'a>, eps: f32) -> Result<()> {
+    require_tensor_contiguous(x)?;
+    require_tensor_dims(x, &[1])?;
+    let x_buf = x.mut_buf()?;
+    let sum = x_buf.iter().fold(0.0, |s, n| s + n * n);
+    let rms = ((sum / x_buf.len() as f32) + eps).sqrt();
+    for i in 0..x_buf.len() {
+        x_buf[i] = x_buf[i] / rms;
+    }
     Ok(())
 }
 

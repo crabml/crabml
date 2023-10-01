@@ -19,9 +19,10 @@ use crabml::tensor::arithmetic::tensor_copy_chunk;
 use crabml::tensor::arithmetic::tensor_mul;
 use crabml::tensor::arithmetic::tensor_mul_inplace;
 use crabml::tensor::arithmetic::tensor_multi_query_attention;
+use crabml::tensor::arithmetic::tensor_rms_norm_inplace;
 use crabml::tensor::arithmetic::tensor_rope_inplace;
-use crabml::tensor::Tensor;
 use crabml::tensor::arithmetic::tensor_silu_inplace;
+use crabml::tensor::Tensor;
 use rayon::prelude::*;
 use std::ops::AddAssign;
 use std::slice;
@@ -368,7 +369,6 @@ impl<'a> Llama2Runner<'a> {
 
         // forward all the layers
         for l in 0..self.conf.n_layers {
-
             // attention rnsnorm
             let x_with_rms_norm_att = {
                 let mut x_with_rms_norm =
@@ -448,7 +448,6 @@ impl<'a> Llama2Runner<'a> {
 
             // residual connection back into x
             tensor_add_inplace(&mut x, &x_with_attn_wo)?;
-            self.state.x.copy_from_slice(x.ref_buf());
 
             // ffn
             {
@@ -490,17 +489,22 @@ impl<'a> Llama2Runner<'a> {
                 tensor_add_inplace(&mut x, &x_ffn_out)?;
             }
         }
-        self.state.x.copy_from_slice(x.ref_buf());
 
         // final rmsnorm
-        rmsnorm_inplace(&mut self.state.x, self.weights.rms_final_weight.ref_buf());
+        let x = {
+            tensor_rms_norm_inplace(&mut x, 1e-5)?;
+            let mut x_final_rms_norm = Tensor::zeros(vec![embed_dim])?.with_name("x_final_rms_norm");
+            tensor_mul(&mut x_final_rms_norm, &self.weights.rms_final_weight, &x)?;
+            x_final_rms_norm
+        };
 
         // classifier into logits
-        matmul(
-            &mut self.state.logits,
-            &self.state.x,
-            self.weights.wcls.ref_buf(),
-        );
+        let logits = {
+            let mut logits = Tensor::zeros(vec![self.conf.vocab_size])?.with_name("logits");
+            tensor_2d_matmul(&mut logits, &self.weights.wcls, &x)?; // (vocab_size,
+            logits
+        };
+        self.state.logits.copy_from_slice(logits.ref_buf());
 
         Ok(&mut self.state.logits)
     }

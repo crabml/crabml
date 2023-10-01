@@ -5,10 +5,6 @@ use crate::tensor::Tensor;
 
 ///! arithmetic.rs contains the tensor arithmetics operations like matmul, accum, etc.
 
-pub fn tensor_copy<'a>(dst: &mut Tensor<'a>, src: &Tensor<'a>) -> Result<()> {
-    Ok(())
-}
-
 // x: (prompt_len, embed_len)
 pub fn tensor_2d_rms_norm<'a>(out: &mut Tensor<'a>, xs: &Tensor<'a>, eps: f32) -> Result<()> {
     require_tensor_shape(out, xs.shape())?;
@@ -49,6 +45,17 @@ pub fn tensor_mul<'a>(out: &mut Tensor<'a>, a: &Tensor<'a>, b: &Tensor<'a>) -> R
     Ok(())
 }
 
+pub fn tensor_mul_inplace<'a>(a: &mut Tensor<'a>, b: &Tensor<'a>) -> Result<()> {
+    require_tensor_shape(a, b.shape())?;
+    let a_buf = a.mut_buf()?;
+    let b_buf = b.ref_buf();
+
+    for (a, b) in a_buf.iter_mut().zip(b_buf.iter()) {
+        *a *= b;
+    }
+    Ok(())
+}
+
 pub fn tensor_add_inplace<'a>(a: &mut Tensor<'a>, b: &Tensor<'a>) -> Result<()> {
     require_tensor_shape(a, b.shape())?;
     require_tensor_contiguous(a)?;
@@ -59,6 +66,14 @@ pub fn tensor_add_inplace<'a>(a: &mut Tensor<'a>, b: &Tensor<'a>) -> Result<()> 
 
     for (a, b) in a_buf.iter_mut().zip(b_buf.iter()) {
         *a += *b;
+    }
+    Ok(())
+}
+
+pub fn tensor_silu_inplace<'a>(x: &mut Tensor<'a>) -> Result<()> {
+    let buf = x.mut_buf()?;
+    for i in 0..buf.len() {
+        buf[i] = buf[i] * (1.0 / (1.0 + (-buf[i]).exp()));
     }
     Ok(())
 }

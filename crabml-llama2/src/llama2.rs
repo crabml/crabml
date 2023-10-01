@@ -17,9 +17,11 @@ use crabml::tensor::arithmetic::tensor_2d_rms_norm;
 use crabml::tensor::arithmetic::tensor_add_inplace;
 use crabml::tensor::arithmetic::tensor_copy_chunk;
 use crabml::tensor::arithmetic::tensor_mul;
+use crabml::tensor::arithmetic::tensor_mul_inplace;
 use crabml::tensor::arithmetic::tensor_multi_query_attention;
 use crabml::tensor::arithmetic::tensor_rope_inplace;
 use crabml::tensor::Tensor;
+use crabml::tensor::arithmetic::tensor_silu_inplace;
 use rayon::prelude::*;
 use std::ops::AddAssign;
 use std::slice;
@@ -474,28 +476,20 @@ impl<'a> Llama2Runner<'a> {
                 // first calculate self.w1(x) and self.w3(x)
                 tensor_2d_matmul(&mut h1, &self.weights.w1[l], &x_with_rms_norm_ffn)?;
                 tensor_2d_matmul(&mut h2, &self.weights.w3[l], &x_with_rms_norm_ffn)?;
-                self.state.hb.copy_from_slice(h1.ref_buf());
-                self.state.hb2.copy_from_slice(h2.ref_buf());
 
                 // F.silu; silu(x)=x*σ(x),where σ(x) is the logistic sigmoid
-                for i in 0..hidden_dim {
-                    self.state.hb[i] = self.state.hb[i] * (1.0 / (1.0 + (-self.state.hb[i]).exp()));
-                }
+                tensor_silu_inplace(&mut h1)?;
 
                 // elementwise multiply with w3(x)
-                for i in 0..hidden_dim {
-                    self.state.hb[i] *= self.state.hb2[i];
-                }
+                tensor_mul_inplace(&mut h2, &h1)?;
 
                 // final matmul to get the output of the ffn
-                matmul(
-                    &mut self.state.xb,
-                    &self.state.hb,
-                    &self.weights.w2[l].ref_buf(),
-                );
+                let mut x_ffn_out = Tensor::zeros(vec![embed_dim])?.with_name("x_ffn_out");
+                tensor_2d_matmul(&mut x_ffn_out, &self.weights.w2[l], &h2)?;
 
                 // residual connection
-                accum(&mut self.state.x, &self.state.xb);
+                tensor_add_inplace(&mut x, &x_ffn_out)?;
+                self.state.x.copy_from_slice(x.ref_buf());
             }
         }
 

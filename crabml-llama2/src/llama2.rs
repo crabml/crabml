@@ -451,11 +451,21 @@ impl<'a> Llama2Runner<'a> {
             // ffn
             {
                 // ffn rmsnorm
-                rmsnorm(
-                    &mut self.state.xb,
-                    &self.state.x,
-                    self.weights.rms_ffn_weight[l].ref_buf(),
-                );
+                let x_with_rms_norm_ffn = {
+                    let mut x_with_rms_norm =
+                        Tensor::zeros(vec![embed_dim])?.with_name("x_with_rms_norm");
+                    tensor_2d_rms_norm(&mut x_with_rms_norm, &x, 1e-5)?;
+
+                    let mut x_with_rms_norm_ffn =
+                        Tensor::zeros(vec![embed_dim])?.with_name("x_with_rms_norm_ffn");
+                    tensor_mul(
+                        &mut x_with_rms_norm_ffn,
+                        &self.weights.rms_ffn_weight[l],
+                        &x_with_rms_norm,
+                    )?;
+                    x_with_rms_norm_ffn
+                };
+                self.state.xb.copy_from_slice(x_with_rms_norm_ffn.ref_buf());
 
                 // Now for FFN in PyTorch we have: self.w2(F.silu(self.w1(x)) * self.w3(x))
                 // first calculate self.w1(x) and self.w3(x)

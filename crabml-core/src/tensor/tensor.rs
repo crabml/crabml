@@ -11,7 +11,11 @@ pub struct TensorStrider {
 impl TensorStrider {
     pub fn new(shape: Vec<usize>, offset: usize) -> Self {
         let strides = Self::compute_strides(&shape);
-        Self { shape, strides, offset }
+        Self {
+            shape,
+            strides,
+            offset,
+        }
     }
 
     pub fn shape(&self) -> &[usize] {
@@ -37,8 +41,9 @@ impl TensorStrider {
                 format!(
                     "invalid row position {:?} for tensor of shape {:?}",
                     pos, self.shape
-                )).into()
-            );
+                ),
+            )
+                .into());
         }
 
         let offset = pos
@@ -49,7 +54,11 @@ impl TensorStrider {
 
         let shape = self.shape[pos.len()..].to_vec();
         let strides = self.strides[pos.len()..].to_vec();
-        Ok(TensorStrider { shape, strides, offset })
+        Ok(TensorStrider {
+            shape,
+            strides,
+            offset,
+        })
     }
 
     pub fn len(&self) -> usize {
@@ -67,49 +76,72 @@ impl TensorStrider {
     }
 }
 
-pub type TensorBufferHandle = usize;
+type TensorID = usize;
 
-#[derive(Clone)]
-pub struct TensorBuffer<D: TensorDevice, T: TensorDataType> {
-    handle: TensorBufferHandle,
-    device: Rc<RefCell<D>>,
-    _phantom: std::marker::PhantomData<T>,
+pub enum TensorDevicePipelineOp {
+    AllocTensor {
+        strider: TensorStrider,
+    },
+
+    RecycleTensor {
+        t: TensorID,
+    },
+
+    EditTensor {
+        t: TensorID,
+        strider: TensorStrider,
+    },
+
+    CopyFrom {
+        dst: TensorID,
+        pos: Vec<usize>,
+        src: TensorID,
+    },
+
+    MatMul {
+        out: TensorID,
+        lhs: TensorID,
+        rhs: TensorID,
+    },
+
+    RopeInplace {
+        q: TensorID,
+        k: TensorID,
+        pos: usize,
+        freq_base: f32,
+        freq_scale: f32,
+    },
+
+    SiluInplace {
+        t: TensorID,
+    },
+
+    MulInplace {
+        t1: TensorID,
+        t2: TensorID,
+    },
+
+    AddInplace {
+        t1: TensorID,
+        t2: TensorID,
+    },
+
+    RmsNormInplace {
+        t: TensorID,
+    }
 }
 
-impl<D: TensorDevice, T: TensorDataType> TensorBuffer<D, T> {
-    fn alloc(size: usize, device: &Rc<RefCell<D>>) -> Self {
-        let handle = device.borrow_mut().alloc_buffer(size * T::size());
-        let buf = Self {
-            handle,
-            device: device.clone(),
-            _phantom: Default::default(),
-        };
-        buf
-    }
-
-    fn copy_from(&mut self, src: &Self, offset: usize, limit: usize) -> Result<()> {
-        let mut device = self.device.borrow_mut();
-        device.copy_buffer(self.handle, src.handle, offset * T::size(), limit * T::size());
-        Ok(())
-    }
-}
-
-impl<D: TensorDevice, T: TensorDataType> Drop for TensorBuffer<D, T> {
-    fn drop(&mut self) {
-        self.device.borrow_mut().recycle_buffer(self.handle);
-    }
-}
-
+// if we want to support GPU, we need to add a new type of device
 pub trait TensorDevice {
-    fn alloc_buffer(&mut self, size: usize) -> TensorBufferHandle;
+    type DataType: TensorDataType;
 
-    fn recycle_buffer(&mut self, handle: TensorBufferHandle);
+    fn process_op(&mut self, op: TensorDevicePipelineOp) -> Option<TensorID>;
 
-    fn copy_buffer(&mut self, dst: TensorBufferHandle, src: TensorBufferHandle, offset: usize, len: usize);
+    fn register_tensor(&mut self, shape: &[usize], data: &[Self::DataType]) -> TensorID;
 
-    fn register_buffer(&mut self, buf: &[u8]) -> TensorBufferHandle;
+    fn export_tensor(self, t: TensorID, buf: &mut [Self::DataType]) -> Result<()>;
 
-    fn retrieve_buffer(&self, handle: TensorBufferHandle) -> &[u8];
+    fn data_type(&self) -> Self::DataType;
 }
 
 pub trait TensorDataType {
@@ -118,37 +150,27 @@ pub trait TensorDataType {
     fn name() -> &'static str;
 }
 
-pub trait TensorUnaryOp {
-    fn apply(self) -> Result<Self>;
-}
-
-pub trait TensorBackend<Tr> {
-    fn matmul_2d(t1: &Tr, t2: &Tr) -> Result<Tr>;
-
-    fn multi_query_attention(q: &Tr, k_cache: &Tr, v_cache: &Tr, pos: usize) -> Result<Tr>;
-
-    fn softmax(t: Tr) -> Result<Tr>;
-
-    fn mul(t1: Tr, t2: Tr) -> Result<Tr>;
-
-    fn add(t1: Tr, t2: Tr) -> Result<Tr>;
-
-    fn rms_norm(t1: Tr, eps: f32) -> Result<Tr>;
-
-    fn silu(t1: Tr) -> Result<Tr>;
-}
-
 #[derive(Clone)]
-pub struct Tensor<D: TensorDevice, T: TensorDataType> {
+pub struct Tensor<D: TensorDevice> {
+    id: TensorID,
     strider: TensorStrider,
-    buf: TensorBuffer<D, T>,
+    device: Rc<RefCell<D>>,
 }
 
-impl<D: TensorDevice, T: TensorDataType> Tensor<D, T> {
-    pub fn zeros(shape: Vec<usize>, device: &Rc<RefCell<D>>) -> Self {
-        let strider: TensorStrider = TensorStrider::new(shape, 0);
-        let buf = TensorBuffer::alloc(strider.len() * T::size(), device);
-        Self { strider, buf }
+impl<D: TensorDevice> Tensor<D> {
+    pub fn zeros(shape: Vec<usize>, device: Rc<RefCell<D>>) -> Self {
+        let strider: TensorStrider = TensorStrider::new(shape.clone(), 0);
+        let id = device
+            .borrow_mut()
+            .process_op(TensorDevicePipelineOp::AllocTensor {
+                strider: strider.clone(),
+            })
+            .unwrap();
+        Self {
+            id,
+            strider,
+            device,
+        }
     }
 
     pub fn shape(&self) -> &[usize] {
@@ -159,10 +181,11 @@ impl<D: TensorDevice, T: TensorDataType> Tensor<D, T> {
         self.strider.len()
     }
 
-    pub fn copy_row_from(&mut self, pos: &[usize], t: &Self) -> Result<()> {
+    pub fn copy_from(&mut self, pos: &[usize], t: &Self) -> Result<()> {
         let strider = self.strider.row(pos)?;
         let n_elems = strider.len();
-        self.buf.copy_from(&t.buf, t.strider.offset, n_elems)?;
+
+        todo!();
         Ok(())
     }
 
@@ -179,9 +202,17 @@ impl<D: TensorDevice, T: TensorDataType> Tensor<D, T> {
                 .into());
         }
         let strider = TensorStrider::new(shape, self.strider.offset);
+
+        self.device
+            .borrow_mut()
+            .process_op(TensorDevicePipelineOp::EditTensor {
+                t: self.id,
+                strider: strider.clone(),
+            });
         Ok(Self {
             strider,
-            buf: self.buf,
+            id: self.id,
+            device: self.device.clone(),
         })
     }
 
@@ -199,5 +230,13 @@ impl<D: TensorDevice, T: TensorDataType> Tensor<D, T> {
 
     pub fn matmul(&self, t: &Self) -> Result<Self> {
         todo!()
+    }
+}
+
+impl<D: TensorDevice> Drop for Tensor<D> {
+    fn drop(&mut self) {
+        self.device
+            .borrow_mut()
+            .process_op(TensorDevicePipelineOp::RecycleTensor { t: self.id });
     }
 }

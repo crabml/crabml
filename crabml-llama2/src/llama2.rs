@@ -284,7 +284,6 @@ impl<'a> Llama2Runner<'a> {
         let n_heads = self.conf.n_heads;
         let n_kv_heads = self.conf.n_kv_heads;
         let head_size = self.conf.head_size();
-        let hidden_dim = self.conf.hidden_dim;
 
         // copy the token embedding into x
         let content_row = self.weights.token_embedding_table.ref_chunk(&[token])?;
@@ -303,10 +302,6 @@ impl<'a> Llama2Runner<'a> {
 
             // matmul qkv for every head
             let (q, k, v) = {
-                let mut q = Tensor::zeros(vec![embed_dim])?;
-                let mut k = Tensor::zeros(vec![kv_dim])?;
-                let mut v = Tensor::zeros(vec![kv_dim])?;
-
                 // wq: (embed_dim, embed_dim) @ x (embed_dim, ) => (embed_dim, )
                 // wk: (kv_dim, embed_dim) @ x (embed_dim, ) => (kv_dim, )
                 // wv: (kv_dim, embed_dim) @ x (embed_dim, ) => (kv_dim, )
@@ -319,7 +314,6 @@ impl<'a> Llama2Runner<'a> {
 
             // ROPE
             let (q, k) = {
-                // k (kv_dim, ) => k (n_kv_head, head_size)
                 let q = q.view(&[n_heads, head_size])?;
                 let k = k.view(&[n_kv_heads, head_size])?;
 
@@ -339,34 +333,26 @@ impl<'a> Llama2Runner<'a> {
             x = {
                 let q = q.view(&[n_heads, head_size])?;
 
-                let mut attn_scores = Tensor::zeros(vec![self.conf.seq_len])?;
-                let mut x_with_attn = Tensor::zeros(vec![n_heads, head_size])?;
-
                 // q: (n_heads, head_size)
                 // key_cache: (seq, n_kv_heads, head_size)
-                // attn_scores: (seq, )
                 // value_cache: (seq, kv_heads, head_size)
-                tensor_multi_query_attention(
-                    &mut x_with_attn,
-                    &mut attn_scores,
+                let x_with_attn = tensor_multi_query_attention(
                     &q,
                     &self.state.key_cache[l],
                     &self.state.value_cache[l],
                     pos,
                 )?;
-
                 let x_with_attn = x_with_attn.view(&[embed_dim])?;
 
                 // final matmul to get the output of the attention
-                let x_with_attn_wo = tensor_matmul_2d(&self.weights.wo[l], &x_with_attn)?;
-                x_with_attn_wo
+                tensor_matmul_2d(&self.weights.wo[l], &x_with_attn)?
             };
 
             // residual connection back into x
             x = tensor_add_inplace(x, &x_attn_orig)?;
 
             // ffn
-            {
+            x = {
                 // save for redidual connection
                 let x_orig_ffn = x.clone();
 
@@ -385,7 +371,7 @@ impl<'a> Llama2Runner<'a> {
                 let h2 = tensor_matmul_2d(&self.weights.w3[l], &x)?;
 
                 // F.silu; silu(x)=x*σ(x),where σ(x) is the logistic sigmoid
-                tensor_silu_inplace(&mut h1)?;
+                h1 = tensor_silu_inplace(h1)?;
 
                 // elementwise multiply with w3(x)
                 h1 = tensor_mul_inplace(h1, &h2)?;
@@ -395,6 +381,7 @@ impl<'a> Llama2Runner<'a> {
 
                 // residual connection
                 x = tensor_add_inplace(x, &x_orig_ffn)?;
+                x
             }
         }
 

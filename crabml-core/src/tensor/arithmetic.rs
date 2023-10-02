@@ -5,32 +5,6 @@ use crate::tensor::Tensor;
 
 ///! arithmetic.rs contains the tensor arithmetics operations like matmul, accum, etc.
 
-// x: (prompt_len, embed_len)
-pub fn tensor_2d_rms_norm<'a>(out: &mut Tensor<'a>, xs: &Tensor<'a>, eps: f32) -> Result<()> {
-    require_tensor_shape(out, xs.shape())?;
-    require_tensor_contiguous(xs)?;
-    require_tensor_contiguous(out)?;
-    require_tensor_dims(xs, &[1, 2])?;
-
-    let xs = if xs.shape().len() == 1 {
-        xs.clone().view(&[1, xs.shape()[0]])?
-    } else {
-        xs.clone()
-    };
-
-    let out_buf = out.mut_buf()?;
-    for (i, x) in xs.subtensors()?.iter().enumerate() {
-        let x_buf = x.ref_buf();
-        let sum = x_buf.iter().fold(0.0, |s, n| s + n * n);
-        let rms = ((sum / x_buf.len() as f32) + eps).sqrt();
-        for j in 0..x_buf.len() {
-            out_buf[i * x_buf.len() + j] = x_buf[j] / rms;
-        }
-    }
-
-    Ok(())
-}
-
 pub fn tensor_rms_norm_inplace<'a>(mut x: Tensor<'a>, eps: f32) -> Result<Tensor<'a>> {
     require_tensor_contiguous(&x)?;
     require_tensor_dims(&x, &[1])?;
@@ -82,12 +56,12 @@ pub fn tensor_add_inplace<'a>(mut a: Tensor<'a>, b: &Tensor<'a>) -> Result<Tenso
     Ok(a)
 }
 
-pub fn tensor_silu_inplace<'a>(x: &mut Tensor<'a>) -> Result<()> {
+pub fn tensor_silu_inplace<'a>(mut x: Tensor<'a>) -> Result<Tensor<'a>> {
     let buf = x.mut_buf()?;
     for i in 0..buf.len() {
         buf[i] = buf[i] * (1.0 / (1.0 + (-buf[i]).exp()));
     }
-    Ok(())
+    Ok(x)
 }
 
 // W (w_rows,w_cols) @ x (w_cols,x_cols) -> xout (w_rows,x_cols)
@@ -153,21 +127,22 @@ pub fn tensor_softmax_inplace<'a>(t: &mut Tensor<'a>, pos: usize) -> Result<()> 
 // attn: (n_seq, )
 // out: (n_heads, head_size)
 pub fn tensor_multi_query_attention<'a>(
-    out: &mut Tensor<'a>,
-    attn: &mut Tensor<'a>,
     q: &Tensor<'a>,
     k_cache: &Tensor<'a>,
     v_cache: &Tensor<'a>,
     pos: usize,
-) -> Result<()> {
+) -> Result<Tensor<'a>> {
     require_tensor_contiguous(q)?;
     require_tensor_contiguous(k_cache)?;
-    require_tensor_contiguous(attn)?;
     require_tensor_dims(k_cache, &[3])?;
 
     let n_heads = q.shape()[0];
     let n_kv_heads = k_cache.shape()[1];
     let head_size = q.shape()[1];
+    let n_seq = k_cache.shape()[0];
+
+    let mut attn = Tensor::zeros(vec![n_seq])?;
+    let mut out = Tensor::zeros(vec![n_heads, head_size])?;
 
     // get attention scores
     for h in 0..n_heads {
@@ -179,7 +154,7 @@ pub fn tensor_multi_query_attention<'a>(
             let score = (0..head_size).map(|i| q_head[i] * k_head[i]).sum::<f32>();
             attn_buf[tok] = score / (head_size as f32).sqrt();
         }
-        tensor_softmax_inplace(attn, pos)?;
+        tensor_softmax_inplace(&mut attn, pos)?;
 
         let kvh = h / (n_heads / n_kv_heads);
         let attn_buf = attn.ref_buf(); // (n_seq, )
@@ -192,7 +167,7 @@ pub fn tensor_multi_query_attention<'a>(
         }
     }
 
-    Ok(())
+    Ok(out)
 }
 
 // t: (n_heads, head_size)
@@ -354,28 +329,6 @@ mod tests {
         assert_eq!(
             v,
             vec![0.999995, 0.999995, 0.999995, 0.999995, 0.999995, 0.999995]
-        );
-
-        let mut out = Tensor::new(vec![0.0; 6], vec![6])?;
-        let xs = Tensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![6])?;
-        tensor_2d_rms_norm(&mut out, &xs, 1e-5)?;
-        assert_eq!(
-            out.ref_buf(),
-            &[0.2567762, 0.5135524, 0.77032864, 1.0271049, 1.2838811, 1.5406573]
-        );
-
-        let mut out = Tensor::new(vec![0.0; 12], vec![2, 6])?;
-        let xs = Tensor::new(
-            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-            vec![2, 6],
-        )?;
-        tensor_2d_rms_norm(&mut out, &xs, 1e-5)?;
-        assert_eq!(
-            out.ref_buf(),
-            &[
-                0.2567762, 0.5135524, 0.77032864, 1.0271049, 1.2838811, 1.5406573, 0.999995,
-                0.999995, 0.999995, 0.999995, 0.999995, 0.999995
-            ]
         );
 
         Ok(())

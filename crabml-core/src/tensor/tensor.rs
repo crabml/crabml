@@ -118,6 +118,26 @@ pub trait TensorDataType {
     fn name() -> &'static str;
 }
 
+pub trait TensorUnaryOp {
+    fn apply(self) -> Result<Self>;
+}
+
+pub trait TensorBackend<Tr> {
+    fn matmul_2d(t1: &Tr, t2: &Tr) -> Result<Tr>;
+
+    fn multi_query_attention(q: &Tr, k_cache: &Tr, v_cache: &Tr, pos: usize) -> Result<Tr>;
+
+    fn softmax(t: Tr) -> Result<Tr>;
+
+    fn mul(t1: Tr, t2: Tr) -> Result<Tr>;
+
+    fn add(t1: Tr, t2: Tr) -> Result<Tr>;
+
+    fn rms_norm(t1: Tr, eps: f32) -> Result<Tr>;
+
+    fn silu(t1: Tr) -> Result<Tr>;
+}
+
 #[derive(Clone)]
 pub struct Tensor<D: TensorDevice, T: TensorDataType> {
     strider: TensorStrider,
@@ -163,5 +183,21 @@ impl<D: TensorDevice, T: TensorDataType> Tensor<D, T> {
             strider,
             buf: self.buf,
         })
+    }
+
+    pub fn repeat(self, n: usize, axis: usize) -> Result<Self> {
+        todo!()
+    }
+
+    pub fn mul(self, t: &Self) -> Result<Self> {
+        todo!()
+    }
+
+    pub fn add(self, t: &Self) -> Result<Self> {
+        todo!()
+    }
+
+    pub fn matmul(&self, t: &Self) -> Result<Self> {
+        todo!()
     }
 }

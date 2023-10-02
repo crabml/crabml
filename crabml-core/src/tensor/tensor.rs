@@ -104,18 +104,25 @@ pub trait TensorDevice {
     fn retrieve_buffer(&self, handle: TensorBufferHandle) -> &[u8];
 }
 
-#[derive(Clone)]
-pub struct Tensor<D: TensorDevice> {
-    strider: TensorStrider,
-    elem_size: usize,
-    buf: Rc<RefCell<TensorBuffer<D>>>,
+pub trait TensorDataType {
+    fn size() -> usize;
+
+    fn name() -> &'static str;
 }
 
-impl<D: TensorDevice> Tensor<D> {
+#[derive(Clone)]
+pub struct Tensor<D: TensorDevice, T> {
+    strider: TensorStrider,
+    buf: Rc<RefCell<TensorBuffer<D>>>,
+    elem_size: usize,
+    _phantom: std::marker::PhantomData<T>,
+}
+
+impl<D: TensorDevice, T: TensorDataType> Tensor<D, T> {
     pub fn zeros(shape: Vec<usize>, device: &Rc<RefCell<D>>) -> Self {
         let strider: TensorStrider = TensorStrider::new(shape, 0);
-        let buf = TensorBuffer::alloc(strider.len(), device);
-        Self { strider, buf, elem_size: 8 }
+        let buf = TensorBuffer::alloc(strider.len() * T::size(), device);
+        Self { strider, buf, elem_size: T::size(), _phantom: Default::default() }
     }
 
     pub fn shape(&self) -> &[usize] {
@@ -132,6 +139,7 @@ impl<D: TensorDevice> Tensor<D> {
             strider,
             elem_size: self.elem_size,
             buf: self.buf.clone(),
+            _phantom: Default::default(),
         })
     }
 
@@ -168,6 +176,7 @@ impl<D: TensorDevice> Tensor<D> {
             strider,
             elem_size: self.elem_size,
             buf: self.buf.clone(),
+            _phantom: Default::default(),
         })
     }
 }

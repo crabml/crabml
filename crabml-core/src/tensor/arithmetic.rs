@@ -57,20 +57,20 @@ pub fn tensor_mul<'a>(out: &mut Tensor<'a>, a: &Tensor<'a>, b: &Tensor<'a>) -> R
     Ok(())
 }
 
-pub fn tensor_mul_inplace<'a>(a: &mut Tensor<'a>, b: &Tensor<'a>) -> Result<()> {
-    require_tensor_shape(a, b.shape())?;
+pub fn tensor_mul_inplace<'a>(mut a: Tensor<'a>, b: &Tensor<'a>) -> Result<Tensor<'a>> {
+    require_tensor_shape(&a, b.shape())?;
     let a_buf = a.mut_buf()?;
     let b_buf = b.ref_buf();
 
     for (a, b) in a_buf.iter_mut().zip(b_buf.iter()) {
         *a *= b;
     }
-    Ok(())
+    Ok(a)
 }
 
-pub fn tensor_add_inplace<'a>(a: &mut Tensor<'a>, b: &Tensor<'a>) -> Result<()> {
-    require_tensor_shape(a, b.shape())?;
-    require_tensor_contiguous(a)?;
+pub fn tensor_add_inplace<'a>(mut a: Tensor<'a>, b: &Tensor<'a>) -> Result<Tensor<'a>> {
+    require_tensor_shape(&a, b.shape())?;
+    require_tensor_contiguous(&a)?;
     require_tensor_contiguous(b)?;
 
     let a_buf = a.mut_buf()?;
@@ -79,7 +79,7 @@ pub fn tensor_add_inplace<'a>(a: &mut Tensor<'a>, b: &Tensor<'a>) -> Result<()> 
     for (a, b) in a_buf.iter_mut().zip(b_buf.iter()) {
         *a += *b;
     }
-    Ok(())
+    Ok(a)
 }
 
 pub fn tensor_silu_inplace<'a>(x: &mut Tensor<'a>) -> Result<()> {
@@ -92,13 +92,19 @@ pub fn tensor_silu_inplace<'a>(x: &mut Tensor<'a>) -> Result<()> {
 
 // W (w_rows,w_cols) @ x (w_cols,x_cols) -> xout (w_rows,x_cols)
 // W (w_rows,w_cols) @ x (w_cols,) -> xout (w_rows,)
-pub fn tensor_2d_matmul<'a>(out: &mut Tensor<'a>, w: &Tensor<'a>, x: &Tensor<'a>) -> Result<()> {
+pub fn tensor_matmul_2d<'a>(w: &Tensor<'a>, x: &Tensor<'a>) -> Result<Tensor<'a>> {
     require_tensor_dims(w, &[2])?;
     require_tensor_dims(x, &[1, 2])?;
     require_tensor_matmul_2d_shapes(w, x)?;
     require_tensor_contiguous(w)?;
     require_tensor_contiguous(x)?;
-    require_tensor_contiguous(out)?;
+
+    let out_shape = if x.shape().len() == 1 {
+        vec![w.shape()[0]]
+    } else {
+        vec![w.shape()[0], x.shape()[1]]
+    };
+    let mut out = Tensor::zeros(out_shape)?;
 
     let w_rows = w.shape()[0];
     let w_cols = w.shape()[1];
@@ -121,11 +127,11 @@ pub fn tensor_2d_matmul<'a>(out: &mut Tensor<'a>, w: &Tensor<'a>, x: &Tensor<'a>
         }
     }
 
-    Ok(())
+    Ok(out)
 }
 
 // t: (rows, cols)
-pub fn tensor_1d_softmax_inplace<'a>(t: &mut Tensor<'a>, pos: usize) -> Result<()> {
+pub fn tensor_softmax_inplace<'a>(t: &mut Tensor<'a>, pos: usize) -> Result<()> {
     require_tensor_dims(t, &[1])?;
     let buf = t.mut_buf()?;
     let buf = &mut buf[0..pos + 1];
@@ -173,7 +179,7 @@ pub fn tensor_multi_query_attention<'a>(
             let score = (0..head_size).map(|i| q_head[i] * k_head[i]).sum::<f32>();
             attn_buf[tok] = score / (head_size as f32).sqrt();
         }
-        tensor_1d_softmax_inplace(attn, pos)?;
+        tensor_softmax_inplace(attn, pos)?;
 
         let kvh = h / (n_heads / n_kv_heads);
         let attn_buf = attn.ref_buf(); // (n_seq, )
@@ -191,16 +197,16 @@ pub fn tensor_multi_query_attention<'a>(
 
 // t: (n_heads, head_size)
 pub fn tensor_rope_inplace<'a>(
-    q: &mut Tensor<'a>,
-    k: &mut Tensor<'a>,
+    mut q: Tensor<'a>,
+    mut k: Tensor<'a>,
     pos: usize,
     freq_base: f32,
     freq_scale: f32,
-) -> Result<()> {
-    require_tensor_contiguous(q)?;
-    require_tensor_contiguous(k)?;
-    require_tensor_dims(q, &[2])?;
-    require_tensor_dims(k, &[2])?;
+) -> Result<(Tensor<'a>, Tensor<'a>)> {
+    require_tensor_contiguous(&q)?;
+    require_tensor_contiguous(&k)?;
+    require_tensor_dims(&q, &[2])?;
+    require_tensor_dims(&k, &[2])?;
 
     let kv_dim: usize = k.shape().iter().product();
     let head_size = q.shape()[1];
@@ -220,7 +226,7 @@ pub fn tensor_rope_inplace<'a>(
             vec[i + 1] = v0 * fci + v1 * fcr;
         }
     }
-    Ok(())
+    Ok((q, k))
 }
 
 pub fn tensor_copy_chunk<'a>(out: &mut Tensor<'_>, n: usize, row: &Tensor<'a>) -> Result<()> {
@@ -386,10 +392,9 @@ mod tests {
         let b = Tensor::new(vec![1.0, 2.0, 3.0], vec![3])?;
         // 0
         // 0
-        let mut out = Tensor::new(vec![0.0; 2], vec![2])?;
         // 1*1 + 2*2 + 3*3 = 1 + 4 + 9
         // 1*4 + 2*5 + 3*6 = 4 + 10 + 18
-        tensor_2d_matmul(&mut out, &w, &b)?;
+        let out = tensor_matmul_2d(&w, &b)?;
         assert_eq!(out.ref_buf(), &[14.0, 32.0]);
 
         // 1, 2, 3
@@ -405,8 +410,7 @@ mod tests {
             ],
             vec![3, 4],
         )?;
-        let mut out = Tensor::new(vec![0.0; 8], vec![2, 4])?;
-        tensor_2d_matmul(&mut out, &w, &b)?;
+        let out = tensor_matmul_2d(&w, &b)?;
         assert_eq!(
             out.ref_buf(),
             &[38.0, 44.0, 50.0, 56.0, 83.0, 98.0, 113.0, 128.0]

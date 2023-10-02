@@ -1,8 +1,3 @@
-use crate::math::accum;
-use crate::math::matmul;
-use crate::math::rmsnorm;
-use crate::math::rmsnorm_inplace;
-use crate::math::softmax;
 use crate::sampler::Llama2Sampler;
 use crate::tokenizer;
 use crate::tokenizer::Llama2Tokenizer;
@@ -11,12 +6,9 @@ use crabml::error::ErrorKind;
 use crabml::error::Result;
 use crabml::gguf::GGUFFile;
 use crabml::gguf::GGUFFileLoader;
-use crabml::tensor::arithmetic::tensor_1d_softmax_inplace;
-use crabml::tensor::arithmetic::tensor_2d_matmul;
-use crabml::tensor::arithmetic::tensor_2d_rms_norm;
 use crabml::tensor::arithmetic::tensor_add_inplace;
+use crabml::tensor::arithmetic::tensor_matmul_2d;
 use crabml::tensor::arithmetic::tensor_copy_chunk;
-use crabml::tensor::arithmetic::tensor_mul;
 use crabml::tensor::arithmetic::tensor_mul_inplace;
 use crabml::tensor::arithmetic::tensor_multi_query_attention;
 use crabml::tensor::arithmetic::tensor_rms_norm_inplace;
@@ -305,7 +297,7 @@ impl<'a> Llama2Runner<'a> {
             // attention rnsnorm
             x = {
                 x = tensor_rms_norm_inplace(x, 1e-5)?;
-                tensor_mul_inplace(&mut x, &self.weights.rms_att_weight[l])?;
+                x = tensor_mul_inplace(x, &self.weights.rms_att_weight[l])?;
                 x
             };
 
@@ -318,21 +310,20 @@ impl<'a> Llama2Runner<'a> {
                 // wq: (embed_dim, embed_dim) @ x (embed_dim, ) => (embed_dim, )
                 // wk: (kv_dim, embed_dim) @ x (embed_dim, ) => (kv_dim, )
                 // wv: (kv_dim, embed_dim) @ x (embed_dim, ) => (kv_dim, )
-                tensor_2d_matmul(&mut q, &self.weights.wq[l], &x)?;
-                tensor_2d_matmul(&mut k, &self.weights.wk[l], &x)?;
-                tensor_2d_matmul(&mut v, &self.weights.wv[l], &x)?;
+                let q = tensor_matmul_2d(&self.weights.wq[l], &x)?;
+                let k = tensor_matmul_2d(&self.weights.wk[l], &x)?;
+                let v = tensor_matmul_2d(&self.weights.wv[l], &x)?;
 
                 (q, k, v)
             };
 
             // ROPE
-            let (k, q) = {
+            let (q, k) = {
                 // k (kv_dim, ) => k (n_kv_head, head_size)
-                let mut k = k.view(&[n_kv_heads, head_size])?;
-                let mut q = q.view(&[n_heads, head_size])?;
+                let q = q.view(&[n_heads, head_size])?;
+                let k = k.view(&[n_kv_heads, head_size])?;
 
-                tensor_rope_inplace(&mut q, &mut k, pos, 1.0, 10000_f32)?;
-                (k, q)
+                tensor_rope_inplace(q, k, pos, 1.0, 10000_f32)?
             };
 
             // save to kv cache
@@ -365,15 +356,14 @@ impl<'a> Llama2Runner<'a> {
                 )?;
 
                 let x_with_attn = x_with_attn.view(&[embed_dim])?;
-                let mut x_with_attn_wo = Tensor::zeros(vec![embed_dim])?;
 
                 // final matmul to get the output of the attention
-                tensor_2d_matmul(&mut x_with_attn_wo, &self.weights.wo[l], &x_with_attn)?;
+                let x_with_attn_wo = tensor_matmul_2d(&self.weights.wo[l], &x_with_attn)?;
                 x_with_attn_wo
             };
 
             // residual connection back into x
-            tensor_add_inplace(&mut x, &x_attn_orig)?;
+            x = tensor_add_inplace(x, &x_attn_orig)?;
 
             // ffn
             {
@@ -383,48 +373,40 @@ impl<'a> Llama2Runner<'a> {
                 // ffn rmsnorm
                 x = {
                     x = tensor_rms_norm_inplace(x, 1e-5)?;
-                    tensor_mul_inplace(&mut x, &self.weights.rms_ffn_weight[l])?;
+                    x = tensor_mul_inplace(x, &self.weights.rms_ffn_weight[l])?;
                     x
                 };
-
-                let mut h1 = Tensor::zeros(vec![hidden_dim])?.with_name("h1");
-                let mut h2 = Tensor::zeros(vec![hidden_dim])?.with_name("h2");
 
                 // Now for FFN in PyTorch we have: self.w2(F.silu(self.w1(x)) * self.w3(x))
                 // first calculate self.w1(x) and self.w3(x)
                 // w1: (hidden_dim, embed_dim) @ x (embed_dim, ) => (hidden_dim, )
                 // w3: (hidden_dim, embed_dim) @ x (embed_dim, ) => (hidden_dim, )
-                tensor_2d_matmul(&mut h1, &self.weights.w1[l], &x)?;
-                tensor_2d_matmul(&mut h2, &self.weights.w3[l], &x)?;
+                let mut h1 = tensor_matmul_2d(&self.weights.w1[l], &x)?;
+                let h2 = tensor_matmul_2d(&self.weights.w3[l], &x)?;
 
                 // F.silu; silu(x)=x*σ(x),where σ(x) is the logistic sigmoid
                 tensor_silu_inplace(&mut h1)?;
 
                 // elementwise multiply with w3(x)
-                tensor_mul_inplace(&mut h1, &h2)?;
+                h1 = tensor_mul_inplace(h1, &h2)?;
 
                 // final matmul to get the output of the ffn
-                x = Tensor::zeros(vec![embed_dim])?.with_name("x_ffn_out");
-                tensor_2d_matmul(&mut x, &self.weights.w2[l], &h1)?;
+                x = tensor_matmul_2d(&self.weights.w2[l], &h1)?;
 
                 // residual connection
-                tensor_add_inplace(&mut x, &x_orig_ffn)?;
+                x = tensor_add_inplace(x, &x_orig_ffn)?;
             }
         }
 
         // final rmsnorm
         x = {
             x = tensor_rms_norm_inplace(x, 1e-5)?;
-            tensor_mul_inplace(&mut x, &self.weights.rms_final_weight)?;
+            x = tensor_mul_inplace(x, &self.weights.rms_final_weight)?;
             x
         };
 
         // classifier into logits
-        let logits = {
-            let mut logits = Tensor::zeros(vec![self.conf.vocab_size])?;
-            tensor_2d_matmul(&mut logits, &self.weights.wcls, &x)?; // (vocab_size,
-            logits
-        };
+        let logits = tensor_matmul_2d(&self.weights.wcls, &x)?; // (vocab_size,
 
         self.state.logits.copy_from_slice(logits.ref_buf());
 
@@ -537,26 +519,6 @@ impl<'a> Iterator for Llama2RunnerOutputGenerator<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_accum() {
-        let mut a = [1.0, 2.0];
-        let b = [1.2, 3.0];
-        accum(&mut a, &b);
-        assert_eq!(a[0], 2.2);
-        assert_eq!(a[1], 5.0);
-    }
-
-    #[test]
-    fn test_matmul() {
-        let wvec = vec![1.0, 2.0, 3.0, 1.0, 5.0, 1.0];
-        let w = Tensor::new(&wvec, vec![2, 3]).unwrap(); // (2,3)
-        let x = [2.0, 4.0, 8.0]; // (3,)
-        let out: &mut [f32; 2] = &mut [0.0, 0.0]; // (2, )
-        matmul(out, &x, w.ref_buf());
-        assert_eq!(out[0], 34.0);
-        assert_eq!(out[1], 30.0);
-    }
 
     #[test]
     fn test_gguf_tokenizer() -> Result<()> {

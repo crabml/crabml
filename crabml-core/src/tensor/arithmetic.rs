@@ -17,20 +17,6 @@ pub fn tensor_rms_norm_inplace<'a>(mut x: CpuTensor<'a>, eps: f32) -> Result<Cpu
     Ok(x)
 }
 
-pub fn tensor_mul<'a>(out: &mut CpuTensor<'a>, a: &CpuTensor<'a>, b: &CpuTensor<'a>) -> Result<()> {
-    require_tensor_shape(a, b.shape())?;
-    require_tensor_shape(out, b.shape())?;
-
-    let out_buf = out.mut_buf()?;
-    let a_buf = a.ref_buf();
-    let b_buf = b.ref_buf();
-
-    for (i, (a, b)) in a_buf.iter().zip(b_buf.iter()).enumerate() {
-        out_buf[i] = a * b;
-    }
-    Ok(())
-}
-
 pub fn tensor_mul_inplace<'a>(mut a: CpuTensor<'a>, b: &CpuTensor<'a>) -> Result<CpuTensor<'a>> {
     require_tensor_shape(&a, b.shape())?;
     let a_buf = a.mut_buf()?;

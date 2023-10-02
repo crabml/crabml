@@ -33,6 +33,16 @@ impl std::fmt::Display for Error {
     }
 }
 
+impl<S: Into<String>> From<(ErrorKind, S)> for Error {
+    fn from((kind, message): (ErrorKind, S)) -> Self {
+        Self {
+            kind,
+            message: message.into(),
+            cause: None,
+        }
+    }
+}
+
 impl std::error::Error for Error {}
 
 pub type Result<T> = std::result::Result<T, Error>;

@@ -1,11 +1,11 @@
 use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::error::Result;
-use crate::tensor::Tensor;
+use crate::tensor::CpuTensor;
 
 ///! arithmetic.rs contains the tensor arithmetics operations like matmul, accum, etc.
 
-pub fn tensor_rms_norm_inplace<'a>(mut x: Tensor<'a>, eps: f32) -> Result<Tensor<'a>> {
+pub fn tensor_rms_norm_inplace<'a>(mut x: CpuTensor<'a>, eps: f32) -> Result<CpuTensor<'a>> {
     require_tensor_contiguous(&x)?;
     require_tensor_dims(&x, &[1])?;
     let x_buf = x.mut_buf()?;
@@ -17,7 +17,7 @@ pub fn tensor_rms_norm_inplace<'a>(mut x: Tensor<'a>, eps: f32) -> Result<Tensor
     Ok(x)
 }
 
-pub fn tensor_mul<'a>(out: &mut Tensor<'a>, a: &Tensor<'a>, b: &Tensor<'a>) -> Result<()> {
+pub fn tensor_mul<'a>(out: &mut CpuTensor<'a>, a: &CpuTensor<'a>, b: &CpuTensor<'a>) -> Result<()> {
     require_tensor_shape(a, b.shape())?;
     require_tensor_shape(out, b.shape())?;
 
@@ -31,7 +31,7 @@ pub fn tensor_mul<'a>(out: &mut Tensor<'a>, a: &Tensor<'a>, b: &Tensor<'a>) -> R
     Ok(())
 }
 
-pub fn tensor_mul_inplace<'a>(mut a: Tensor<'a>, b: &Tensor<'a>) -> Result<Tensor<'a>> {
+pub fn tensor_mul_inplace<'a>(mut a: CpuTensor<'a>, b: &CpuTensor<'a>) -> Result<CpuTensor<'a>> {
     require_tensor_shape(&a, b.shape())?;
     let a_buf = a.mut_buf()?;
     let b_buf = b.ref_buf();
@@ -42,7 +42,7 @@ pub fn tensor_mul_inplace<'a>(mut a: Tensor<'a>, b: &Tensor<'a>) -> Result<Tenso
     Ok(a)
 }
 
-pub fn tensor_add_inplace<'a>(mut a: Tensor<'a>, b: &Tensor<'a>) -> Result<Tensor<'a>> {
+pub fn tensor_add_inplace<'a>(mut a: CpuTensor<'a>, b: &CpuTensor<'a>) -> Result<CpuTensor<'a>> {
     require_tensor_shape(&a, b.shape())?;
     require_tensor_contiguous(&a)?;
     require_tensor_contiguous(b)?;
@@ -56,7 +56,7 @@ pub fn tensor_add_inplace<'a>(mut a: Tensor<'a>, b: &Tensor<'a>) -> Result<Tenso
     Ok(a)
 }
 
-pub fn tensor_silu_inplace<'a>(mut x: Tensor<'a>) -> Result<Tensor<'a>> {
+pub fn tensor_silu_inplace<'a>(mut x: CpuTensor<'a>) -> Result<CpuTensor<'a>> {
     let buf = x.mut_buf()?;
     for i in 0..buf.len() {
         buf[i] = buf[i] * (1.0 / (1.0 + (-buf[i]).exp()));
@@ -66,7 +66,7 @@ pub fn tensor_silu_inplace<'a>(mut x: Tensor<'a>) -> Result<Tensor<'a>> {
 
 // W (w_rows,w_cols) @ x (w_cols,x_cols) -> xout (w_rows,x_cols)
 // W (w_rows,w_cols) @ x (w_cols,) -> xout (w_rows,)
-pub fn tensor_matmul_2d<'a>(w: &Tensor<'a>, x: &Tensor<'a>) -> Result<Tensor<'a>> {
+pub fn tensor_matmul_2d<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'a>> {
     require_tensor_dims(w, &[2])?;
     require_tensor_dims(x, &[1, 2])?;
     require_tensor_matmul_2d_shapes(w, x)?;
@@ -78,7 +78,7 @@ pub fn tensor_matmul_2d<'a>(w: &Tensor<'a>, x: &Tensor<'a>) -> Result<Tensor<'a>
     } else {
         vec![w.shape()[0], x.shape()[1]]
     };
-    let mut out = Tensor::zeros(out_shape)?;
+    let mut out = CpuTensor::zeros(out_shape)?;
 
     let w_rows = w.shape()[0];
     let w_cols = w.shape()[1];
@@ -105,7 +105,7 @@ pub fn tensor_matmul_2d<'a>(w: &Tensor<'a>, x: &Tensor<'a>) -> Result<Tensor<'a>
 }
 
 // t: (rows, cols)
-pub fn tensor_softmax_inplace<'a>(t: &mut Tensor<'a>, pos: usize) -> Result<()> {
+pub fn tensor_softmax_inplace<'a>(t: &mut CpuTensor<'a>, pos: usize) -> Result<()> {
     require_tensor_dims(t, &[1])?;
     let buf = t.mut_buf()?;
     let buf = &mut buf[0..pos + 1];
@@ -127,11 +127,11 @@ pub fn tensor_softmax_inplace<'a>(t: &mut Tensor<'a>, pos: usize) -> Result<()> 
 // attn: (n_seq, )
 // out: (n_heads, head_size)
 pub fn tensor_multi_query_attention<'a>(
-    q: &Tensor<'a>,
-    k_cache: &Tensor<'a>,
-    v_cache: &Tensor<'a>,
+    q: &CpuTensor<'a>,
+    k_cache: &CpuTensor<'a>,
+    v_cache: &CpuTensor<'a>,
     pos: usize,
-) -> Result<Tensor<'a>> {
+) -> Result<CpuTensor<'a>> {
     require_tensor_contiguous(q)?;
     require_tensor_contiguous(k_cache)?;
     require_tensor_dims(k_cache, &[3])?;
@@ -141,8 +141,8 @@ pub fn tensor_multi_query_attention<'a>(
     let head_size = q.shape()[1];
     let n_seq = k_cache.shape()[0];
 
-    let mut attn = Tensor::zeros(vec![n_seq])?;
-    let mut out = Tensor::zeros(vec![n_heads, head_size])?;
+    let mut attn = CpuTensor::zeros(vec![n_seq])?;
+    let mut out = CpuTensor::zeros(vec![n_heads, head_size])?;
 
     // get attention scores
     for h in 0..n_heads {
@@ -172,12 +172,12 @@ pub fn tensor_multi_query_attention<'a>(
 
 // t: (n_heads, head_size)
 pub fn tensor_rope_inplace<'a>(
-    mut q: Tensor<'a>,
-    mut k: Tensor<'a>,
+    mut q: CpuTensor<'a>,
+    mut k: CpuTensor<'a>,
     pos: usize,
     freq_base: f32,
     freq_scale: f32,
-) -> Result<(Tensor<'a>, Tensor<'a>)> {
+) -> Result<(CpuTensor<'a>, CpuTensor<'a>)> {
     require_tensor_contiguous(&q)?;
     require_tensor_contiguous(&k)?;
     require_tensor_dims(&q, &[2])?;
@@ -204,7 +204,7 @@ pub fn tensor_rope_inplace<'a>(
     Ok((q, k))
 }
 
-fn require_tensor_shape(t: &Tensor, shape: &[usize]) -> Result<()> {
+fn require_tensor_shape(t: &CpuTensor, shape: &[usize]) -> Result<()> {
     if !t.shape().eq(shape) {
         return Err(Error {
             kind: ErrorKind::TensorError,
@@ -220,7 +220,7 @@ fn require_tensor_shape(t: &Tensor, shape: &[usize]) -> Result<()> {
     Ok(())
 }
 
-fn require_tensor_owned(t: &Tensor) -> Result<()> {
+fn require_tensor_owned(t: &CpuTensor) -> Result<()> {
     if !t.is_owned() {
         return Err(Error {
             kind: ErrorKind::TensorError,
@@ -231,7 +231,7 @@ fn require_tensor_owned(t: &Tensor) -> Result<()> {
     Ok(())
 }
 
-fn require_tensor_dims(t: &Tensor, dims: &[usize]) -> Result<()> {
+fn require_tensor_dims(t: &CpuTensor, dims: &[usize]) -> Result<()> {
     if !dims.contains(&t.shape().len()) {
         return Err(Error {
             kind: ErrorKind::TensorError,
@@ -251,7 +251,7 @@ fn require_tensor_dims(t: &Tensor, dims: &[usize]) -> Result<()> {
     Ok(())
 }
 
-fn require_tensor_matmul_2d_shapes(t1: &Tensor, t2: &Tensor) -> Result<()> {
+fn require_tensor_matmul_2d_shapes(t1: &CpuTensor, t2: &CpuTensor) -> Result<()> {
     if t1.shape()[1] != t2.shape()[0] {
         return Err(Error {
             kind: ErrorKind::TensorError,
@@ -266,7 +266,7 @@ fn require_tensor_matmul_2d_shapes(t1: &Tensor, t2: &Tensor) -> Result<()> {
     Ok(())
 }
 
-fn require_tensor_contiguous(t: &Tensor) -> Result<()> {
+fn require_tensor_contiguous(t: &CpuTensor) -> Result<()> {
     if !t.is_contiguous() {
         return Err(Error {
             kind: ErrorKind::TensorError,
@@ -316,11 +316,11 @@ mod tests {
     fn test_matmul_2d() -> Result<()> {
         // 1, 2, 3
         // 4, 5, 6
-        let w = Tensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![2, 3])?;
+        let w = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![2, 3])?;
         // 1
         // 2
         // 3
-        let b = Tensor::new(vec![1.0, 2.0, 3.0], vec![3])?;
+        let b = CpuTensor::new(vec![1.0, 2.0, 3.0], vec![3])?;
         // 0
         // 0
         // 1*1 + 2*2 + 3*3 = 1 + 4 + 9
@@ -330,12 +330,12 @@ mod tests {
 
         // 1, 2, 3
         // 4, 5, 6
-        let w = Tensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![2, 3])?;
+        let w = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![2, 3])?;
         // 1, 2, 3
         // 4, 5, 6
         // 7, 8, 9
         // 10, 11, 12
-        let b = Tensor::new(
+        let b = CpuTensor::new(
             vec![
                 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
             ],

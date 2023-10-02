@@ -7,7 +7,7 @@ use std::ops::Range;
 use std::slice;
 
 #[derive(Debug, Default, Clone)]
-pub struct Tensor<'a> {
+pub struct CpuTensor<'a> {
     buf: Cow<'a, [f32]>,
     shape: Vec<usize>,
     strides: Vec<usize>,
@@ -19,7 +19,7 @@ pub struct Tensor<'a> {
 // The buffer may be owned in a Vec or an ref to a part of shared memory. Any
 // change on the tensor is considered as a move operation, to reduce the need on
 // copying the owned buffer. Feel free to clone() the tensor.
-impl<'a> Tensor<'a> {
+impl<'a> CpuTensor<'a> {
     pub fn new(buf: impl Into<Cow<'a, [f32]>>, shape: Vec<usize>) -> Result<Self> {
         let buf = buf.into();
         if buf.len() != shape.iter().product() {
@@ -218,7 +218,7 @@ impl<'a> Tensor<'a> {
         Ok(&self.buf[offset_start..offset_end])
     }
 
-    pub fn copy_chunk(&mut self, pos: &[usize], data: &Tensor<'a>) -> Result<()> {
+    pub fn copy_chunk(&mut self, pos: &[usize], data: &CpuTensor<'a>) -> Result<()> {
         let buf = self.mut_chunk(pos)?;
         buf.copy_from_slice(data.ref_buf());
         Ok(())
@@ -351,7 +351,7 @@ impl<'a> Tensor<'a> {
         &self.shape
     }
 
-    pub fn subtensors(&self) -> Result<Vec<Tensor<'a>>> {
+    pub fn subtensors(&self) -> Result<Vec<CpuTensor<'a>>> {
         let mut result = Vec::with_capacity(self.shape[0]);
         for i in 0..self.shape[0] {
             result.push(self.subtensor(i)?);
@@ -371,7 +371,7 @@ struct TensorIterator<'a, 'b>
 where
     'a: 'b,
 {
-    tensor: &'b Tensor<'a>,
+    tensor: &'b CpuTensor<'a>,
     logical_pos: usize,
     idx_buf: Vec<usize>,
 }
@@ -407,7 +407,7 @@ struct Tensor1DIterator<'a, 'b>
 where
     'a: 'b,
 {
-    tensor: &'b Tensor<'a>,
+    tensor: &'b CpuTensor<'a>,
     logical_pos: usize,
 }
 
@@ -430,7 +430,7 @@ impl<'a, 'b> Iterator for Tensor1DIterator<'a, 'b> {
     }
 }
 
-impl<'a> Display for Tensor<'a> {
+impl<'a> Display for CpuTensor<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.shape().len() == 1 {
             write!(f, "[")?;
@@ -473,7 +473,7 @@ mod tests {
     #[test]
     fn test_tensor() -> Result<()> {
         let v = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let t = Tensor::new(&v, vec![2, 3]).unwrap();
+        let t = CpuTensor::new(&v, vec![2, 3]).unwrap();
         assert_eq!(
             t.subtensor(0)?.iter().collect::<Vec<_>>(),
             vec![1.0, 2.0, 3.0]
@@ -484,7 +484,7 @@ mod tests {
         );
 
         let v = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let t = Tensor::new(&v, vec![2, 3, 1]).unwrap();
+        let t = CpuTensor::new(&v, vec![2, 3, 1]).unwrap();
         assert_eq!(format!("{:?}", t.strides), "[3, 1, 1]");
         assert_eq!(t.is_contiguous(), true);
         assert_eq!(t.subtensor(0)?.ref_buf().to_vec(), vec![1.0, 2.0, 3.0]);
@@ -498,7 +498,7 @@ mod tests {
         let v = vec![
             1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
         ];
-        let t = Tensor::new(&v, vec![2, 3, 2, 1]).unwrap();
+        let t = CpuTensor::new(&v, vec![2, 3, 2, 1]).unwrap();
         assert_eq!(
             t.subtensor(0)?.ref_buf().to_vec(),
             vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
@@ -513,7 +513,7 @@ mod tests {
     #[test]
     fn test_tensor_transform() -> Result<()> {
         let v = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let t = Tensor::new(&v, vec![2, 3]).unwrap();
+        let t = CpuTensor::new(&v, vec![2, 3]).unwrap();
         assert_eq!(t.strides.to_vec(), vec![3, 1]);
         assert_eq!(t.at(&[0, 0])?, 1.0);
         assert_eq!(t.at(&[0, 1])?, 2.0);
@@ -534,7 +534,7 @@ mod tests {
         assert_eq!(t.at(&[2, 1])?, 6.0);
 
         let v = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let t = Tensor::new(&v, vec![2, 3]).unwrap(); // 2x3
+        let t = CpuTensor::new(&v, vec![2, 3]).unwrap(); // 2x3
         let t1 = t.subtensor(0)?; // (3, )
         assert_eq!(t1.shape(), &[3]);
         assert_eq!(t1.at(&[0])?, 1.0); // offset = 1 * 3 + 0 * 1 = 2
@@ -551,7 +551,7 @@ mod tests {
     #[test]
     fn test_tensor_iterator() -> Result<()> {
         let v = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let t = Tensor::new(&v, vec![2, 3]).unwrap();
+        let t = CpuTensor::new(&v, vec![2, 3]).unwrap();
         let tv = t.iter().collect::<Vec<_>>();
         assert_eq!(tv, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
 
@@ -560,7 +560,7 @@ mod tests {
         assert_eq!(tv, vec![1.0, 4.0, 2.0, 5.0, 3.0, 6.0]);
 
         let v = vec![1.0, 2.0, 3.0, 4.0];
-        let t = Tensor::new(&v, vec![4]).unwrap();
+        let t = CpuTensor::new(&v, vec![4]).unwrap();
         let tv = t.iter().collect::<Vec<_>>();
         assert_eq!(tv, vec![1.0, 2.0, 3.0, 4.0]);
 
@@ -573,7 +573,7 @@ mod tests {
 
         // 1, 2, 3
         // 4, 5, 6
-        let t = Tensor::new(&v, vec![2, 3]).unwrap();
+        let t = CpuTensor::new(&v, vec![2, 3]).unwrap();
         assert_eq!(t.to_string(), "[[1, 2, 3]\n,[4, 5, 6]]");
 
         // 1, 4,
@@ -598,7 +598,7 @@ mod tests {
 
         // 1, 2, 3
         // 4, 5, 6
-        let mut t = Tensor::new(v, vec![2, 3]).unwrap();
+        let mut t = CpuTensor::new(v, vec![2, 3]).unwrap();
         assert_eq!(t.to_string(), "[[1, 2, 3]\n,[4, 5, 6]]");
         assert_eq!(t.strides, vec![3, 1]);
 

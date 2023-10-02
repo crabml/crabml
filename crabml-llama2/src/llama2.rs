@@ -61,8 +61,8 @@ pub struct Llama2Weights<'a> {
     rms_ffn_weight: Vec<Tensor<'a>>, // (layer, dim)
     // weights for matmuls
     wq: Vec<Tensor<'a>>, // (layer, embedding_dim, embedding_dim)
-    wk: Vec<Tensor<'a>>, // (layer, embedding_dim, kv_dim)
-    wv: Vec<Tensor<'a>>, // (layer, embeddin_dim, kv_dim)
+    wk: Vec<Tensor<'a>>, // (layer, kv_dim, embedding_dim)
+    wv: Vec<Tensor<'a>>, // (layer, kv_dim, embedding_dim)
     wo: Vec<Tensor<'a>>, // (layer, embedding_dim, embedding_dim)
     // weights for ffn
     w1: Vec<Tensor<'a>>, // (layer, hidden_dim, embedding_dim)
@@ -240,7 +240,7 @@ impl<'a> Llama2Model<'a> {
 }
 
 struct Llama2State<'a> {
-    logits: Vec<f32>,    // output logits (vocab_size, )
+    logits: Vec<f32>, // output logits (vocab_size, )
     // ProbIndex *probindex; // buffer used in top-p sampling
     key_cache: Vec<Tensor<'a>>,   // (layer, seq_len, kv_dim)
     value_cache: Vec<Tensor<'a>>, // (layer, seq_len, kv_dim)
@@ -300,28 +300,24 @@ impl<'a> Llama2Runner<'a> {
 
         // forward all the layers
         for l in 0..self.conf.n_layers {
-            let x_orig_attn = x.clone();
+            let x_attn_orig = x.clone();
 
             // attention rnsnorm
             x = {
-                tensor_rms_norm_inplace(&mut x, 1e-5)?;
-
-                tensor_mul_inplace(
-                    &mut x,
-                    &self.weights.rms_att_weight[l],
-                )?;
+                x = tensor_rms_norm_inplace(x, 1e-5)?;
+                tensor_mul_inplace(&mut x, &self.weights.rms_att_weight[l])?;
                 x
             };
 
             // matmul qkv for every head
             let (q, k, v) = {
-                // .q(embedding_dim, ) = (xb(1, embedding_dim) * wq(embedding_dim, embedding_dim)).T
-                // .k(kv_dim, ) = (xb(1, embedding_dim) * wq(embedding_dim, kv_dim)).T
-                // .v(kv_dim, ) = (xb(1, embedding_dim) * wv(embedding_dim, kv_dim)).T
-                let mut q = Tensor::zeros(vec![embed_dim])?.with_name("q");
-                let mut k = Tensor::zeros(vec![kv_dim])?.with_name("k");
-                let mut v = Tensor::zeros(vec![kv_dim])?.with_name("v");
+                let mut q = Tensor::zeros(vec![embed_dim])?;
+                let mut k = Tensor::zeros(vec![kv_dim])?;
+                let mut v = Tensor::zeros(vec![kv_dim])?;
 
+                // wq: (embed_dim, embed_dim) @ x (embed_dim, ) => (embed_dim, )
+                // wk: (kv_dim, embed_dim) @ x (embed_dim, ) => (kv_dim, )
+                // wv: (kv_dim, embed_dim) @ x (embed_dim, ) => (kv_dim, )
                 tensor_2d_matmul(&mut q, &self.weights.wq[l], &x)?;
                 tensor_2d_matmul(&mut k, &self.weights.wk[l], &x)?;
                 tensor_2d_matmul(&mut v, &self.weights.wv[l], &x)?;
@@ -349,19 +345,16 @@ impl<'a> Llama2Runner<'a> {
             };
 
             // multihead attention. iterate over all heads
-            // output to self.state.xb
-            // q: (n_heads, head_size)
-            // key_cache: (seq, n_kv_heads, head_size)
-            // attn_scores: (seq, )
-            // value_cache: (seq, kv_heads, head_size)
             x = {
                 let q = q.view(&[n_heads, head_size])?;
 
-                let mut attn_scores =
-                    Tensor::zeros(vec![self.conf.seq_len])?.with_name("attn_scores");
-                let mut x_with_attn =
-                    Tensor::zeros(vec![n_heads, head_size])?.with_name("x_with_attn");
+                let mut attn_scores = Tensor::zeros(vec![self.conf.seq_len])?;
+                let mut x_with_attn = Tensor::zeros(vec![n_heads, head_size])?;
 
+                // q: (n_heads, head_size)
+                // key_cache: (seq, n_kv_heads, head_size)
+                // attn_scores: (seq, )
+                // value_cache: (seq, kv_heads, head_size)
                 tensor_multi_query_attention(
                     &mut x_with_attn,
                     &mut attn_scores,
@@ -370,18 +363,17 @@ impl<'a> Llama2Runner<'a> {
                     &self.state.value_cache[l],
                     pos,
                 )?;
+
                 let x_with_attn = x_with_attn.view(&[embed_dim])?;
+                let mut x_with_attn_wo = Tensor::zeros(vec![embed_dim])?;
 
                 // final matmul to get the output of the attention
-                let mut x_with_attn_wo =
-                    Tensor::zeros(vec![embed_dim])?.with_name("x_with_attn_wo");
-
                 tensor_2d_matmul(&mut x_with_attn_wo, &self.weights.wo[l], &x_with_attn)?;
                 x_with_attn_wo
             };
 
             // residual connection back into x
-            tensor_add_inplace(&mut x, &x_orig_attn)?;
+            tensor_add_inplace(&mut x, &x_attn_orig)?;
 
             // ffn
             {
@@ -390,11 +382,8 @@ impl<'a> Llama2Runner<'a> {
 
                 // ffn rmsnorm
                 x = {
-                    tensor_rms_norm_inplace(&mut x, 1e-5)?;
-                    tensor_mul_inplace(
-                        &mut x,
-                        &self.weights.rms_ffn_weight[l],
-                    )?;
+                    x = tensor_rms_norm_inplace(x, 1e-5)?;
+                    tensor_mul_inplace(&mut x, &self.weights.rms_ffn_weight[l])?;
                     x
                 };
 
@@ -403,6 +392,8 @@ impl<'a> Llama2Runner<'a> {
 
                 // Now for FFN in PyTorch we have: self.w2(F.silu(self.w1(x)) * self.w3(x))
                 // first calculate self.w1(x) and self.w3(x)
+                // w1: (hidden_dim, embed_dim) @ x (embed_dim, ) => (hidden_dim, )
+                // w3: (hidden_dim, embed_dim) @ x (embed_dim, ) => (hidden_dim, )
                 tensor_2d_matmul(&mut h1, &self.weights.w1[l], &x)?;
                 tensor_2d_matmul(&mut h2, &self.weights.w3[l], &x)?;
 
@@ -423,14 +414,14 @@ impl<'a> Llama2Runner<'a> {
 
         // final rmsnorm
         x = {
-            tensor_rms_norm_inplace(&mut x, 1e-5)?;
+            x = tensor_rms_norm_inplace(x, 1e-5)?;
             tensor_mul_inplace(&mut x, &self.weights.rms_final_weight)?;
             x
         };
 
         // classifier into logits
         let logits = {
-            let mut logits = Tensor::zeros(vec![self.conf.vocab_size])?.with_name("logits");
+            let mut logits = Tensor::zeros(vec![self.conf.vocab_size])?;
             tensor_2d_matmul(&mut logits, &self.weights.wcls, &x)?; // (vocab_size,
             logits
         };

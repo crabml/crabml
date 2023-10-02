@@ -70,23 +70,31 @@ impl TensorStrider {
 pub type TensorBufferHandle = usize;
 
 #[derive(Clone)]
-pub struct TensorBuffer<D: TensorDevice> {
+pub struct TensorBuffer<D: TensorDevice, T: TensorDataType> {
     handle: TensorBufferHandle,
     device: Rc<RefCell<D>>,
+    _phantom: std::marker::PhantomData<T>,
 }
 
-impl<D: TensorDevice> TensorBuffer<D> {
+impl<D: TensorDevice, T: TensorDataType> TensorBuffer<D, T> {
     fn alloc(size: usize, device: &Rc<RefCell<D>>) -> Rc<RefCell<Self>> {
-        let handle = device.borrow_mut().alloc_buffer(size);
+        let handle = device.borrow_mut().alloc_buffer(size * T::size());
         let buf = Self {
             handle,
             device: device.clone(),
+            _phantom: Default::default(),
         };
         Rc::new(RefCell::new(buf))
     }
+
+    fn copy_from(&mut self, src: &Self, offset: usize, limit: usize) -> Result<()> {
+        let mut device = self.device.borrow_mut();
+        device.copy_buffer(self.handle, src.handle, offset * T::size(), limit * T::size());
+        Ok(())
+    }
 }
 
-impl<D: TensorDevice> Drop for TensorBuffer<D> {
+impl<D: TensorDevice, T: TensorDataType> Drop for TensorBuffer<D, T> {
     fn drop(&mut self) {
         self.device.borrow_mut().recycle_buffer(self.handle);
     }
@@ -111,18 +119,16 @@ pub trait TensorDataType {
 }
 
 #[derive(Clone)]
-pub struct Tensor<D: TensorDevice, T> {
+pub struct Tensor<D: TensorDevice, T: TensorDataType> {
     strider: TensorStrider,
-    buf: Rc<RefCell<TensorBuffer<D>>>,
-    elem_size: usize,
-    _phantom: std::marker::PhantomData<T>,
+    buf: Rc<RefCell<TensorBuffer<D, T>>>,
 }
 
 impl<D: TensorDevice, T: TensorDataType> Tensor<D, T> {
     pub fn zeros(shape: Vec<usize>, device: &Rc<RefCell<D>>) -> Self {
         let strider: TensorStrider = TensorStrider::new(shape, 0);
         let buf = TensorBuffer::alloc(strider.len() * T::size(), device);
-        Self { strider, buf, elem_size: T::size(), _phantom: Default::default() }
+        Self { strider, buf }
     }
 
     pub fn shape(&self) -> &[usize] {
@@ -137,25 +143,15 @@ impl<D: TensorDevice, T: TensorDataType> Tensor<D, T> {
         let strider = self.strider.row(pos)?;
         Ok(Self {
             strider,
-            elem_size: self.elem_size,
             buf: self.buf.clone(),
-            _phantom: Default::default(),
         })
     }
 
     pub fn copy_row_from(&mut self, pos: &[usize], t: &Self) -> Result<()> {
         let strider = self.strider.row(pos)?;
         let n_elems = strider.len();
-        let src_len = n_elems * self.elem_size;
-        let dst_offset = strider.offset * self.elem_size;
-        let dst = self.buf.borrow_mut();
-        let src = t.buf.borrow();
-        dst.device.borrow_mut().copy_buffer(
-            dst.handle,
-            dst_offset,
-            src.handle,
-            src_len,
-        );
+        let mut buf = self.buf.borrow_mut();
+        buf.copy_from(&t.buf.borrow(), t.strider.offset, n_elems)?;
         Ok(())
     }
 
@@ -174,9 +170,7 @@ impl<D: TensorDevice, T: TensorDataType> Tensor<D, T> {
         let strider = TensorStrider::new(shape, self.strider.offset);
         Ok(Self {
             strider,
-            elem_size: self.elem_size,
             buf: self.buf.clone(),
-            _phantom: Default::default(),
         })
     }
 }

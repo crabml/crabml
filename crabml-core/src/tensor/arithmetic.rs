@@ -204,28 +204,6 @@ pub fn tensor_rope_inplace<'a>(
     Ok((q, k))
 }
 
-pub fn tensor_copy_chunk<'a>(out: &mut Tensor<'_>, n: usize, row: &Tensor<'a>) -> Result<()> {
-    require_tensor_owned(out)?;
-    require_tensor_contiguous(row)?;
-
-    if n >= out.shape()[0] {
-        return Err(Error {
-            kind: ErrorKind::TensorError,
-            message: format!(
-                "tensor ~{} row {} is out of bounds",
-                out.name().unwrap_or_default(),
-                n,
-            ),
-            cause: None,
-        });
-    }
-
-    let row_size = row.len();
-    let target_buf = &mut out.mut_buf()?[row_size * n..row_size * (n + 1)];
-    target_buf.copy_from_slice(row.ref_buf());
-    Ok(())
-}
-
 fn require_tensor_shape(t: &Tensor, shape: &[usize]) -> Result<()> {
     if !t.shape().eq(shape) {
         return Err(Error {

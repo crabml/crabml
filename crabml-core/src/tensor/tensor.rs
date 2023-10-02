@@ -218,6 +218,12 @@ impl<'a> Tensor<'a> {
         Ok(&self.buf[offset_start..offset_end])
     }
 
+    pub fn copy_chunk(&mut self, pos: &[usize], data: &Tensor<'a>) -> Result<()> {
+        let buf = self.mut_chunk(pos)?;
+        buf.copy_from_slice(data.ref_buf());
+        Ok(())
+    }
+
     pub fn mut_chunk(&mut self, pos: &[usize]) -> Result<&mut [f32]> {
         if !self.is_contiguous() {
             return Err(Error {

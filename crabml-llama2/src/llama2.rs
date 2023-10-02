@@ -1,24 +1,18 @@
 use crate::sampler::Llama2Sampler;
-use crate::tokenizer;
 use crate::tokenizer::Llama2Tokenizer;
 use crabml::error::Error;
 use crabml::error::ErrorKind;
 use crabml::error::Result;
 use crabml::gguf::GGUFFile;
-use crabml::gguf::GGUFFileLoader;
 use crabml::tensor::arithmetic::tensor_add_inplace;
 use crabml::tensor::arithmetic::tensor_matmul_2d;
-use crabml::tensor::arithmetic::tensor_copy_chunk;
 use crabml::tensor::arithmetic::tensor_mul_inplace;
 use crabml::tensor::arithmetic::tensor_multi_query_attention;
 use crabml::tensor::arithmetic::tensor_rms_norm_inplace;
 use crabml::tensor::arithmetic::tensor_rope_inplace;
 use crabml::tensor::arithmetic::tensor_silu_inplace;
 use crabml::tensor::Tensor;
-use rayon::prelude::*;
 use std::ops::AddAssign;
-use std::slice;
-use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 use std::vec;
@@ -325,8 +319,8 @@ impl<'a> Llama2Runner<'a> {
                 let k = k.view(&[kv_dim])?;
                 let v = v.view(&[kv_dim])?;
 
-                tensor_copy_chunk(&mut self.state.key_cache[l], pos, &k)?;
-                tensor_copy_chunk(&mut self.state.value_cache[l], pos, &v)?;
+                self.state.key_cache[l].copy_chunk(&[pos], &k)?;
+                self.state.value_cache[l].copy_chunk(&[pos], &v)?;
             };
 
             // multihead attention. iterate over all heads
@@ -506,6 +500,7 @@ impl<'a> Iterator for Llama2RunnerOutputGenerator<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crabml::gguf::GGUFFileLoader;
 
     #[test]
     fn test_gguf_tokenizer() -> Result<()> {

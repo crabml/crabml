@@ -77,14 +77,14 @@ pub struct TensorBuffer<D: TensorDevice, T: TensorDataType> {
 }
 
 impl<D: TensorDevice, T: TensorDataType> TensorBuffer<D, T> {
-    fn alloc(size: usize, device: &Rc<RefCell<D>>) -> Rc<RefCell<Self>> {
+    fn alloc(size: usize, device: &Rc<RefCell<D>>) -> Self {
         let handle = device.borrow_mut().alloc_buffer(size * T::size());
         let buf = Self {
             handle,
             device: device.clone(),
             _phantom: Default::default(),
         };
-        Rc::new(RefCell::new(buf))
+        buf
     }
 
     fn copy_from(&mut self, src: &Self, offset: usize, limit: usize) -> Result<()> {
@@ -121,7 +121,7 @@ pub trait TensorDataType {
 #[derive(Clone)]
 pub struct Tensor<D: TensorDevice, T: TensorDataType> {
     strider: TensorStrider,
-    buf: Rc<RefCell<TensorBuffer<D, T>>>,
+    buf: TensorBuffer<D, T>,
 }
 
 impl<D: TensorDevice, T: TensorDataType> Tensor<D, T> {
@@ -139,23 +139,14 @@ impl<D: TensorDevice, T: TensorDataType> Tensor<D, T> {
         self.strider.len()
     }
 
-    pub fn row(&self, pos: &[usize]) -> Result<Self> {
-        let strider = self.strider.row(pos)?;
-        Ok(Self {
-            strider,
-            buf: self.buf.clone(),
-        })
-    }
-
     pub fn copy_row_from(&mut self, pos: &[usize], t: &Self) -> Result<()> {
         let strider = self.strider.row(pos)?;
         let n_elems = strider.len();
-        let mut buf = self.buf.borrow_mut();
-        buf.copy_from(&t.buf.borrow(), t.strider.offset, n_elems)?;
+        self.buf.copy_from(&t.buf, t.strider.offset, n_elems)?;
         Ok(())
     }
 
-    pub fn reshape(&self, shape: Vec<usize>) -> Result<Self> {
+    pub fn reshape(self, shape: Vec<usize>) -> Result<Self> {
         let len: usize = shape.iter().product();
         if len != self.len() {
             return Err((
@@ -170,7 +161,7 @@ impl<D: TensorDevice, T: TensorDataType> Tensor<D, T> {
         let strider = TensorStrider::new(shape, self.strider.offset);
         Ok(Self {
             strider,
-            buf: self.buf.clone(),
+            buf: self.buf,
         })
     }
 }

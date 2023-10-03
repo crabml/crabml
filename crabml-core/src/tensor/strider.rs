@@ -65,6 +65,27 @@ impl TensorStrider {
         })
     }
 
+    /// from the position, iterate until the last row / column
+    pub fn iter_axis(&self, pos: &[usize], axis: usize) -> Result<impl Iterator<Item=usize> + '_> {
+        let iter = self.iter_axis_inner(pos, axis)?;
+        let iter = iter.map(|pos| self.at(&pos));
+        Ok(iter)
+    }
+
+    fn iter_axis_inner(&self, pos: &[usize], axis: usize) -> Result<impl Iterator<Item=Vec<usize>>> {
+        let mut pos = pos.to_vec();
+        let axis_pos = pos[axis];
+        let axis_max = self.shape[axis];
+        for i in axis_pos..axis_max {
+            pos[axis] = i;
+        }
+
+        Ok((axis_pos..axis_max).map(move |i| {
+            pos[axis] = i;
+            pos.clone()
+        }))
+    }
+
     pub fn view(&self, shape: Vec<usize>) -> Result<Self> {
         if !self.is_contiguous() {
             return Err((ErrorKind::TensorError, "not contiguous").into());

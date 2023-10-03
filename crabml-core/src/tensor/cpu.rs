@@ -2,6 +2,7 @@ use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::error::Result;
 use std::borrow::Cow;
+use std::ops::IndexMut;
 use std::slice;
 
 use super::strider::TensorStrider;
@@ -79,12 +80,43 @@ impl<'a> CpuTensor<'a> {
         }
     }
 
+    pub fn iter_axis(&'a self, pos: &[usize], axis: usize) -> Result<impl Iterator<Item = &'a f32>> {
+        Ok(self.strider.iter_axis(pos, axis)?.map(|i| &self.buf[i] ))
+    }
+
+    pub fn iter_axis_mut(&'a mut self, pos: &[usize], axis: usize) -> Result<impl Iterator<Item = &'a mut f32>> {
+        if !self.is_owned() {
+            return Err((ErrorKind::TensorError, "not owned").into());
+        }
+
+        let pos_iter = Box::new(self.strider.iter_axis(pos, axis)?);
+        Ok(CpuTensorAxisIterMut {
+            tensor: self,
+            pos_iter,
+        })
+    }
+
     pub fn is_contiguous(&self) -> bool {
         self.strider.is_contiguous()
     }
 
     pub fn shape(&self) -> &[usize] {
         self.strider.shape()
+    }
+}
+
+struct CpuTensorAxisIterMut<'a> {
+    tensor: &'a CpuTensor<'a>,
+    pos_iter: Box<dyn Iterator<Item = usize> + 'a>,
+}
+
+impl<'a> Iterator for CpuTensorAxisIterMut<'a> {
+    type Item = &'a mut f32;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.pos_iter.next().map(|pos| {
+            &mut self.tensor.buf[pos]
+        })
     }
 }
 

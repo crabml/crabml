@@ -106,7 +106,7 @@ impl Llama2Sampler {
         probs
             .iter()
             .enumerate()
-            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
             .map(|(i, _)| i)
             .ok_or_else(|| Error {
                 kind: ErrorKind::Unexpected,

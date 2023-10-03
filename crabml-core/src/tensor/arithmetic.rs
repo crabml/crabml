@@ -123,13 +123,13 @@ pub fn tensor_multi_query_attention<'a>(
     let n_seq = k_cache.shape()[0];
 
     let mut out = CpuTensor::zeros(vec![n_heads, head_size])?;
+    let mut attn = CpuTensor::zeros(vec![n_seq])?;
 
     // get attention scores
     for h in 0..n_heads {
-        let mut attn = CpuTensor::zeros(vec![n_seq])?;
 
         let kvh = h / (n_heads / n_kv_heads);
-        for (tok, attn) in attn.iter_mut()?.take(pos + 1).enumerate() {
+        for (tok, attn) in attn.iter_mut()?.take(pos).enumerate() {
             let q_head = q.iter_axis(vec![h, 0], 1)?; // (head_size, )
             let k_head = k_cache.iter_axis(vec![tok, kvh, 0], 2)?; // (head_size, )
             let score = q_head.zip(k_head).map(|(q, k)| q * k).sum::<f32>();
@@ -139,7 +139,7 @@ pub fn tensor_multi_query_attention<'a>(
         tensor_softmax_inplace(&mut attn, pos)?;
 
         let kvh = h / (n_heads / n_kv_heads);
-        for (tok, attn) in attn.iter().take(pos + 1).enumerate() {
+        for (tok, attn) in attn.iter().take(pos).enumerate() {
             let v_head = v_cache.iter_axis(vec![tok, kvh, 0], 2)?; // (head_size, )
             let out_buf = out.iter_axis_mut(vec![h, 0], 1)?; // (head_size, )
             for (i, (o, v)) in out_buf.zip(v_head).enumerate() {

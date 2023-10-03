@@ -321,8 +321,8 @@ impl<'a> Llama2Runner<'a> {
 
             // save to kv cache
             {
-                self.state.key_cache[l].copy_from(&[pos, 0], &k)?;
-                self.state.value_cache[l].copy_from(&[pos, 0], &v)?;
+                self.state.key_cache[l].copy_from(&[pos, 0, 0], &k)?;
+                self.state.value_cache[l].copy_from(&[pos, 0, 0], &v)?;
             };
 
             // multihead attention. iterate over all heads

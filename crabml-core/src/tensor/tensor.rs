@@ -55,15 +55,15 @@ pub enum TensorDeviceOp {
 
     RmsNormInplace {
         t: TensorID,
-    }
+    },
 }
 
 /// A tensor device is responsible for manage the buffer of tensors, and performing
 /// platform specific operations on tensors.
-/// 
+///
 /// A tensor device might be a CPU, GPU. Besides that, if we want to inference a model
 /// with quantization, we can also have a specialized quantized CPU/GPU tensor device.
-/// 
+///
 /// The tensors are managed in a handle based way. The device is responsible for manage
 /// the pool of the tensors, each tensor is identified by a unique TensorID. The tensor
 /// may located in the CPU or GPU memory, you can not directly acccess its data except

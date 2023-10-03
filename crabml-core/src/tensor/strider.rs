@@ -30,7 +30,7 @@ impl TensorStrider {
         self.offset
     }
 
-    pub fn offset_at(&self, idx: &[usize]) -> usize {
+    pub fn at(&self, idx: &[usize]) -> usize {
         let mut offset = 0;
         for (dim, stride) in idx.iter().zip(self.strides.iter()) {
             offset += dim * stride;
@@ -65,6 +65,45 @@ impl TensorStrider {
         })
     }
 
+    pub fn view(&self, shape: Vec<usize>) -> Result<Self> {
+        if !self.is_contiguous() {
+            return Err((ErrorKind::TensorError, "not contiguous").into());
+        }
+        let len: usize = shape.iter().product();
+        if len != self.len() {
+            return Err((
+                ErrorKind::TensorError,
+                format!(
+                    "invalid shape {:?} for a tensor has a length of {}",
+                    shape, len
+                ),
+            )
+                .into());
+        }
+
+        let strider = TensorStrider::new(shape, self.offset);
+        Ok(strider)
+    }
+
+    pub fn is_contiguous(&self) -> bool {
+        if self.strides.len() == 0 {
+            return true;
+        }
+
+        if self.strides.last() != Some(&1) {
+            return false;
+        }
+
+        let mut last_stride = 1;
+        for i in (1..self.shape.len()).rev() {
+            if last_stride != self.strides[i] {
+                return false;
+            }
+            last_stride *= self.shape[i];
+        }
+        true
+    }
+
     pub fn len(&self) -> usize {
         self.shape.iter().product()
     }
@@ -82,7 +121,22 @@ impl TensorStrider {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
-    fn test_strider() {
+    fn test_strider() -> Result<()> {
+        let s = TensorStrider::new(vec![3, 4], 0);
+        assert_eq!(s.at(&[0, 0]), 0);
+        assert_eq!(s.at(&[0, 3]), 3);
+        assert_eq!(s.at(&[1, 0]), 4);
+
+        let r = s.view(vec![4, 2]);
+        assert!(r.is_err());
+
+        let s = s.view(vec![2, 6])?;
+        assert_eq!(s.at(&[0, 0]), 0);
+        assert_eq!(s.at(&[0, 5]), 5);
+        assert_eq!(s.at(&[1, 0]), 6);
+        Ok(())
     }
 }

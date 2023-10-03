@@ -70,7 +70,7 @@ impl TensorStrider {
     pub fn into_iter_axis(
         self,
         pos: Vec<usize>,
-        axis: usize
+        axis: usize,
     ) -> Result<impl Iterator<Item = usize>> {
         let iter = self.iter_axis_inner(pos, axis)?;
         let iter = iter.map(move |pos| self.at_unchecked(&pos));

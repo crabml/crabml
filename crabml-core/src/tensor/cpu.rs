@@ -81,11 +81,19 @@ impl<'a> CpuTensor<'a> {
         }
     }
 
-    pub fn iter_axis(&'a self, pos: Vec<usize>, axis: usize) -> Result<impl Iterator<Item = &'a f32>> {
-        Ok(self.strider.iter_axis(pos, axis)?.map(|i| &self.buf[i] ))
+    pub fn iter_axis(
+        &'a self,
+        pos: Vec<usize>,
+        axis: usize,
+    ) -> Result<impl Iterator<Item = &'a f32>> {
+        Ok(self.strider.iter_axis(pos, axis)?.map(|i| &self.buf[i]))
     }
 
-    pub fn iter_axis_mut(&'a mut self, pos: Vec<usize>, axis: usize) -> Result<impl Iterator<Item = &'a mut f32>> {
+    pub fn iter_axis_mut(
+        &'a mut self,
+        pos: Vec<usize>,
+        axis: usize,
+    ) -> Result<impl Iterator<Item = &'a mut f32>> {
         if !self.is_owned() {
             return Err((ErrorKind::TensorError, "not owned").into());
         }
@@ -99,12 +107,12 @@ impl<'a> CpuTensor<'a> {
         };
 
         // on a contiguous tensor, if we move one position according to the axis, the step length must equals the stride
-        let pos = self.strider.at(&pos)?;
-        let buf = &mut buf[pos..];
+        let buf = &mut buf[self.strider.at(&pos)?..];
         let stride = self.strider.strides()[axis];
+        let count = self.strider.shape()[axis] - pos[axis];
 
         // whenever you wanna make a IterMut, the builtin functions like split_at_mut / chunks_mut are your friend
-        let iter = buf.chunks_mut(stride).map(|chunk| {
+        let iter = buf.chunks_mut(stride).take(count).map(|chunk| {
             let (n, _) = chunk.split_first_mut().unwrap();
             n
         });
@@ -128,7 +136,27 @@ mod tests {
     fn test_tensor_iter_axis() -> Result<()> {
         let t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![2, 3])?;
         let r = t.iter_axis(vec![0, 0], 1)?.cloned().collect::<Vec<_>>();
-        assert_eq!(r, vec![]);
+        assert_eq!(r, vec![1.0, 2.0, 3.0]);
+        let r = t.iter_axis(vec![0, 0], 0)?.cloned().collect::<Vec<_>>();
+        assert_eq!(r, vec![1.0, 4.0]);
+        // 1, 2, 3
+        // 4, 5, 6
+        let r = t.iter_axis(vec![0, 1], 0)?.cloned().collect::<Vec<_>>();
+        assert_eq!(r, vec![2.0, 5.0]);
+
+        let mut t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![2, 3])?;
+        let r = t
+            .iter_axis_mut(vec![0, 0], 1)?
+            .map(|f| *f)
+            .collect::<Vec<_>>();
+        assert_eq!(r, vec![1.0, 2.0, 3.0]);
+
+        let mut t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![2, 3])?;
+        let r = t
+            .iter_axis_mut(vec![0, 0], 0)?
+            .map(|f| *f)
+            .collect::<Vec<_>>();
+        assert_eq!(r, vec![1.0, 4.0]);
 
         Ok(())
     }

@@ -8,21 +8,18 @@ use crate::tensor::CpuTensor;
 pub fn tensor_rms_norm_inplace<'a>(mut x: CpuTensor<'a>, eps: f32) -> Result<CpuTensor<'a>> {
     require_tensor_contiguous(&x)?;
     require_tensor_dims(&x, &[1])?;
-    let x_buf = x.mut_buf()?;
-    let sum = x_buf.iter().fold(0.0, |s, n| s + n * n);
-    let rms = ((sum / x_buf.len() as f32) + eps).sqrt();
-    for i in 0..x_buf.len() {
-        x_buf[i] = x_buf[i] / rms;
-    }
+
+    let len = x.shape()[0];
+    let sum = x.iter_axis(vec![0], 0)?.fold(0.0, |s, n| s + n * n);
+    let rms = ((sum / len as f32) + eps).sqrt();
+    x.iter_axis_mut(vec![0], 0)?.map(|n| *n = *n / rms);
     Ok(x)
 }
 
 pub fn tensor_mul_inplace<'a>(mut a: CpuTensor<'a>, b: &CpuTensor<'a>) -> Result<CpuTensor<'a>> {
     require_tensor_shape(&a, b.shape())?;
-    let a_buf = a.mut_buf()?;
-    let b_buf = b.ref_buf();
 
-    for (a, b) in a_buf.iter_mut().zip(b_buf.iter()) {
+    for (a, b) in a.iter_mut()?.zip(b.iter()) {
         *a *= b;
     }
     Ok(a)
@@ -33,20 +30,17 @@ pub fn tensor_add_inplace<'a>(mut a: CpuTensor<'a>, b: &CpuTensor<'a>) -> Result
     require_tensor_contiguous(&a)?;
     require_tensor_contiguous(b)?;
 
-    let a_buf = a.mut_buf()?;
-    let b_buf = b.ref_buf();
-
-    for (a, b) in a_buf.iter_mut().zip(b_buf.iter()) {
+    for (a, b) in a.iter_mut()?.zip(b.iter()) {
         *a += *b;
     }
     Ok(a)
 }
 
 pub fn tensor_silu_inplace<'a>(mut x: CpuTensor<'a>) -> Result<CpuTensor<'a>> {
-    let buf = x.mut_buf()?;
-    for i in 0..buf.len() {
-        buf[i] = buf[i] * (1.0 / (1.0 + (-buf[i]).exp()));
-    }
+    // for i in 0..buf.len() {
+    //    buf[i] = buf[i] * (1.0 / (1.0 + (-buf[i]).exp()));
+    // }
+    x.iter_mut()?.for_each(|n| *n = *n / (1.0 + (-*n).exp()));
     Ok(x)
 }
 
@@ -91,17 +85,16 @@ pub fn tensor_matmul_2d<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuT
 }
 
 // t: (rows, cols)
-pub fn tensor_softmax_inplace<'a>(t: &mut CpuTensor<'a>, pos: usize) -> Result<()> {
+pub fn tensor_softmax_inplace<'a>(t: &mut CpuTensor<'a>, limit: usize) -> Result<()> {
     require_tensor_dims(t, &[1])?;
-    let buf = t.mut_buf()?;
-    let buf = &mut buf[0..pos + 1];
-    let max = buf.iter().fold(f32::NAN, |a, b| a.max(*b));
+
+    let max = t.iter_axis(vec![0], 0)?.take(limit).fold(f32::NAN, |a, b| a.max(*b));
     let mut sum = 0.0;
-    for val in buf.iter_mut() {
+    for val in t.iter_axis_mut(vec![0], 0)? {
         *val = (*val - max).exp();
         sum += *val;
     }
-    for val in buf.iter_mut() {
+    for val in t.iter_axis_mut(vec![0], 0)? {
         *val /= sum;
     }
     Ok(())
@@ -195,8 +188,7 @@ fn require_tensor_shape(t: &CpuTensor, shape: &[usize]) -> Result<()> {
         return Err(Error {
             kind: ErrorKind::TensorError,
             message: format!(
-                "tensor ~{} shape is not {:?}, but {:?}",
-                t.name().unwrap_or_default(),
+                "tensor shape is not {:?}, but {:?}",
                 shape,
                 t.shape(),
             ),
@@ -210,7 +202,7 @@ fn require_tensor_owned(t: &CpuTensor) -> Result<()> {
     if !t.is_owned() {
         return Err(Error {
             kind: ErrorKind::TensorError,
-            message: format!("tensor {} is not owned", t.name().unwrap_or_default(),),
+            message: "not owned".into(),
             cause: None,
         });
     }
@@ -222,8 +214,7 @@ fn require_tensor_dims(t: &CpuTensor, dims: &[usize]) -> Result<()> {
         return Err(Error {
             kind: ErrorKind::TensorError,
             message: format!(
-                "tensor ~{} is required for {} dimensions, but got {}",
-                t.name().unwrap_or_default(),
+                "tensor is required for {} dimensions, but got {}",
                 dims.iter()
                     .map(|d| d.to_string())
                     .collect::<Vec<_>>()
@@ -257,8 +248,7 @@ fn require_tensor_contiguous(t: &CpuTensor) -> Result<()> {
         return Err(Error {
             kind: ErrorKind::TensorError,
             message: format!(
-                "tensor ~{} need to be contiguous",
-                t.name().unwrap_or_default()
+                "tensor need to be contiguous",
             ),
             cause: None,
         });

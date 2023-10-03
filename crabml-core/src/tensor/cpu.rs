@@ -119,6 +119,17 @@ impl<'a> CpuTensor<'a> {
         Ok(iter)
     }
 
+    pub fn iter(&'a self) -> impl Iterator<Item = &'a f32> {
+        self.buf.iter()
+    }
+
+    pub fn iter_mut(&'a mut self) -> Result<impl Iterator<Item = &'a mut f32>> {
+        if !self.is_owned() {
+            return Err((ErrorKind::TensorError, "not owned").into());
+        }
+        Ok(self.buf.to_mut().iter_mut())
+    }
+
     pub fn is_contiguous(&self) -> bool {
         self.strider.is_contiguous()
     }

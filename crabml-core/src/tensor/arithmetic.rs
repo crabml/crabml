@@ -92,11 +92,11 @@ pub fn tensor_softmax_inplace<'a>(t: &mut CpuTensor<'a>, limit: usize) -> Result
         .take(limit)
         .fold(f32::NAN, |a, b| a.max(*b));
     let mut sum = 0.0;
-    for val in t.iter_axis_mut(vec![0], 0)? {
+    for val in t.iter_axis_mut(vec![0], 0)?.take(limit) {
         *val = (*val - max).exp();
         sum += *val;
     }
-    for val in t.iter_axis_mut(vec![0], 0)? {
+    for val in t.iter_axis_mut(vec![0], 0)?.take(limit) {
         *val /= sum;
     }
     Ok(())
@@ -129,17 +129,17 @@ pub fn tensor_multi_query_attention<'a>(
     for h in 0..n_heads {
 
         let kvh = h / (n_heads / n_kv_heads);
-        for (tok, attn) in attn.iter_mut()?.take(pos).enumerate() {
+        for (tok, attn) in attn.iter_mut()?.take(pos+1).enumerate() {
             let q_head = q.iter_axis(vec![h, 0], 1)?; // (head_size, )
             let k_head = k_cache.iter_axis(vec![tok, kvh, 0], 2)?; // (head_size, )
             let score = q_head.zip(k_head).map(|(q, k)| q * k).sum::<f32>();
             *attn = score / (head_size as f32).sqrt();
         }
 
-        tensor_softmax_inplace(&mut attn, pos)?;
+        tensor_softmax_inplace(&mut attn, pos+1)?;
 
         let kvh = h / (n_heads / n_kv_heads);
-        for (tok, attn) in attn.iter().take(pos).enumerate() {
+        for (tok, attn) in attn.iter().take(pos+1).enumerate() {
             let v_head = v_cache.iter_axis(vec![tok, kvh, 0], 2)?; // (head_size, )
             let out_buf = out.iter_axis_mut(vec![h, 0], 1)?; // (head_size, )
             for (i, (o, v)) in out_buf.zip(v_head).enumerate() {

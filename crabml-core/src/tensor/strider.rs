@@ -56,6 +56,16 @@ impl TensorStrider {
         offset
     }
 
+    pub fn iter(&self) -> impl Iterator<Item = usize> + '_ {
+        let mut pos = vec![0; self.shape.len()];
+        let shape = &self.shape;
+        (0..self.len()).into_iter().map(move |i| {
+            let v = self.at_unchecked(&pos);
+            Self::increment_pos(&mut pos, shape);
+            v
+        })
+    }
+
     /// from the position, iterate until the end of the row / column
     pub fn iter_axis(
         &self,
@@ -148,6 +158,17 @@ impl TensorStrider {
         strides.reverse();
         strides
     }
+
+    fn increment_pos(pos: &mut Vec<usize>, shape: &[usize]) {
+        for i in (0..pos.len()).rev() {
+            if pos[i] < shape[i] - 1 {
+                pos[i] += 1;
+                return;
+            } else {
+                pos[i] = 0;
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -187,6 +208,22 @@ mod tests {
         assert_eq!(r[0], vec![0, 0]);
         assert_eq!(r[1], vec![1, 0]);
         assert_eq!(r[2], vec![2, 0]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_strider_increment_pos() -> Result<()> {
+        let shape = vec![3, 2];
+        let mut pos = vec![0, 0];
+
+        TensorStrider::increment_pos(&mut pos, &shape);
+        assert_eq!(pos, vec![0, 1]);
+        TensorStrider::increment_pos(&mut pos, &shape);
+        TensorStrider::increment_pos(&mut pos, &shape);
+        assert_eq!(pos, vec![1, 1]);
+        TensorStrider::increment_pos(&mut pos, &shape);
+        TensorStrider::increment_pos(&mut pos, &shape);
+        assert_eq!(pos, vec![2, 1]);
         Ok(())
     }
 }

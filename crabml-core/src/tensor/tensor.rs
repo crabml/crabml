@@ -122,15 +122,6 @@ impl<D: TensorDevice> Tensor<D> {
         Ok(())
     }
 
-    // cpu only:
-    // pub fn iter_axis(&mut self, pos: &[usize], axis: usize) -> Result<Box<dyn Iterator<Item=&D::DataType>>> {
-    //    todo!();
-    // }
-
-    // pub fn iter_axis_mut(&mut self, pos: &[usize], axis: usize) -> Result<Box<dyn Iterator<Item=&mut D::DataType>>> {
-    //    todo!();
-    // }
-
     pub fn view(self, shape: Vec<usize>) -> Result<Self> {
         let strider = self.strider.view(shape)?;
 

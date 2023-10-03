@@ -151,8 +151,7 @@ pub fn tensor_multi_query_attention<'a>(
     Ok(out)
 }
 
-/*
-// t: (n_heads, head_size)
+// q: (n_heads, head_size)
 pub fn tensor_rope_inplace<'a>(
     mut q: CpuTensor<'a>,
     mut k: CpuTensor<'a>,
@@ -185,7 +184,6 @@ pub fn tensor_rope_inplace<'a>(
     }
     Ok((q, k))
 }
-*/
 
 fn require_tensor_shape(t: &CpuTensor, shape: &[usize]) -> Result<()> {
     if !t.shape().eq(shape) {

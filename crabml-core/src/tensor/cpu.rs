@@ -7,6 +7,7 @@ use std::ops::IndexMut;
 use std::slice;
 
 use super::strider::TensorStrider;
+use super::tensor::Tensor;
 
 #[derive(Debug, Clone, Default)]
 pub struct CpuTensor<'a> {
@@ -55,6 +56,21 @@ impl<'a> CpuTensor<'a> {
 
     pub fn at(&self, idx: &[usize]) -> Result<f32> {
         self.strider.at(idx).map(|offset| self.buf[offset])
+    }
+
+    pub fn copy_from(&mut self, pos: &[usize], t: &CpuTensor<'a>) -> Result<()> {
+        if !self.is_owned() {
+            return Err((ErrorKind::TensorError, "not owned").into());
+        }
+        if !self.is_contiguous() {
+            return Err((ErrorKind::TensorError, "not contiguous").into());
+        }
+
+        let idx = self.strider.at(pos)?;
+        let buf = &mut self.buf.to_mut()[idx..];
+
+        buf.iter_mut().zip(t.iter()).for_each(|(a, b)| *a = *b);
+        Ok(())
     }
 
     pub fn len(&self) -> usize {
@@ -142,12 +158,15 @@ impl<'a> CpuTensor<'a> {
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &f32> {
-        self.buf.iter()
+        self.strider.iter().map(|i| &self.buf[i])
     }
 
     pub fn iter_mut(&mut self) -> Result<impl Iterator<Item = &mut f32>> {
         if !self.is_owned() {
             return Err((ErrorKind::TensorError, "not owned").into());
+        }
+        if !self.is_contiguous() {
+            return Err((ErrorKind::TensorError, "not contiguous").into());
         }
         Ok(self.buf.to_mut().iter_mut())
     }
@@ -158,6 +177,14 @@ impl<'a> CpuTensor<'a> {
 
     pub fn shape(&self) -> &[usize] {
         self.strider.shape()
+    }
+
+    // TODO: only used for ROPE encoding, remove it after we learned about the algorithm behind rope
+    pub fn mut_buf(&mut self) -> Result<&mut [f32]> {
+        if !self.is_owned() {
+            return Err((ErrorKind::TensorError, "not owned").into());
+        }
+        Ok(self.buf.to_mut())
     }
 }
 

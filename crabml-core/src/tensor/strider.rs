@@ -5,16 +5,14 @@ use crate::error::Result;
 pub struct TensorStrider {
     shape: Vec<usize>,
     strides: Vec<usize>,
-    offset: usize,
 }
 
 impl TensorStrider {
-    pub fn new(shape: Vec<usize>, offset: usize) -> Self {
+    pub fn new(shape: Vec<usize>) -> Self {
         let strides = Self::compute_strides(&shape);
         Self {
             shape,
             strides,
-            offset,
         }
     }
 
@@ -24,10 +22,6 @@ impl TensorStrider {
 
     pub fn strides(&self) -> &[usize] {
         &self.strides
-    }
-
-    pub fn offset(&self) -> usize {
-        self.offset
     }
 
     pub fn at(&self, idx: &[usize]) -> usize {
@@ -63,6 +57,7 @@ impl TensorStrider {
         if !self.is_contiguous() {
             return Err((ErrorKind::TensorError, "not contiguous").into());
         }
+
         let len: usize = shape.iter().product();
         if len != self.len() {
             return Err((
@@ -75,7 +70,7 @@ impl TensorStrider {
                 .into());
         }
 
-        let strider = TensorStrider::new(shape, self.offset);
+        let strider = TensorStrider::new(shape);
         Ok(strider)
     }
 
@@ -119,7 +114,7 @@ mod tests {
 
     #[test]
     fn test_strider_reshape() -> Result<()> {
-        let s = TensorStrider::new(vec![3, 4], 0);
+        let s = TensorStrider::new(vec![3, 4]);
         assert_eq!(s.at(&[0, 0]), 0);
         assert_eq!(s.at(&[0, 3]), 3);
         assert_eq!(s.at(&[1, 0]), 4);
@@ -131,6 +126,25 @@ mod tests {
         assert_eq!(s.at(&[0, 0]), 0);
         assert_eq!(s.at(&[0, 5]), 5);
         assert_eq!(s.at(&[1, 0]), 6);
+        Ok(())
+    }
+
+    #[test]
+    fn test_strider_iter_axis() -> Result<()> {
+        let s = TensorStrider::new(vec![3, 4]);
+
+        let r = s.iter_axis_inner(&[0, 0], 1)?.collect::<Vec<_>>();
+        assert_eq!(r.len(), 4);
+        assert_eq!(r[0], vec![0, 0]);
+        assert_eq!(r[1], vec![0, 1]);
+        assert_eq!(r[2], vec![0, 2]);
+        assert_eq!(r[3], vec![0, 3]);
+
+        let r = s.iter_axis_inner(&[0, 0], 0)?.collect::<Vec<_>>();
+        assert_eq!(r.len(), 3);
+        assert_eq!(r[0], vec![0, 0]);
+        assert_eq!(r[1], vec![1, 0]);
+        assert_eq!(r[2], vec![2, 0]);
         Ok(())
     }
 }

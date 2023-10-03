@@ -89,7 +89,7 @@ pub struct Tensor<D: TensorDevice> {
 
 impl<D: TensorDevice> Tensor<D> {
     pub fn zeros(shape: Vec<usize>, device: Rc<RefCell<D>>) -> Result<Self> {
-        let strider: TensorStrider = TensorStrider::new(shape.clone(), 0);
+        let strider: TensorStrider = TensorStrider::new(shape.clone());
         let id = device
             .borrow_mut()
             .process_op(TensorDeviceOp::AllocTensor {
@@ -131,20 +131,8 @@ impl<D: TensorDevice> Tensor<D> {
     //    todo!();
     // }
 
-    pub fn reshape(self, shape: Vec<usize>) -> Result<Self> {
-        let len: usize = shape.iter().product();
-        if len != self.len() {
-            return Err((
-                ErrorKind::TensorError,
-                format!(
-                    "invalid shape {:?} for a tensor has a length of {}",
-                    shape, len
-                ),
-            )
-                .into());
-        }
-
-        let strider = TensorStrider::new(shape, self.strider.offset());
+    pub fn view(self, shape: Vec<usize>) -> Result<Self> {
+        let strider = self.strider.view(shape)?;
 
         self.device
             .borrow_mut()

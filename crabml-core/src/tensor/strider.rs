@@ -1,7 +1,7 @@
 use crate::error::ErrorKind;
 use crate::error::Result;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct TensorStrider {
     shape: Vec<usize>,
     strides: Vec<usize>,

@@ -8,7 +8,7 @@ use std::slice;
 
 use super::strider::TensorStrider;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct CpuTensor<'a> {
     buf: Cow<'a, [f32]>,
     strider: TensorStrider,

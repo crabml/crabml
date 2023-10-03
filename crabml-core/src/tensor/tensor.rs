@@ -1,80 +1,7 @@
 use crate::error::{ErrorKind, Result};
+use crate::tensor::strider::TensorStrider;
+
 use std::{cell::RefCell, rc::Rc};
-
-#[derive(Clone)]
-pub struct TensorStrider {
-    shape: Vec<usize>,
-    strides: Vec<usize>,
-    offset: usize,
-}
-
-impl TensorStrider {
-    pub fn new(shape: Vec<usize>, offset: usize) -> Self {
-        let strides = Self::compute_strides(&shape);
-        Self {
-            shape,
-            strides,
-            offset,
-        }
-    }
-
-    pub fn shape(&self) -> &[usize] {
-        &self.shape
-    }
-
-    pub fn strides(&self) -> &[usize] {
-        &self.strides
-    }
-
-    pub fn offset_at(&self, idx: &[usize]) -> usize {
-        let mut offset = 0;
-        for (dim, stride) in idx.iter().zip(self.strides.iter()) {
-            offset += dim * stride;
-        }
-        offset
-    }
-
-    pub fn row(&self, pos: &[usize]) -> Result<TensorStrider> {
-        if pos.len() >= self.shape.len() {
-            return Err((
-                ErrorKind::TensorError,
-                format!(
-                    "invalid row position {:?} for tensor of shape {:?}",
-                    pos, self.shape
-                ),
-            )
-                .into());
-        }
-
-        let offset = pos
-            .iter()
-            .zip(self.strides.iter())
-            .map(|(&p, &s)| p * s)
-            .sum();
-
-        let shape = self.shape[pos.len()..].to_vec();
-        let strides = self.strides[pos.len()..].to_vec();
-        Ok(TensorStrider {
-            shape,
-            strides,
-            offset,
-        })
-    }
-
-    pub fn len(&self) -> usize {
-        self.shape.iter().product()
-    }
-
-    fn compute_strides(shape: &[usize]) -> Vec<usize> {
-        let mut strides = Vec::with_capacity(shape.len());
-        strides.push(1);
-        for i in 0..shape.len() - 1 {
-            strides.push(strides.last().unwrap() * shape[shape.len() - i - 1]);
-        }
-        strides.reverse();
-        strides
-    }
-}
 
 type TensorID = usize;
 
@@ -131,17 +58,24 @@ pub enum TensorDeviceOp {
     }
 }
 
-// if we want to support GPU, we need to add a new type of device
+/// A tensor device is responsible for manage the buffer of tensors, and performing
+/// platform specific operations on tensors.
+/// 
+/// A tensor device might be a CPU, GPU. Besides that, if we want to inference a model
+/// with quantization, we can also have a specialized quantized CPU/GPU tensor device.
+/// 
+/// The tensors are managed in a handle based way. The device is responsible for manage
+/// the pool of the tensors, each tensor is identified by a unique TensorID. The tensor
+/// may located in the CPU or GPU memory, you can not directly acccess its data except
+/// calling `export_tensor()` to load the tensor's data into the host's memory.
 pub trait TensorDevice {
     type DataType;
 
     fn process_op(&mut self, op: TensorDeviceOp) -> Result<Option<TensorID>>;
 
-    fn register_tensor(&mut self, shape: &[usize], data: &[Self::DataType]) -> TensorID;
+    fn import_tensor(&mut self, shape: &[usize], data: &[Self::DataType]) -> TensorID;
 
-    fn export_tensor(self, t: TensorID, buf: &mut [Self::DataType]) -> Result<()>;
-
-    fn data_type(&self) -> Self::DataType;
+    fn export_tensor(self, t: TensorID, data: &mut [Self::DataType]) -> Result<()>;
 
     fn name(&self) -> &'static str;
 }
@@ -197,7 +131,8 @@ impl<D: TensorDevice> Tensor<D> {
             )
                 .into());
         }
-        let strider = TensorStrider::new(shape, self.strider.offset);
+
+        let strider = TensorStrider::new(shape, self.strider.offset());
 
         self.device
             .borrow_mut()

@@ -53,15 +53,21 @@ pub fn tensor_matmul_2d<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuT
     require_tensor_contiguous(w)?;
     require_tensor_contiguous(x)?;
 
-    let out_shape = if x.shape().len() == 1 {
-        vec![w.shape()[0]]
+    let (mut out, x, reshaped) = if x.shape().len() == 1 {
+        (
+            CpuTensor::zeros(vec![w.shape()[0], 1])?,
+            x.view_ref(&[x.shape()[0], 1])?,
+            true,
+        )
     } else {
-        vec![w.shape()[0], x.shape()[1]]
+        (
+            CpuTensor::zeros(vec![w.shape()[0], x.shape()[1]])?,
+            x.as_ref(),
+            false,
+        )
     };
+
     let w_rows = w.shape()[0];
-
-    let mut out = CpuTensor::zeros(out_shape)?;
-
     for w_row in 0..w_rows {
         let o_row_iter = out.iter_axis_mut(vec![w_row, 0], 1)?; // (x_cols, )
         for (x_col, o) in o_row_iter.enumerate() {
@@ -71,6 +77,9 @@ pub fn tensor_matmul_2d<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuT
         }
     }
 
+    if reshaped {
+        out = out.view(&[w.shape()[0]])?;
+    }
     Ok(out)
 }
 
@@ -78,7 +87,10 @@ pub fn tensor_matmul_2d<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuT
 pub fn tensor_softmax_inplace<'a>(t: &mut CpuTensor<'a>, limit: usize) -> Result<()> {
     require_tensor_dims(t, &[1])?;
 
-    let max = t.iter_axis(vec![0], 0)?.take(limit).fold(f32::NAN, |a, b| a.max(*b));
+    let max = t
+        .iter_axis(vec![0], 0)?
+        .take(limit)
+        .fold(f32::NAN, |a, b| a.max(*b));
     let mut sum = 0.0;
     for val in t.iter_axis_mut(vec![0], 0)? {
         *val = (*val - max).exp();
@@ -120,14 +132,14 @@ pub fn tensor_multi_query_attention<'a>(
         for (tok, attn) in attn.iter_mut()?.take(pos + 1).enumerate() {
             let q_head = q.iter_axis(vec![h, 0], 1)?; // (head_size, )
             let k_head = k_cache.iter_axis(vec![tok, kvh, 0], 2)?; // (head_size, )
-            let score = q_head.zip(k_head).map(|(q, k)| q*k).sum::<f32>();
+            let score = q_head.zip(k_head).map(|(q, k)| q * k).sum::<f32>();
             *attn = score / (head_size as f32).sqrt();
         }
 
         tensor_softmax_inplace(&mut attn, pos)?;
 
         let kvh = h / (n_heads / n_kv_heads);
-        for (tok, attn) in attn.iter().take(pos+1).enumerate() {
+        for (tok, attn) in attn.iter().take(pos + 1).enumerate() {
             let v_head = v_cache.iter_axis(vec![tok, kvh, 0], 2)?; // (head_size, )
             let out_buf = out.iter_axis_mut(vec![h, 0], 1)?; // (head_size, )
             for (i, (o, v)) in out_buf.zip(v_head).enumerate() {
@@ -139,7 +151,7 @@ pub fn tensor_multi_query_attention<'a>(
     Ok(out)
 }
 
-/* 
+/*
 // t: (n_heads, head_size)
 pub fn tensor_rope_inplace<'a>(
     mut q: CpuTensor<'a>,
@@ -179,11 +191,7 @@ fn require_tensor_shape(t: &CpuTensor, shape: &[usize]) -> Result<()> {
     if !t.shape().eq(shape) {
         return Err(Error {
             kind: ErrorKind::TensorError,
-            message: format!(
-                "tensor shape is not {:?}, but {:?}",
-                shape,
-                t.shape(),
-            ),
+            message: format!("tensor shape is not {:?}, but {:?}", shape, t.shape(),),
             cause: None,
         });
     }
@@ -239,9 +247,7 @@ fn require_tensor_contiguous(t: &CpuTensor) -> Result<()> {
     if !t.is_contiguous() {
         return Err(Error {
             kind: ErrorKind::TensorError,
-            message: format!(
-                "tensor need to be contiguous",
-            ),
+            message: format!("tensor need to be contiguous",),
             cause: None,
         });
     }
@@ -276,6 +282,45 @@ mod tests {
             v,
             vec![0.999995, 0.999995, 0.999995, 0.999995, 0.999995, 0.999995]
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_matmul() -> Result<()> {
+        // 1, 2, 3
+        // 4, 5, 6
+        let w = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![2, 3])?;
+        // 1
+        // 2
+        // 3
+        let b = CpuTensor::new(vec![1.0, 2.0, 3.0], vec![3])?;
+        // 0
+        // 0
+        // 1*1 + 2*2 + 3*3 = 1 + 4 + 9
+        // 1*4 + 2*5 + 3*6 = 4 + 10 + 18
+        let out = tensor_matmul_2d(&w, &b)?;
+        assert_eq!(out.iter().cloned().collect::<Vec<_>>(), &[14.0, 32.0]);
+
+        // 1, 2, 3
+        // 4, 5, 6
+        let w = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![2, 3])?;
+        // 1, 2, 3
+        // 4, 5, 6
+        // 7, 8, 9
+        // 10, 11, 12
+        let b = CpuTensor::new(
+            vec![
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+            ],
+            vec![3, 4],
+        )?;
+        let out = tensor_matmul_2d(&w, &b)?;
+        assert_eq!(
+            out.iter().cloned().collect::<Vec<_>>(),
+            &[38.0, 44.0, 50.0, 56.0, 83.0, 98.0, 113.0, 128.0]
+        );
+        assert_eq!(out.shape(), vec![2, 4]);
 
         Ok(())
     }

@@ -69,13 +69,26 @@ impl<'a> CpuTensor<'a> {
         })
     }
 
-    pub fn view_ref<'b>(&'b self, shape: &[usize]) -> Result<CpuTensor<'a>> where 'b: 'a {
+    pub fn view_ref<'b>(&'b self, shape: &[usize]) -> Result<CpuTensor<'a>>
+    where
+        'b: 'a,
+    {
         let strider = self.strider.view(shape.to_vec())?;
         let buf = self.buf.as_ref();
         Ok(Self {
             buf: Cow::Borrowed(buf),
             strider,
         })
+    }
+
+    pub fn as_ref<'b>(&'b self) -> CpuTensor<'a>
+    where
+        'b: 'a,
+    {
+        Self {
+            buf: Cow::Borrowed(self.buf.as_ref()),
+            strider: self.strider.clone(),
+        }
     }
 
     pub fn at_unchecked(&self, idx: &[usize]) -> f32 {
@@ -158,7 +171,10 @@ mod tests {
         let t = t.view(&[3, 2])?;
 
         let tr = t.view_ref(&[2, 3])?;
-        assert_eq!(tr.iter().cloned().collect::<Vec<f32>>(), vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+        assert_eq!(
+            tr.iter().cloned().collect::<Vec<f32>>(),
+            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        );
         Ok(())
     }
 

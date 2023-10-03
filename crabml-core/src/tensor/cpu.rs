@@ -2,6 +2,7 @@ use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::error::Result;
 use std::borrow::Cow;
+use std::ops::Index;
 use std::ops::IndexMut;
 use std::slice;
 
@@ -80,19 +81,30 @@ impl<'a> CpuTensor<'a> {
         }
     }
 
-    pub fn iter_axis(&'a self, pos: &[usize], axis: usize) -> Result<impl Iterator<Item = &'a f32>> {
+    pub fn iter_axis(&'a self, pos: Vec<usize>, axis: usize) -> Result<impl Iterator<Item = &'a f32>> {
         Ok(self.strider.iter_axis(pos, axis)?.map(|i| &self.buf[i] ))
     }
 
-    pub fn iter_axis_mut(&'a mut self, pos: &[usize], axis: usize) -> Result<impl Iterator<Item = &'a mut f32>> {
+    pub fn iter_axis_mut(&'a mut self, pos: Vec<usize>, axis: usize) -> Result<CpuTensorAxisIterMut<'a>> {
         if !self.is_owned() {
             return Err((ErrorKind::TensorError, "not owned").into());
         }
+        if !self.is_contiguous() {
+            return Err((ErrorKind::TensorError, "not contiguous").into());
+        }
 
-        let pos_iter = Box::new(self.strider.iter_axis(pos, axis)?);
+        let buf = match self.buf {
+            Cow::Owned(ref mut buf) => buf,
+            _ => unreachable!(),
+        };
+
+        let strider = self.strider.clone();
+        let pos_iter = Box::new(strider.into_iter_axis(pos, axis)?);
+
         Ok(CpuTensorAxisIterMut {
-            tensor: self,
-            pos_iter,
+            tail: Some(buf),
+            pos: None,
+            pos_iter: pos_iter,
         })
     }
 
@@ -105,22 +117,53 @@ impl<'a> CpuTensor<'a> {
     }
 }
 
-struct CpuTensorAxisIterMut<'a> {
-    tensor: &'a CpuTensor<'a>,
-    pos_iter: Box<dyn Iterator<Item = usize> + 'a>,
+pub struct CpuTensorAxisIterMut<'a> {
+    tail: Option<&'a mut [f32]>,
+    pos_iter: Box<dyn Iterator<Item=usize>>,
+    pos: Option<usize>,
 }
 
 impl<'a> Iterator for CpuTensorAxisIterMut<'a> {
     type Item = &'a mut f32;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.pos_iter.next().map(|pos| {
-            &mut self.tensor.buf[pos]
-        })
+        // on the first iter, seek to the first position
+        if self.pos.is_none() {
+            let pos = self.pos_iter.next()?;
+            let tail = self.tail.take().unwrap();
+            let (_, tail) = tail.split_at_mut(pos);
+            self.tail = Some(tail);
+            self.pos = Some(pos);
+        }
+
+        // pop the current position
+        let tail = self.tail.take()?;
+        let (n, tail) = tail.split_first_mut()?;
+
+        // prepare the next position
+        let pos = self.pos.unwrap();
+        if let Some(next_pos) = self.pos_iter.next() {
+            let (_, tail) = tail.split_at_mut(next_pos - pos - 1);
+            self.tail = Some(tail);
+            self.pos = Some(next_pos);
+        } else {
+            self.tail = None;
+        }
+
+        Some(n)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_tensor_iter_axis() -> Result<()> {
+        let t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![2, 3])?;
+        let r = t.iter_axis(vec![0, 0], 1)?.cloned().collect::<Vec<_>>();
+        assert_eq!(r, vec![]);
+
+        Ok(())
+    }
 }

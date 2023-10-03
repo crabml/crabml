@@ -59,7 +59,7 @@ impl TensorStrider {
     /// from the position, iterate until the end of the row / column
     pub fn iter_axis(
         &self,
-        pos: &[usize],
+        pos: Vec<usize>,
         axis: usize,
     ) -> Result<impl Iterator<Item = usize> + '_> {
         let iter = self.iter_axis_inner(pos, axis)?;
@@ -67,9 +67,19 @@ impl TensorStrider {
         Ok(iter)
     }
 
+    pub fn into_iter_axis(
+        self,
+        pos: Vec<usize>,
+        axis: usize
+    ) -> Result<impl Iterator<Item = usize>> {
+        let iter = self.iter_axis_inner(pos, axis)?;
+        let iter = iter.map(move |pos| self.at_unchecked(&pos));
+        Ok(iter)
+    }
+
     fn iter_axis_inner(
         &self,
-        pos: &[usize],
+        pos: Vec<usize>,
         axis: usize,
     ) -> Result<impl Iterator<Item = Vec<usize>>> {
         let mut pos = pos.to_vec();
@@ -165,14 +175,14 @@ mod tests {
     fn test_strider_iter_axis() -> Result<()> {
         let s = TensorStrider::new(vec![3, 4]);
 
-        let r = s.iter_axis_inner(&[0, 0], 1)?.collect::<Vec<_>>();
+        let r = s.iter_axis_inner(vec![0, 0], 1)?.collect::<Vec<_>>();
         assert_eq!(r.len(), 4);
         assert_eq!(r[0], vec![0, 0]);
         assert_eq!(r[1], vec![0, 1]);
         assert_eq!(r[2], vec![0, 2]);
         assert_eq!(r[3], vec![0, 3]);
 
-        let r = s.iter_axis_inner(&[0, 0], 0)?.collect::<Vec<_>>();
+        let r = s.iter_axis_inner(vec![0, 0], 0)?.collect::<Vec<_>>();
         assert_eq!(r.len(), 3);
         assert_eq!(r[0], vec![0, 0]);
         assert_eq!(r[1], vec![1, 0]);

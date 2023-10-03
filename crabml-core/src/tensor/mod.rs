@@ -1,4 +1,4 @@
-pub mod arithmetic;
+// pub mod arithmetic;
 pub mod cpu;
 pub mod strider;
 pub mod tensor;

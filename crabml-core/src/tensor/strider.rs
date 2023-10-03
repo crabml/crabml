@@ -1,7 +1,7 @@
 use crate::error::ErrorKind;
 use crate::error::Result;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct TensorStrider {
     shape: Vec<usize>,
     strides: Vec<usize>,
@@ -10,10 +10,7 @@ pub struct TensorStrider {
 impl TensorStrider {
     pub fn new(shape: Vec<usize>) -> Self {
         let strides = Self::compute_strides(&shape);
-        Self {
-            shape,
-            strides,
-        }
+        Self { shape, strides }
     }
 
     pub fn shape(&self) -> &[usize] {
@@ -24,7 +21,34 @@ impl TensorStrider {
         &self.strides
     }
 
-    pub fn at(&self, idx: &[usize]) -> usize {
+    pub fn at(&self, idx: &[usize]) -> Result<usize> {
+        if idx.len() != self.shape.len() {
+            return Err((
+                ErrorKind::TensorError,
+                format!(
+                    "invalid index {:?} for tensor of shape {:?}",
+                    idx, self.shape
+                ),
+            )
+                .into());
+        }
+        for (i, &dim) in idx.iter().enumerate() {
+            if dim >= self.shape[i] {
+                return Err((
+                    ErrorKind::TensorError,
+                    format!(
+                        "invalid index {:?} for tensor of shape {:?}",
+                        idx, self.shape
+                    ),
+                )
+                    .into());
+            }
+        }
+
+        Ok(self.at_unchecked(idx))
+    }
+
+    pub fn at_unchecked(&self, idx: &[usize]) -> usize {
         let mut offset = 0;
         for (dim, stride) in idx.iter().zip(self.strides.iter()) {
             offset += dim * stride;
@@ -33,13 +57,21 @@ impl TensorStrider {
     }
 
     /// from the position, iterate until the end of the row / column
-    pub fn iter_axis(&self, pos: &[usize], axis: usize) -> Result<impl Iterator<Item=usize> + '_> {
+    pub fn iter_axis(
+        &self,
+        pos: &[usize],
+        axis: usize,
+    ) -> Result<impl Iterator<Item = usize> + '_> {
         let iter = self.iter_axis_inner(pos, axis)?;
-        let iter = iter.map(|pos| self.at(&pos));
+        let iter = iter.map(|pos| self.at_unchecked(&pos));
         Ok(iter)
     }
 
-    fn iter_axis_inner(&self, pos: &[usize], axis: usize) -> Result<impl Iterator<Item=Vec<usize>>> {
+    fn iter_axis_inner(
+        &self,
+        pos: &[usize],
+        axis: usize,
+    ) -> Result<impl Iterator<Item = Vec<usize>>> {
         let mut pos = pos.to_vec();
         let axis_pos = pos[axis];
         let axis_max = self.shape[axis];
@@ -115,17 +147,17 @@ mod tests {
     #[test]
     fn test_strider_reshape() -> Result<()> {
         let s = TensorStrider::new(vec![3, 4]);
-        assert_eq!(s.at(&[0, 0]), 0);
-        assert_eq!(s.at(&[0, 3]), 3);
-        assert_eq!(s.at(&[1, 0]), 4);
+        assert_eq!(s.at(&[0, 0])?, 0);
+        assert_eq!(s.at(&[0, 3])?, 3);
+        assert_eq!(s.at(&[1, 0])?, 4);
 
         let r = s.view(vec![4, 2]);
         assert!(r.is_err());
 
         let s = s.view(vec![2, 6])?;
-        assert_eq!(s.at(&[0, 0]), 0);
-        assert_eq!(s.at(&[0, 5]), 5);
-        assert_eq!(s.at(&[1, 0]), 6);
+        assert_eq!(s.at(&[0, 0])?, 0);
+        assert_eq!(s.at(&[0, 5])?, 5);
+        assert_eq!(s.at(&[1, 0])?, 6);
         Ok(())
     }
 

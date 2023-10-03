@@ -61,10 +61,19 @@ impl<'a> CpuTensor<'a> {
         self.strider.len()
     }
 
-    pub fn view(self, shape: &[usize]) -> Result<Self> {
+    pub fn view(self, shape: &[usize]) -> Result<CpuTensor<'a>> {
         let strider = self.strider.view(shape.to_vec())?;
         Ok(Self {
             buf: self.buf,
+            strider,
+        })
+    }
+
+    pub fn view_ref<'b>(&'b self, shape: &[usize]) -> Result<CpuTensor<'a>> where 'b: 'a {
+        let strider = self.strider.view(shape.to_vec())?;
+        let buf = self.buf.as_ref();
+        Ok(Self {
+            buf: Cow::Borrowed(buf),
             strider,
         })
     }
@@ -142,6 +151,16 @@ impl<'a> CpuTensor<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_tensor_view() -> Result<()> {
+        let t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![2, 3])?;
+        let t = t.view(&[3, 2])?;
+
+        let tr = t.view_ref(&[2, 3])?;
+        assert_eq!(tr.iter().cloned().collect::<Vec<f32>>(), vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+        Ok(())
+    }
 
     #[test]
     fn test_tensor_iter_axis() -> Result<()> {

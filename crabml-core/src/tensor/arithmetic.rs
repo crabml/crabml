@@ -12,7 +12,7 @@ pub fn tensor_rms_norm_inplace(mut x: CpuTensor<'_>, eps: f32) -> Result<CpuTens
     let len = x.shape()[0];
     let sum = x.iter_axis(vec![0], 0)?.fold(0.0, |s, n| s + n * n);
     let rms = ((sum / len as f32) + eps).sqrt();
-    x.iter_axis_mut(vec![0], 0)?.map(|n| *n = *n / rms);
+    x.iter_axis_mut(vec![0], 0)?.for_each(|n| *n = *n / rms);
     Ok(x)
 }
 
@@ -58,15 +58,9 @@ pub fn tensor_matmul_2d<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuT
     } else {
         vec![w.shape()[0], x.shape()[1]]
     };
-    let mut out = CpuTensor::zeros(out_shape)?;
-
     let w_rows = w.shape()[0];
-    let w_cols = w.shape()[1];
-    let x_cols = if x.shape().len() == 2 {
-        x.shape()[1]
-    } else {
-        1
-    };
+
+    let mut out = CpuTensor::zeros(out_shape)?;
 
     for w_row in 0..w_rows {
         let o_row_iter = out.iter_axis_mut(vec![w_row, 0], 1)?; // (x_cols, )

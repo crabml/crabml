@@ -1,4 +1,5 @@
 - [x] add name for each tensor
 - [x] refactor with tensor arithmetic
-- [ ] refactor tensor arithmetic with return values
+- [x] refactor tensor arithmetic with return values
+- [ ] support repeat in tensor
 - [ ] wgpu tensor support

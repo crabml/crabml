@@ -1,4 +1,6 @@
 pub mod arithmetic;
+pub mod cpu;
+pub mod strider;
 pub mod tensor;
 
-pub use tensor::Tensor;
+pub use cpu::CpuTensor;

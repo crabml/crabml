@@ -78,7 +78,7 @@ impl TensorStrider {
 
 type TensorID = usize;
 
-pub enum TensorDevicePipelineOp {
+pub enum TensorDeviceOp {
     AllocTensor {
         strider: TensorStrider,
     },
@@ -133,21 +133,17 @@ pub enum TensorDevicePipelineOp {
 
 // if we want to support GPU, we need to add a new type of device
 pub trait TensorDevice {
-    type DataType: TensorDataType;
+    type DataType;
 
-    fn process_op(&mut self, op: TensorDevicePipelineOp) -> Option<TensorID>;
+    fn process_op(&mut self, op: TensorDeviceOp) -> Result<Option<TensorID>>;
 
     fn register_tensor(&mut self, shape: &[usize], data: &[Self::DataType]) -> TensorID;
 
     fn export_tensor(self, t: TensorID, buf: &mut [Self::DataType]) -> Result<()>;
 
     fn data_type(&self) -> Self::DataType;
-}
 
-pub trait TensorDataType {
-    fn size() -> usize;
-
-    fn name() -> &'static str;
+    fn name(&self) -> &'static str;
 }
 
 #[derive(Clone)]
@@ -158,19 +154,19 @@ pub struct Tensor<D: TensorDevice> {
 }
 
 impl<D: TensorDevice> Tensor<D> {
-    pub fn zeros(shape: Vec<usize>, device: Rc<RefCell<D>>) -> Self {
+    pub fn zeros(shape: Vec<usize>, device: Rc<RefCell<D>>) -> Result<Self> {
         let strider: TensorStrider = TensorStrider::new(shape.clone(), 0);
         let id = device
             .borrow_mut()
-            .process_op(TensorDevicePipelineOp::AllocTensor {
+            .process_op(TensorDeviceOp::AllocTensor {
                 strider: strider.clone(),
-            })
+            })?
             .unwrap();
-        Self {
+        Ok(Self {
             id,
             strider,
             device,
-        }
+        })
     }
 
     pub fn shape(&self) -> &[usize] {
@@ -205,10 +201,10 @@ impl<D: TensorDevice> Tensor<D> {
 
         self.device
             .borrow_mut()
-            .process_op(TensorDevicePipelineOp::EditTensor {
+            .process_op(TensorDeviceOp::EditTensor {
                 t: self.id,
                 strider: strider.clone(),
-            });
+            })?;
         Ok(Self {
             strider,
             id: self.id,
@@ -237,6 +233,7 @@ impl<D: TensorDevice> Drop for Tensor<D> {
     fn drop(&mut self) {
         self.device
             .borrow_mut()
-            .process_op(TensorDevicePipelineOp::RecycleTensor { t: self.id });
+            .process_op(TensorDeviceOp::RecycleTensor { t: self.id })
+            .unwrap();
     }
 }

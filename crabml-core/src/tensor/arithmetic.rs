@@ -5,7 +5,7 @@ use crate::tensor::CpuTensor;
 
 ///! arithmetic.rs contains the tensor arithmetics operations like matmul, accum, etc.
 
-pub fn tensor_rms_norm_inplace<'a>(mut x: CpuTensor<'a>, eps: f32) -> Result<CpuTensor<'a>> {
+pub fn tensor_rms_norm_inplace(mut x: CpuTensor<'_>, eps: f32) -> Result<CpuTensor<'_>> {
     require_tensor_contiguous(&x)?;
     require_tensor_dims(&x, &[1])?;
 
@@ -19,8 +19,8 @@ pub fn tensor_rms_norm_inplace<'a>(mut x: CpuTensor<'a>, eps: f32) -> Result<Cpu
 pub fn tensor_mul_inplace<'a>(mut a: CpuTensor<'a>, b: &CpuTensor<'a>) -> Result<CpuTensor<'a>> {
     require_tensor_shape(&a, b.shape())?;
 
-    for (a, b) in a.iter_mut()?.zip(b.iter()) {
-        *a *= b;
+    for (ia, ib) in a.iter_mut()?.zip(b.iter()) {
+        *ia *= ib;
     }
     Ok(a)
 }
@@ -30,8 +30,8 @@ pub fn tensor_add_inplace<'a>(mut a: CpuTensor<'a>, b: &CpuTensor<'a>) -> Result
     require_tensor_contiguous(&a)?;
     require_tensor_contiguous(b)?;
 
-    for (a, b) in a.iter_mut()?.zip(b.iter()) {
-        *a += *b;
+    for (ia, ib) in a.iter_mut()?.zip(b.iter()) {
+        *ia += *ib;
     }
     Ok(a)
 }
@@ -70,8 +70,8 @@ pub fn tensor_matmul_2d<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuT
 
     for w_row in 0..w_rows {
         let o_row_iter = out.iter_axis_mut(vec![w_row, 0], 1)?; // (x_cols, )
-        let w_row_iter = w.iter_axis(vec![w_row, 0], 1)?; // (w_cols, )
         for (x_col, o) in o_row_iter.enumerate() {
+            let w_row_iter = w.iter_axis(vec![w_row, 0], 1)?; // (w_cols, )
             let x_col_iter = x.iter_axis(vec![0, x_col], 0)?; // (w_cols, )
             *o = w_row_iter.zip(x_col_iter).map(|(w, x)| w * x).sum::<f32>();
         }
@@ -96,6 +96,7 @@ pub fn tensor_softmax_inplace<'a>(t: &mut CpuTensor<'a>, limit: usize) -> Result
     Ok(())
 }
 
+/*
 // q: (n_heads, head_size)
 // k_cache: (n_seq, n_kv_heads, head_size)
 // v_cache: (n_seq, n_kv_heads, head_size)
@@ -116,34 +117,38 @@ pub fn tensor_multi_query_attention<'a>(
     let head_size = q.shape()[1];
     let n_seq = k_cache.shape()[0];
 
-    let mut attn = CpuTensor::zeros(vec![n_seq])?;
     let mut out = CpuTensor::zeros(vec![n_heads, head_size])?;
 
     // get attention scores
     for h in 0..n_heads {
-        let kvh = h / (n_heads / n_kv_heads);
-        let attn_buf = attn.mut_buf()?; // (n_seq, )
-        let q_head = q.ref_chunk(&[h])?; // (head_size, )
-        for tok in 0..pos + 1 {
-            let k_head = k_cache.ref_chunk(&[tok, kvh])?; // (head_size, )
-            let score = (0..head_size).map(|i| q_head[i] * k_head[i]).sum::<f32>();
-            attn_buf[tok] = score / (head_size as f32).sqrt();
-        }
-        tensor_softmax_inplace(&mut attn, pos)?;
+        let mut attn = CpuTensor::zeros(vec![n_seq])?;
 
         let kvh = h / (n_heads / n_kv_heads);
-        let attn_buf = attn.ref_buf(); // (n_seq, )
-        let out_buf = out.mut_chunk(&[h])?; // (head_size, )
-        for tok in 0..pos + 1 {
-            let v_head = v_cache.ref_chunk(&[tok, kvh])?; // (head_size, )
-            for i in 0..head_size {
-                out_buf[i] += attn_buf[tok] * v_head[i];
+        {
+            for (tok, attn) in attn.iter_mut()?.take(pos + 1).enumerate() {
+                let q_head = q.iter_axis(vec![h, 0], 1)?; // (head_size, )
+                let k_head = k_cache.iter_axis(vec![tok, kvh, 0], 2)?; // (head_size, )
+                let score = q_head.zip(k_head).map(|(q, k)| q*k).sum::<f32>();
+                *attn = score / (head_size as f32).sqrt();
+            }
+        }
+
+        {
+            tensor_softmax_inplace(&mut attn, pos)?;
+        }
+
+        let kvh = h / (n_heads / n_kv_heads);
+        for (tok, attn) in attn.iter().take(pos+1).enumerate() {
+            let v_head = v_cache.iter_axis(vec![tok, kvh, 0], 2)?; // (head_size, )
+            let out_buf = out.iter_axis_mut(vec![h, 0], 1)?; // (head_size, )
+            for (i, (o, v)) in out_buf.zip(v_head).enumerate() {
+                *o += v * attn
             }
         }
     }
 
     Ok(out)
-}
+} */
 
 /* 
 // t: (n_heads, head_size)

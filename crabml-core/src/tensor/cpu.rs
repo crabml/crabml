@@ -90,10 +90,10 @@ impl<'a> CpuTensor<'a> {
     }
 
     pub fn iter_axis_mut(
-        &'a mut self,
+        &mut self,
         pos: Vec<usize>,
         axis: usize,
-    ) -> Result<impl Iterator<Item = &'a mut f32>> {
+    ) -> Result<impl Iterator<Item = &mut f32>> {
         if !self.is_owned() {
             return Err((ErrorKind::TensorError, "not owned").into());
         }
@@ -119,11 +119,11 @@ impl<'a> CpuTensor<'a> {
         Ok(iter)
     }
 
-    pub fn iter(&'a self) -> impl Iterator<Item = &'a f32> {
+    pub fn iter(&self) -> impl Iterator<Item = &f32> {
         self.buf.iter()
     }
 
-    pub fn iter_mut(&'a mut self) -> Result<impl Iterator<Item = &'a mut f32>> {
+    pub fn iter_mut(&mut self) -> Result<impl Iterator<Item = &mut f32>> {
         if !self.is_owned() {
             return Err((ErrorKind::TensorError, "not owned").into());
         }

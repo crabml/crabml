@@ -38,34 +38,7 @@ impl TensorStrider {
         offset
     }
 
-    pub fn row(&self, pos: &[usize]) -> Result<TensorStrider> {
-        if pos.len() >= self.shape.len() {
-            return Err((
-                ErrorKind::TensorError,
-                format!(
-                    "invalid row position {:?} for tensor of shape {:?}",
-                    pos, self.shape
-                ),
-            )
-                .into());
-        }
-
-        let offset = pos
-            .iter()
-            .zip(self.strides.iter())
-            .map(|(&p, &s)| p * s)
-            .sum();
-
-        let shape = self.shape[pos.len()..].to_vec();
-        let strides = self.strides[pos.len()..].to_vec();
-        Ok(TensorStrider {
-            shape,
-            strides,
-            offset,
-        })
-    }
-
-    /// from the position, iterate until the last row / column
+    /// from the position, iterate until the end of the row / column
     pub fn iter_axis(&self, pos: &[usize], axis: usize) -> Result<impl Iterator<Item=usize> + '_> {
         let iter = self.iter_axis_inner(pos, axis)?;
         let iter = iter.map(|pos| self.at(&pos));
@@ -145,7 +118,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_strider() -> Result<()> {
+    fn test_strider_reshape() -> Result<()> {
         let s = TensorStrider::new(vec![3, 4], 0);
         assert_eq!(s.at(&[0, 0]), 0);
         assert_eq!(s.at(&[0, 3]), 3);

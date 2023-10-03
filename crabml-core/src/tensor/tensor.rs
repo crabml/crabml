@@ -111,13 +111,25 @@ impl<D: TensorDevice> Tensor<D> {
         self.strider.len()
     }
 
-    pub fn copy_from(&mut self, pos: &[usize], t: &Self) -> Result<()> {
-        let strider = self.strider.row(pos)?;
-        let n_elems = strider.len();
-
-        todo!();
+    pub fn copy_from(&mut self, pos: &[usize], src: &Self) -> Result<()> {
+        self.device
+            .borrow_mut()
+            .process_op(TensorDeviceOp::CopyFrom {
+                dst: self.id,
+                pos: pos.to_vec(),
+                src: src.id,
+            })?;
         Ok(())
     }
+
+    // cpu only:
+    // pub fn iter_axis(&mut self, pos: &[usize], axis: usize) -> Result<Box<dyn Iterator<Item=&D::DataType>>> {
+    //    todo!();
+    // }
+
+    // pub fn iter_axis_mut(&mut self, pos: &[usize], axis: usize) -> Result<Box<dyn Iterator<Item=&mut D::DataType>>> {
+    //    todo!();
+    // }
 
     pub fn reshape(self, shape: Vec<usize>) -> Result<Self> {
         let len: usize = shape.iter().product();

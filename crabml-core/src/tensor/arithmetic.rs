@@ -68,16 +68,12 @@ pub fn tensor_matmul_2d<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuT
         1
     };
 
-    let obuf = out.mut_buf()?;
-    let wbuf = w.ref_buf();
-    let xbuf = x.ref_buf();
-
     for w_row in 0..w_rows {
-        for x_col in 0..x_cols {
-            for w_col in 0..w_cols {
-                obuf[w_row * x_cols + x_col] +=
-                    wbuf[w_row * w_cols + w_col] * xbuf[w_col * x_cols + x_col];
-            }
+        let o_row_iter = out.iter_axis_mut(vec![w_row, 0], 1)?; // (x_cols, )
+        let w_row_iter = w.iter_axis(vec![w_row, 0], 1)?; // (w_cols, )
+        for (x_col, o) in o_row_iter.enumerate() {
+            let x_col_iter = x.iter_axis(vec![0, x_col], 0)?; // (w_cols, )
+            *o = w_row_iter.zip(x_col_iter).map(|(w, x)| w * x).sum::<f32>();
         }
     }
 
@@ -149,6 +145,7 @@ pub fn tensor_multi_query_attention<'a>(
     Ok(out)
 }
 
+/* 
 // t: (n_heads, head_size)
 pub fn tensor_rope_inplace<'a>(
     mut q: CpuTensor<'a>,
@@ -182,6 +179,7 @@ pub fn tensor_rope_inplace<'a>(
     }
     Ok((q, k))
 }
+*/
 
 fn require_tensor_shape(t: &CpuTensor, shape: &[usize]) -> Result<()> {
     if !t.shape().eq(shape) {

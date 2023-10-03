@@ -85,7 +85,7 @@ impl<'a> CpuTensor<'a> {
         Ok(self.strider.iter_axis(pos, axis)?.map(|i| &self.buf[i] ))
     }
 
-    pub fn iter_axis_mut(&'a mut self, pos: Vec<usize>, axis: usize) -> Result<CpuTensorAxisIterMut<'a>> {
+    pub fn iter_axis_mut(&'a mut self, pos: Vec<usize>, axis: usize) -> Result<impl Iterator<Item = &'a mut f32>> {
         if !self.is_owned() {
             return Err((ErrorKind::TensorError, "not owned").into());
         }
@@ -98,14 +98,17 @@ impl<'a> CpuTensor<'a> {
             _ => unreachable!(),
         };
 
-        let strider = self.strider.clone();
-        let pos_iter = Box::new(strider.into_iter_axis(pos, axis)?);
+        // on a contiguous tensor, if we move one position according to the axis, the step length must equals the stride
+        let pos = self.strider.at(&pos)?;
+        let buf = &mut buf[pos..];
+        let stride = self.strider.strides()[axis];
 
-        Ok(CpuTensorAxisIterMut {
-            tail: Some(buf),
-            pos: None,
-            pos_iter: pos_iter,
-        })
+        // whenever you wanna make a IterMut, the builtin functions like split_at_mut / chunks_mut are your friend
+        let iter = buf.chunks_mut(stride).map(|chunk| {
+            let (n, _) = chunk.split_first_mut().unwrap();
+            n
+        });
+        Ok(iter)
     }
 
     pub fn is_contiguous(&self) -> bool {
@@ -114,43 +117,6 @@ impl<'a> CpuTensor<'a> {
 
     pub fn shape(&self) -> &[usize] {
         self.strider.shape()
-    }
-}
-
-pub struct CpuTensorAxisIterMut<'a> {
-    tail: Option<&'a mut [f32]>,
-    pos_iter: Box<dyn Iterator<Item=usize>>,
-    pos: Option<usize>,
-}
-
-impl<'a> Iterator for CpuTensorAxisIterMut<'a> {
-    type Item = &'a mut f32;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        // on the first iter, seek to the first position
-        if self.pos.is_none() {
-            let pos = self.pos_iter.next()?;
-            let tail = self.tail.take().unwrap();
-            let (_, tail) = tail.split_at_mut(pos);
-            self.tail = Some(tail);
-            self.pos = Some(pos);
-        }
-
-        // pop the current position
-        let tail = self.tail.take()?;
-        let (n, tail) = tail.split_first_mut()?;
-
-        // prepare the next position
-        let pos = self.pos.unwrap();
-        if let Some(next_pos) = self.pos_iter.next() {
-            let (_, tail) = tail.split_at_mut(next_pos - pos - 1);
-            self.tail = Some(tail);
-            self.pos = Some(next_pos);
-        } else {
-            self.tail = None;
-        }
-
-        Some(n)
     }
 }
 

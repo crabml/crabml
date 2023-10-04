@@ -121,7 +121,7 @@ impl<'a> CpuTensor<'a> {
 
     pub fn iter_axis(
         &'a self,
-        pos: Vec<usize>,
+        pos: &[usize],
         axis: usize,
     ) -> Result<impl Iterator<Item = &'a f32>> {
         Ok(self.strider.iter_axis(pos, axis)?.map(|i| &self.buf[i]))
@@ -208,13 +208,13 @@ mod tests {
     #[test]
     fn test_tensor_iter_axis() -> Result<()> {
         let t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![2, 3])?;
-        let r = t.iter_axis(vec![0, 0], 1)?.cloned().collect::<Vec<_>>();
+        let r = t.iter_axis(&[0, 0], 1)?.cloned().collect::<Vec<_>>();
         assert_eq!(r, vec![1.0, 2.0, 3.0]);
-        let r = t.iter_axis(vec![0, 0], 0)?.cloned().collect::<Vec<_>>();
+        let r = t.iter_axis(&[0, 0], 0)?.cloned().collect::<Vec<_>>();
         assert_eq!(r, vec![1.0, 4.0]);
         // 1, 2, 3
         // 4, 5, 6
-        let r = t.iter_axis(vec![0, 1], 0)?.cloned().collect::<Vec<_>>();
+        let r = t.iter_axis(&[0, 1], 0)?.cloned().collect::<Vec<_>>();
         assert_eq!(r, vec![2.0, 5.0]);
 
         let mut t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![2, 3])?;

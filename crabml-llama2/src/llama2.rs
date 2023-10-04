@@ -283,7 +283,7 @@ impl<'a> Llama2Runner<'a> {
         let content_row = self
             .weights
             .token_embedding_table
-            .iter_axis(vec![token, 0], 1)?
+            .iter_axis(&[token, 0], 1)?
             .cloned()
             .collect::<Vec<_>>();
         let mut x = CpuTensor::new(content_row, vec![embed_dim])?;

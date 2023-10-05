@@ -5,6 +5,7 @@ use std::borrow::Cow;
 use std::ops::Index;
 use std::ops::IndexMut;
 use std::slice;
+use rayon::prelude::*;
 
 use super::strider::TensorStrider;
 use super::tensor::Tensor;
@@ -154,6 +155,36 @@ impl<'a> CpuTensor<'a> {
             let (n, _) = chunk.split_first_mut().unwrap();
             n
         });
+        Ok(iter)
+    }
+
+    pub fn par_iter_axis_mut(
+        &mut self,
+        pos: Vec<usize>,
+        axis: usize,
+    ) -> Result<impl rayon::iter::ParallelIterator<Item = (usize, &mut f32)>> {
+        if !self.is_owned() {
+            return Err((ErrorKind::TensorError, "not owned").into());
+        }
+        if !self.is_contiguous() {
+            return Err((ErrorKind::TensorError, "not contiguous").into());
+        }
+
+        let buf = match self.buf {
+            Cow::Owned(ref mut buf) => buf,
+            _ => unreachable!(),
+        };
+
+        // on a contiguous tensor, if we move one position according to the axis, the step length must equals the stride
+        let buf = &mut buf[self.strider.at(&pos)?..];
+        let stride = self.strider.strides()[axis];
+        let count = self.strider.shape()[axis] - pos[axis];
+
+        // whenever you wanna make a IterMut, the builtin functions like split_at_mut / chunks_mut are your friend
+        let iter = buf.par_chunks_mut(stride).take(count).map(|chunk| {
+            let (n, _) = chunk.split_first_mut().unwrap();
+            n
+        }).enumerate();
         Ok(iter)
     }
 

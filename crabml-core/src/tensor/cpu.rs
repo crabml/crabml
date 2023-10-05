@@ -121,19 +121,22 @@ impl<'a> CpuTensor<'a> {
         }
     }
 
-    pub fn iter_axis(
-        &'a self,
-        pos: &[usize],
-        axis: usize,
-    ) -> Result<CpuTensorAxisIter<'a, f32>> {
-        if self.is_contiguous() {
-            if pos[axis] == 0 {
+    pub fn iter_axis(&'a self, pos: &[usize], axis: usize) -> Result<CpuTensorAxisIter<'a, f32>> {
+        if self.strider.is_contigous_on_axis(axis) {
+            if axis == self.shape().len() - 1 && pos[axis] == 0 {
                 let start = self.strider.at(pos)?;
-                let buf = &self.buf[start..start+self.strider.shape()[axis]];
+                let buf = &self.buf[start..start + self.strider.shape()[axis]];
                 return Ok(CpuTensorAxisIter::Slice(buf.iter()));
             }
+
+            let stride = self.strider.strides()[axis];
+            let start = self.strider.at(pos)?;
+            let buf = &self.buf[start..];
+            return Ok(CpuTensorAxisIter::Boxed(Box::new(buf.iter().step_by(stride))));
         }
-        Ok(CpuTensorAxisIter::Boxed(Box::new(self.strider.iter_axis(pos, axis)?.map(|i| &self.buf[i]))))
+        Ok(CpuTensorAxisIter::Boxed(Box::new(
+            self.strider.iter_axis(pos, axis)?.map(|i| &self.buf[i]),
+        )))
     }
 
     pub fn iter_axis_mut(
@@ -252,7 +255,7 @@ impl<'a> CpuTensor<'a> {
 
 pub enum CpuTensorAxisIter<'a, T> {
     Slice(slice::Iter<'a, T>),
-    Boxed(Box<dyn Iterator<Item = &'a T> + 'a>)
+    Boxed(Box<dyn Iterator<Item = &'a T> + 'a>),
 }
 
 impl<'a, T> Iterator for CpuTensorAxisIter<'a, T> {

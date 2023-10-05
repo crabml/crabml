@@ -13,7 +13,7 @@ use rayon::prelude::*;
 /// test benchmark_tensor_matmul                      ... bench:      35,687 ns/iter (+/- 1,554)
 /// test benchmark_tensor_matmul_specialized_2d_1d    ... bench:      35,694 ns/iter (+/- 138)
 /// test benchmark_tensor_matmul_specialized_2d_1d_v2 ... bench:      36,740 ns/iter (+/- 8,254)
-/// 
+///
 /// Some note about the benchmark:
 /// - chained iter like .iter().enumerate.map(|i| pos[i]) is dog slow, 30 nearly times slower
 /// - `iter()` on a memory contigous slice is not slow

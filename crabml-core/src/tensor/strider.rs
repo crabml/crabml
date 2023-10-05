@@ -177,12 +177,19 @@ impl TensorStrider {
     }
 
     pub fn is_contiguous(&self) -> bool {
+        self.is_contigous_on_axis(0)
+    }
+
+    pub fn is_contigous_on_axis(&self, axis: usize) -> bool {
         if self.strides.len() == 0 {
             return true;
         }
 
-        if self.repeats.is_some() {
-            return false;
+        if let Some(repeats) = &self.repeats {
+            let all_one = repeats[axis..].iter().all(|r| *r == 1);
+            if !all_one {
+                return false;
+            }
         }
 
         if self.strides.last() != Some(&1) {
@@ -190,12 +197,13 @@ impl TensorStrider {
         }
 
         let mut last_stride = 1;
-        for i in (1..self.shape.len()).rev() {
+        for i in (axis..self.shape.len()).rev() {
             if last_stride != self.strides[i] {
                 return false;
             }
             last_stride *= self.shape[i];
         }
+
         true
     }
 
@@ -275,6 +283,13 @@ mod tests {
         assert_eq!(s.at_unchecked(&[1, 0]), 0);
         assert_eq!(s.at_unchecked(&[2, 0]), 3);
         assert_eq!(s.at_unchecked(&[3, 0]), 3);
+        Ok(())
+    }
+
+    #[test]
+    fn test_is_contigous() -> Result<()> {
+        let s = TensorStrider::new(vec![2, 3]);
+        assert!(s.is_contiguous());
         Ok(())
     }
 

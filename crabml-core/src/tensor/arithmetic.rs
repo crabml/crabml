@@ -52,7 +52,6 @@ pub fn tensor_matmul_2d<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuT
     require_tensor_dims(x, &[1, 2])?;
     require_tensor_matmul_2d_shapes(w, x)?;
     require_tensor_contiguous(w)?;
-    require_tensor_contiguous(x)?;
 
     let (mut out, x, reshaped) = if x.shape().len() == 1 {
         (

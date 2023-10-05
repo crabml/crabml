@@ -94,8 +94,8 @@ pub fn tensor_matmul_specialized_2d_1d<'a>(
     let xb = x.buf();
     let x_dim = x.len();
 
-    xout.iter_mut()?.enumerate().for_each(|(i, xo)| {
-        let wi = wb[i * x_dim..(i + 1) * x_dim].iter();
+    xout.iter_mut()?.enumerate().for_each(|(w_row, xo)| {
+        let wi = wb[w_row * x_dim..(w_row + 1) * x_dim].iter();
         let xi = xb.iter();
         *xo = wi.zip(xi).map(|(w, x)| w * x).sum::<f32>();
     });

@@ -134,14 +134,6 @@ impl TensorStrider {
                 .into());
         }
 
-        if self.repeats.is_some() {
-            return Err((
-                ErrorKind::TensorError,
-                "cannot view a repeated tensor in a different shape",
-            )
-                .into());
-        }
-
         let strider = TensorStrider::new(shape);
         Ok(strider)
     }

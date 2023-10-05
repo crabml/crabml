@@ -2,6 +2,7 @@ use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::error::Result;
 use crate::tensor::CpuTensor;
+use rayon::prelude::*;
 
 ///! arithmetic.rs contains the tensor arithmetics operations like matmul, accum, etc.
 

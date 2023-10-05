@@ -132,8 +132,10 @@ impl<'a> CpuTensor<'a> {
             let stride = self.strider.strides()[axis];
             let start = self.strider.at(pos)?;
             let buf = &self.buf[start..];
-            return Ok(CpuTensorAxisIter::Boxed(Box::new(buf.iter().step_by(stride))));
+            return Ok(CpuTensorAxisIter::StepBy(buf.iter().step_by(stride)));
         }
+
+        // slow path
         Ok(CpuTensorAxisIter::Boxed(Box::new(
             self.strider.iter_axis(pos, axis)?.map(|i| &self.buf[i]),
         )))
@@ -255,6 +257,7 @@ impl<'a> CpuTensor<'a> {
 
 pub enum CpuTensorAxisIter<'a, T> {
     Slice(slice::Iter<'a, T>),
+    StepBy(std::iter::StepBy<std::slice::Iter<'a, T>>),
     Boxed(Box<dyn Iterator<Item = &'a T> + 'a>),
 }
 
@@ -264,6 +267,7 @@ impl<'a, T> Iterator for CpuTensorAxisIter<'a, T> {
     fn next(&mut self) -> Option<Self::Item> {
         match self {
             CpuTensorAxisIter::Slice(iter) => iter.next(),
+            CpuTensorAxisIter::StepBy(iter) => iter.next(),
             CpuTensorAxisIter::Boxed(iter) => iter.next(),
         }
     }

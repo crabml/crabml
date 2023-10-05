@@ -59,23 +59,20 @@ pub fn tensor_matmul_2d<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuT
     }
 
     if x.shape().len() == 1 {
-        let mut out = CpuTensor::zeros(vec![w.shape()[0], 1])?;
-        let w_rows = w.shape()[0];
-        for w_row in 0..w_rows {
-            let o_row_iter = out.iter_axis_mut(vec![w_row, 0], 1)?; // (x_cols, )
-            o_row_iter.for_each(|o| {
-                let w_row_iter = w.iter_axis(&[w_row, 0], 1).unwrap(); // (w_cols, )
-                let x_col_iter = x.iter_axis(&[0], 0).unwrap(); // (w_cols, )
-                *o = w_row_iter.zip(x_col_iter).map(|(w, x)| w * x).sum::<f32>();
-            });
-        }
+        let mut out = CpuTensor::zeros(vec![w.shape()[0]])?;
+        let o_row_iter = out.iter_axis_mut(vec![0], 0)?; // (x_cols, )
+        o_row_iter.enumerate().for_each(|(w_row, o)| {
+            let w_row_iter = w.iter_axis(&[w_row, 0], 1).unwrap(); // (w_cols, )
+            let x_col_iter = x.iter_axis(&[0], 0).unwrap(); // (w_cols, )
+            *o = w_row_iter.zip(x_col_iter).map(|(w, x)| w * x).sum::<f32>();
+        });
         return Ok(out);
     }
 
     let mut out = CpuTensor::zeros(vec![w.shape()[0], x.shape()[1]])?;
     let w_rows = w.shape()[0];
     for w_row in 0..w_rows {
-        let o_row_iter = out.iter_axis_mut(vec![w_row, 0], 1)?; // (x_cols, )
+        let o_row_iter = out.par_iter_axis_mut(vec![w_row, 0], 1)?; // (x_cols, )
         o_row_iter.enumerate().for_each(|(x_col, o)| {
             let w_row_iter = w.iter_axis(&[w_row, 0], 1).unwrap(); // (w_cols, )
             let x_col_iter = x.iter_axis(&[0, x_col], 0).unwrap(); // (w_cols, )
@@ -208,6 +205,7 @@ pub fn tensor_rope_inplace<'a>(
 
 fn require_tensor_shape(t: &CpuTensor, shape: &[usize]) -> Result<()> {
     if !t.shape().eq(shape) {
+        panic!("failed shape");
         return Err(Error {
             kind: ErrorKind::TensorError,
             message: format!("tensor shape is not {:?}, but {:?}", shape, t.shape(),),

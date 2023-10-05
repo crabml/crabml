@@ -54,7 +54,7 @@ pub fn tensor_matmul_2d<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuT
     require_tensor_matmul_2d_shapes(w, x)?;
     require_tensor_contiguous(w)?;
 
-    if w.shape().len() == 2 && x.shape().len() == 1 {
+    if x.is_contiguous() && x.shape().len() == 1 {
         return tensor_matmul_specialized_2d_1d(w, x);
     }
 
@@ -74,7 +74,7 @@ pub fn tensor_matmul_2d<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuT
 
     let w_rows = w.shape()[0];
     for w_row in 0..w_rows {
-        let o_row_iter = out.par_iter_axis_mut(vec![w_row, 0], 1)?; // (x_cols, )
+        let o_row_iter = out.iter_axis_mut(vec![w_row, 0], 1)?; // (x_cols, )
         o_row_iter.enumerate().for_each(|(x_col, o)| {
             let w_row_iter = w.iter_axis(&[w_row, 0], 1).unwrap(); // (w_cols, )
             let x_col_iter = x.iter_axis(&[0, x_col], 0).unwrap(); // (w_cols, )

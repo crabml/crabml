@@ -127,11 +127,7 @@ impl<'a> CpuTensor<'a> {
         axis: usize,
     ) -> Result<CpuTensorAxisIter<'a, f32>> {
         if self.is_contiguous() {
-            if self.shape().len() == 1 && axis == 0 && pos[axis] == 0 {
-                let buf = &self.buf[pos[0]..];
-                return Ok(CpuTensorAxisIter::Slice(buf.iter()));
-            }
-            if self.shape().len() == 2 && axis == 1 && pos[axis] == 0 {
+            if pos[axis] == 0 {
                 let start = self.strider.at(pos)?;
                 let buf = &self.buf[start..start+self.strider.shape()[axis]];
                 return Ok(CpuTensorAxisIter::Slice(buf.iter()));

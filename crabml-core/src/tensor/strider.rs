@@ -91,9 +91,14 @@ impl TensorStrider {
         pos: &[usize],
         axis: usize,
     ) -> Result<impl Iterator<Item = usize> + '_> {
-        let iter = self.iter_axis_inner(pos, axis)?;
-        let iter = iter.map(|pos| self.at_unchecked(&pos));
-        Ok(iter)
+        let mut pos = pos.to_vec();
+        let axis_pos = pos[axis];
+        let axis_max = self.shape[axis];
+
+        Ok((axis_pos..axis_max).map(move |i| {
+            pos[axis] = i;
+            self.at_unchecked(&pos)
+        }))
     }
 
     pub fn into_iter_axis(self, pos: &[usize], axis: usize) -> Result<impl Iterator<Item = usize>> {

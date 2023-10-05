@@ -13,7 +13,7 @@ pub fn tensor_rms_norm_inplace(mut x: CpuTensor<'_>, eps: f32) -> Result<CpuTens
     let len = x.shape()[0];
     let sum = x.iter_axis(&[0], 0)?.fold(0.0, |s, n| s + n * n);
     let rms = ((sum / len as f32) + eps).sqrt();
-    x.iter_axis_mut(vec![0], 0)?.for_each(|n| *n = *n / rms);
+    x.par_iter_axis_mut(vec![0], 0)?.for_each(|n| *n = *n / rms);
     Ok(x)
 }
 
@@ -71,7 +71,7 @@ pub fn tensor_matmul_2d<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuT
     let w_rows = w.shape()[0];
     for w_row in 0..w_rows {
         let o_row_iter = out.par_iter_axis_mut(vec![w_row, 0], 1)?; // (x_cols, )
-        o_row_iter.for_each(|(x_col, o)| {
+        o_row_iter.enumerate().for_each(|(x_col, o)| {
             let w_row_iter = w.iter_axis(&[w_row, 0], 1).unwrap(); // (w_cols, )
             let x_col_iter = x.iter_axis(&[0, x_col], 0).unwrap(); // (w_cols, )
             *o = w_row_iter.zip(x_col_iter).map(|(w, x)| w * x).sum::<f32>();

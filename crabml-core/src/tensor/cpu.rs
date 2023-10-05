@@ -162,7 +162,7 @@ impl<'a> CpuTensor<'a> {
         &mut self,
         pos: Vec<usize>,
         axis: usize,
-    ) -> Result<impl rayon::iter::ParallelIterator<Item = (usize, &mut f32)>> {
+    ) -> Result<impl rayon::iter::IndexedParallelIterator<Item = &mut f32>> {
         if !self.is_owned() {
             return Err((ErrorKind::TensorError, "not owned").into());
         }
@@ -184,7 +184,7 @@ impl<'a> CpuTensor<'a> {
         let iter = buf.par_chunks_mut(stride).take(count).map(|chunk| {
             let (n, _) = chunk.split_first_mut().unwrap();
             n
-        }).enumerate();
+        });
         Ok(iter)
     }
 

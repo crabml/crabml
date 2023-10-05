@@ -7,6 +7,20 @@ use crabml::tensor::arithmetic::tensor_matmul_specialized_2d_1d;
 use crabml::tensor::CpuTensor;
 use rayon::prelude::*;
 
+/// test benchmark_iter_simple_matmul                 ... bench:      35,691 ns/iter (+/- 143)
+/// test benchmark_par_simple_matmul                  ... bench:      40,225 ns/iter (+/- 2,400)
+/// test benchmark_simple_matmul                      ... bench:      35,747 ns/iter (+/- 402)
+/// test benchmark_tensor_matmul                      ... bench:      35,687 ns/iter (+/- 1,554)
+/// test benchmark_tensor_matmul_specialized_2d_1d    ... bench:      35,694 ns/iter (+/- 138)
+/// test benchmark_tensor_matmul_specialized_2d_1d_v2 ... bench:      36,740 ns/iter (+/- 8,254)
+/// 
+/// Some note about the benchmark:
+/// - chained iter like .iter().enumerate.map(|i| pos[i]) is dog slow, 30 nearly times slower
+/// - `iter()` on a memory contigous slice is not slow
+/// - Boxed `iter()` is 3 times slower
+/// - having memory allocation did not actually make it slower
+/// - C-like speicialized matmul is still the fastest
+
 fn simple_matmul(xout: &mut [f32], x: &[f32], w: &[f32]) {
     // w (d,n) @ x (n,) -> xout (d,)
     let x_dim = x.len();
@@ -40,19 +54,6 @@ fn iter_simple_matmul(xout: &mut [f32], x: &[f32], w: &[f32]) {
     });
 }
 
-pub fn tensor_matmul_specialized_2d_1d_v2<'a>(
-    w: &CpuTensor<'a>,
-    x: &CpuTensor<'a>,
-) -> CpuTensor<'a> {
-    let mut xout = CpuTensor::zeros(vec![w.shape()[0]]).unwrap();
-    xout.iter_mut().unwrap().enumerate().for_each(|(w_row, xo)| {
-        let w_row_iter = w.iter_axis_contigous(&[w_row, 0], 1).unwrap(); // (w_cols, )
-        let x_col_iter = x.iter_axis_contigous(&[0], 0).unwrap(); // (w_cols, )
-        *xo = w_row_iter.zip(x_col_iter).map(|(w, x)| w * x).sum::<f32>();
-    });
-    xout
-}
-
 fn benchmark_tensor_matmul(bench: &mut Bencher) {
     let w = CpuTensor::new(vec![1.0; 50000], vec![100, 500]).unwrap();
     let b = CpuTensor::new(vec![1.0; 500], vec![500]).unwrap();
@@ -66,14 +67,6 @@ fn benchmark_tensor_matmul_specialized_2d_1d(bench: &mut Bencher) {
     let b = CpuTensor::new(vec![1.0; 500], vec![500]).unwrap();
     bench.iter(|| {
         tensor_matmul_specialized_2d_1d(&w, &b).unwrap();
-    })
-}
-
-fn benchmark_tensor_matmul_specialized_2d_1d_v2(bench: &mut Bencher) {
-    let w = CpuTensor::new(vec![1.0; 50000], vec![100, 500]).unwrap();
-    let b = CpuTensor::new(vec![1.0; 500], vec![500]).unwrap();
-    bench.iter(|| {
-        tensor_matmul_specialized_2d_1d_v2(&w, &b);
     })
 }
 
@@ -111,6 +104,5 @@ benchmark_group!(
     benchmark_par_simple_matmul,
     benchmark_iter_simple_matmul,
     benchmark_tensor_matmul_specialized_2d_1d,
-    benchmark_tensor_matmul_specialized_2d_1d_v2,
 );
 benchmark_main!(benches);

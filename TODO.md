@@ -1,4 +1,6 @@
-- [ ] support repeat in tensor
+- [x] support repeat in tensor
+- [ ] benchmark matmuls
+- [ ] replace multi query attention with matmul with repeat
 - [ ] support quantization
 - [ ] take the tensor & device framework
 - [ ] wgpu tensor support

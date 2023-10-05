@@ -10,3 +10,8 @@ rayon = "1.8.0"
 
 [dev-dependencies]
 pretty_assertions = "1.2.1"
+bencher = "0.1.5"
+
+[[bench]]
+name = "matmul"
+harness = false

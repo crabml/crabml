@@ -125,19 +125,19 @@ impl<'a> CpuTensor<'a> {
         &'a self,
         pos: &[usize],
         axis: usize,
-    ) -> Result<Box<dyn Iterator<Item = &'a f32> + 'a>> {
+    ) -> Result<CpuTensorAxisIter<'a, f32>> {
         if self.is_contiguous() {
             if self.shape().len() == 1 && axis == 0 && pos[axis] == 0 {
                 let buf = &self.buf[pos[0]..];
-                return Ok(Box::new(buf.iter()));
+                return Ok(CpuTensorAxisIter::Slice(buf.iter()));
             }
             if self.shape().len() == 2 && axis == 1 && pos[axis] == 0 {
                 let start = self.strider.at(pos)?;
                 let buf = &self.buf[start..start+self.strider.shape()[axis]];
-                return Ok(Box::new(buf.iter()));
+                return Ok(CpuTensorAxisIter::Slice(buf.iter()));
             }
         }
-        Ok(Box::new(self.strider.iter_axis(pos, axis)?.map(|i| &self.buf[i])))
+        Ok(CpuTensorAxisIter::Boxed(Box::new(self.strider.iter_axis(pos, axis)?.map(|i| &self.buf[i]))))
     }
 
     pub fn iter_axis_contigous(
@@ -270,6 +270,22 @@ impl<'a> CpuTensor<'a> {
             return Err((ErrorKind::TensorError, "not owned").into());
         }
         Ok(self.buf.to_mut())
+    }
+}
+
+pub enum CpuTensorAxisIter<'a, T> {
+    Slice(slice::Iter<'a, T>),
+    Boxed(Box<dyn Iterator<Item = &'a T> + 'a>)
+}
+
+impl<'a, T> Iterator for CpuTensorAxisIter<'a, T> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            CpuTensorAxisIter::Slice(iter) => iter.next(),
+            CpuTensorAxisIter::Boxed(iter) => iter.next(),
+        }
     }
 }
 

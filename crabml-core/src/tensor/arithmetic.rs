@@ -60,7 +60,7 @@ pub fn tensor_matmul_2d<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuT
 
     if x.shape().len() == 1 {
         let mut out = CpuTensor::zeros(vec![w.shape()[0]])?;
-        let o_row_iter = out.iter_axis_mut(vec![0], 0)?; // (x_cols, )
+        let o_row_iter = out.par_iter_axis_mut(vec![0], 0)?; // (x_cols, )
         o_row_iter.enumerate().for_each(|(w_row, o)| {
             let w_row_iter = w.iter_axis(&[w_row, 0], 1).unwrap(); // (w_cols, )
             let x_col_iter = x.iter_axis(&[0], 0).unwrap(); // (w_cols, )
@@ -91,7 +91,7 @@ pub fn tensor_matmul_specialized_2d_1d<'a>(
     let xb = x.buf();
     let x_dim = x.len();
 
-    xout.iter_mut()?.enumerate().for_each(|(w_row, xo)| {
+    xout.par_iter_mut()?.enumerate().for_each(|(w_row, xo)| {
         let wi = wb[w_row * x_dim..(w_row + 1) * x_dim].iter();
         let xi = xb.iter();
         *xo = wi.zip(xi).map(|(w, x)| w * x).sum::<f32>();
@@ -107,14 +107,14 @@ pub fn tensor_softmax_inplace<'a>(t: &mut CpuTensor<'a>, limit: usize) -> Result
         .iter_axis(&[0], 0)?
         .take(limit)
         .fold(f32::NAN, |a, b| a.max(*b));
-    let mut sum = 0.0;
-    for val in t.iter_axis_mut(vec![0], 0)?.take(limit) {
+    let sum = t.iter_axis_mut(vec![0], 0)?.take(limit).fold(0.0, |mut acc, val| {
         *val = (*val - max).exp();
-        sum += *val;
-    }
-    for val in t.iter_axis_mut(vec![0], 0)?.take(limit) {
+        acc += *val;
+        acc
+    });
+    t.par_iter_axis_mut(vec![0], 0)?.take(limit).for_each(|val| {
         *val /= sum;
-    }
+    });
     Ok(())
 }
 

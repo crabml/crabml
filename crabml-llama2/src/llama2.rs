@@ -78,6 +78,18 @@ impl<'a> Llama2Model<'a> {
         })
     }
 
+    pub fn conf(&self) -> &Llama2Config {
+        &self.conf
+    }
+
+    pub fn weights(&self) -> &Llama2Weights<'a> {
+        &self.weights
+    }
+
+    pub fn tokenizer(&self) -> &Llama2Tokenizer {
+        &self.tokenizer
+    }
+
     fn load_weights(gf: &'a GGUFFile<'a>, n_layers: usize) -> Result<Llama2Weights<'a>> {
         // [64 (dim), 512 (vocab_size)]
         let token_embedding_table = Self::load_tensor(gf, "token_embd.weight")?;
@@ -235,14 +247,14 @@ struct Llama2State<'a> {
 pub struct Llama2Runner<'a> {
     conf: Llama2Config,
     state: Llama2State<'a>,
-    weights: Llama2Weights<'a>,
+    weights: &'a Llama2Weights<'a>,
     tokenizer: &'a Llama2Tokenizer,
 }
 
 impl<'a> Llama2Runner<'a> {
     pub fn new(
         conf: &Llama2Config,
-        weights: Llama2Weights<'a>,
+        weights: &'a Llama2Weights<'a>,
         tokenizer: &'a Llama2Tokenizer,
     ) -> Result<Self> {
         let state = Llama2State {
@@ -542,7 +554,7 @@ mod tests {
         let lm = Llama2Model::from(&gf)?;
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0);
-        let mut runner = Llama2Runner::new(&lm.conf, lm.weights, &lm.tokenizer)?;
+        let mut runner = Llama2Runner::new(&lm.conf, &lm.weights, &lm.tokenizer)?;
         let output = runner.generate("Lily is a cat ", 30, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
         assert_eq!(

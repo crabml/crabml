@@ -2,4 +2,5 @@
 members = [
     "crabml-core",
     "crabml-llama2",
+    "crabml-cli",
 ]

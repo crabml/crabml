@@ -1,0 +1,14 @@
+[package]
+name = "crabml-cli"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rayon = "1.7.0"
+num_cpus = "1.16.0"
+clap = { version = "4.0", features = ["derive"] }
+crabml-llama2 = { path = "../crabml-llama2" }
+crabml = { path = "../crabml-core" }
+
+[dev-dependencies]
+pretty_assertions = "1.2.1"

@@ -138,6 +138,39 @@ impl TensorStrider {
         Ok(strider)
     }
 
+    /// repeat the tensor along each axis. only used in the multi grouped query
+    /// where each key/value head have multiple query heads.
+    pub fn repeat(&self, repeats: Vec<usize>) -> Result<Self> {
+        if !self.is_contiguous() {
+            return Err((ErrorKind::TensorError, "not contiguous").into());
+        }
+
+        if repeats.len() != self.shape.len() {
+            return Err((
+                ErrorKind::TensorError,
+                format!(
+                    "invalid repeats {:?} for a tensor of shape {:?}",
+                    repeats, self.shape
+                ),
+            )
+                .into());
+        }
+
+        let new_shape = self
+            .shape
+            .iter()
+            .zip(repeats.iter())
+            .map(|(dim, repeat)| dim * repeat)
+            .collect::<Vec<_>>();
+
+        let strider = TensorStrider {
+            shape: new_shape,
+            strides: self.strides.clone(),
+            repeats: Some(repeats.clone()),
+        };
+        Ok(strider)
+    }
+
     pub fn is_contiguous(&self) -> bool {
         if self.strides.len() == 0 {
             return true;
@@ -224,6 +257,19 @@ mod tests {
         assert_eq!(r[0], vec![0, 0]);
         assert_eq!(r[1], vec![1, 0]);
         assert_eq!(r[2], vec![2, 0]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_repeat() -> Result<()> {
+        let s_orig = TensorStrider::new(vec![2, 3]);
+        let s = s_orig.repeat(vec![2, 1])?;
+        assert_eq!(s.shape(), &[4, 3]);
+        assert_eq!(s.strides(), &[3, 1]);
+        assert_eq!(s.at_unchecked(&[0, 0]), 0);
+        assert_eq!(s.at_unchecked(&[1, 0]), 0);
+        assert_eq!(s.at_unchecked(&[2, 0]), 3);
+        assert_eq!(s.at_unchecked(&[3, 0]), 3);
         Ok(())
     }
 

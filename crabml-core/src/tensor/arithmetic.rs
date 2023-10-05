@@ -31,9 +31,9 @@ pub fn tensor_add_inplace<'a>(mut a: CpuTensor<'a>, b: &CpuTensor<'a>) -> Result
     require_tensor_contiguous(&a)?;
     require_tensor_contiguous(b)?;
 
-    for (ia, ib) in a.iter_mut()?.zip(b.iter()) {
+    a.par_iter_mut()?.zip(b.par_iter()?).for_each(|(ia, ib)| {
         *ia += *ib;
-    }
+    });
     Ok(a)
 }
 
@@ -41,7 +41,7 @@ pub fn tensor_silu_inplace<'a>(mut x: CpuTensor<'a>) -> Result<CpuTensor<'a>> {
     // for i in 0..buf.len() {
     //    buf[i] = buf[i] * (1.0 / (1.0 + (-buf[i]).exp()));
     // }
-    x.iter_mut()?.for_each(|n| *n = *n / (1.0 + (-*n).exp()));
+    x.par_iter_mut()?.for_each(|n| *n = *n / (1.0 + (-*n).exp()));
     Ok(x)
 }
 
@@ -129,12 +129,12 @@ pub fn tensor_multi_query_attention<'a>(
     // get attention scores
     for h in 0..n_heads {
         let kvh = h / (n_heads / n_kv_heads);
-        for (tok, attn) in attn.iter_mut()?.take(pos + 1).enumerate() {
-            let q_head = q.iter_axis(&[h, 0], 1)?; // (head_size, )
-            let k_head = k_cache.iter_axis(&[tok, kvh, 0], 2)?; // (head_size, )
+        attn.par_iter_mut()?.take(pos + 1).enumerate().for_each(|(tok, attn)| {
+            let q_head = q.iter_axis(&[h, 0], 1).unwrap(); // (head_size, )
+            let k_head = k_cache.iter_axis(&[tok, kvh, 0], 2).unwrap(); // (head_size, )
             let score = q_head.zip(k_head).map(|(q, k)| q * k).sum::<f32>();
             *attn = score / (head_size as f32).sqrt();
-        }
+        });
 
         tensor_softmax_inplace(&mut attn, pos + 1)?;
 

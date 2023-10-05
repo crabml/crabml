@@ -5,6 +5,7 @@ use std::borrow::Cow;
 use std::ops::Index;
 use std::ops::IndexMut;
 use std::slice;
+use std::slice::SliceIndex;
 use rayon::prelude::*;
 
 use super::strider::TensorStrider;
@@ -192,6 +193,14 @@ impl<'a> CpuTensor<'a> {
         self.strider.iter().map(|i| &self.buf[i])
     }
 
+    pub fn par_iter(&self) -> Result<impl IndexedParallelIterator<Item = &f32>> {
+        if !self.is_contiguous() {
+            return Err((ErrorKind::TensorError, "not contiguous").into());
+        }
+
+        Ok(self.buf.par_iter())
+    }
+
     pub fn iter_mut(&mut self) -> Result<impl Iterator<Item = &mut f32>> {
         if !self.is_owned() {
             return Err((ErrorKind::TensorError, "not owned").into());
@@ -200,6 +209,16 @@ impl<'a> CpuTensor<'a> {
             return Err((ErrorKind::TensorError, "not contiguous").into());
         }
         Ok(self.buf.to_mut().iter_mut())
+    }
+
+    pub fn par_iter_mut(&mut self) -> Result<impl IndexedParallelIterator<Item = &mut f32>> {
+        if !self.is_owned() {
+            return Err((ErrorKind::TensorError, "not owned").into());
+        }
+        if !self.is_contiguous() {
+            return Err((ErrorKind::TensorError, "not contiguous").into());
+        }
+        Ok(self.buf.to_mut().par_iter_mut())
     }
 
     pub fn is_contiguous(&self) -> bool {

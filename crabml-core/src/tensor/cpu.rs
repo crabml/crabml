@@ -1,10 +1,12 @@
 use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::error::Result;
+use rayon::prelude::*;
 use std::borrow::Cow;
 use std::ops::Index;
 use std::ops::IndexMut;
 use std::slice;
+use std::slice::SliceIndex;
 
 use super::strider::TensorStrider;
 use super::tensor::Tensor;
@@ -119,12 +121,24 @@ impl<'a> CpuTensor<'a> {
         }
     }
 
-    pub fn iter_axis(
-        &'a self,
-        pos: Vec<usize>,
-        axis: usize,
-    ) -> Result<impl Iterator<Item = &'a f32>> {
-        Ok(self.strider.iter_axis(pos, axis)?.map(|i| &self.buf[i]))
+    pub fn iter_axis(&'a self, pos: &[usize], axis: usize) -> Result<CpuTensorAxisIter<'a, f32>> {
+        if self.strider.is_contiguous_on_axis(axis) {
+            if axis == self.shape().len() - 1 && pos[axis] == 0 {
+                let start = self.strider.at(pos)?;
+                let buf = &self.buf[start..start + self.strider.shape()[axis]];
+                return Ok(CpuTensorAxisIter::Slice(buf.iter()));
+            }
+
+            let stride = self.strider.strides()[axis];
+            let start = self.strider.at(pos)?;
+            let buf = &self.buf[start..];
+            return Ok(CpuTensorAxisIter::StepBy(buf.iter().step_by(stride)));
+        }
+
+        // slow path
+        Ok(CpuTensorAxisIter::Boxed(Box::new(
+            self.strider.iter_axis(pos, axis)?.map(|i| &self.buf[i]),
+        )))
     }
 
     pub fn iter_axis_mut(
@@ -157,8 +171,46 @@ impl<'a> CpuTensor<'a> {
         Ok(iter)
     }
 
+    pub fn par_iter_axis_mut(
+        &mut self,
+        pos: Vec<usize>,
+        axis: usize,
+    ) -> Result<impl rayon::iter::IndexedParallelIterator<Item = &mut f32>> {
+        if !self.is_owned() {
+            return Err((ErrorKind::TensorError, "not owned").into());
+        }
+        if !self.is_contiguous() {
+            return Err((ErrorKind::TensorError, "not contiguous").into());
+        }
+
+        let buf = match self.buf {
+            Cow::Owned(ref mut buf) => buf,
+            _ => unreachable!(),
+        };
+
+        // on a contiguous tensor, if we move one position according to the axis, the step length must equals the stride
+        let buf = &mut buf[self.strider.at(&pos)?..];
+        let stride = self.strider.strides()[axis];
+        let count = self.strider.shape()[axis] - pos[axis];
+
+        // whenever you wanna make a IterMut, the builtin functions like split_at_mut / chunks_mut are your friend
+        let iter = buf.par_chunks_mut(stride).take(count).map(|chunk| {
+            let (n, _) = chunk.split_first_mut().unwrap();
+            n
+        });
+        Ok(iter)
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = &f32> {
         self.strider.iter().map(|i| &self.buf[i])
+    }
+
+    pub fn par_iter(&self) -> Result<impl IndexedParallelIterator<Item = &f32>> {
+        if !self.is_contiguous() {
+            return Err((ErrorKind::TensorError, "not contiguous").into());
+        }
+
+        Ok(self.buf.par_iter())
     }
 
     pub fn iter_mut(&mut self) -> Result<impl Iterator<Item = &mut f32>> {
@@ -171,6 +223,16 @@ impl<'a> CpuTensor<'a> {
         Ok(self.buf.to_mut().iter_mut())
     }
 
+    pub fn par_iter_mut(&mut self) -> Result<impl IndexedParallelIterator<Item = &mut f32>> {
+        if !self.is_owned() {
+            return Err((ErrorKind::TensorError, "not owned").into());
+        }
+        if !self.is_contiguous() {
+            return Err((ErrorKind::TensorError, "not contiguous").into());
+        }
+        Ok(self.buf.to_mut().par_iter_mut())
+    }
+
     pub fn is_contiguous(&self) -> bool {
         self.strider.is_contiguous()
     }
@@ -179,12 +241,35 @@ impl<'a> CpuTensor<'a> {
         self.strider.shape()
     }
 
-    // TODO: only used for ROPE encoding, remove it after we learned about the algorithm behind rope
-    pub fn mut_buf(&mut self) -> Result<&mut [f32]> {
+    // only used on specialized performance critical cases
+    pub fn buf(&self) -> &[f32] {
+        &self.buf
+    }
+
+    // only used on specialized performance critical cases
+    pub fn buf_mut(&mut self) -> Result<&mut [f32]> {
         if !self.is_owned() {
             return Err((ErrorKind::TensorError, "not owned").into());
         }
         Ok(self.buf.to_mut())
+    }
+}
+
+pub enum CpuTensorAxisIter<'a, T> {
+    Slice(slice::Iter<'a, T>),
+    StepBy(std::iter::StepBy<std::slice::Iter<'a, T>>),
+    Boxed(Box<dyn Iterator<Item = &'a T> + 'a>),
+}
+
+impl<'a, T> Iterator for CpuTensorAxisIter<'a, T> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            CpuTensorAxisIter::Slice(iter) => iter.next(),
+            CpuTensorAxisIter::StepBy(iter) => iter.next(),
+            CpuTensorAxisIter::Boxed(iter) => iter.next(),
+        }
     }
 }
 
@@ -208,13 +293,13 @@ mod tests {
     #[test]
     fn test_tensor_iter_axis() -> Result<()> {
         let t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![2, 3])?;
-        let r = t.iter_axis(vec![0, 0], 1)?.cloned().collect::<Vec<_>>();
+        let r = t.iter_axis(&[0, 0], 1)?.cloned().collect::<Vec<_>>();
         assert_eq!(r, vec![1.0, 2.0, 3.0]);
-        let r = t.iter_axis(vec![0, 0], 0)?.cloned().collect::<Vec<_>>();
+        let r = t.iter_axis(&[0, 0], 0)?.cloned().collect::<Vec<_>>();
         assert_eq!(r, vec![1.0, 4.0]);
         // 1, 2, 3
         // 4, 5, 6
-        let r = t.iter_axis(vec![0, 1], 0)?.cloned().collect::<Vec<_>>();
+        let r = t.iter_axis(&[0, 1], 0)?.cloned().collect::<Vec<_>>();
         assert_eq!(r, vec![2.0, 5.0]);
 
         let mut t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![2, 3])?;

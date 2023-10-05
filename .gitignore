@@ -18,3 +18,5 @@ Cargo.lock
 
 /target
 /Cargo.lock
+
+testdata/*.gguf

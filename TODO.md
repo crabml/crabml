@@ -1,5 +1,6 @@
-- [x] add name for each tensor
-- [x] refactor with tensor arithmetic
-- [x] refactor tensor arithmetic with return values
-- [ ] support repeat in tensor
+- [x] support repeat in tensor
+- [ ] benchmark matmuls
+- [ ] replace multi query attention with matmul with repeat
+- [ ] support quantization
+- [ ] take the tensor & device framework
 - [ ] wgpu tensor support

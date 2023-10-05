@@ -107,14 +107,19 @@ pub fn tensor_softmax_inplace<'a>(t: &mut CpuTensor<'a>, limit: usize) -> Result
         .iter_axis(&[0], 0)?
         .take(limit)
         .fold(f32::NAN, |a, b| a.max(*b));
-    let sum = t.iter_axis_mut(vec![0], 0)?.take(limit).fold(0.0, |mut acc, val| {
-        *val = (*val - max).exp();
-        acc += *val;
-        acc
-    });
-    t.par_iter_axis_mut(vec![0], 0)?.take(limit).for_each(|val| {
-        *val /= sum;
-    });
+    let sum = t
+        .iter_axis_mut(vec![0], 0)?
+        .take(limit)
+        .fold(0.0, |mut acc, val| {
+            *val = (*val - max).exp();
+            acc += *val;
+            acc
+        });
+    t.par_iter_axis_mut(vec![0], 0)?
+        .take(limit)
+        .for_each(|val| {
+            *val /= sum;
+        });
     Ok(())
 }
 

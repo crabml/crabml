@@ -333,6 +333,8 @@ impl<'a> Llama2Runner<'a> {
 
             // save to kv cache
             {
+                let v = v.view(&[n_kv_heads, head_size])?;
+
                 self.state.key_cache[l].extend(&k)?;
                 self.state.value_cache[l].extend(&v)?;
             };

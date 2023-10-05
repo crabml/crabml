@@ -83,7 +83,15 @@ impl<'a> CpuTensor<'a> {
             return Err((ErrorKind::TensorError, "not contiguous").into());
         }
         if !t.shape().eq(&self.shape()[1..]) {
-            return Err((ErrorKind::TensorError, "shape mismatch").into());
+            return Err((
+                ErrorKind::TensorError,
+                format!(
+                    "shape mismatch on extend, want {:?} but got {:?}",
+                    &self.shape()[1..],
+                    &t.shape()
+                ),
+            )
+                .into());
         }
 
         self.buf.to_mut().extend(t.iter());
@@ -276,6 +284,7 @@ impl<'a> CpuTensor<'a> {
     }
 }
 
+// a enum dispatcher seems 3 times faster than a trait object on the benchmarks
 pub enum CpuTensorAxisIter<'a, T> {
     Slice(slice::Iter<'a, T>),
     StepBy(std::iter::StepBy<std::slice::Iter<'a, T>>),
@@ -343,11 +352,14 @@ mod tests {
     #[test]
     fn test_extend() -> Result<()> {
         let mut t1 = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![1, 2, 3])?;
-        let t2 = CpuTensor::new(vec![1.0; 6], vec![2,3])?;
+        let t2 = CpuTensor::new(vec![1.0; 6], vec![2, 3])?;
         t1.extend(&t2)?;
 
         assert_eq!(t1.shape(), &[2, 2, 3]);
-        assert_eq!(t1.buf(), &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]);
+        assert_eq!(
+            t1.buf(),
+            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+        );
         Ok(())
     }
 }

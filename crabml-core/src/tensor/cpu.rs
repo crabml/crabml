@@ -122,7 +122,7 @@ impl<'a> CpuTensor<'a> {
     }
 
     pub fn iter_axis(&'a self, pos: &[usize], axis: usize) -> Result<CpuTensorAxisIter<'a, f32>> {
-        if self.strider.is_contigous_on_axis(axis) {
+        if self.strider.is_contiguous_on_axis(axis) {
             if axis == self.shape().len() - 1 && pos[axis] == 0 {
                 let start = self.strider.at(pos)?;
                 let buf = &self.buf[start..start + self.strider.shape()[axis]];

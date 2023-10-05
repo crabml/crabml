@@ -177,10 +177,12 @@ impl TensorStrider {
     }
 
     pub fn is_contiguous(&self) -> bool {
-        self.is_contigous_on_axis(0)
+        self.is_contiguous_on_axis(0)
     }
 
-    pub fn is_contigous_on_axis(&self, axis: usize) -> bool {
+    // if the tensor is contiguous on the given axis, you can safely iterate
+    // the axis with a simple `.iter().step_by(strides[axis])`.
+    pub fn is_contiguous_on_axis(&self, axis: usize) -> bool {
         if self.strides.len() == 0 {
             return true;
         }
@@ -290,6 +292,15 @@ mod tests {
     fn test_is_contigous() -> Result<()> {
         let s = TensorStrider::new(vec![2, 3]);
         assert!(s.is_contiguous());
+        assert!(s.is_contiguous_on_axis(1));
+        assert!(s.is_contiguous_on_axis(0));
+
+        let s = TensorStrider::new(vec![1, 2, 3]);
+        let s = s.repeat(vec![2, 1, 1])?;
+        assert!(!s.is_contiguous());
+        assert!(s.is_contiguous_on_axis(2));
+        assert!(s.is_contiguous_on_axis(1));
+        assert!(!s.is_contiguous_on_axis(0));
         Ok(())
     }
 

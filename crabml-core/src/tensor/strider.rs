@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+
 use crate::error::ErrorKind;
 use crate::error::Result;
 
@@ -5,12 +7,18 @@ use crate::error::Result;
 pub struct TensorStrider {
     shape: Vec<usize>,
     strides: Vec<usize>,
+    repeats: Option<Vec<usize>>,
 }
 
 impl TensorStrider {
     pub fn new(shape: Vec<usize>) -> Self {
         let strides = Self::compute_strides(&shape);
-        Self { shape, strides }
+        let dims = shape.len();
+        Self {
+            shape,
+            strides,
+            repeats: None,
+        }
     }
 
     pub fn shape(&self) -> &[usize] {
@@ -49,6 +57,17 @@ impl TensorStrider {
     }
 
     pub fn at_unchecked(&self, idx: &[usize]) -> usize {
+        // if repeats is set, divide the index by the repeat factor.
+        // for example a tensor of shape [4, 3] with repeats [2, 1] will
+        // be viewed as a tensor of shape [2, 3] with no repeats.
+        if let Some(repeats) = &self.repeats {
+            let mut offset = 0;
+            for (dim, (stride, repeat)) in idx.iter().zip(self.strides.iter().zip(repeats)) {
+                offset += dim / repeat * stride;
+            }
+            return offset;
+        }
+
         let mut offset = 0;
         for (dim, stride) in idx.iter().zip(self.strides.iter()) {
             offset += dim * stride;
@@ -77,11 +96,7 @@ impl TensorStrider {
         Ok(iter)
     }
 
-    pub fn into_iter_axis(
-        self,
-        pos: &[usize],
-        axis: usize,
-    ) -> Result<impl Iterator<Item = usize>> {
+    pub fn into_iter_axis(self, pos: &[usize], axis: usize) -> Result<impl Iterator<Item = usize>> {
         let iter = self.iter_axis_inner(pos, axis)?;
         let iter = iter.map(move |pos| self.at_unchecked(&pos));
         Ok(iter)
@@ -95,9 +110,6 @@ impl TensorStrider {
         let mut pos = pos.to_vec();
         let axis_pos = pos[axis];
         let axis_max = self.shape[axis];
-        for i in axis_pos..axis_max {
-            pos[axis] = i;
-        }
 
         Ok((axis_pos..axis_max).map(move |i| {
             pos[axis] = i;
@@ -122,6 +134,14 @@ impl TensorStrider {
                 .into());
         }
 
+        if self.repeats.is_some() {
+            return Err((
+                ErrorKind::TensorError,
+                "cannot view a repeated tensor in a different shape",
+            )
+                .into());
+        }
+
         let strider = TensorStrider::new(shape);
         Ok(strider)
     }
@@ -129,6 +149,10 @@ impl TensorStrider {
     pub fn is_contiguous(&self) -> bool {
         if self.strides.len() == 0 {
             return true;
+        }
+
+        if self.repeats.is_some() {
+            return false;
         }
 
         if self.strides.last() != Some(&1) {

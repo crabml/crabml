@@ -1,9 +1,9 @@
 use clap::Parser;
-use crabml_llama2::sampler::Llama2Sampler;
-use std::io::Write;
 use crabml::error::Result;
 use crabml::gguf::GGUFFileLoader;
 use crabml_llama2::llama2::{Llama2Model, Llama2Runner};
+use crabml_llama2::sampler::Llama2Sampler;
+use std::io::Write;
 
 #[derive(Parser, Debug)]
 struct CommandArgs {

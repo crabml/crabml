@@ -41,7 +41,8 @@ pub fn tensor_silu_inplace<'a>(mut x: CpuTensor<'a>) -> Result<CpuTensor<'a>> {
     // for i in 0..buf.len() {
     //    buf[i] = buf[i] * (1.0 / (1.0 + (-buf[i]).exp()));
     // }
-    x.par_iter_mut()?.for_each(|n| *n = *n / (1.0 + (-*n).exp()));
+    x.par_iter_mut()?
+        .for_each(|n| *n = *n / (1.0 + (-*n).exp()));
     Ok(x)
 }
 
@@ -52,6 +53,10 @@ pub fn tensor_matmul_2d<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuT
     require_tensor_dims(x, &[1, 2])?;
     require_tensor_matmul_2d_shapes(w, x)?;
     require_tensor_contiguous(w)?;
+
+    if w.shape().len() == 2 && x.shape().len() == 1 {
+        return tensor_matmul_specialized_2d_1d(w, x);
+    }
 
     let (mut out, x, reshaped) = if x.shape().len() == 1 {
         (
@@ -81,6 +86,24 @@ pub fn tensor_matmul_2d<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuT
         out = out.view(&[w.shape()[0]])?;
     }
     Ok(out)
+}
+
+pub fn tensor_matmul_specialized_2d_1d<'a>(
+    w: &CpuTensor<'a>,
+    x: &CpuTensor<'a>,
+) -> Result<CpuTensor<'a>> {
+    let mut xout = CpuTensor::zeros(vec![w.shape()[0]])?;
+    let wb = w.buf();
+    let xb = x.buf();
+    let x_dim = x.len();
+
+    xout.iter_mut()?.enumerate().for_each(|(i, xo)| {
+        *xo = 0.0;
+        for j in 0..x.len() {
+            *xo += wb[i * x_dim + j] * xb[j];
+        }
+    });
+    Ok(xout)
 }
 
 // t: (rows, cols)
@@ -128,12 +151,15 @@ pub fn tensor_multi_query_attention<'a>(
     // get attention scores
     for h in 0..n_heads {
         let kvh = h / (n_heads / n_kv_heads);
-        attn.par_iter_mut()?.take(pos + 1).enumerate().for_each(|(tok, attn)| {
-            let q_head = q.iter_axis(&[h, 0], 1).unwrap(); // (head_size, )
-            let k_head = k_cache.iter_axis(&[tok, kvh, 0], 2).unwrap(); // (head_size, )
-            let score = q_head.zip(k_head).map(|(q, k)| q * k).sum::<f32>();
-            *attn = score / (head_size as f32).sqrt();
-        });
+        attn.par_iter_mut()?
+            .take(pos + 1)
+            .enumerate()
+            .for_each(|(tok, attn)| {
+                let q_head = q.iter_axis(&[h, 0], 1).unwrap(); // (head_size, )
+                let k_head = k_cache.iter_axis(&[tok, kvh, 0], 2).unwrap(); // (head_size, )
+                let score = q_head.zip(k_head).map(|(q, k)| q * k).sum::<f32>();
+                *attn = score / (head_size as f32).sqrt();
+            });
 
         tensor_softmax_inplace(&mut attn, pos + 1)?;
 
@@ -174,7 +200,7 @@ pub fn tensor_rope_inplace<'a>(
         let fci = val.sin();
         let rotn = if i < kv_dim { 2 } else { 1 }; // how many vectors? 2 = q & k, 1 = q only
         for v in 0..rotn {
-            let vec = if v == 0 { q.mut_buf()? } else { k.mut_buf()? };
+            let vec = if v == 0 { q.buf_mut()? } else { k.buf_mut()? };
             let v0 = vec[i];
             let v1 = vec[i + 1];
             vec[i] = v0 * fcr - v1 * fci;

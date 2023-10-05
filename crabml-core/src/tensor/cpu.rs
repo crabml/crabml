@@ -1,12 +1,12 @@
 use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::error::Result;
+use rayon::prelude::*;
 use std::borrow::Cow;
 use std::ops::Index;
 use std::ops::IndexMut;
 use std::slice;
 use std::slice::SliceIndex;
-use rayon::prelude::*;
 
 use super::strider::TensorStrider;
 use super::tensor::Tensor;
@@ -229,8 +229,13 @@ impl<'a> CpuTensor<'a> {
         self.strider.shape()
     }
 
-    // TODO: only used for ROPE encoding, remove it after we learned about the algorithm behind rope
-    pub fn mut_buf(&mut self) -> Result<&mut [f32]> {
+    // only used on specialized performance critical cases
+    pub fn buf(&self) -> &[f32] {
+        &self.buf
+    }
+
+    // only used on specialized performance critical cases
+    pub fn buf_mut(&mut self) -> Result<&mut [f32]> {
         if !self.is_owned() {
             return Err((ErrorKind::TensorError, "not owned").into());
         }

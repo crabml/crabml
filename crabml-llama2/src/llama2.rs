@@ -260,10 +260,10 @@ impl<'a> Llama2Runner<'a> {
         let state = Llama2State {
             logits: vec![0.0; conf.vocab_size],
             key_cache: (0..conf.n_layers)
-                .map(|_| CpuTensor::zeros(vec![conf.seq_len, conf.n_kv_heads, conf.head_size()]))
+                .map(|_| CpuTensor::zeros(vec![0, conf.n_kv_heads, conf.head_size()]))
                 .collect::<Result<Vec<_>>>()?,
             value_cache: (0..conf.n_layers)
-                .map(|_| CpuTensor::zeros(vec![conf.seq_len, conf.n_kv_heads, conf.head_size()]))
+                .map(|_| CpuTensor::zeros(vec![0, conf.n_kv_heads, conf.head_size()]))
                 .collect::<Result<Vec<_>>>()?,
         };
 
@@ -333,8 +333,8 @@ impl<'a> Llama2Runner<'a> {
 
             // save to kv cache
             {
-                self.state.key_cache[l].copy_from(&[pos, 0, 0], &k)?;
-                self.state.value_cache[l].copy_from(&[pos, 0, 0], &v)?;
+                self.state.key_cache[l].extend(&k)?;
+                self.state.value_cache[l].extend(&v)?;
             };
 
             // multihead attention. iterate over all heads

@@ -75,6 +75,27 @@ impl<'a> CpuTensor<'a> {
         Ok(())
     }
 
+    pub fn extend(&mut self, t: &CpuTensor<'a>) -> Result<()> {
+        if !self.is_owned() {
+            return Err((ErrorKind::TensorError, "not owned").into());
+        }
+        if !self.is_contiguous() {
+            return Err((ErrorKind::TensorError, "not contiguous").into());
+        }
+        if !t.shape().eq(&self.shape()[1..]) {
+            return Err((ErrorKind::TensorError, "shape mismatch").into());
+        }
+
+        self.buf.to_mut().extend(t.iter());
+        let new_shape = {
+            let mut shape = self.shape().to_vec();
+            shape[0] += 1;
+            shape
+        };
+        self.strider = TensorStrider::new(new_shape);
+        Ok(())
+    }
+
     pub fn len(&self) -> usize {
         self.strider.len()
     }
@@ -316,6 +337,17 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(r, vec![1.0, 4.0]);
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_extend() -> Result<()> {
+        let mut t1 = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![1, 2, 3])?;
+        let t2 = CpuTensor::new(vec![1.0; 6], vec![2,3])?;
+        t1.extend(&t2)?;
+
+        assert_eq!(t1.shape(), &[2, 2, 3]);
+        assert_eq!(t1.buf(), &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]);
         Ok(())
     }
 }

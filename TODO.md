@@ -1,5 +1,5 @@
 - [x] support repeat in tensor
-- [ ] benchmark matmuls
+- [x] benchmark matmuls
 - [ ] replace multi query attention with matmul with repeat
 - [ ] support quantization
 - [ ] take the tensor & device framework

@@ -340,7 +340,10 @@ mod tests {
         // 2, 2, 5, 5
         let s = s.repeat(vec![1, 2])?;
         assert_eq!(s.shape(), &[3, 4]);
-        assert_eq!(s.iter().collect::<Vec<_>>(), vec![0, 0, 3, 3, 1, 1, 4, 4, 2, 2, 5, 5]);
+        assert_eq!(
+            s.iter().collect::<Vec<_>>(),
+            vec![0, 0, 3, 3, 1, 1, 4, 4, 2, 2, 5, 5]
+        );
 
         // test transpose after repeat
 
@@ -350,14 +353,20 @@ mod tests {
         // 3, 4, 5
         // 3, 4, 5
         assert_eq!(s.shape(), &[4, 3]);
-        assert_eq!(s.iter().collect::<Vec<_>>(), vec![0, 1, 2, 0, 1, 2, 3, 4, 5, 3, 4, 5]);
+        assert_eq!(
+            s.iter().collect::<Vec<_>>(),
+            vec![0, 1, 2, 0, 1, 2, 3, 4, 5, 3, 4, 5]
+        );
 
         // 0, 0, 3, 3
         // 1, 1, 4, 4
         // 2, 2, 5, 5
         let s = s.transpose(&[1, 0])?;
         assert_eq!(s.shape(), &[3, 4]);
-        assert_eq!(s.iter().collect::<Vec<_>>(), vec![0, 0, 3, 3, 1, 1, 4, 4, 2, 2, 5, 5]);
+        assert_eq!(
+            s.iter().collect::<Vec<_>>(),
+            vec![0, 0, 3, 3, 1, 1, 4, 4, 2, 2, 5, 5]
+        );
         Ok(())
     }
 

@@ -142,6 +142,14 @@ impl<'a> CpuTensor<'a> {
         })
     }
 
+    pub fn transpose(self, dims: &[usize]) -> Result<CpuTensor<'a>> {
+        let strider = self.strider.transpose(dims)?;
+        Ok(Self {
+            buf: self.buf,
+            strider,
+        })
+    }
+
     pub fn transpose_ref<'b>(&'b self, dims: &[usize]) -> Result<CpuTensor<'a>>
     where
         'b: 'a,

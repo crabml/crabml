@@ -99,9 +99,12 @@ pub fn tensor_matmul_specialized_2d_1d<'a>(
     Ok(xout)
 }
 
-pub fn tensor_batch_matmul<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'a>> {
+pub fn tensor_batch_matmul<'a, 'b>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'b>>
+where
+    'b: 'a,
+{
     require_tensor_dims(w, &[3])?;
-    require_tensor_dims(x, &[3])?;
+    require_tensor_dims(x, &[2, 3])?;
 
     if w.shape()[0] != x.shape()[0] || w.shape()[2] != x.shape()[1] {
         return Err((
@@ -110,8 +113,25 @@ pub fn tensor_batch_matmul<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<C
                 "mismatched tensor shapes on batch matmul: {:?} @ {:?}",
                 w.shape(),
                 x.shape()
-            )).into()
-        );
+            ),
+        )
+            .into());
+    }
+
+    if x.shape().len() == 2 {
+        // (batch_size, w_rows, w_cols) @ (batch_size, w_cols, ) -> (batch_size, w_rows, )
+        let batch_size = w.shape()[0];
+        let w_rows = w.shape()[1];
+        let mut out = CpuTensor::zeros(vec![batch_size, w_rows])?;
+        for b in 0..batch_size {
+            let o_iter = out.par_iter_axis_mut(vec![b, 0], 1)?; // w_cols
+            o_iter.enumerate().for_each(|(w_col, o)| {
+                let w_iter = w.iter_axis(&[b, 0, w_col], 1).unwrap(); // w_rows
+                let x_iter = x.iter_axis(&[b, 0], 1).unwrap(); // w_rows
+                *o = w_iter.zip(x_iter).map(|(w, x)| w * x).sum::<f32>();
+            })
+        }
+        return Ok(out);
     }
 
     let batch_size = w.shape()[0];
@@ -207,6 +227,46 @@ pub fn tensor_multi_query_attention<'a>(
     Ok(out)
 }
 
+/// - key_cache: [seq, kv_head, head_size]
+/// - key_cache = key_cache.repeat(1, n_head / n_kv_head, 1) => [seq, n_head, head_size]
+/// - key_cache = key_cache.transpose(1, 0, 2) => [n_head, seq, head_size]
+/// - q: [n_head, head_size]
+/// - attn_score = batch_matmul(key_cache, q) => [n_head, seq]
+/// - softmax(attn_score, axis=1) => [n_head, seq]
+///
+/// - val_cache: [seq, kv_head, head_size]
+/// - val_cache = val_cache.repeat(1, n_head / n_kv_head, 1) => [seq, n_head, head_size]
+/// - val_cache = val_cache.transpose(1, 2, 0) => [n_head, head_size, seq]
+/// - out = batch_matmul(val_cache, atten_scores) => [n_head, head_size]
+pub fn tensor_multi_query_attention2<'a>(
+    q: &CpuTensor<'a>,
+    k_cache: &CpuTensor<'a>,
+    v_cache: &CpuTensor<'a>,
+    pos: usize,
+) -> Result<CpuTensor<'a>> {
+    require_tensor_contiguous(q)?;
+    require_tensor_contiguous(&k_cache)?;
+    require_tensor_dims(&k_cache, &[3])?;
+
+    let n_heads = q.shape()[0];
+    let n_kv_heads = k_cache.shape()[1];
+
+    // get attention scores
+    let k_cache = k_cache
+        .repeat_ref(&[1, n_heads / n_kv_heads, 1])?
+        .transpose(&[1, 0, 2])?;
+
+    let attn_score = tensor_batch_matmul(&k_cache, &q)?; // (n_heads, n_seq)
+    // TODO: softmax
+
+    let v_cache = v_cache
+        .repeat_ref(&[1, n_heads / n_kv_heads, 1])?
+        .transpose(&[1, 2, 0])?;
+
+    let out = tensor_batch_matmul(&v_cache, &attn_score)?; // (n_heads, head_size)
+
+    Ok(out)
+}
 
 // q: (n_heads, head_size)
 pub fn tensor_rope_inplace<'a>(
@@ -382,13 +442,18 @@ mod tests {
 
     #[test]
     fn test_batch_matmul() -> Result<()> {
-        let w = CpuTensor::new(vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0], vec![2, 2, 3])?;
+        let w = CpuTensor::new(
+            vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0],
+            vec![2, 2, 3],
+        )?;
         let b = CpuTensor::new(vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0], vec![2, 3, 1])?;
- 
+
         let o = tensor_batch_matmul(&w, &b)?;
         assert_eq!(o.shape(), vec![2, 2, 1]);
-        assert_eq!(o.iter().cloned().collect::<Vec<_>>(), vec![3.0, 12.0, 21.0, 30.0]);
+        assert_eq!(
+            o.iter().cloned().collect::<Vec<_>>(),
+            vec![3.0, 12.0, 21.0, 30.0]
+        );
         Ok(())
     }
-
 }

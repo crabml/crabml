@@ -321,6 +321,47 @@ mod tests {
     }
 
     #[test]
+    fn test_transpose() -> Result<()> {
+        // 0, 1, 2
+        // 3, 4, 5
+        let s_orig = TensorStrider::new(vec![2, 3]);
+
+        // test repeat after transpose
+        // 0, 3
+        // 1, 4
+        // 2, 5
+        let s = s_orig.transpose(&[1, 0])?;
+        assert_eq!(s.shape(), &[3, 2]);
+        assert_eq!(s.iter().collect::<Vec<_>>(), vec![0, 3, 1, 4, 2, 5]);
+        assert_eq!(s.at(&[1, 1])?, 4);
+        assert_eq!(s.at(&[2, 1])?, 5);
+        // 0, 0, 3, 3
+        // 1, 1, 4, 4
+        // 2, 2, 5, 5
+        let s = s.repeat(vec![1, 2])?;
+        assert_eq!(s.shape(), &[3, 4]);
+        assert_eq!(s.iter().collect::<Vec<_>>(), vec![0, 0, 3, 3, 1, 1, 4, 4, 2, 2, 5, 5]);
+
+        // test transpose after repeat
+
+        let s = s_orig.repeat(vec![2, 1])?;
+        // 0, 1, 2
+        // 0, 1, 2
+        // 3, 4, 5
+        // 3, 4, 5
+        assert_eq!(s.shape(), &[4, 3]);
+        assert_eq!(s.iter().collect::<Vec<_>>(), vec![0, 1, 2, 0, 1, 2, 3, 4, 5, 3, 4, 5]);
+
+        // 0, 0, 3, 3
+        // 1, 1, 4, 4
+        // 2, 2, 5, 5
+        let s = s.transpose(&[1, 0])?;
+        assert_eq!(s.shape(), &[3, 4]);
+        assert_eq!(s.iter().collect::<Vec<_>>(), vec![0, 0, 3, 3, 1, 1, 4, 4, 2, 2, 5, 5]);
+        Ok(())
+    }
+
+    #[test]
     fn test_is_contigous() -> Result<()> {
         let s = TensorStrider::new(vec![2, 3]);
         assert!(s.is_contiguous());

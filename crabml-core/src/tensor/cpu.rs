@@ -3,13 +3,9 @@ use crate::error::ErrorKind;
 use crate::error::Result;
 use rayon::prelude::*;
 use std::borrow::Cow;
-use std::ops::Index;
-use std::ops::IndexMut;
 use std::slice;
-use std::slice::SliceIndex;
 
 use super::strider::TensorStrider;
-use super::tensor::Tensor;
 
 #[derive(Debug, Clone, Default)]
 pub struct CpuTensor<'a> {
@@ -116,21 +112,8 @@ impl<'a> CpuTensor<'a> {
         })
     }
 
-    // view_ref is called on an owned Tensor, call view() if the tensor is mmapped.
-    pub fn view_ref<'b>(&'b self, shape: &[usize]) -> Result<CpuTensor<'a>>
-    where
-        'b: 'a,
-    {
-        let strider = self.strider.view(shape.to_vec())?;
-        let buf = self.buf.as_ref();
-        Ok(Self {
-            buf: Cow::Borrowed(buf),
-            strider,
-        })
-    }
-
     /// called on an owned Tensor, may used on MGQ where we have multiple query head on each key/value head
-    pub fn repeat_ref<'b>(&'b self, repeats: &[usize]) -> Result<CpuTensor<'a>>
+    pub fn repeat<'b>(&'b self, repeats: &[usize]) -> Result<CpuTensor<'a>>
     where
         'b: 'a,
     {
@@ -146,18 +129,6 @@ impl<'a> CpuTensor<'a> {
         let strider = self.strider.transpose(dims)?;
         Ok(Self {
             buf: self.buf,
-            strider,
-        })
-    }
-
-    pub fn transpose_ref<'b>(&'b self, dims: &[usize]) -> Result<CpuTensor<'a>>
-    where
-        'b: 'a,
-    {
-        let strider = self.strider.transpose(dims)?;
-        let buf = self.buf.as_ref();
-        Ok(Self {
-            buf: Cow::Borrowed(buf),
             strider,
         })
     }
@@ -361,7 +332,7 @@ mod tests {
         let t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![2, 3])?;
         let t = t.view(&[3, 2])?;
 
-        let tr = t.view_ref(&[2, 3])?;
+        let tr = t.view(&[2, 3])?;
         assert_eq!(
             tr.iter().cloned().collect::<Vec<f32>>(),
             vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
@@ -411,7 +382,7 @@ mod tests {
         // 1, 1, 2, 2, 3, 3
         // 4, 4, 5, 5, 6, 6
         let t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![2, 3])?;
-        let t = t.repeat_ref(&[1, 2])?;
+        let t = t.repeat(&[1, 2])?;
 
         let tests = vec![
             Test {
@@ -487,12 +458,12 @@ mod tests {
         // 0, 3,
         // 1, 4
         // 2, 5
-        let t = t.transpose_ref(&[1, 0])?;
+        let t = t.transpose(&[1, 0])?;
 
         // 0, 0, 3, 3
         // 1, 1, 4, 4
         // 2, 2, 5, 5
-        let t = t.repeat_ref(&[1, 2])?;
+        let t = t.repeat(&[1, 2])?;
 
         let tests = vec![
             Test {

@@ -344,8 +344,8 @@ impl<'a> Llama2Runner<'a> {
             // multi query attention
             x = {
                 let q = q.view(&[n_heads, head_size])?;
-                let k_cache = &self.state.key_cache[l];
-                let v_cache = &self.state.value_cache[l];
+                let k_cache = self.state.key_cache[l].as_ref();
+                let v_cache = self.state.value_cache[l].as_ref();
 
                 // - key_cache: [seq, kv_head, head_size]
                 // - key_cache = key_cache.repeat(1, n_head / n_kv_head, 1) => [seq, n_head, head_size]
@@ -360,7 +360,7 @@ impl<'a> Llama2Runner<'a> {
 
                 // get attention scores
                 let k_cache = k_cache
-                    .repeat_ref(&[1, n_heads / n_kv_heads, 1])?
+                    .repeat(&[1, n_heads / n_kv_heads, 1])?
                     .transpose(&[1, 0, 2])?;
                 // (n_heads, n_seq, head_size) @ (n_head, head_size) => (n_heads, n_seq)
                 let attn = batch_matmul(&k_cache, &q)?;
@@ -369,7 +369,7 @@ impl<'a> Llama2Runner<'a> {
 
                 // get the weighted sum of the values and attention scores
                 let v_cache = v_cache
-                    .repeat_ref(&[1, n_heads / n_kv_heads, 1])?
+                    .repeat(&[1, n_heads / n_kv_heads, 1])?
                     .transpose(&[1, 2, 0])?;
                 // (n_heads, head_size, n_seq) @ (n_heads, n_seq) => (n_heads, head_size)
                 let x_with_attn = batch_matmul(&v_cache, &attn)?; // (n_heads, head_size)

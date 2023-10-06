@@ -113,14 +113,10 @@ impl<'a> CpuTensor<'a> {
     }
 
     /// called on an owned Tensor, may used on MGQ where we have multiple query head on each key/value head
-    pub fn repeat<'b>(&'b self, repeats: &[usize]) -> Result<CpuTensor<'a>>
-    where
-        'b: 'a,
-    {
+    pub fn repeat(self, repeats: &[usize]) -> Result<CpuTensor<'a>> {
         let strider = self.strider.repeat(repeats.to_vec())?;
-        let buf = self.buf.as_ref();
         Ok(Self {
-            buf: Cow::Borrowed(buf),
+            buf: self.buf,
             strider,
         })
     }

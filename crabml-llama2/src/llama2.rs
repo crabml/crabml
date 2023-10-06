@@ -344,8 +344,8 @@ impl<'a> Llama2Runner<'a> {
             // multi query attention
             x = {
                 let q = q.view(&[n_heads, head_size])?;
-                let k_cache = &self.state.key_cache[l].as_ref();
-                let v_cache = &self.state.value_cache[l].as_ref();
+                let k_cache = self.state.key_cache[l].as_ref();
+                let v_cache = self.state.value_cache[l].as_ref();
 
                 // - key_cache: [seq, kv_head, head_size]
                 // - key_cache = key_cache.repeat(1, n_head / n_kv_head, 1) => [seq, n_head, head_size]

@@ -27,9 +27,9 @@ pub fn tensor_mul_inplace<'a>(mut a: CpuTensor<'a>, b: &CpuTensor<'a>) -> Result
 }
 
 pub fn tensor_div_scalar_inplace<'a>(mut a: CpuTensor<'a>, b: f32) -> Result<CpuTensor<'a>> {
-    for ia in a.iter_mut()? {
+    a.par_iter_mut()?.for_each(|ia| {
         *ia /= b;
-    }
+    });
     Ok(a)
 }
 
@@ -160,8 +160,8 @@ where
 }
 
 // t: (rows, cols)
-pub fn tensor_softmax_inplace<'a>(t: &mut CpuTensor<'a>, axis: usize) -> Result<()> {
-    require_tensor_dims(t, &[2])?;
+pub fn tensor_softmax_inplace<'a>(mut t: CpuTensor<'a>, axis: usize) -> Result<CpuTensor<'a>> {
+    require_tensor_dims(&t, &[2])?;
 
     if axis != 1 {
         return Err((ErrorKind::TensorError, "only axis=1 is supported").into());
@@ -179,7 +179,7 @@ pub fn tensor_softmax_inplace<'a>(t: &mut CpuTensor<'a>, axis: usize) -> Result<
         });
     }
 
-    Ok(())
+    Ok(t)
 }
 
 // q: (n_heads, head_size)
@@ -217,7 +217,7 @@ pub fn tensor_multi_query_attention<'a>(
             });
 
         attn = attn.view(&[1, n_seq])?; // (1, n_seq
-        tensor_softmax_inplace(&mut attn, 1)?;
+        attn = tensor_softmax_inplace(attn, 1)?;
 
         let kvh = h / (n_heads / n_kv_heads);
         for (tok, attn) in attn.iter().enumerate() {
@@ -262,16 +262,16 @@ pub fn tensor_multi_query_attention2<'a>(
         .transpose(&[1, 0, 2])?; // (n_heads, n_seq, head_size)
 
     // (n_heads, n_seq, head_size) @ (n_head, head_size) => (n_heads, n_seq)
-    let attn_score = tensor_batch_matmul(&k_cache, &q)?;
-    let mut attn_score = tensor_div_scalar_inplace(attn_score, (head_size as f32).sqrt())?;
-    tensor_softmax_inplace(&mut attn_score, 1)?;
+    let attn = tensor_batch_matmul(&k_cache, &q)?;
+    let attn = tensor_div_scalar_inplace(attn, (head_size as f32).sqrt())?;
+    let attn = tensor_softmax_inplace(attn, 1)?;
 
     let v_cache = v_cache
         .repeat_ref(&[1, n_heads / n_kv_heads, 1])?
         .transpose(&[1, 2, 0])?;
 
     // (n_heads, head_size, n_seq) @ (n_heads, n_seq) => (n_heads, head_size)
-    let out = tensor_batch_matmul(&v_cache, &attn_score)?; // (n_heads, head_size)
+    let out = tensor_batch_matmul(&v_cache, &attn)?; // (n_heads, head_size)
 
     Ok(out)
 }

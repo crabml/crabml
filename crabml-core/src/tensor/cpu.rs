@@ -157,17 +157,28 @@ impl<'a> CpuTensor<'a> {
                 let buf = &self.buf[start..start + self.strider.shape()[axis]];
                 return Ok(CpuTensorAxisIter::Slice(buf.iter()));
             }
-
-            let stride = self.strider.strides()[axis];
-            let start = self.strider.at(pos)?;
-            let buf = &self.buf[start..];
-            return Ok(CpuTensorAxisIter::StepBy(buf.iter().step_by(stride)));
         }
 
-        // slow path
-        Ok(CpuTensorAxisIter::Boxed(Box::new(
-            self.strider.iter_axis(pos, axis)?.map(|i| &self.buf[i]),
-        )))
+        let stride = self.strider.strides()[axis];
+        let start = self.strider.at(pos)?;
+
+        // iterate the original buf, and repeat each element `repeats[axis]` times.
+        // if this axis is repeated, the original buf of this axis is `repeats[axis]` times smaller than 
+        // the shape. e.g. shape = [2, 6], repeats = [1, 2], then the actual buf is [2, 3]
+        if let Some(repeats) = self.strider.repeats() {
+            let remains = (self.strider.shape()[axis] - pos[axis]) / repeats[axis];
+            let buf = &self.buf[start..start + remains * stride];
+            let iter = buf
+                .iter()
+                .step_by(stride)
+                .flat_map(move |n| std::iter::repeat(n).take(repeats[axis]));
+            return Ok(CpuTensorAxisIter::Boxed(Box::new(iter)));
+        }
+
+        // normal case: to iterate arbitary axis, just step by the stride
+        let remains = self.strider.shape()[axis] - pos[axis];
+        let buf = &self.buf[start..start + remains * stride];
+        return Ok(CpuTensorAxisIter::StepBy(buf.iter().step_by(stride)));
     }
 
     pub fn iter_axis_mut(

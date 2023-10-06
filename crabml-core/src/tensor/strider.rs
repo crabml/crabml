@@ -29,6 +29,10 @@ impl TensorStrider {
         &self.strides
     }
 
+    pub fn repeats(&self) -> Option<&Vec<usize>> {
+        self.repeats.as_ref()
+    }
+
     pub fn at(&self, idx: &[usize]) -> Result<usize> {
         if idx.len() != self.shape.len() {
             return Err((

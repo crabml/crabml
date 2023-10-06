@@ -187,7 +187,7 @@ pub fn tensor_softmax_inplace<'a>(mut t: CpuTensor<'a>, axis: usize) -> Result<C
 // v_cache: (n_seq, n_kv_heads, head_size)
 // attn: (n_seq, )
 // out: (n_heads, head_size)
-pub fn tensor_multi_query_attention<'a>(
+pub fn tensor_multi_query_attention_specialized<'a>(
     q: &CpuTensor<'a>,
     k_cache: &CpuTensor<'a>,
     v_cache: &CpuTensor<'a>,
@@ -228,50 +228,6 @@ pub fn tensor_multi_query_attention<'a>(
             }
         }
     }
-
-    Ok(out)
-}
-
-/// - key_cache: [seq, kv_head, head_size]
-/// - key_cache = key_cache.repeat(1, n_head / n_kv_head, 1) => [seq, n_head, head_size]
-/// - key_cache = key_cache.transpose(1, 0, 2) => [n_head, seq, head_size]
-/// - q: [n_head, head_size]
-/// - attn_score = batch_matmul(key_cache, q) => [n_head, seq]
-/// - softmax(attn_score, axis=1) => [n_head, seq]
-///
-/// - val_cache: [seq, kv_head, head_size]
-/// - val_cache = val_cache.repeat(1, n_head / n_kv_head, 1) => [seq, n_head, head_size]
-/// - val_cache = val_cache.transpose(1, 2, 0) => [n_head, head_size, seq]
-/// - out = batch_matmul(val_cache, atten_scores) => [n_head, head_size]
-pub fn tensor_multi_query_attention2<'a>(
-    q: &CpuTensor<'a>,
-    k_cache: &CpuTensor<'a>,
-    v_cache: &CpuTensor<'a>,
-) -> Result<CpuTensor<'a>> {
-    require_tensor_contiguous(q)?;
-    require_tensor_contiguous(&k_cache)?;
-    require_tensor_dims(&k_cache, &[3])?;
-
-    let n_heads = q.shape()[0];
-    let head_size = q.shape()[1];
-    let n_kv_heads = k_cache.shape()[1];
-
-    // get attention scores
-    let k_cache = k_cache
-        .repeat_ref(&[1, n_heads / n_kv_heads, 1])?
-        .transpose(&[1, 0, 2])?; // (n_heads, n_seq, head_size)
-
-    // (n_heads, n_seq, head_size) @ (n_head, head_size) => (n_heads, n_seq)
-    let attn = tensor_batch_matmul(&k_cache, &q)?;
-    let attn = tensor_div_scalar_inplace(attn, (head_size as f32).sqrt())?;
-    let attn = tensor_softmax_inplace(attn, 1)?;
-
-    let v_cache = v_cache
-        .repeat_ref(&[1, n_heads / n_kv_heads, 1])?
-        .transpose(&[1, 2, 0])?;
-
-    // (n_heads, head_size, n_seq) @ (n_heads, n_seq) => (n_heads, head_size)
-    let out = tensor_batch_matmul(&v_cache, &attn)?; // (n_heads, head_size)
 
     Ok(out)
 }

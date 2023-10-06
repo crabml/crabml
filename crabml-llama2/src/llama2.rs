@@ -5,14 +5,15 @@ use crabml::error::ErrorKind;
 use crabml::error::Result;
 use crabml::gguf::GGUFFile;
 use crabml::tensor::arithmetic::tensor_add_inplace;
+use crabml::tensor::arithmetic::tensor_batch_matmul;
+use crabml::tensor::arithmetic::tensor_div_scalar_inplace;
 use crabml::tensor::arithmetic::tensor_matmul_2d;
 use crabml::tensor::arithmetic::tensor_mul_inplace;
-use crabml::tensor::arithmetic::tensor_multi_query_attention;
-use crabml::tensor::arithmetic::tensor_multi_query_attention2;
 use crabml::tensor::arithmetic::tensor_rms_norm_inplace;
 use crabml::tensor::arithmetic::tensor_rope_inplace;
 use crabml::tensor::arithmetic::tensor_silu_inplace;
 use crabml::tensor::CpuTensor;
+use crabml::tensor::arithmetic::tensor_softmax_inplace;
 use std::ops::AddAssign;
 use std::time::Duration;
 use std::time::Instant;
@@ -340,18 +341,38 @@ impl<'a> Llama2Runner<'a> {
                 self.state.value_cache[l].extend(&v)?;
             };
 
-            // multihead attention. iterate over all heads
+            // multi query attention
             x = {
                 let q = q.view(&[n_heads, head_size])?;
+                let k_cache = &self.state.key_cache[l];
+                let v_cache = &self.state.value_cache[l];
 
-                // q: (n_heads, head_size)
-                // key_cache: (seq, n_kv_heads, head_size)
-                // value_cache: (seq, kv_heads, head_size)
-                let x_with_attn = tensor_multi_query_attention2(
-                    &q,
-                    &self.state.key_cache[l],
-                    &self.state.value_cache[l],
-                )?;
+                // - key_cache: [seq, kv_head, head_size]
+                // - key_cache = key_cache.repeat(1, n_head / n_kv_head, 1) => [seq, n_head, head_size]
+                // - key_cache = key_cache.transpose(1, 0, 2) => [n_head, seq, head_size]
+                // - q: [n_head, head_size]
+                // - attn_score = batch_matmul(key_cache, q) => [n_head, seq]
+                // - softmax(attn_score, axis=1) => [n_head, seq]
+                // - val_cache: [seq, kv_head, head_size]
+                // - val_cache = val_cache.repeat(1, n_head / n_kv_head, 1) => [seq, n_head, head_size]
+                // - val_cache = val_cache.transpose(1, 2, 0) => [n_head, head_size, seq]
+                // - out = batch_matmul(val_cache, atten_scores) => [n_head, head_size] 
+
+                // get attention scores
+                let k_cache = k_cache
+                    .repeat_ref(&[1, n_heads / n_kv_heads, 1])?
+                    .transpose(&[1, 0, 2])?; // (n_heads, n_seq, head_size)
+                // (n_heads, n_seq, head_size) @ (n_head, head_size) => (n_heads, n_seq)
+                let attn = tensor_batch_matmul(&k_cache, &q)?;
+                let attn = tensor_div_scalar_inplace(attn, (head_size as f32).sqrt())?;
+                let attn = tensor_softmax_inplace(attn, 1)?;
+
+                // get the weighted sum of the values and attention scores
+                let v_cache = v_cache
+                    .repeat_ref(&[1, n_heads / n_kv_heads, 1])?
+                    .transpose(&[1, 2, 0])?;
+                // (n_heads, head_size, n_seq) @ (n_heads, n_seq) => (n_heads, head_size)
+                let x_with_attn = tensor_batch_matmul(&v_cache, &attn)?; // (n_heads, head_size)
                 let x_with_attn = x_with_attn.view(&[embed_dim])?;
 
                 // final matmul to get the output of the attention

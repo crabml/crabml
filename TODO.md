@@ -1,8 +1,8 @@
 - [x] support repeat in tensor
 - [x] benchmark matmuls
-- [ ] add transpose
-- [ ] add batched matmul: (b, m, n) @ (b, n, o) => (b, m, o)
-- [ ] replace multi query attention with matmul with repeat
+- [x] add transpose
+- [x] add batched matmul: (b, m, n) @ (b, n, o) => (b, m, o)
+- [x] replace multi query attention with matmul with repeat
   - key_cache: [seq, kv_head, head_size]
   - key_cache = key_cache.repeat(1, n_head / n_kv_head, 1) => [seq, n_head, head_size]
   - key_cache = key_cache.transpose(1, 0, 2) => [n_head, seq, head_size]

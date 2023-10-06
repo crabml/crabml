@@ -244,7 +244,6 @@ pub fn tensor_rope_inplace<'a>(
 
 fn require_tensor_shape(t: &CpuTensor, shape: &[usize]) -> Result<()> {
     if !t.shape().eq(shape) {
-        panic!("failed shape");
         return Err(Error {
             kind: ErrorKind::TensorError,
             message: format!("tensor shape is not {:?}, but {:?}", shape, t.shape(),),
@@ -380,4 +379,16 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn test_batch_matmul() -> Result<()> {
+        let w = CpuTensor::new(vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0], vec![2, 2, 3])?;
+        let b = CpuTensor::new(vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0], vec![2, 3, 1])?;
+ 
+        let o = tensor_batch_matmul(&w, &b)?;
+        assert_eq!(o.shape(), vec![2, 2, 1]);
+        assert_eq!(o.iter().cloned().collect::<Vec<_>>(), vec![3.0, 12.0, 21.0, 30.0]);
+        Ok(())
+    }
+
 }

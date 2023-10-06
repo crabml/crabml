@@ -99,6 +99,39 @@ pub fn tensor_matmul_specialized_2d_1d<'a>(
     Ok(xout)
 }
 
+pub fn tensor_batch_matmul<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'a>> {
+    require_tensor_dims(w, &[3])?;
+    require_tensor_dims(x, &[3])?;
+
+    if w.shape()[0] != x.shape()[0] || w.shape()[2] != x.shape()[1] {
+        return Err((
+            ErrorKind::TensorError,
+            format!(
+                "mismatched tensor shapes on batch matmul: {:?} @ {:?}",
+                w.shape(),
+                x.shape()
+            )).into()
+        );
+    }
+
+    let batch_size = w.shape()[0];
+    let w_rows = w.shape()[1];
+    let x_cols = x.shape()[2];
+    let mut out = CpuTensor::zeros(vec![batch_size, w_rows, x_cols])?;
+    for b in 0..batch_size {
+        for w_row in 0..w_rows {
+            let o_row_iter = out.par_iter_axis_mut(vec![b, w_row, 0], 2)?; // (x_cols, )
+            o_row_iter.enumerate().for_each(|(x_col, o)| {
+                let w_row_iter = w.iter_axis(&[b, w_row, 0], 2).unwrap(); // (w_rows, )
+                let x_col_iter = x.iter_axis(&[b, 0, x_col], 1).unwrap(); // (w_rows, )
+                *o = w_row_iter.zip(x_col_iter).map(|(w, x)| w * x).sum::<f32>();
+            });
+        }
+    }
+
+    Ok(out)
+}
+
 // t: (rows, cols)
 pub fn tensor_softmax_inplace<'a>(t: &mut CpuTensor<'a>, limit: usize) -> Result<()> {
     require_tensor_dims(t, &[1])?;
@@ -173,6 +206,7 @@ pub fn tensor_multi_query_attention<'a>(
 
     Ok(out)
 }
+
 
 // q: (n_heads, head_size)
 pub fn tensor_rope_inplace<'a>(

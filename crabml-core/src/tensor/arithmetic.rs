@@ -26,6 +26,13 @@ pub fn tensor_mul_inplace<'a>(mut a: CpuTensor<'a>, b: &CpuTensor<'a>) -> Result
     Ok(a)
 }
 
+pub fn tensor_div_scalar_inplace<'a>(mut a: CpuTensor<'a>, b: f32) -> Result<CpuTensor<'a>> {
+    for ia in a.iter_mut()? {
+        *ia /= b;
+    }
+    Ok(a)
+}
+
 pub fn tensor_add_inplace<'a>(mut a: CpuTensor<'a>, b: &CpuTensor<'a>) -> Result<CpuTensor<'a>> {
     require_tensor_shape(&a, b.shape())?;
     require_tensor_contiguous(&a)?;
@@ -124,9 +131,9 @@ where
         let w_rows = w.shape()[1];
         let mut out = CpuTensor::zeros(vec![batch_size, w_rows])?;
         for b in 0..batch_size {
-            let o_iter = out.par_iter_axis_mut(vec![b, 0], 1)?; // w_cols
-            o_iter.enumerate().for_each(|(w_col, o)| {
-                let w_iter = w.iter_axis(&[b, 0, w_col], 1).unwrap(); // w_rows
+            let o_iter = out.iter_axis_mut(vec![b, 0], 1)?; // w_cols
+            o_iter.enumerate().for_each(|(w_row, o)| {
+                let w_iter = w.iter_axis(&[b, w_row, 0], 2).unwrap(); // w_rows
                 let x_iter = x.iter_axis(&[b, 0], 1).unwrap(); // w_rows
                 *o = w_iter.zip(x_iter).map(|(w, x)| w * x).sum::<f32>();
             })
@@ -140,7 +147,7 @@ where
     let mut out = CpuTensor::zeros(vec![batch_size, w_rows, x_cols])?;
     for b in 0..batch_size {
         for w_row in 0..w_rows {
-            let o_row_iter = out.par_iter_axis_mut(vec![b, w_row, 0], 2)?; // (x_cols, )
+            let o_row_iter = out.iter_axis_mut(vec![b, w_row, 0], 2)?; // (x_cols, )
             o_row_iter.enumerate().for_each(|(x_col, o)| {
                 let w_row_iter = w.iter_axis(&[b, w_row, 0], 2).unwrap(); // (w_rows, )
                 let x_col_iter = x.iter_axis(&[b, 0, x_col], 1).unwrap(); // (w_rows, )
@@ -246,20 +253,24 @@ pub fn tensor_multi_query_attention2<'a>(
     require_tensor_dims(&k_cache, &[3])?;
 
     let n_heads = q.shape()[0];
+    let head_size = q.shape()[1];
     let n_kv_heads = k_cache.shape()[1];
 
     // get attention scores
     let k_cache = k_cache
         .repeat_ref(&[1, n_heads / n_kv_heads, 1])?
-        .transpose(&[1, 0, 2])?;
+        .transpose(&[1, 0, 2])?; // (n_heads, n_seq, head_size)
 
-    let attn_score = tensor_batch_matmul(&k_cache, &q)?; // (n_heads, n_seq)
-                                                         // TODO: softmax
+    // (n_heads, n_seq, head_size) @ (n_head, head_size) => (n_heads, n_seq)
+    let attn_score = tensor_batch_matmul(&k_cache, &q)?;
+    let mut attn_score = tensor_div_scalar_inplace(attn_score, (head_size as f32).sqrt())?;
+    tensor_softmax_inplace(&mut attn_score, 1)?;
 
     let v_cache = v_cache
         .repeat_ref(&[1, n_heads / n_kv_heads, 1])?
         .transpose(&[1, 2, 0])?;
 
+    // (n_heads, head_size, n_seq) @ (n_heads, n_seq) => (n_heads, head_size)
     let out = tensor_batch_matmul(&v_cache, &attn_score)?; // (n_heads, head_size)
 
     Ok(out)

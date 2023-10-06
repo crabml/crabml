@@ -8,6 +8,7 @@ use crabml::tensor::arithmetic::tensor_add_inplace;
 use crabml::tensor::arithmetic::tensor_matmul_2d;
 use crabml::tensor::arithmetic::tensor_mul_inplace;
 use crabml::tensor::arithmetic::tensor_multi_query_attention;
+use crabml::tensor::arithmetic::tensor_multi_query_attention2;
 use crabml::tensor::arithmetic::tensor_rms_norm_inplace;
 use crabml::tensor::arithmetic::tensor_rope_inplace;
 use crabml::tensor::arithmetic::tensor_silu_inplace;
@@ -346,7 +347,7 @@ impl<'a> Llama2Runner<'a> {
                 // q: (n_heads, head_size)
                 // key_cache: (seq, n_kv_heads, head_size)
                 // value_cache: (seq, kv_heads, head_size)
-                let x_with_attn = tensor_multi_query_attention(
+                let x_with_attn = tensor_multi_query_attention2(
                     &q,
                     &self.state.key_cache[l],
                     &self.state.value_cache[l],

@@ -26,6 +26,13 @@ pub fn tensor_mul_inplace<'a>(mut a: CpuTensor<'a>, b: &CpuTensor<'a>) -> Result
     Ok(a)
 }
 
+pub fn tensor_div_scalar_inplace<'a>(mut a: CpuTensor<'a>, b: f32) -> Result<CpuTensor<'a>> {
+    a.par_iter_mut()?.for_each(|ia| {
+        *ia /= b;
+    });
+    Ok(a)
+}
+
 pub fn tensor_add_inplace<'a>(mut a: CpuTensor<'a>, b: &CpuTensor<'a>) -> Result<CpuTensor<'a>> {
     require_tensor_shape(&a, b.shape())?;
     require_tensor_contiguous(&a)?;
@@ -48,7 +55,7 @@ pub fn tensor_silu_inplace<'a>(mut x: CpuTensor<'a>) -> Result<CpuTensor<'a>> {
 
 // W (w_rows,w_cols) @ x (w_cols,x_cols) -> xout (w_rows,x_cols)
 // W (w_rows,w_cols) @ x (w_cols,) -> xout (w_rows,)
-pub fn tensor_matmul_2d<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'a>> {
+pub fn tensor_matmul<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'a>> {
     require_tensor_dims(w, &[2])?;
     require_tensor_dims(x, &[1, 2])?;
     require_tensor_matmul_2d_shapes(w, x)?;
@@ -99,23 +106,80 @@ pub fn tensor_matmul_specialized_2d_1d<'a>(
     Ok(xout)
 }
 
-// t: (rows, cols)
-pub fn tensor_softmax_inplace<'a>(t: &mut CpuTensor<'a>, limit: usize) -> Result<()> {
-    require_tensor_dims(t, &[1])?;
+pub fn tensor_batch_matmul<'a, 'b>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'b>>
+where
+    'b: 'a,
+{
+    require_tensor_dims(w, &[3])?;
+    require_tensor_dims(x, &[2, 3])?;
 
-    let max = t
-        .iter_axis(&[0], 0)?
-        .take(limit)
-        .fold(f32::NAN, |a, b| a.max(*b));
-    let sum = t.iter_axis_mut(vec![0], 0)?.take(limit).fold(0.0, |mut acc, val| {
-        *val = (*val - max).exp();
-        acc += *val;
-        acc
-    });
-    t.par_iter_axis_mut(vec![0], 0)?.take(limit).for_each(|val| {
-        *val /= sum;
-    });
-    Ok(())
+    if w.shape()[0] != x.shape()[0] || w.shape()[2] != x.shape()[1] {
+        return Err((
+            ErrorKind::TensorError,
+            format!(
+                "mismatched tensor shapes on batch matmul: {:?} @ {:?}",
+                w.shape(),
+                x.shape()
+            ),
+        )
+            .into());
+    }
+
+    if x.shape().len() == 2 {
+        // (batch_size, w_rows, w_cols) @ (batch_size, w_cols, ) -> (batch_size, w_rows, )
+        let batch_size = w.shape()[0];
+        let w_rows = w.shape()[1];
+        let mut out = CpuTensor::zeros(vec![batch_size, w_rows])?;
+        for b in 0..batch_size {
+            let o_iter = out.iter_axis_mut(vec![b, 0], 1)?; // w_cols
+            o_iter.enumerate().for_each(|(w_row, o)| {
+                let w_iter = w.iter_axis(&[b, w_row, 0], 2).unwrap(); // w_rows
+                let x_iter = x.iter_axis(&[b, 0], 1).unwrap(); // w_rows
+                *o = w_iter.zip(x_iter).map(|(w, x)| w * x).sum::<f32>();
+            })
+        }
+        return Ok(out);
+    }
+
+    let batch_size = w.shape()[0];
+    let w_rows = w.shape()[1];
+    let x_cols = x.shape()[2];
+    let mut out = CpuTensor::zeros(vec![batch_size, w_rows, x_cols])?;
+    for b in 0..batch_size {
+        for w_row in 0..w_rows {
+            let o_row_iter = out.iter_axis_mut(vec![b, w_row, 0], 2)?; // (x_cols, )
+            o_row_iter.enumerate().for_each(|(x_col, o)| {
+                let w_row_iter = w.iter_axis(&[b, w_row, 0], 2).unwrap(); // (w_rows, )
+                let x_col_iter = x.iter_axis(&[b, 0, x_col], 1).unwrap(); // (w_rows, )
+                *o = w_row_iter.zip(x_col_iter).map(|(w, x)| w * x).sum::<f32>();
+            });
+        }
+    }
+
+    Ok(out)
+}
+
+// t: (rows, cols)
+pub fn tensor_softmax_inplace<'a>(mut t: CpuTensor<'a>, axis: usize) -> Result<CpuTensor<'a>> {
+    require_tensor_dims(&t, &[2])?;
+
+    if axis != 1 {
+        return Err((ErrorKind::TensorError, "only axis=1 is supported").into());
+    }
+
+    for row in 0..t.shape()[0] {
+        let max = t.iter_axis(&[row, 0], 1)?.fold(f32::NAN, |a, b| a.max(*b));
+        let sum = t.iter_axis_mut(vec![row, 0], 1)?.fold(0.0, |mut acc, val| {
+            *val = (*val - max).exp();
+            acc += *val;
+            acc
+        });
+        t.par_iter_axis_mut(vec![row, 0], 1)?.for_each(|val| {
+            *val /= sum;
+        });
+    }
+
+    Ok(t)
 }
 
 // q: (n_heads, head_size)
@@ -123,11 +187,10 @@ pub fn tensor_softmax_inplace<'a>(t: &mut CpuTensor<'a>, limit: usize) -> Result
 // v_cache: (n_seq, n_kv_heads, head_size)
 // attn: (n_seq, )
 // out: (n_heads, head_size)
-pub fn tensor_multi_query_attention<'a>(
+pub fn tensor_multi_query_attention_specialized<'a>(
     q: &CpuTensor<'a>,
     k_cache: &CpuTensor<'a>,
     v_cache: &CpuTensor<'a>,
-    pos: usize,
 ) -> Result<CpuTensor<'a>> {
     require_tensor_contiguous(q)?;
     require_tensor_contiguous(k_cache)?;
@@ -145,7 +208,6 @@ pub fn tensor_multi_query_attention<'a>(
     for h in 0..n_heads {
         let kvh = h / (n_heads / n_kv_heads);
         attn.par_iter_mut()?
-            .take(pos + 1)
             .enumerate()
             .for_each(|(tok, attn)| {
                 let q_head = q.iter_axis(&[h, 0], 1).unwrap(); // (head_size, )
@@ -154,10 +216,11 @@ pub fn tensor_multi_query_attention<'a>(
                 *attn = score / (head_size as f32).sqrt();
             });
 
-        tensor_softmax_inplace(&mut attn, pos + 1)?;
+        attn = attn.view(&[1, n_seq])?; // (1, n_seq
+        attn = tensor_softmax_inplace(attn, 1)?;
 
         let kvh = h / (n_heads / n_kv_heads);
-        for (tok, attn) in attn.iter().take(pos + 1).enumerate() {
+        for (tok, attn) in attn.iter().enumerate() {
             let v_head = v_cache.iter_axis(&[tok, kvh, 0], 2)?; // (head_size, )
             let out_buf = out.iter_axis_mut(vec![h, 0], 1)?; // (head_size, )
             for (i, (o, v)) in out_buf.zip(v_head).enumerate() {
@@ -205,7 +268,6 @@ pub fn tensor_rope_inplace<'a>(
 
 fn require_tensor_shape(t: &CpuTensor, shape: &[usize]) -> Result<()> {
     if !t.shape().eq(shape) {
-        panic!("failed shape");
         return Err(Error {
             kind: ErrorKind::TensorError,
             message: format!("tensor shape is not {:?}, but {:?}", shape, t.shape(),),
@@ -316,7 +378,7 @@ mod tests {
         // 0
         // 1*1 + 2*2 + 3*3 = 1 + 4 + 9
         // 1*4 + 2*5 + 3*6 = 4 + 10 + 18
-        let out = tensor_matmul_2d(&w, &b)?;
+        let out = tensor_matmul(&w, &b)?;
         assert_eq!(out.iter().cloned().collect::<Vec<_>>(), &[14.0, 32.0]);
 
         // 1, 2, 3
@@ -332,13 +394,30 @@ mod tests {
             ],
             vec![3, 4],
         )?;
-        let out = tensor_matmul_2d(&w, &b)?;
+        let out = tensor_matmul(&w, &b)?;
         assert_eq!(
             out.iter().cloned().collect::<Vec<_>>(),
             &[38.0, 44.0, 50.0, 56.0, 83.0, 98.0, 113.0, 128.0]
         );
         assert_eq!(out.shape(), vec![2, 4]);
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_batch_matmul() -> Result<()> {
+        let w = CpuTensor::new(
+            vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0],
+            vec![2, 2, 3],
+        )?;
+        let b = CpuTensor::new(vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0], vec![2, 3, 1])?;
+
+        let o = tensor_batch_matmul(&w, &b)?;
+        assert_eq!(o.shape(), vec![2, 2, 1]);
+        assert_eq!(
+            o.iter().cloned().collect::<Vec<_>>(),
+            vec![3.0, 12.0, 21.0, 30.0]
+        );
         Ok(())
     }
 }

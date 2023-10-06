@@ -75,6 +75,35 @@ impl<'a> CpuTensor<'a> {
         Ok(())
     }
 
+    pub fn extend(&mut self, t: &CpuTensor<'a>) -> Result<()> {
+        if !self.is_owned() {
+            return Err((ErrorKind::TensorError, "not owned").into());
+        }
+        if !self.is_contiguous() {
+            return Err((ErrorKind::TensorError, "not contiguous").into());
+        }
+        if !t.shape().eq(&self.shape()[1..]) {
+            return Err((
+                ErrorKind::TensorError,
+                format!(
+                    "shape mismatch on extend, want {:?} but got {:?}",
+                    &self.shape()[1..],
+                    &t.shape()
+                ),
+            )
+                .into());
+        }
+
+        self.buf.to_mut().extend(t.iter());
+        let new_shape = {
+            let mut shape = self.shape().to_vec();
+            shape[0] += 1;
+            shape
+        };
+        self.strider = TensorStrider::new(new_shape);
+        Ok(())
+    }
+
     pub fn len(&self) -> usize {
         self.strider.len()
     }
@@ -87,11 +116,45 @@ impl<'a> CpuTensor<'a> {
         })
     }
 
+    // view_ref is called on an owned Tensor, call view() if the tensor is mmapped.
     pub fn view_ref<'b>(&'b self, shape: &[usize]) -> Result<CpuTensor<'a>>
     where
         'b: 'a,
     {
         let strider = self.strider.view(shape.to_vec())?;
+        let buf = self.buf.as_ref();
+        Ok(Self {
+            buf: Cow::Borrowed(buf),
+            strider,
+        })
+    }
+
+    /// called on an owned Tensor, may used on MGQ where we have multiple query head on each key/value head
+    pub fn repeat_ref<'b>(&'b self, repeats: &[usize]) -> Result<CpuTensor<'a>>
+    where
+        'b: 'a,
+    {
+        let strider = self.strider.repeat(repeats.to_vec())?;
+        let buf = self.buf.as_ref();
+        Ok(Self {
+            buf: Cow::Borrowed(buf),
+            strider,
+        })
+    }
+
+    pub fn transpose(self, dims: &[usize]) -> Result<CpuTensor<'a>> {
+        let strider = self.strider.transpose(dims)?;
+        Ok(Self {
+            buf: self.buf,
+            strider,
+        })
+    }
+
+    pub fn transpose_ref<'b>(&'b self, dims: &[usize]) -> Result<CpuTensor<'a>>
+    where
+        'b: 'a,
+    {
+        let strider = self.strider.transpose(dims)?;
         let buf = self.buf.as_ref();
         Ok(Self {
             buf: Cow::Borrowed(buf),
@@ -122,23 +185,38 @@ impl<'a> CpuTensor<'a> {
     }
 
     pub fn iter_axis(&'a self, pos: &[usize], axis: usize) -> Result<CpuTensorAxisIter<'a, f32>> {
+        // speculize the fast path on iterating a contiguous memory buf
         if self.strider.is_contiguous_on_axis(axis) {
             if axis == self.shape().len() - 1 && pos[axis] == 0 {
                 let start = self.strider.at(pos)?;
                 let buf = &self.buf[start..start + self.strider.shape()[axis]];
                 return Ok(CpuTensorAxisIter::Slice(buf.iter()));
             }
-
-            let stride = self.strider.strides()[axis];
-            let start = self.strider.at(pos)?;
-            let buf = &self.buf[start..];
-            return Ok(CpuTensorAxisIter::StepBy(buf.iter().step_by(stride)));
         }
 
-        // slow path
-        Ok(CpuTensorAxisIter::Boxed(Box::new(
-            self.strider.iter_axis(pos, axis)?.map(|i| &self.buf[i]),
-        )))
+        let stride = self.strider.strides()[axis];
+        let start = self.strider.at(pos)?;
+
+        // iterate the original buf, and repeat each element `repeats[axis]` times.
+        // if this axis is repeated, the original buf of this axis is `repeats[axis]` times smaller than
+        // the shape. e.g. shape = [2, 6], repeats = [1, 2], then the actual buf is [2, 3]
+        if let Some(repeats) = self.strider.repeats() {
+            let remains = (self.strider.shape()[axis] - pos[axis]) / repeats[axis] - 1;
+            let buf = &self.buf[start..start + remains * stride + 1];
+            if repeats[axis] == 1 {
+                return Ok(CpuTensorAxisIter::StepBy(buf.iter().step_by(stride)));
+            }
+            let iter = buf
+                .iter()
+                .step_by(stride)
+                .flat_map(move |n| std::iter::repeat(n).take(repeats[axis]));
+            return Ok(CpuTensorAxisIter::Boxed(Box::new(iter)));
+        }
+
+        // normal case: to iterate arbitary axis, just step by the stride
+        let remains = self.strider.shape()[axis] - pos[axis] - 1;
+        let buf = &self.buf[start..start + remains * stride + 1];
+        return Ok(CpuTensorAxisIter::StepBy(buf.iter().step_by(stride)));
     }
 
     pub fn iter_axis_mut(
@@ -255,6 +333,7 @@ impl<'a> CpuTensor<'a> {
     }
 }
 
+// a enum dispatcher seems 3 times faster than a trait object on the benchmarks
 pub enum CpuTensorAxisIter<'a, T> {
     Slice(slice::Iter<'a, T>),
     StepBy(std::iter::StepBy<std::slice::Iter<'a, T>>),
@@ -292,16 +371,160 @@ mod tests {
 
     #[test]
     fn test_tensor_iter_axis() -> Result<()> {
-        let t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![2, 3])?;
-        let r = t.iter_axis(&[0, 0], 1)?.cloned().collect::<Vec<_>>();
-        assert_eq!(r, vec![1.0, 2.0, 3.0]);
-        let r = t.iter_axis(&[0, 0], 0)?.cloned().collect::<Vec<_>>();
-        assert_eq!(r, vec![1.0, 4.0]);
+        struct Test<'a> {
+            tensor: &'a CpuTensor<'a>,
+            input: (Vec<usize>, usize),
+            want: Vec<f32>,
+        };
+
         // 1, 2, 3
         // 4, 5, 6
-        let r = t.iter_axis(&[0, 1], 0)?.cloned().collect::<Vec<_>>();
-        assert_eq!(r, vec![2.0, 5.0]);
+        let t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![2, 3])?;
 
+        let tests = vec![
+            Test {
+                tensor: &t,
+                input: (vec![0, 0], 1),
+                want: vec![1.0, 2.0, 3.0],
+            },
+            Test {
+                tensor: &t,
+                input: (vec![0, 0], 0),
+                want: vec![1.0, 4.0],
+            },
+            Test {
+                tensor: &t,
+                input: (vec![0, 1], 0),
+                want: vec![2.0, 5.0],
+            },
+        ];
+        for tt in tests {
+            let r = tt
+                .tensor
+                .iter_axis(&tt.input.0, tt.input.1)?
+                .cloned()
+                .collect::<Vec<_>>();
+            assert_eq!(r, tt.want);
+        }
+
+        // iter_axis with repeat
+        // 1, 1, 2, 2, 3, 3
+        // 4, 4, 5, 5, 6, 6
+        let t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![2, 3])?;
+        let t = t.repeat_ref(&[1, 2])?;
+
+        let tests = vec![
+            Test {
+                tensor: &t,
+                input: (vec![0, 0], 1),
+                want: vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0],
+            },
+            Test {
+                tensor: &t,
+                input: (vec![0, 0], 0),
+                want: vec![1.0, 4.0],
+            },
+            Test {
+                tensor: &t,
+                input: (vec![0, 1], 0),
+                want: vec![1.0, 4.0],
+            },
+            Test {
+                tensor: &t,
+                input: (vec![0, 2], 0),
+                want: vec![2.0, 5.0],
+            },
+            Test {
+                tensor: &t,
+                input: (vec![0, 3], 0),
+                want: vec![2.0, 5.0],
+            },
+            Test {
+                tensor: &t,
+                input: (vec![0, 4], 0),
+                want: vec![3.0, 6.0],
+            },
+            Test {
+                tensor: &t,
+                input: (vec![0, 5], 0),
+                want: vec![3.0, 6.0],
+            },
+            Test {
+                tensor: &t,
+                input: (vec![1, 0], 1),
+                want: vec![4.0, 4.0, 5.0, 5.0, 6.0, 6.0],
+            },
+            Test {
+                tensor: &t,
+                input: (vec![0, 0], 1),
+                want: vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0],
+            },
+        ];
+        for tt in tests {
+            let r = tt
+                .tensor
+                .iter_axis(&tt.input.0, tt.input.1)?
+                .cloned()
+                .collect::<Vec<_>>();
+            assert_eq!(r, tt.want);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_tensor_iter_axis_on_repeat_and_transpose() -> Result<()> {
+        struct Test<'a> {
+            tensor: &'a CpuTensor<'a>,
+            input: (Vec<usize>, usize),
+            want: Vec<f32>,
+        };
+
+        // 0, 1, 2
+        // 3, 4, 5
+        let t = CpuTensor::new(vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0], vec![2, 3])?;
+
+        // 0, 3,
+        // 1, 4
+        // 2, 5
+        let t = t.transpose_ref(&[1, 0])?;
+
+        // 0, 0, 3, 3
+        // 1, 1, 4, 4
+        // 2, 2, 5, 5
+        let t = t.repeat_ref(&[1, 2])?;
+
+        let tests = vec![
+            Test {
+                tensor: &t,
+                input: (vec![0, 0], 1),
+                want: vec![0.0, 0.0, 3.0, 3.0],
+            },
+            Test {
+                tensor: &t,
+                input: (vec![0, 0], 0),
+                want: vec![0.0, 1.0, 2.0],
+            },
+            Test {
+                tensor: &t,
+                input: (vec![0, 1], 0),
+                want: vec![0.0, 1.0, 2.0],
+            },
+        ];
+        for tt in tests {
+            let r = tt
+                .tensor
+                .iter_axis(&tt.input.0, tt.input.1)?
+                .cloned()
+                .collect::<Vec<_>>();
+            assert_eq!(r, tt.want);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_tensor_iter_axis_mut() -> Result<()> {
         let mut t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![2, 3])?;
         let r = t
             .iter_axis_mut(vec![0, 0], 1)?
@@ -316,6 +539,20 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(r, vec![1.0, 4.0]);
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_extend() -> Result<()> {
+        let mut t1 = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![1, 2, 3])?;
+        let t2 = CpuTensor::new(vec![1.0; 6], vec![2, 3])?;
+        t1.extend(&t2)?;
+
+        assert_eq!(t1.shape(), &[2, 2, 3]);
+        assert_eq!(
+            t1.buf(),
+            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+        );
         Ok(())
     }
 }

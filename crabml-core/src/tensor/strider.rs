@@ -29,6 +29,10 @@ impl TensorStrider {
         &self.strides
     }
 
+    pub fn repeats(&self) -> Option<&Vec<usize>> {
+        self.repeats.as_ref()
+    }
+
     pub fn at(&self, idx: &[usize]) -> Result<usize> {
         if idx.len() != self.shape.len() {
             return Err((
@@ -143,11 +147,39 @@ impl TensorStrider {
         Ok(strider)
     }
 
+    pub fn transpose(&self, dims: &[usize]) -> Result<Self> {
+        if dims.len() != self.shape.len() {
+            return Err((
+                ErrorKind::TensorError,
+                format!(
+                    "invalid dims {:?} for a tensor of shape {:?}",
+                    dims, self.shape
+                ),
+            )
+                .into());
+        }
+
+        let new_shape = dims.iter().map(|d| self.shape[*d]).collect::<Vec<_>>();
+        let new_strides = dims.iter().map(|d| self.strides[*d]).collect::<Vec<_>>();
+        let new_repeats = if let Some(repeats) = &self.repeats {
+            Some(dims.iter().map(|d| repeats[*d]).collect::<Vec<_>>())
+        } else {
+            None
+        };
+
+        let strider = TensorStrider {
+            shape: new_shape,
+            strides: new_strides,
+            repeats: new_repeats,
+        };
+        Ok(strider)
+    }
+
     /// repeat the tensor along each axis. only used in the multi grouped query
     /// where each key/value head have multiple query heads.
     pub fn repeat(&self, repeats: Vec<usize>) -> Result<Self> {
-        if !self.is_contiguous() {
-            return Err((ErrorKind::TensorError, "not contiguous").into());
+        if self.repeats.is_some() {
+            return Err((ErrorKind::TensorError, "already repeated").into());
         }
 
         if repeats.len() != self.shape.len() {
@@ -285,6 +317,56 @@ mod tests {
         assert_eq!(s.at_unchecked(&[1, 0]), 0);
         assert_eq!(s.at_unchecked(&[2, 0]), 3);
         assert_eq!(s.at_unchecked(&[3, 0]), 3);
+        Ok(())
+    }
+
+    #[test]
+    fn test_transpose() -> Result<()> {
+        // 0, 1, 2
+        // 3, 4, 5
+        let s_orig = TensorStrider::new(vec![2, 3]);
+
+        // test repeat after transpose
+        // 0, 3
+        // 1, 4
+        // 2, 5
+        let s = s_orig.transpose(&[1, 0])?;
+        assert_eq!(s.shape(), &[3, 2]);
+        assert_eq!(s.iter().collect::<Vec<_>>(), vec![0, 3, 1, 4, 2, 5]);
+        assert_eq!(s.at(&[1, 1])?, 4);
+        assert_eq!(s.at(&[2, 1])?, 5);
+        // 0, 0, 3, 3
+        // 1, 1, 4, 4
+        // 2, 2, 5, 5
+        let s = s.repeat(vec![1, 2])?;
+        assert_eq!(s.shape(), &[3, 4]);
+        assert_eq!(
+            s.iter().collect::<Vec<_>>(),
+            vec![0, 0, 3, 3, 1, 1, 4, 4, 2, 2, 5, 5]
+        );
+
+        // test transpose after repeat
+
+        let s = s_orig.repeat(vec![2, 1])?;
+        // 0, 1, 2
+        // 0, 1, 2
+        // 3, 4, 5
+        // 3, 4, 5
+        assert_eq!(s.shape(), &[4, 3]);
+        assert_eq!(
+            s.iter().collect::<Vec<_>>(),
+            vec![0, 1, 2, 0, 1, 2, 3, 4, 5, 3, 4, 5]
+        );
+
+        // 0, 0, 3, 3
+        // 1, 1, 4, 4
+        // 2, 2, 5, 5
+        let s = s.transpose(&[1, 0])?;
+        assert_eq!(s.shape(), &[3, 4]);
+        assert_eq!(
+            s.iter().collect::<Vec<_>>(),
+            vec![0, 0, 3, 3, 1, 1, 4, 4, 2, 2, 5, 5]
+        );
         Ok(())
     }
 

@@ -5,13 +5,15 @@ use crabml::error::ErrorKind;
 use crabml::error::Result;
 use crabml::gguf::GGUFFile;
 use crabml::tensor::arithmetic::tensor_add_inplace;
-use crabml::tensor::arithmetic::tensor_matmul_2d;
+use crabml::tensor::arithmetic::tensor_batch_matmul;
+use crabml::tensor::arithmetic::tensor_div_scalar_inplace;
+use crabml::tensor::arithmetic::tensor_matmul;
 use crabml::tensor::arithmetic::tensor_mul_inplace;
-use crabml::tensor::arithmetic::tensor_multi_query_attention;
 use crabml::tensor::arithmetic::tensor_rms_norm_inplace;
 use crabml::tensor::arithmetic::tensor_rope_inplace;
 use crabml::tensor::arithmetic::tensor_silu_inplace;
 use crabml::tensor::CpuTensor;
+use crabml::tensor::arithmetic::tensor_softmax_inplace;
 use std::ops::AddAssign;
 use std::time::Duration;
 use std::time::Instant;
@@ -260,10 +262,10 @@ impl<'a> Llama2Runner<'a> {
         let state = Llama2State {
             logits: vec![0.0; conf.vocab_size],
             key_cache: (0..conf.n_layers)
-                .map(|_| CpuTensor::zeros(vec![conf.seq_len, conf.n_kv_heads, conf.head_size()]))
+                .map(|_| CpuTensor::zeros(vec![0, conf.n_kv_heads, conf.head_size()]))
                 .collect::<Result<Vec<_>>>()?,
             value_cache: (0..conf.n_layers)
-                .map(|_| CpuTensor::zeros(vec![conf.seq_len, conf.n_kv_heads, conf.head_size()]))
+                .map(|_| CpuTensor::zeros(vec![0, conf.n_kv_heads, conf.head_size()]))
                 .collect::<Result<Vec<_>>>()?,
         };
 
@@ -316,9 +318,9 @@ impl<'a> Llama2Runner<'a> {
                 // wq: (embed_dim, embed_dim) @ x (embed_dim, ) => (embed_dim, )
                 // wk: (kv_dim, embed_dim) @ x (embed_dim, ) => (kv_dim, )
                 // wv: (kv_dim, embed_dim) @ x (embed_dim, ) => (kv_dim, )
-                let q = tensor_matmul_2d(&self.weights.wq[l], &x)?;
-                let k = tensor_matmul_2d(&self.weights.wk[l], &x)?;
-                let v = tensor_matmul_2d(&self.weights.wv[l], &x)?;
+                let q = tensor_matmul(&self.weights.wq[l], &x)?;
+                let k = tensor_matmul(&self.weights.wk[l], &x)?;
+                let v = tensor_matmul(&self.weights.wv[l], &x)?;
 
                 (q, k, v)
             };
@@ -333,27 +335,48 @@ impl<'a> Llama2Runner<'a> {
 
             // save to kv cache
             {
-                self.state.key_cache[l].copy_from(&[pos, 0, 0], &k)?;
-                self.state.value_cache[l].copy_from(&[pos, 0, 0], &v)?;
+                let v = v.view(&[n_kv_heads, head_size])?;
+
+                self.state.key_cache[l].extend(&k)?;
+                self.state.value_cache[l].extend(&v)?;
             };
 
-            // multihead attention. iterate over all heads
+            // multi query attention
             x = {
                 let q = q.view(&[n_heads, head_size])?;
+                let k_cache = &self.state.key_cache[l];
+                let v_cache = &self.state.value_cache[l];
 
-                // q: (n_heads, head_size)
-                // key_cache: (seq, n_kv_heads, head_size)
-                // value_cache: (seq, kv_heads, head_size)
-                let x_with_attn = tensor_multi_query_attention(
-                    &q,
-                    &self.state.key_cache[l],
-                    &self.state.value_cache[l],
-                    pos,
-                )?;
+                // - key_cache: [seq, kv_head, head_size]
+                // - key_cache = key_cache.repeat(1, n_head / n_kv_head, 1) => [seq, n_head, head_size]
+                // - key_cache = key_cache.transpose(1, 0, 2) => [n_head, seq, head_size]
+                // - q: [n_head, head_size]
+                // - attn_score = batch_matmul(key_cache, q) => [n_head, seq]
+                // - softmax(attn_score, axis=1) => [n_head, seq]
+                // - val_cache: [seq, kv_head, head_size]
+                // - val_cache = val_cache.repeat(1, n_head / n_kv_head, 1) => [seq, n_head, head_size]
+                // - val_cache = val_cache.transpose(1, 2, 0) => [n_head, head_size, seq]
+                // - out = batch_matmul(val_cache, atten_scores) => [n_head, head_size] 
+
+                // get attention scores
+                let k_cache = k_cache
+                    .repeat_ref(&[1, n_heads / n_kv_heads, 1])?
+                    .transpose(&[1, 0, 2])?; // (n_heads, n_seq, head_size)
+                // (n_heads, n_seq, head_size) @ (n_head, head_size) => (n_heads, n_seq)
+                let attn = tensor_batch_matmul(&k_cache, &q)?;
+                let attn = tensor_div_scalar_inplace(attn, (head_size as f32).sqrt())?;
+                let attn = tensor_softmax_inplace(attn, 1)?;
+
+                // get the weighted sum of the values and attention scores
+                let v_cache = v_cache
+                    .repeat_ref(&[1, n_heads / n_kv_heads, 1])?
+                    .transpose(&[1, 2, 0])?;
+                // (n_heads, head_size, n_seq) @ (n_heads, n_seq) => (n_heads, head_size)
+                let x_with_attn = tensor_batch_matmul(&v_cache, &attn)?; // (n_heads, head_size)
                 let x_with_attn = x_with_attn.view(&[embed_dim])?;
 
                 // final matmul to get the output of the attention
-                tensor_matmul_2d(&self.weights.wo[l], &x_with_attn)?
+                tensor_matmul(&self.weights.wo[l], &x_with_attn)?
             };
 
             // residual connection back into x
@@ -375,8 +398,8 @@ impl<'a> Llama2Runner<'a> {
                 // first calculate self.w1(x) and self.w3(x)
                 // w1: (hidden_dim, embed_dim) @ x (embed_dim, ) => (hidden_dim, )
                 // w3: (hidden_dim, embed_dim) @ x (embed_dim, ) => (hidden_dim, )
-                let mut h1 = tensor_matmul_2d(&self.weights.w1[l], &x)?;
-                let h2 = tensor_matmul_2d(&self.weights.w3[l], &x)?;
+                let mut h1 = tensor_matmul(&self.weights.w1[l], &x)?;
+                let h2 = tensor_matmul(&self.weights.w3[l], &x)?;
 
                 // F.silu; silu(x)=x*σ(x),where σ(x) is the logistic sigmoid
                 h1 = tensor_silu_inplace(h1)?;
@@ -385,7 +408,7 @@ impl<'a> Llama2Runner<'a> {
                 h1 = tensor_mul_inplace(h1, &h2)?;
 
                 // final matmul to get the output of the ffn
-                x = tensor_matmul_2d(&self.weights.w2[l], &h1)?;
+                x = tensor_matmul(&self.weights.w2[l], &h1)?;
 
                 // residual connection
                 x = tensor_add_inplace(x, &x_orig_ffn)?;
@@ -401,7 +424,7 @@ impl<'a> Llama2Runner<'a> {
         };
 
         // classifier into logits
-        let logits = tensor_matmul_2d(&self.weights.wcls, &x)?; // (vocab_size,
+        let logits = tensor_matmul(&self.weights.wcls, &x)?; // (vocab_size,
 
         self.state.logits = logits.iter().cloned().collect::<Vec<_>>();
         Ok(&mut self.state.logits)

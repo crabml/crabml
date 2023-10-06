@@ -142,6 +142,18 @@ impl<'a> CpuTensor<'a> {
         })
     }
 
+    pub fn transpose_ref<'b>(&'b self, dims: &[usize]) -> Result<CpuTensor<'a>>
+    where
+        'b: 'a,
+    {
+        let strider = self.strider.transpose(dims)?;
+        let buf = self.buf.as_ref();
+        Ok(Self {
+            buf: Cow::Borrowed(buf),
+            strider,
+        })
+    }
+
     pub fn as_ref<'b>(&'b self) -> CpuTensor<'a>
     where
         'b: 'a,
@@ -438,6 +450,57 @@ mod tests {
                 tensor: &t,
                 input: (vec![0, 0], 1),
                 want: vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0],
+            },
+        ];
+        for tt in tests {
+            let r = tt
+                .tensor
+                .iter_axis(&tt.input.0, tt.input.1)?
+                .cloned()
+                .collect::<Vec<_>>();
+            assert_eq!(r, tt.want);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_tensor_iter_axis_on_repeat_and_transpose() -> Result<()> {
+        struct Test<'a> {
+            tensor: &'a CpuTensor<'a>,
+            input: (Vec<usize>, usize),
+            want: Vec<f32>,
+        };
+
+        // 0, 1, 2
+        // 3, 4, 5
+        let t = CpuTensor::new(vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0], vec![2, 3])?;
+
+        // 0, 3,
+        // 1, 4
+        // 2, 5
+        let t = t.transpose_ref(&[1, 0])?;
+
+        // 0, 0, 3, 3
+        // 1, 1, 4, 4
+        // 2, 2, 5, 5
+        let t = t.repeat_ref(&[1, 2])?;
+
+        let tests = vec![
+            Test {
+                tensor: &t,
+                input: (vec![0, 0], 1),
+                want: vec![0.0, 0.0, 3.0, 3.0],
+            },
+            Test {
+                tensor: &t,
+                input: (vec![0, 0], 0),
+                want: vec![0.0, 1.0, 2.0],
+            },
+            Test {
+                tensor: &t,
+                input: (vec![0, 1], 0),
+                want: vec![0.0, 1.0, 2.0],
             },
         ];
         for tt in tests {

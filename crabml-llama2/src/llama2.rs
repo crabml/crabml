@@ -368,7 +368,8 @@ impl<'a> Llama2Runner<'a> {
                 let attn = softmax_inplace(attn, 1)?;
 
                 // get the weighted sum of the values and attention scores
-                let v_cache = v_cache.repeat(&[1, n_heads / n_kv_heads, 1])?
+                let v_cache = v_cache
+                    .repeat(&[1, n_heads / n_kv_heads, 1])?
                     .transpose(&[1, 2, 0])?;
                 // (n_heads, head_size, n_seq) @ (n_heads, n_seq) => (n_heads, head_size)
                 let x_with_attn = batch_matmul(&v_cache, &attn)?; // (n_heads, head_size)

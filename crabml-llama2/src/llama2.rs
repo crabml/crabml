@@ -4,16 +4,16 @@ use crabml::error::Error;
 use crabml::error::ErrorKind;
 use crabml::error::Result;
 use crabml::gguf::GGUFFile;
-use crabml::tensor::arithmetic::tensor_add_inplace;
-use crabml::tensor::arithmetic::tensor_batch_matmul;
-use crabml::tensor::arithmetic::tensor_div_scalar_inplace;
-use crabml::tensor::arithmetic::tensor_matmul;
-use crabml::tensor::arithmetic::tensor_mul_inplace;
-use crabml::tensor::arithmetic::tensor_rms_norm_inplace;
-use crabml::tensor::arithmetic::tensor_rope_inplace;
-use crabml::tensor::arithmetic::tensor_silu_inplace;
+use crabml::tensor::arithmetic::add_inplace;
+use crabml::tensor::arithmetic::batch_matmul;
+use crabml::tensor::arithmetic::div_scalar_inplace;
+use crabml::tensor::arithmetic::matmul;
+use crabml::tensor::arithmetic::mul_inplace;
+use crabml::tensor::arithmetic::rms_norm_inplace;
+use crabml::tensor::arithmetic::rope_inplace;
+use crabml::tensor::arithmetic::silu_inplace;
+use crabml::tensor::arithmetic::softmax_inplace;
 use crabml::tensor::CpuTensor;
-use crabml::tensor::arithmetic::tensor_softmax_inplace;
 use std::ops::AddAssign;
 use std::time::Duration;
 use std::time::Instant;
@@ -308,8 +308,8 @@ impl<'a> Llama2Runner<'a> {
 
             // attention rnsnorm
             x = {
-                x = tensor_rms_norm_inplace(x, 1e-5)?;
-                x = tensor_mul_inplace(x, &self.weights.rms_att_weight[l])?;
+                x = rms_norm_inplace(x, 1e-5)?;
+                x = mul_inplace(x, &self.weights.rms_att_weight[l])?;
                 x
             };
 
@@ -318,9 +318,9 @@ impl<'a> Llama2Runner<'a> {
                 // wq: (embed_dim, embed_dim) @ x (embed_dim, ) => (embed_dim, )
                 // wk: (kv_dim, embed_dim) @ x (embed_dim, ) => (kv_dim, )
                 // wv: (kv_dim, embed_dim) @ x (embed_dim, ) => (kv_dim, )
-                let q = tensor_matmul(&self.weights.wq[l], &x)?;
-                let k = tensor_matmul(&self.weights.wk[l], &x)?;
-                let v = tensor_matmul(&self.weights.wv[l], &x)?;
+                let q = matmul(&self.weights.wq[l], &x)?;
+                let k = matmul(&self.weights.wk[l], &x)?;
+                let v = matmul(&self.weights.wv[l], &x)?;
 
                 (q, k, v)
             };
@@ -330,7 +330,7 @@ impl<'a> Llama2Runner<'a> {
                 let q = q.view(&[n_heads, head_size])?;
                 let k = k.view(&[n_kv_heads, head_size])?;
 
-                tensor_rope_inplace(q, k, pos, 1.0, 10000_f32)?
+                rope_inplace(q, k, pos, 1.0, 10000_f32)?
             };
 
             // save to kv cache
@@ -356,31 +356,31 @@ impl<'a> Llama2Runner<'a> {
                 // - val_cache: [seq, kv_head, head_size]
                 // - val_cache = val_cache.repeat(1, n_head / n_kv_head, 1) => [seq, n_head, head_size]
                 // - val_cache = val_cache.transpose(1, 2, 0) => [n_head, head_size, seq]
-                // - out = batch_matmul(val_cache, atten_scores) => [n_head, head_size] 
+                // - out = batch_matmul(val_cache, atten_scores) => [n_head, head_size]
 
                 // get attention scores
                 let k_cache = k_cache
                     .repeat_ref(&[1, n_heads / n_kv_heads, 1])?
-                    .transpose(&[1, 0, 2])?; // (n_heads, n_seq, head_size)
+                    .transpose(&[1, 0, 2])?;
                 // (n_heads, n_seq, head_size) @ (n_head, head_size) => (n_heads, n_seq)
-                let attn = tensor_batch_matmul(&k_cache, &q)?;
-                let attn = tensor_div_scalar_inplace(attn, (head_size as f32).sqrt())?;
-                let attn = tensor_softmax_inplace(attn, 1)?;
+                let attn = batch_matmul(&k_cache, &q)?;
+                let attn = div_scalar_inplace(attn, (head_size as f32).sqrt())?;
+                let attn = softmax_inplace(attn, 1)?;
 
                 // get the weighted sum of the values and attention scores
                 let v_cache = v_cache
                     .repeat_ref(&[1, n_heads / n_kv_heads, 1])?
                     .transpose(&[1, 2, 0])?;
                 // (n_heads, head_size, n_seq) @ (n_heads, n_seq) => (n_heads, head_size)
-                let x_with_attn = tensor_batch_matmul(&v_cache, &attn)?; // (n_heads, head_size)
+                let x_with_attn = batch_matmul(&v_cache, &attn)?; // (n_heads, head_size)
                 let x_with_attn = x_with_attn.view(&[embed_dim])?;
 
                 // final matmul to get the output of the attention
-                tensor_matmul(&self.weights.wo[l], &x_with_attn)?
+                matmul(&self.weights.wo[l], &x_with_attn)?
             };
 
             // residual connection back into x
-            x = tensor_add_inplace(x, &x_attn_orig)?;
+            x = add_inplace(x, &x_attn_orig)?;
 
             // ffn
             x = {
@@ -389,8 +389,8 @@ impl<'a> Llama2Runner<'a> {
 
                 // ffn rmsnorm
                 x = {
-                    x = tensor_rms_norm_inplace(x, 1e-5)?;
-                    x = tensor_mul_inplace(x, &self.weights.rms_ffn_weight[l])?;
+                    x = rms_norm_inplace(x, 1e-5)?;
+                    x = mul_inplace(x, &self.weights.rms_ffn_weight[l])?;
                     x
                 };
 
@@ -398,33 +398,33 @@ impl<'a> Llama2Runner<'a> {
                 // first calculate self.w1(x) and self.w3(x)
                 // w1: (hidden_dim, embed_dim) @ x (embed_dim, ) => (hidden_dim, )
                 // w3: (hidden_dim, embed_dim) @ x (embed_dim, ) => (hidden_dim, )
-                let mut h1 = tensor_matmul(&self.weights.w1[l], &x)?;
-                let h2 = tensor_matmul(&self.weights.w3[l], &x)?;
+                let mut h1 = matmul(&self.weights.w1[l], &x)?;
+                let h2 = matmul(&self.weights.w3[l], &x)?;
 
                 // F.silu; silu(x)=x*σ(x),where σ(x) is the logistic sigmoid
-                h1 = tensor_silu_inplace(h1)?;
+                h1 = silu_inplace(h1)?;
 
                 // elementwise multiply with w3(x)
-                h1 = tensor_mul_inplace(h1, &h2)?;
+                h1 = mul_inplace(h1, &h2)?;
 
                 // final matmul to get the output of the ffn
-                x = tensor_matmul(&self.weights.w2[l], &h1)?;
+                x = matmul(&self.weights.w2[l], &h1)?;
 
                 // residual connection
-                x = tensor_add_inplace(x, &x_orig_ffn)?;
+                x = add_inplace(x, &x_orig_ffn)?;
                 x
             }
         }
 
         // final rmsnorm
         x = {
-            x = tensor_rms_norm_inplace(x, 1e-5)?;
-            x = tensor_mul_inplace(x, &self.weights.rms_final_weight)?;
+            x = rms_norm_inplace(x, 1e-5)?;
+            x = mul_inplace(x, &self.weights.rms_final_weight)?;
             x
         };
 
         // classifier into logits
-        let logits = tensor_matmul(&self.weights.wcls, &x)?; // (vocab_size,
+        let logits = matmul(&self.weights.wcls, &x)?; // (vocab_size,
 
         self.state.logits = logits.iter().cloned().collect::<Vec<_>>();
         Ok(&mut self.state.logits)

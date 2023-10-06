@@ -6,7 +6,7 @@ use rayon::prelude::*;
 
 ///! arithmetic.rs contains the tensor arithmetics operations like matmul, accum, etc.
 
-pub fn tensor_rms_norm_inplace(mut x: CpuTensor<'_>, eps: f32) -> Result<CpuTensor<'_>> {
+pub fn rms_norm_inplace(mut x: CpuTensor<'_>, eps: f32) -> Result<CpuTensor<'_>> {
     require_tensor_contiguous(&x)?;
     require_tensor_dims(&x, &[1])?;
 
@@ -17,7 +17,7 @@ pub fn tensor_rms_norm_inplace(mut x: CpuTensor<'_>, eps: f32) -> Result<CpuTens
     Ok(x)
 }
 
-pub fn tensor_mul_inplace<'a>(mut a: CpuTensor<'a>, b: &CpuTensor<'a>) -> Result<CpuTensor<'a>> {
+pub fn mul_inplace<'a>(mut a: CpuTensor<'a>, b: &CpuTensor<'a>) -> Result<CpuTensor<'a>> {
     require_tensor_shape(&a, b.shape())?;
 
     for (ia, ib) in a.iter_mut()?.zip(b.iter()) {
@@ -26,14 +26,14 @@ pub fn tensor_mul_inplace<'a>(mut a: CpuTensor<'a>, b: &CpuTensor<'a>) -> Result
     Ok(a)
 }
 
-pub fn tensor_div_scalar_inplace<'a>(mut a: CpuTensor<'a>, b: f32) -> Result<CpuTensor<'a>> {
+pub fn div_scalar_inplace<'a>(mut a: CpuTensor<'a>, b: f32) -> Result<CpuTensor<'a>> {
     a.par_iter_mut()?.for_each(|ia| {
         *ia /= b;
     });
     Ok(a)
 }
 
-pub fn tensor_add_inplace<'a>(mut a: CpuTensor<'a>, b: &CpuTensor<'a>) -> Result<CpuTensor<'a>> {
+pub fn add_inplace<'a>(mut a: CpuTensor<'a>, b: &CpuTensor<'a>) -> Result<CpuTensor<'a>> {
     require_tensor_shape(&a, b.shape())?;
     require_tensor_contiguous(&a)?;
     require_tensor_contiguous(b)?;
@@ -44,7 +44,7 @@ pub fn tensor_add_inplace<'a>(mut a: CpuTensor<'a>, b: &CpuTensor<'a>) -> Result
     Ok(a)
 }
 
-pub fn tensor_silu_inplace<'a>(mut x: CpuTensor<'a>) -> Result<CpuTensor<'a>> {
+pub fn silu_inplace<'a>(mut x: CpuTensor<'a>) -> Result<CpuTensor<'a>> {
     // for i in 0..buf.len() {
     //    buf[i] = buf[i] * (1.0 / (1.0 + (-buf[i]).exp()));
     // }
@@ -55,14 +55,14 @@ pub fn tensor_silu_inplace<'a>(mut x: CpuTensor<'a>) -> Result<CpuTensor<'a>> {
 
 // W (w_rows,w_cols) @ x (w_cols,x_cols) -> xout (w_rows,x_cols)
 // W (w_rows,w_cols) @ x (w_cols,) -> xout (w_rows,)
-pub fn tensor_matmul<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'a>> {
+pub fn matmul<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'a>> {
     require_tensor_dims(w, &[2])?;
     require_tensor_dims(x, &[1, 2])?;
     require_tensor_matmul_2d_shapes(w, x)?;
     require_tensor_contiguous(w)?;
 
     if x.is_contiguous() && x.shape().len() == 1 {
-        return tensor_matmul_specialized_2d_1d(w, x);
+        return matmul_specialized_2d_1d(w, x);
     }
 
     if x.shape().len() == 1 {
@@ -89,10 +89,7 @@ pub fn tensor_matmul<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTens
     Ok(out)
 }
 
-pub fn tensor_matmul_specialized_2d_1d<'a>(
-    w: &CpuTensor<'a>,
-    x: &CpuTensor<'a>,
-) -> Result<CpuTensor<'a>> {
+pub fn matmul_specialized_2d_1d<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'a>> {
     let mut xout = CpuTensor::zeros(vec![w.shape()[0]])?;
     let wb = w.buf();
     let xb = x.buf();
@@ -106,7 +103,7 @@ pub fn tensor_matmul_specialized_2d_1d<'a>(
     Ok(xout)
 }
 
-pub fn tensor_batch_matmul<'a, 'b>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'b>>
+pub fn batch_matmul<'a, 'b>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'b>>
 where
     'b: 'a,
 {
@@ -160,7 +157,7 @@ where
 }
 
 // t: (rows, cols)
-pub fn tensor_softmax_inplace<'a>(mut t: CpuTensor<'a>, axis: usize) -> Result<CpuTensor<'a>> {
+pub fn softmax_inplace<'a>(mut t: CpuTensor<'a>, axis: usize) -> Result<CpuTensor<'a>> {
     require_tensor_dims(&t, &[2])?;
 
     if axis != 1 {
@@ -187,7 +184,7 @@ pub fn tensor_softmax_inplace<'a>(mut t: CpuTensor<'a>, axis: usize) -> Result<C
 // v_cache: (n_seq, n_kv_heads, head_size)
 // attn: (n_seq, )
 // out: (n_heads, head_size)
-pub fn tensor_multi_query_attention_specialized<'a>(
+pub fn multi_query_attention_specialized<'a>(
     q: &CpuTensor<'a>,
     k_cache: &CpuTensor<'a>,
     v_cache: &CpuTensor<'a>,
@@ -207,17 +204,15 @@ pub fn tensor_multi_query_attention_specialized<'a>(
     // get attention scores
     for h in 0..n_heads {
         let kvh = h / (n_heads / n_kv_heads);
-        attn.par_iter_mut()?
-            .enumerate()
-            .for_each(|(tok, attn)| {
-                let q_head = q.iter_axis(&[h, 0], 1).unwrap(); // (head_size, )
-                let k_head = k_cache.iter_axis(&[tok, kvh, 0], 2).unwrap(); // (head_size, )
-                let score = q_head.zip(k_head).map(|(q, k)| q * k).sum::<f32>();
-                *attn = score / (head_size as f32).sqrt();
-            });
+        attn.par_iter_mut()?.enumerate().for_each(|(tok, attn)| {
+            let q_head = q.iter_axis(&[h, 0], 1).unwrap(); // (head_size, )
+            let k_head = k_cache.iter_axis(&[tok, kvh, 0], 2).unwrap(); // (head_size, )
+            let score = q_head.zip(k_head).map(|(q, k)| q * k).sum::<f32>();
+            *attn = score / (head_size as f32).sqrt();
+        });
 
         attn = attn.view(&[1, n_seq])?; // (1, n_seq
-        attn = tensor_softmax_inplace(attn, 1)?;
+        attn = softmax_inplace(attn, 1)?;
 
         let kvh = h / (n_heads / n_kv_heads);
         for (tok, attn) in attn.iter().enumerate() {
@@ -233,7 +228,7 @@ pub fn tensor_multi_query_attention_specialized<'a>(
 }
 
 // q: (n_heads, head_size)
-pub fn tensor_rope_inplace<'a>(
+pub fn rope_inplace<'a>(
     mut q: CpuTensor<'a>,
     mut k: CpuTensor<'a>,
     pos: usize,
@@ -378,7 +373,7 @@ mod tests {
         // 0
         // 1*1 + 2*2 + 3*3 = 1 + 4 + 9
         // 1*4 + 2*5 + 3*6 = 4 + 10 + 18
-        let out = tensor_matmul(&w, &b)?;
+        let out = matmul(&w, &b)?;
         assert_eq!(out.iter().cloned().collect::<Vec<_>>(), &[14.0, 32.0]);
 
         // 1, 2, 3
@@ -394,7 +389,7 @@ mod tests {
             ],
             vec![3, 4],
         )?;
-        let out = tensor_matmul(&w, &b)?;
+        let out = matmul(&w, &b)?;
         assert_eq!(
             out.iter().cloned().collect::<Vec<_>>(),
             &[38.0, 44.0, 50.0, 56.0, 83.0, 98.0, 113.0, 128.0]
@@ -412,7 +407,7 @@ mod tests {
         )?;
         let b = CpuTensor::new(vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0], vec![2, 3, 1])?;
 
-        let o = tensor_batch_matmul(&w, &b)?;
+        let o = batch_matmul(&w, &b)?;
         assert_eq!(o.shape(), vec![2, 2, 1]);
         assert_eq!(
             o.iter().cloned().collect::<Vec<_>>(),

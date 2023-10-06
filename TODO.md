@@ -2,6 +2,12 @@
 - [x] benchmark matmuls
 - [ ] add batched matmul: (b, m, n) @ (b, n, o) => (b, m, o)
 - [ ] replace multi query attention with matmul with repeat
+  - key_cache: [seq, kv_head, head_size]
+  - key_cache = key_cache.repeat(1, n_head / n_kv_head, 1) => [seq, n_head, head_size]
+  - key_cache = key_cache.transpose(1, 0, 2) => [n_head, seq, head_size]
+  - q: [n_head, head_size]
+  - q = q.view([n_head, head_size, 1]) => [n_head, head_size, 1]
+  - attn_score = batch_matmul(key_cache, q)
 - [ ] support quantization
 - [ ] take the tensor & device framework
 - [ ] wgpu tensor support

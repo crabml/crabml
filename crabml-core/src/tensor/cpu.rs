@@ -180,10 +180,12 @@ impl<'a> CpuTensor<'a> {
         // iterate the original buf, and repeat each element `repeats[axis]` times.
         // if this axis is repeated, the original buf of this axis is `repeats[axis]` times smaller than
         // the shape. e.g. shape = [2, 6], repeats = [1, 2], then the actual buf is [2, 3]
-        // this is considered as a slow path, we'd not actually iter_axis around a repeated axis.
         if let Some(repeats) = self.strider.repeats() {
             let remains = (self.strider.shape()[axis] - pos[axis]) / repeats[axis] - 1;
             let buf = &self.buf[start..start + remains * stride + 1];
+            if repeats[axis] == 1 {
+                return Ok(CpuTensorAxisIter::StepBy(buf.iter().step_by(stride)));
+            }
             let iter = buf
                 .iter()
                 .step_by(stride)

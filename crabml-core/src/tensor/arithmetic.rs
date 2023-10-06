@@ -153,26 +153,25 @@ where
 }
 
 // t: (rows, cols)
-pub fn tensor_softmax_inplace<'a>(t: &mut CpuTensor<'a>, limit: usize) -> Result<()> {
-    require_tensor_dims(t, &[1])?;
+pub fn tensor_softmax_inplace<'a>(t: &mut CpuTensor<'a>, axis: usize) -> Result<()> {
+    require_tensor_dims(t, &[2])?;
 
-    let max = t
-        .iter_axis(&[0], 0)?
-        .take(limit)
-        .fold(f32::NAN, |a, b| a.max(*b));
-    let sum = t
-        .iter_axis_mut(vec![0], 0)?
-        .take(limit)
-        .fold(0.0, |mut acc, val| {
+    if axis != 1 {
+        return Err((ErrorKind::TensorError, "only axis=1 is supported").into());
+    }
+
+    for row in 0..t.shape()[0] {
+        let max = t.iter_axis(&[row, 0], 1)?.fold(f32::NAN, |a, b| a.max(*b));
+        let sum = t.iter_axis_mut(vec![row, 0], 1)?.fold(0.0, |mut acc, val| {
             *val = (*val - max).exp();
             acc += *val;
             acc
         });
-    t.par_iter_axis_mut(vec![0], 0)?
-        .take(limit)
-        .for_each(|val| {
+        t.par_iter_axis_mut(vec![row, 0], 1)?.for_each(|val| {
             *val /= sum;
         });
+    }
+
     Ok(())
 }
 
@@ -185,7 +184,6 @@ pub fn tensor_multi_query_attention<'a>(
     q: &CpuTensor<'a>,
     k_cache: &CpuTensor<'a>,
     v_cache: &CpuTensor<'a>,
-    pos: usize,
 ) -> Result<CpuTensor<'a>> {
     require_tensor_contiguous(q)?;
     require_tensor_contiguous(k_cache)?;
@@ -203,7 +201,6 @@ pub fn tensor_multi_query_attention<'a>(
     for h in 0..n_heads {
         let kvh = h / (n_heads / n_kv_heads);
         attn.par_iter_mut()?
-            .take(pos + 1)
             .enumerate()
             .for_each(|(tok, attn)| {
                 let q_head = q.iter_axis(&[h, 0], 1).unwrap(); // (head_size, )
@@ -212,10 +209,11 @@ pub fn tensor_multi_query_attention<'a>(
                 *attn = score / (head_size as f32).sqrt();
             });
 
-        tensor_softmax_inplace(&mut attn, pos + 1)?;
+        attn = attn.view(&[1, n_seq])?; // (1, n_seq
+        tensor_softmax_inplace(&mut attn, 1)?;
 
         let kvh = h / (n_heads / n_kv_heads);
-        for (tok, attn) in attn.iter().take(pos + 1).enumerate() {
+        for (tok, attn) in attn.iter().enumerate() {
             let v_head = v_cache.iter_axis(&[tok, kvh, 0], 2)?; // (head_size, )
             let out_buf = out.iter_axis_mut(vec![h, 0], 1)?; // (head_size, )
             for (i, (o, v)) in out_buf.zip(v_head).enumerate() {
@@ -242,7 +240,6 @@ pub fn tensor_multi_query_attention2<'a>(
     q: &CpuTensor<'a>,
     k_cache: &CpuTensor<'a>,
     v_cache: &CpuTensor<'a>,
-    pos: usize,
 ) -> Result<CpuTensor<'a>> {
     require_tensor_contiguous(q)?;
     require_tensor_contiguous(&k_cache)?;
@@ -257,7 +254,7 @@ pub fn tensor_multi_query_attention2<'a>(
         .transpose(&[1, 0, 2])?;
 
     let attn_score = tensor_batch_matmul(&k_cache, &q)?; // (n_heads, n_seq)
-    // TODO: softmax
+                                                         // TODO: softmax
 
     let v_cache = v_cache
         .repeat_ref(&[1, n_heads / n_kv_heads, 1])?

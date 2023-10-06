@@ -350,7 +350,6 @@ impl<'a> Llama2Runner<'a> {
                     &q,
                     &self.state.key_cache[l],
                     &self.state.value_cache[l],
-                    pos,
                 )?;
                 let x_with_attn = x_with_attn.view(&[embed_dim])?;
 

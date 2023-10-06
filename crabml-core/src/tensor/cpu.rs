@@ -379,7 +379,11 @@ mod tests {
             },
         ];
         for tt in tests {
-            let r = tt.tensor.iter_axis(&tt.input.0, tt.input.1)?.cloned().collect::<Vec<_>>();
+            let r = tt
+                .tensor
+                .iter_axis(&tt.input.0, tt.input.1)?
+                .cloned()
+                .collect::<Vec<_>>();
             assert_eq!(r, tt.want);
         }
 
@@ -434,10 +438,14 @@ mod tests {
                 tensor: &t,
                 input: (vec![0, 0], 1),
                 want: vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0],
-            }
+            },
         ];
         for tt in tests {
-            let r = tt.tensor.iter_axis(&tt.input.0, tt.input.1)?.cloned().collect::<Vec<_>>();
+            let r = tt
+                .tensor
+                .iter_axis(&tt.input.0, tt.input.1)?
+                .cloned()
+                .collect::<Vec<_>>();
             assert_eq!(r, tt.want);
         }
 

@@ -147,11 +147,39 @@ impl TensorStrider {
         Ok(strider)
     }
 
+    pub fn transpose(&self, dims: &[usize]) -> Result<Self> {
+        if dims.len() != self.shape.len() {
+            return Err((
+                ErrorKind::TensorError,
+                format!(
+                    "invalid dims {:?} for a tensor of shape {:?}",
+                    dims, self.shape
+                ),
+            )
+                .into());
+        }
+
+        let new_shape = dims.iter().map(|d| self.shape[*d]).collect::<Vec<_>>();
+        let new_strides = dims.iter().map(|d| self.strides[*d]).collect::<Vec<_>>();
+        let new_repeats = if let Some(repeats) = &self.repeats {
+            Some(dims.iter().map(|d| repeats[*d]).collect::<Vec<_>>())
+        } else {
+            None
+        };
+
+        let strider = TensorStrider {
+            shape: new_shape,
+            strides: new_strides,
+            repeats: new_repeats,
+        };
+        Ok(strider)
+    }
+
     /// repeat the tensor along each axis. only used in the multi grouped query
     /// where each key/value head have multiple query heads.
     pub fn repeat(&self, repeats: Vec<usize>) -> Result<Self> {
-        if !self.is_contiguous() {
-            return Err((ErrorKind::TensorError, "not contiguous").into());
+        if self.repeats.is_some() {
+            return Err((ErrorKind::TensorError, "already repeated").into());
         }
 
         if repeats.len() != self.shape.len() {

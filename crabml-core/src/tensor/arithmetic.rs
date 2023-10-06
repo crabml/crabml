@@ -55,7 +55,7 @@ pub fn tensor_silu_inplace<'a>(mut x: CpuTensor<'a>) -> Result<CpuTensor<'a>> {
 
 // W (w_rows,w_cols) @ x (w_cols,x_cols) -> xout (w_rows,x_cols)
 // W (w_rows,w_cols) @ x (w_cols,) -> xout (w_rows,)
-pub fn tensor_matmul_2d<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'a>> {
+pub fn tensor_matmul<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'a>> {
     require_tensor_dims(w, &[2])?;
     require_tensor_dims(x, &[1, 2])?;
     require_tensor_matmul_2d_shapes(w, x)?;
@@ -378,7 +378,7 @@ mod tests {
         // 0
         // 1*1 + 2*2 + 3*3 = 1 + 4 + 9
         // 1*4 + 2*5 + 3*6 = 4 + 10 + 18
-        let out = tensor_matmul_2d(&w, &b)?;
+        let out = tensor_matmul(&w, &b)?;
         assert_eq!(out.iter().cloned().collect::<Vec<_>>(), &[14.0, 32.0]);
 
         // 1, 2, 3
@@ -394,7 +394,7 @@ mod tests {
             ],
             vec![3, 4],
         )?;
-        let out = tensor_matmul_2d(&w, &b)?;
+        let out = tensor_matmul(&w, &b)?;
         assert_eq!(
             out.iter().cloned().collect::<Vec<_>>(),
             &[38.0, 44.0, 50.0, 56.0, 83.0, 98.0, 113.0, 128.0]

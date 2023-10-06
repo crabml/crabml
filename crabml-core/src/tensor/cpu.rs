@@ -422,6 +422,16 @@ mod tests {
                 tensor: &t,
                 input: (vec![0, 5], 0),
                 want: vec![3.0, 6.0],
+            },
+            Test {
+                tensor: &t,
+                input: (vec![1, 0], 1),
+                want: vec![4.0, 4.0, 5.0, 5.0, 6.0, 6.0],
+            },
+            Test {
+                tensor: &t,
+                input: (vec![0, 0], 1),
+                want: vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0],
             }
         ];
         for tt in tests {

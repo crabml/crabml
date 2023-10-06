@@ -116,11 +116,25 @@ impl<'a> CpuTensor<'a> {
         })
     }
 
+    // view_ref is called on an owned Tensor, call view() if the tensor is mmapped.
     pub fn view_ref<'b>(&'b self, shape: &[usize]) -> Result<CpuTensor<'a>>
     where
         'b: 'a,
     {
         let strider = self.strider.view(shape.to_vec())?;
+        let buf = self.buf.as_ref();
+        Ok(Self {
+            buf: Cow::Borrowed(buf),
+            strider,
+        })
+    }
+
+    /// called on an owned Tensor, may used on MGQ where we have multiple query head on each key/value head
+    pub fn repeat_ref<'b>(&'b self, repeats: &[usize]) -> Result<CpuTensor<'a>>
+    where
+        'b: 'a,
+    {
+        let strider = self.strider.repeat(repeats.to_vec())?;
         let buf = self.buf.as_ref();
         Ok(Self {
             buf: Cow::Borrowed(buf),
@@ -164,7 +178,7 @@ impl<'a> CpuTensor<'a> {
         let start = self.strider.at(pos)?;
 
         // iterate the original buf, and repeat each element `repeats[axis]` times.
-        // if this axis is repeated, the original buf of this axis is `repeats[axis]` times smaller than 
+        // if this axis is repeated, the original buf of this axis is `repeats[axis]` times smaller than
         // the shape. e.g. shape = [2, 6], repeats = [1, 2], then the actual buf is [2, 3]
         // this is considered as a slow path, we'd not actually iter_axis around a repeated axis.
         if let Some(repeats) = self.strider.repeats() {
@@ -335,16 +349,91 @@ mod tests {
 
     #[test]
     fn test_tensor_iter_axis() -> Result<()> {
-        let t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![2, 3])?;
-        let r = t.iter_axis(&[0, 0], 1)?.cloned().collect::<Vec<_>>();
-        assert_eq!(r, vec![1.0, 2.0, 3.0]);
-        let r = t.iter_axis(&[0, 0], 0)?.cloned().collect::<Vec<_>>();
-        assert_eq!(r, vec![1.0, 4.0]);
+        struct Test<'a> {
+            tensor: &'a CpuTensor<'a>,
+            input: (Vec<usize>, usize),
+            want: Vec<f32>,
+        };
+
         // 1, 2, 3
         // 4, 5, 6
-        let r = t.iter_axis(&[0, 1], 0)?.cloned().collect::<Vec<_>>();
-        assert_eq!(r, vec![2.0, 5.0]);
+        let t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![2, 3])?;
 
+        let tests = vec![
+            Test {
+                tensor: &t,
+                input: (vec![0, 0], 1),
+                want: vec![1.0, 2.0, 3.0],
+            },
+            Test {
+                tensor: &t,
+                input: (vec![0, 0], 0),
+                want: vec![1.0, 4.0],
+            },
+            Test {
+                tensor: &t,
+                input: (vec![0, 1], 0),
+                want: vec![2.0, 5.0],
+            },
+        ];
+        for tt in tests {
+            let r = tt.tensor.iter_axis(&tt.input.0, tt.input.1)?.cloned().collect::<Vec<_>>();
+            assert_eq!(r, tt.want);
+        }
+
+        // iter_axis with repeat
+        // 1, 1, 2, 2, 3, 3
+        // 4, 4, 5, 5, 6, 6
+        let t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![2, 3])?;
+        let t = t.repeat_ref(&[1, 2])?;
+
+        let tests = vec![
+            Test {
+                tensor: &t,
+                input: (vec![0, 0], 1),
+                want: vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0],
+            },
+            Test {
+                tensor: &t,
+                input: (vec![0, 0], 0),
+                want: vec![1.0, 4.0],
+            },
+            Test {
+                tensor: &t,
+                input: (vec![0, 1], 0),
+                want: vec![1.0, 4.0],
+            },
+            Test {
+                tensor: &t,
+                input: (vec![0, 2], 0),
+                want: vec![2.0, 5.0],
+            },
+            Test {
+                tensor: &t,
+                input: (vec![0, 3], 0),
+                want: vec![2.0, 5.0],
+            },
+            Test {
+                tensor: &t,
+                input: (vec![0, 4], 0),
+                want: vec![3.0, 6.0],
+            },
+            Test {
+                tensor: &t,
+                input: (vec![0, 5], 0),
+                want: vec![3.0, 6.0],
+            }
+        ];
+        for tt in tests {
+            let r = tt.tensor.iter_axis(&tt.input.0, tt.input.1)?.cloned().collect::<Vec<_>>();
+            assert_eq!(r, tt.want);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_tensor_iter_axis_mut() -> Result<()> {
         let mut t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![2, 3])?;
         let r = t
             .iter_axis_mut(vec![0, 0], 1)?

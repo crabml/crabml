@@ -151,6 +151,7 @@ impl<'a> CpuTensor<'a> {
     }
 
     pub fn iter_axis(&'a self, pos: &[usize], axis: usize) -> Result<CpuTensorAxisIter<'a, f32>> {
+        // speculize the fast path on iterating a contiguous memory buf
         if self.strider.is_contiguous_on_axis(axis) {
             if axis == self.shape().len() - 1 && pos[axis] == 0 {
                 let start = self.strider.at(pos)?;
@@ -165,9 +166,10 @@ impl<'a> CpuTensor<'a> {
         // iterate the original buf, and repeat each element `repeats[axis]` times.
         // if this axis is repeated, the original buf of this axis is `repeats[axis]` times smaller than 
         // the shape. e.g. shape = [2, 6], repeats = [1, 2], then the actual buf is [2, 3]
+        // this is considered as a slow path, we'd not actually iter_axis around a repeated axis.
         if let Some(repeats) = self.strider.repeats() {
-            let remains = (self.strider.shape()[axis] - pos[axis]) / repeats[axis];
-            let buf = &self.buf[start..start + remains * stride];
+            let remains = (self.strider.shape()[axis] - pos[axis]) / repeats[axis] - 1;
+            let buf = &self.buf[start..start + remains * stride + 1];
             let iter = buf
                 .iter()
                 .step_by(stride)
@@ -176,8 +178,8 @@ impl<'a> CpuTensor<'a> {
         }
 
         // normal case: to iterate arbitary axis, just step by the stride
-        let remains = self.strider.shape()[axis] - pos[axis];
-        let buf = &self.buf[start..start + remains * stride];
+        let remains = self.strider.shape()[axis] - pos[axis] - 1;
+        let buf = &self.buf[start..start + remains * stride + 1];
         return Ok(CpuTensorAxisIter::StepBy(buf.iter().step_by(stride)));
     }
 

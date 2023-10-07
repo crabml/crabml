@@ -61,9 +61,9 @@ pub fn matmul<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'a>>
     require_tensor_matmul_2d_shapes(w, x)?;
     require_tensor_contiguous(w)?;
 
-    if x.is_contiguous() && x.shape().len() == 1 {
-        return matmul_specialized_2d_1d(w, x);
-    }
+    // if x.is_contiguous() && x.shape().len() == 1 {
+    //   return matmul_specialized_2d_1d(w, x);
+    // }
 
     if x.shape().len() == 1 {
         let mut out = CpuTensor::zeros(vec![w.shape()[0]])?;

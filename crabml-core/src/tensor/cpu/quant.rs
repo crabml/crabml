@@ -30,7 +30,9 @@ pub struct BlockBufQ8_0<'a> {
 
 impl<'a> BlockBufQ8_0<'a> {
     pub fn from_bytes(buf: &'a [u8]) -> Self {
-        let num_blocks = buf.len() / std::mem::size_of::<BlockQ8_0>();
+        let block_mem = std::mem::size_of::<BlockQ8_0>();
+        assert!(buf.len() % block_mem == 0);
+        let num_blocks = buf.len() / block_mem;
         Self {
             raw: buf,
             num_blocks,

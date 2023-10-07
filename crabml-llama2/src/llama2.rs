@@ -585,4 +585,21 @@ mod tests {
         );
         Ok(())
     }
+
+    #[test]
+    fn test_generate_q8_0() -> Result<()> {
+        let gl = GGUFFileLoader::new("../testdata/tinyllama-v0.q8_0.gguf")?;
+        let gf = gl.open()?;
+        let lm = Llama2Model::from(&gf)?;
+
+        let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0);
+        let mut runner = Llama2Runner::new(&lm.conf, &lm.weights, &lm.tokenizer)?;
+        let output = runner.generate("Lily ", 30, &mut sampler)?;
+        let s = output.collect::<Result<Vec<String>>>()?.join("");
+        assert_eq!(
+            s,
+            ". She was a shals to almals. She loved to shals to her mommy."
+        );
+        Ok(())
+    }
 }

@@ -22,6 +22,9 @@ struct CommandArgs {
     #[arg(short, long, default_value_t = 1.0)]
     temperature: f32,
 
+    #[arg(short, long, default_value_t = false)]
+    verbose: bool,
+
     /// The prompt
     prompt: String,
 }
@@ -42,6 +45,12 @@ fn main() -> Result<()> {
 
     let mut sampler = Llama2Sampler::new(lm.conf().vocab_size, args.temperature, args.probability);
     let mut runner = Llama2Runner::new(&lm.conf(), lm.weights(), lm.tokenizer())?;
+
+    if args.verbose {
+        for tensor in gf.tensor_infos() {
+            println!("- {} \t\t\t {} \t {:?}", tensor.name(), tensor.typ(), tensor.dimensions());
+        }
+    }
 
     let mut output = runner.generate(&args.prompt, args.steps, &mut sampler)?;
     for token in output.by_ref() {

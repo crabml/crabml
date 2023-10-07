@@ -603,27 +603,12 @@ mod tests {
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0);
         let mut runner = Llama2Runner::new(&lm.conf, &lm.weights, &lm.tokenizer)?;
-        let output = runner.generate("wat ", 5, &mut sampler)?;
+        let output = runner.generate("Lily is a cat ", 10, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
         assert_eq!(
             s,
-            ". She was a shals to almals. She loved to shals to her mommy."
+            "y. Sheaa is a very special cat."
         );
-        Ok(())
-    }
-
-    #[test]
-    fn test_generate_q8_0() -> Result<()> {
-        let gl_orig = GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-f32.gguf")?;
-        let gf_orig = gl_orig.open()?;
-        let lm_orig = Llama2Model::from(&gf_orig)?;
-
-        let gl_quant = GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-q8_0.gguf")?;
-        let gf_quant = gl_quant.open()?;
-        let lm_quant = Llama2Model::from(&gf_quant)?;
-
-        println!("{:?}", &lm_orig.weights().wk[0].iter().collect::<Vec<_>>()[0..100]);
-        println!("{:?}", &lm_quant.weights().wk[0].iter().collect::<Vec<_>>()[0..100]);
         Ok(())
     }
 }

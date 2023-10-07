@@ -5,7 +5,7 @@ use rayon::prelude::*;
 use std::borrow::Cow;
 use std::slice;
 
-use super::strider::TensorStrider;
+use crate::tensor::strider::TensorStrider;
 
 #[derive(Debug, Clone, Default)]
 pub struct CpuTensor<'a> {

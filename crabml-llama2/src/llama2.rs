@@ -235,7 +235,10 @@ impl<'a> Llama2Model<'a> {
             .unwrap()
             .len();
         let embedding_dim = gf.metadata().get_u32("llama.embedding_length").unwrap() as usize;
-        let rms_norm_eps = gf.metadata().get_f32("llama.attention.layer_norm_rms_epsilon").unwrap();
+        let rms_norm_eps = gf
+            .metadata()
+            .get_f32("llama.attention.layer_norm_rms_epsilon")
+            .unwrap();
         Llama2Config {
             n_heads,
             n_kv_heads,
@@ -244,7 +247,7 @@ impl<'a> Llama2Model<'a> {
             hidden_dim,
             seq_len,
             vocab_size,
-            rms_norm_eps
+            rms_norm_eps,
         }
     }
 }
@@ -605,10 +608,7 @@ mod tests {
         let mut runner = Llama2Runner::new(&lm.conf, &lm.weights, &lm.tokenizer)?;
         let output = runner.generate("Lily is a cat ", 10, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
-        assert_eq!(
-            s,
-            "y. Sheaa is a very special cat."
-        );
+        assert_eq!(s, "y. Sheaa is a very special cat.");
         Ok(())
     }
 }

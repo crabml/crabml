@@ -48,7 +48,12 @@ fn main() -> Result<()> {
 
     if args.verbose {
         for tensor in gf.tensor_infos() {
-            println!("- {} \t\t\t {} \t {:?}", tensor.name(), tensor.typ(), tensor.dimensions());
+            println!(
+                "- {} \t\t\t {} \t {:?}",
+                tensor.name(),
+                tensor.typ(),
+                tensor.dimensions()
+            );
         }
     }
 

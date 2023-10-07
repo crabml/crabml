@@ -71,7 +71,10 @@ impl<'a> CpuTensorBuf<'a> {
             CpuTensorBuf::Flat(buf) => {
                 CpuTensorBufIter::StepBy(buf[start..end].iter().step_by(step))
             }
-            CpuTensorBuf::Q8_0(buf) => CpuTensorBufIter::Boxed(Box::new(buf.iter_range(start, end, step)), self.len() / step)
+            CpuTensorBuf::Q8_0(buf) => CpuTensorBufIter::Boxed(
+                Box::new(buf.iter_range(start, end, step)),
+                self.len() / step,
+            ),
         }
     }
 
@@ -105,7 +108,9 @@ impl<'a> CpuTensorBuf<'a> {
         match self {
             CpuTensorBuf::Owned(buf) => CpuTensorBufIter::Slice(buf.iter()),
             CpuTensorBuf::Flat(buf) => CpuTensorBufIter::Slice(buf.iter()),
-            CpuTensorBuf::Q8_0(buf) => CpuTensorBufIter::Boxed(Box::new(buf.iter_range(0, buf.len(), 1)), self.len()),
+            CpuTensorBuf::Q8_0(buf) => {
+                CpuTensorBufIter::Boxed(Box::new(buf.iter_range(0, buf.len(), 1)), self.len())
+            }
         }
     }
 
@@ -113,7 +118,7 @@ impl<'a> CpuTensorBuf<'a> {
         match self {
             CpuTensorBuf::Owned(buf) => buf.par_iter(),
             CpuTensorBuf::Flat(buf) => buf.par_iter(),
-            CpuTensorBuf::Q8_0(buf) => unimplemented!()
+            CpuTensorBuf::Q8_0(buf) => unimplemented!(),
         }
     }
 
@@ -192,7 +197,7 @@ impl<'a> From<&'a [f32]> for CpuTensorBuf<'a> {
 pub enum CpuTensorBufIter<'a> {
     Slice(slice::Iter<'a, f32>),
     StepBy(std::iter::StepBy<std::slice::Iter<'a, f32>>),
-    Boxed(Box<dyn Iterator<Item = f32> + 'a >, usize),
+    Boxed(Box<dyn Iterator<Item = f32> + 'a>, usize),
 }
 
 impl<'a> Iterator for CpuTensorBufIter<'a> {

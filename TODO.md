@@ -1,5 +1,6 @@
-- [ ] support q8 quantization
-  - [ ] zero copy q8 quantization with the zero-copy crate
-  - [ ] have a test with https://huggingface.co/TheBloke/TinyLlama-1.1B-python-v0.1-GGUF/blob/main/tinyllama-1.1b-python-v0.1.Q8_0.gguf
+- [x] support q8 quantization
+  - [x] zero copy q8 quantization with the zero-copy crate
+  - [x] have a test with https://huggingface.co/TheBloke/TinyLlama-1.1B-python-v0.1-GGUF/blob/main/tinyllama-1.1b-python-v0.1.Q8_0.gguf
+- [ ] add a specialized q8 vs f32 matmul to optimize a bit about the dog slot speed
 - [ ] take the tensor & device framework
 - [ ] wgpu tensor support

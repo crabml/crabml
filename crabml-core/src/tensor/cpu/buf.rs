@@ -4,7 +4,7 @@ use std::slice;
 use crate::error::Result;
 use crate::gguf::GGMLType;
 
-use super::quant::BlockBufQ8_0;
+use super::quant::QuantBuf8_0;
 
 /// All the quantized tensor are read-only.
 /// to implement a quantized tensor, we need to implement the following:
@@ -12,15 +12,15 @@ use super::quant::BlockBufQ8_0;
 #[derive(Debug)]
 pub enum CpuTensorBuf<'a> {
     Owned(Vec<f32>),
-    Flat(&'a [f32]),
-    Q8_0(BlockBufQ8_0<'a>),
+    F32(&'a [f32]),
+    Q8_0(QuantBuf8_0<'a>),
 }
 
 impl<'a> CpuTensorBuf<'a> {
     pub fn from_raw_bytes(buf: &'a [u8], typ: GGMLType) -> Result<Self> {
         match typ {
             GGMLType::F32 => Ok(Self::from_raw_bytes_f32(buf)),
-            GGMLType::Q8_0 => Ok(CpuTensorBuf::Q8_0(BlockBufQ8_0::from_bytes(buf))),
+            GGMLType::Q8_0 => Ok(CpuTensorBuf::Q8_0(QuantBuf8_0::from_bytes(buf))),
             _ => unimplemented!(),
         }
     }
@@ -28,7 +28,7 @@ impl<'a> CpuTensorBuf<'a> {
     pub fn at_unchecked(&self, pos: usize) -> f32 {
         match self {
             CpuTensorBuf::Owned(buf) => buf[pos],
-            CpuTensorBuf::Flat(buf) => buf[pos],
+            CpuTensorBuf::F32(buf) => buf[pos],
             CpuTensorBuf::Q8_0(buf) => buf.iter_range(pos, pos + 1, 1).next().unwrap(),
         }
     }
@@ -43,15 +43,23 @@ impl<'a> CpuTensorBuf<'a> {
     pub fn len(&self) -> usize {
         match self {
             CpuTensorBuf::Owned(buf) => buf.len(),
-            CpuTensorBuf::Flat(buf) => buf.len(),
+            CpuTensorBuf::F32(buf) => buf.len(),
             CpuTensorBuf::Q8_0(buf) => buf.len(),
+        }
+    }
+
+    pub fn typ(&self) -> GGMLType {
+        match self {
+            CpuTensorBuf::Owned(_) => GGMLType::F32,
+            CpuTensorBuf::F32(_) => GGMLType::F32,
+            CpuTensorBuf::Q8_0(_) => GGMLType::Q8_0,
         }
     }
 
     pub fn as_ref(&self) -> CpuTensorBuf<'_> {
         match self {
-            CpuTensorBuf::Owned(buf) => CpuTensorBuf::Flat(buf),
-            CpuTensorBuf::Flat(buf) => CpuTensorBuf::Flat(buf),
+            CpuTensorBuf::Owned(buf) => CpuTensorBuf::F32(buf),
+            CpuTensorBuf::F32(buf) => CpuTensorBuf::F32(buf),
             CpuTensorBuf::Q8_0(buf) => CpuTensorBuf::Q8_0(buf.clone()),
         }
     }
@@ -68,7 +76,7 @@ impl<'a> CpuTensorBuf<'a> {
             CpuTensorBuf::Owned(buf) => {
                 CpuTensorBufIter::StepBy(buf[start..end].iter().step_by(step))
             }
-            CpuTensorBuf::Flat(buf) => {
+            CpuTensorBuf::F32(buf) => {
                 CpuTensorBufIter::StepBy(buf[start..end].iter().step_by(step))
             }
             CpuTensorBuf::Q8_0(buf) => CpuTensorBufIter::Boxed(
@@ -107,7 +115,7 @@ impl<'a> CpuTensorBuf<'a> {
     pub fn iter(&self) -> CpuTensorBufIter {
         match self {
             CpuTensorBuf::Owned(buf) => CpuTensorBufIter::Slice(buf.iter()),
-            CpuTensorBuf::Flat(buf) => CpuTensorBufIter::Slice(buf.iter()),
+            CpuTensorBuf::F32(buf) => CpuTensorBufIter::Slice(buf.iter()),
             CpuTensorBuf::Q8_0(buf) => {
                 CpuTensorBufIter::Boxed(Box::new(buf.iter_range(0, buf.len(), 1)), self.len())
             }
@@ -117,7 +125,7 @@ impl<'a> CpuTensorBuf<'a> {
     pub fn par_iter(&self) -> impl rayon::iter::IndexedParallelIterator<Item = &f32> {
         match self {
             CpuTensorBuf::Owned(buf) => buf.par_iter(),
-            CpuTensorBuf::Flat(buf) => buf.par_iter(),
+            CpuTensorBuf::F32(buf) => buf.par_iter(),
             CpuTensorBuf::Q8_0(buf) => unimplemented!(),
         }
     }
@@ -149,14 +157,6 @@ impl<'a> CpuTensorBuf<'a> {
         f32_buf.into()
     }
 
-    pub fn buf(&self) -> &[f32] {
-        match self {
-            CpuTensorBuf::Owned(buf) => buf,
-            CpuTensorBuf::Flat(buf) => buf,
-            _ => unreachable!("only f32 buffers can access the raw buffer"),
-        }
-    }
-
     pub fn buf_mut(&mut self) -> &mut [f32] {
         match self {
             CpuTensorBuf::Owned(buf) => buf,
@@ -169,7 +169,7 @@ impl Clone for CpuTensorBuf<'_> {
     fn clone(&self) -> Self {
         match self {
             CpuTensorBuf::Owned(buf) => Self::Owned(buf.clone()),
-            CpuTensorBuf::Flat(buf) => Self::Flat(buf),
+            CpuTensorBuf::F32(buf) => Self::F32(buf),
             CpuTensorBuf::Q8_0(buf) => Self::Q8_0(buf.clone()),
         }
     }
@@ -189,7 +189,7 @@ impl From<Vec<f32>> for CpuTensorBuf<'_> {
 
 impl<'a> From<&'a [f32]> for CpuTensorBuf<'a> {
     fn from(buf: &'a [f32]) -> Self {
-        Self::Flat(buf)
+        Self::F32(buf)
     }
 }
 

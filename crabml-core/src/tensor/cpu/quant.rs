@@ -3,17 +3,17 @@ use rayon::prelude::*;
 
 #[repr(C, packed)]
 #[derive(Debug)]
-pub struct BlockQ8_0 {
+pub struct QuantBlockQ8_0 {
     d: f16,       // delta
     qs: [i8; 32], // quants
 }
 
-impl BlockQ8_0 {
+impl QuantBlockQ8_0 {
     pub const BLOCK_ELEMS: usize = 32;
 
     pub fn from_bytes(buf: &[u8]) -> Self {
-        assert_eq!(buf.len(), std::mem::size_of::<BlockQ8_0>());
-        unsafe { std::ptr::read(buf.as_ptr() as *const BlockQ8_0) }
+        assert_eq!(buf.len(), std::mem::size_of::<QuantBlockQ8_0>());
+        unsafe { std::ptr::read(buf.as_ptr() as *const QuantBlockQ8_0) }
     }
 
     pub fn dequantize(&self, buf: &mut [f32]) {
@@ -26,14 +26,14 @@ impl BlockQ8_0 {
 }
 
 #[derive(Debug, Clone)]
-pub struct BlockBufQ8_0<'a> {
+pub struct QuantBuf8_0<'a> {
     raw: &'a [u8],
     num_blocks: usize,
 }
 
-impl<'a> BlockBufQ8_0<'a> {
+impl<'a> QuantBuf8_0<'a> {
     pub fn from_bytes(buf: &'a [u8]) -> Self {
-        let block_mem = std::mem::size_of::<BlockQ8_0>();
+        let block_mem = std::mem::size_of::<QuantBlockQ8_0>();
         assert!(buf.len() % block_mem == 0);
         let num_blocks = buf.len() / block_mem;
         Self {
@@ -46,10 +46,10 @@ impl<'a> BlockBufQ8_0<'a> {
         self.num_blocks * 32
     }
 
-    pub fn block_at(&self, idx: usize) -> BlockQ8_0 {
-        let block_mem = std::mem::size_of::<BlockQ8_0>();
+    pub fn block_at(&self, idx: usize) -> QuantBlockQ8_0 {
+        let block_mem = std::mem::size_of::<QuantBlockQ8_0>();
         let buf = &self.raw[idx * block_mem..(idx + 1) * block_mem];
-        BlockQ8_0::from_bytes(buf)
+        QuantBlockQ8_0::from_bytes(buf)
     }
 
     pub fn iter_range(
@@ -73,17 +73,19 @@ impl<'a> BlockBufQ8_0<'a> {
         assert!(self.len() == rows * cols);
 
         out.par_iter_mut().enumerate().for_each(|(i, o)| {
-            let mut current_block_f32_buf = [0.0_f32; 32];
+            let mut current_dequant_buf = [0.0_f32; 32];
+            let mut current_block_idx = usize::MAX;
             for j in 0..cols {
                 let offset = i * cols + j;
-                if offset % 32 == 0 {
-                    let block_idx = offset / 32;
+                let block_idx = offset / 32;
+                if current_block_idx != block_idx {
                     let block = self.block_at(block_idx);
-                    block.dequantize(&mut current_block_f32_buf);
+                    block.dequantize(&mut current_dequant_buf);
+                    current_block_idx = block_idx;
                 }
                 let mut sum = 0.0;
                 for k in 0..cols {
-                    sum += current_block_f32_buf[offset % 32] * rhs[k];
+                    sum += current_dequant_buf[offset % 32] * rhs[k];
                 }
                 *o = sum;
             }
@@ -92,7 +94,7 @@ impl<'a> BlockBufQ8_0<'a> {
 }
 
 pub struct BlockBufIterQ8_0<'a> {
-    buf: &'a BlockBufQ8_0<'a>,
+    buf: &'a QuantBuf8_0<'a>,
     current_f32_buf: [f32; 32],
     current_block: usize,
     pos: usize,
@@ -108,7 +110,7 @@ impl<'a> Iterator for BlockBufIterQ8_0<'a> {
             return None;
         }
 
-        let block_idx = self.pos / BlockQ8_0::BLOCK_ELEMS;
+        let block_idx = self.pos / QuantBlockQ8_0::BLOCK_ELEMS;
         if block_idx != self.current_block {
             let block = self.buf.block_at(block_idx);
             block.dequantize(&mut self.current_f32_buf);
@@ -140,7 +142,7 @@ mod tests {
         buf[66] = 9;
         buf[67] = 9;
 
-        let block = BlockQ8_0::from_bytes(&buf[0..34]);
+        let block = QuantBlockQ8_0::from_bytes(&buf[0..34]);
         assert_eq!(block.d.to_f32(), 3.0);
         assert_eq!(
             block.qs,
@@ -150,7 +152,7 @@ mod tests {
             ]
         );
 
-        let bf = BlockBufQ8_0::from_bytes(&buf);
+        let bf = QuantBuf8_0::from_bytes(&buf);
         assert_eq!(bf.len(), 64);
         assert_eq!(
             bf.iter_range(0, bf.len(), 1).collect::<Vec<_>>(),

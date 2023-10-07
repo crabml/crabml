@@ -3,8 +3,6 @@ use crate::error::ErrorKind;
 use crate::error::Result;
 use crate::gguf::GGMLType;
 use rayon::prelude::*;
-use std::borrow::Cow;
-use std::slice;
 
 use crate::tensor::cpu::buf::CpuTensorBuf;
 use crate::tensor::strider::TensorStrider;
@@ -46,6 +44,10 @@ impl<'a> CpuTensor<'a> {
     pub fn from_raw_bytes(buf: &'a [u8], typ: GGMLType, shape: Vec<usize>) -> Result<Self> {
         let buf = CpuTensorBuf::from_raw_bytes(buf, typ)?;
         Self::new(buf, shape)
+    }
+
+    pub fn typ(&self) -> GGMLType {
+        self.buf.typ()
     }
 
     pub fn at(&self, idx: &[usize]) -> Result<f32> {
@@ -251,12 +253,12 @@ impl<'a> CpuTensor<'a> {
     }
 
     // only used on specialized performance critical cases
-    pub fn buf(&self) -> &[f32] {
-        self.buf.buf()
+    pub(crate) fn buf(&self) -> &CpuTensorBuf<'a> {
+        &self.buf
     }
 
-    // only used on specialized performance critical cases
-    pub fn buf_mut(&mut self) -> Result<&mut [f32]> {
+    // TODO: only used in rope, remoe it later
+    pub(crate) fn buf_mut(&mut self) -> Result<&mut [f32]> {
         if !self.is_owned() {
             return Err((ErrorKind::TensorError, "not owned").into());
         }
@@ -459,7 +461,7 @@ mod tests {
 
         assert_eq!(t1.shape(), &[2, 2, 3]);
         assert_eq!(
-            t1.buf(),
+            t1.iter().collect::<Vec<_>>(),
             &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
         );
         Ok(())

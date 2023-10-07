@@ -1,8 +1,11 @@
 use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::error::Result;
+use crate::gguf::GGMLType;
 use crate::tensor::CpuTensor;
 use rayon::prelude::*;
+
+use super::buf::CpuTensorBuf;
 
 ///! arithmetic.rs contains the tensor arithmetics operations like matmul, accum, etc.
 
@@ -61,9 +64,9 @@ pub fn matmul<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'a>>
     require_tensor_matmul_2d_shapes(w, x)?;
     require_tensor_contiguous(w)?;
 
-    // if x.is_contiguous() && x.shape().len() == 1 {
-    //   return matmul_specialized_2d_1d(w, x);
-    // }
+    if x.typ() == GGMLType::F32 && x.is_contiguous() && x.shape().len() == 1 {
+       return matmul_specialized_f32_2d_1d(w, x);
+    }
 
     if x.shape().len() == 1 {
         let mut out = CpuTensor::zeros(vec![w.shape()[0]])?;
@@ -89,10 +92,17 @@ pub fn matmul<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'a>>
     Ok(out)
 }
 
-pub fn matmul_specialized_2d_1d<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'a>> {
+pub fn matmul_specialized_f32_2d_1d<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'a>> {
     let mut xout = CpuTensor::zeros(vec![w.shape()[0]])?;
-    let wb = w.buf();
-    let xb = x.buf();
+    let wb = match w.buf() {
+        CpuTensorBuf::F32(wb) => wb,
+        _ => unreachable!("only f32 buffers are supported"),
+    };
+    let xb = match x.buf() {
+        CpuTensorBuf::Owned(xb) => xb,
+        CpuTensorBuf::F32(xb) => *xb,
+        _ => unreachable!("only f32 buffers are supported"),
+    };
     let x_dim = x.len();
 
     xout.par_iter_mut()?.enumerate().for_each(|(w_row, xo)| {

@@ -165,7 +165,7 @@ pub fn softmax_inplace<'a>(mut t: CpuTensor<'a>, axis: usize) -> Result<CpuTenso
     }
 
     for row in 0..t.shape()[0] {
-        let max = t.iter_axis(&[row, 0], 1)?.fold(f32::NAN, |a, b| a.max(*b));
+        let max = t.iter_axis(&[row, 0], 1)?.fold(f32::NAN, |a, b| a.max(b));
         let sum = t.iter_axis_mut(vec![row, 0], 1)?.fold(0.0, |mut acc, val| {
             *val = (*val - max).exp();
             acc += *val;

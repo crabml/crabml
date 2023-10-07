@@ -181,7 +181,7 @@ impl<'a> Llama2Model<'a> {
             .map(|v| *v)
             .collect::<Vec<_>>();
 
-        let tensor = CpuTensor::from_raw_bytes(info.data(), dims)?;
+        let tensor = CpuTensor::from_raw_bytes(info.data(), info.typ(), dims)?;
         Ok(tensor)
     }
 
@@ -298,7 +298,6 @@ impl<'a> Llama2Runner<'a> {
             .weights
             .token_embedding_table
             .iter_axis(&[token, 0], 1)?
-            .cloned()
             .collect::<Vec<_>>();
         let mut x = CpuTensor::new(content_row, vec![embed_dim])?;
 

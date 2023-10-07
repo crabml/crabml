@@ -1,6 +1,7 @@
 use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::error::Result;
+use crate::gguf::GGMLType;
 use rayon::prelude::*;
 use std::borrow::Cow;
 use std::slice;
@@ -12,7 +13,7 @@ use super::buf::CpuTensorBufIter;
 
 #[derive(Debug, Clone, Default)]
 pub struct CpuTensor<'a> {
-    buf: CpuTensorBuf<'a, f32>,
+    buf: CpuTensorBuf<'a>,
     strider: TensorStrider,
 }
 
@@ -22,7 +23,7 @@ pub struct CpuTensor<'a> {
 // change on the tensor is considered as a move operation, to reduce the need on
 // copying the owned buffer. Feel free to clone() the tensor.
 impl<'a> CpuTensor<'a> {
-    pub fn new(buf: impl Into<CpuTensorBuf<'a, f32>>, shape: Vec<usize>) -> Result<Self> {
+    pub fn new(buf: impl Into<CpuTensorBuf<'a>>, shape: Vec<usize>) -> Result<Self> {
         let buf = buf.into();
         if buf.len() != shape.iter().product() {
             return Err(Error {
@@ -42,9 +43,9 @@ impl<'a> CpuTensor<'a> {
         Self::new(buf, shape)
     }
 
-    pub fn from_raw_bytes(buf: &'a [u8], shape: Vec<usize>) -> Result<Self> {
-        let f32_buf = CpuTensorBuf::from_raw_bytes(buf);
-        Self::new(f32_buf, shape)
+    pub fn from_raw_bytes(buf: &'a [u8], typ: GGMLType, shape: Vec<usize>) -> Result<Self> {
+        let buf = CpuTensorBuf::from_raw_bytes(buf, typ)?;
+        Self::new(buf, shape)
     }
 
     pub fn at(&self, idx: &[usize]) -> Result<f32> {
@@ -130,7 +131,7 @@ impl<'a> CpuTensor<'a> {
         self.buf.is_owned()
     }
 
-    pub fn iter_axis(&'a self, pos: &[usize], axis: usize) -> Result<CpuTensorBufIter<f32>> {
+    pub fn iter_axis(&'a self, pos: &[usize], axis: usize) -> Result<CpuTensorBufIter> {
         // speculize the fast path on iterating a contiguous memory buf
         if self.strider.is_contiguous_on_axis(axis) {
             if axis == self.shape().len() - 1 && pos[axis] == 0 {
@@ -306,7 +307,6 @@ mod tests {
             let r = tt
                 .tensor
                 .iter_axis(&tt.input.0, tt.input.1)?
-                .cloned()
                 .collect::<Vec<_>>();
             assert_eq!(r, tt.want);
         }
@@ -368,7 +368,6 @@ mod tests {
             let r = tt
                 .tensor
                 .iter_axis(&tt.input.0, tt.input.1)?
-                .cloned()
                 .collect::<Vec<_>>();
             assert_eq!(r, tt.want);
         }
@@ -419,7 +418,6 @@ mod tests {
             let r = tt
                 .tensor
                 .iter_axis(&tt.input.0, tt.input.1)?
-                .cloned()
                 .collect::<Vec<_>>();
             assert_eq!(r, tt.want);
         }

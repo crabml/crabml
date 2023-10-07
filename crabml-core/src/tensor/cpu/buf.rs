@@ -1,21 +1,35 @@
 use rayon::prelude::*;
 use std::slice;
 
+use crate::error::Result;
+use crate::gguf::GGMLType;
+
+use super::quant::BlockBufQ8_0;
+
 /// All the quantized tensor are read-only.
 /// to implement a quantized tensor, we need to implement the following:
 /// - iter_range
 #[derive(Debug)]
-pub enum CpuTensorBuf<'a, T: Copy + Send> {
-    Owned(Vec<T>),
-    Flat(&'a [T]),
-    // Quantized8,
+pub enum CpuTensorBuf<'a> {
+    Owned(Vec<f32>),
+    Flat(&'a [f32]),
+    Q8_0(BlockBufQ8_0<'a>),
 }
 
-impl<'a, T: Copy + Send> CpuTensorBuf<'a, T> {
-    pub fn at_unchecked(&self, pos: usize) -> T {
+impl<'a> CpuTensorBuf<'a> {
+    pub fn from_raw_bytes(buf: &'a [u8], typ: GGMLType) -> Result<Self> {
+        match typ {
+            GGMLType::F32 => Ok(Self::from_raw_bytes_f32(buf)),
+            GGMLType::Q8_0 => Ok(CpuTensorBuf::Q8_0(BlockBufQ8_0::from_raw_bytes(buf))),
+            _ => unimplemented!(),
+        }
+    }
+
+    pub fn at_unchecked(&self, pos: usize) -> f32 {
         match self {
             CpuTensorBuf::Owned(buf) => buf[pos],
             CpuTensorBuf::Flat(buf) => buf[pos],
+            CpuTensorBuf::Q8_0(buf) => buf.iter_range(pos, pos + 1, 1).next().unwrap(),
         }
     }
 
@@ -30,24 +44,26 @@ impl<'a, T: Copy + Send> CpuTensorBuf<'a, T> {
         match self {
             CpuTensorBuf::Owned(buf) => buf.len(),
             CpuTensorBuf::Flat(buf) => buf.len(),
+            CpuTensorBuf::Q8_0(buf) => buf.len(),
         }
     }
 
-    pub fn as_ref(&self) -> CpuTensorBuf<'_, T> {
+    pub fn as_ref(&self) -> CpuTensorBuf<'_> {
         match self {
             CpuTensorBuf::Owned(buf) => CpuTensorBuf::Flat(buf),
             CpuTensorBuf::Flat(buf) => CpuTensorBuf::Flat(buf),
+            CpuTensorBuf::Q8_0(buf) => CpuTensorBuf::Q8_0(buf.clone()),
         }
     }
 
-    pub fn extend(&mut self, iter: impl Iterator<Item = T>) {
+    pub fn extend(&mut self, iter: impl Iterator<Item = f32>) {
         match self {
             CpuTensorBuf::Owned(buf) => buf.extend(iter),
             _ => unreachable!("only owned buffers can be extended"),
         }
     }
 
-    pub fn iter_range(&self, start: usize, end: usize, step: usize) -> CpuTensorBufIter<T> {
+    pub fn iter_range(&self, start: usize, end: usize, step: usize) -> CpuTensorBufIter {
         match self {
             CpuTensorBuf::Owned(buf) => {
                 CpuTensorBufIter::StepBy(buf[start..end].iter().step_by(step))
@@ -55,6 +71,7 @@ impl<'a, T: Copy + Send> CpuTensorBuf<'a, T> {
             CpuTensorBuf::Flat(buf) => {
                 CpuTensorBufIter::StepBy(buf[start..end].iter().step_by(step))
             }
+            CpuTensorBuf::Q8_0(buf) => CpuTensorBufIter::Boxed(Box::new(buf.iter_range(start, end, step)), self.len() / step)
         }
     }
 
@@ -63,7 +80,7 @@ impl<'a, T: Copy + Send> CpuTensorBuf<'a, T> {
         start: usize,
         end: usize,
         step: usize,
-    ) -> impl ExactSizeIterator<Item = &mut T> {
+    ) -> impl ExactSizeIterator<Item = &mut f32> {
         match self {
             CpuTensorBuf::Owned(buf) => buf[start..end].iter_mut().step_by(step),
             _ => unreachable!("only owned buffers can be mutable"),
@@ -75,7 +92,7 @@ impl<'a, T: Copy + Send> CpuTensorBuf<'a, T> {
         start: usize,
         end: usize,
         step: usize,
-    ) -> impl rayon::iter::IndexedParallelIterator<Item = &mut T> {
+    ) -> impl rayon::iter::IndexedParallelIterator<Item = &mut f32> {
         let buf = match self {
             CpuTensorBuf::Owned(buf) => buf,
             _ => unreachable!("only owned buffers can be mutable"),
@@ -84,30 +101,37 @@ impl<'a, T: Copy + Send> CpuTensorBuf<'a, T> {
         buf[start..end].par_iter_mut().step_by(step)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &T> {
+    pub fn iter(&self) -> CpuTensorBufIter {
         match self {
-            CpuTensorBuf::Owned(buf) => buf.iter(),
-            CpuTensorBuf::Flat(buf) => buf.iter(),
+            CpuTensorBuf::Owned(buf) => CpuTensorBufIter::Slice(buf.iter()),
+            CpuTensorBuf::Flat(buf) => CpuTensorBufIter::Slice(buf.iter()),
+            CpuTensorBuf::Q8_0(buf) => CpuTensorBufIter::Boxed(Box::new(buf.iter_range(0, buf.len(), 1)), self.len()),
         }
     }
 
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut T> {
+    pub fn par_iter(&self) -> impl rayon::iter::IndexedParallelIterator<Item = &f32> {
+        match self {
+            CpuTensorBuf::Owned(buf) => buf.par_iter(),
+            CpuTensorBuf::Flat(buf) => buf.par_iter(),
+            CpuTensorBuf::Q8_0(buf) => unimplemented!()
+        }
+    }
+
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut f32> {
         match self {
             CpuTensorBuf::Owned(buf) => buf.iter_mut(),
             _ => unreachable!("only owned buffers can be mutable"),
         }
     }
 
-    pub fn par_iter_mut(&mut self) -> impl rayon::iter::IndexedParallelIterator<Item = &mut T> {
+    pub fn par_iter_mut(&mut self) -> impl rayon::iter::IndexedParallelIterator<Item = &mut f32> {
         match self {
             CpuTensorBuf::Owned(buf) => buf.par_iter_mut(),
             _ => unreachable!("only owned buffers can be mutable"),
         }
     }
-}
 
-impl<'a> CpuTensorBuf<'a, f32> {
-    pub fn from_raw_bytes(buf: &'a [u8]) -> Self {
+    pub fn from_raw_bytes_f32(buf: &'a [u8]) -> Self {
         let len = buf.len();
         assert_eq!(
             len % std::mem::size_of::<f32>(),
@@ -120,17 +144,11 @@ impl<'a> CpuTensorBuf<'a, f32> {
         f32_buf.into()
     }
 
-    pub fn par_iter(&self) -> impl rayon::iter::IndexedParallelIterator<Item = &f32> {
-        match self {
-            CpuTensorBuf::Owned(buf) => buf.par_iter(),
-            CpuTensorBuf::Flat(buf) => buf.par_iter(),
-        }
-    }
-
     pub fn buf(&self) -> &[f32] {
         match self {
             CpuTensorBuf::Owned(buf) => buf,
             CpuTensorBuf::Flat(buf) => buf,
+            _ => unreachable!("only f32 buffers can access the raw buffer"),
         }
     }
 
@@ -142,53 +160,54 @@ impl<'a> CpuTensorBuf<'a, f32> {
     }
 }
 
-impl<T: Copy + Send> Clone for CpuTensorBuf<'_, T> {
+impl Clone for CpuTensorBuf<'_> {
     fn clone(&self) -> Self {
         match self {
             CpuTensorBuf::Owned(buf) => Self::Owned(buf.clone()),
             CpuTensorBuf::Flat(buf) => Self::Flat(buf),
+            CpuTensorBuf::Q8_0(buf) => Self::Q8_0(buf.clone()),
         }
     }
 }
 
-impl<T: Copy + Send> Default for CpuTensorBuf<'_, T> {
+impl Default for CpuTensorBuf<'_> {
     fn default() -> Self {
         Self::Owned(Vec::new())
     }
 }
 
-impl<T: Copy + Send> From<Vec<T>> for CpuTensorBuf<'_, T> {
-    fn from(buf: Vec<T>) -> Self {
+impl From<Vec<f32>> for CpuTensorBuf<'_> {
+    fn from(buf: Vec<f32>) -> Self {
         Self::Owned(buf)
     }
 }
 
-impl<'a, T: Copy + Send> From<&'a [T]> for CpuTensorBuf<'a, T> {
-    fn from(buf: &'a [T]) -> Self {
+impl<'a> From<&'a [f32]> for CpuTensorBuf<'a> {
+    fn from(buf: &'a [f32]) -> Self {
         Self::Flat(buf)
     }
 }
 
 // a enum dispatcher seems 3 times faster than a trait object on the benchmarks
-pub enum CpuTensorBufIter<'a, T> {
-    Slice(slice::Iter<'a, T>),
-    StepBy(std::iter::StepBy<std::slice::Iter<'a, T>>),
-    Boxed(Box<dyn Iterator<Item = &'a T> + 'a>, usize),
+pub enum CpuTensorBufIter<'a> {
+    Slice(slice::Iter<'a, f32>),
+    StepBy(std::iter::StepBy<std::slice::Iter<'a, f32>>),
+    Boxed(Box<dyn Iterator<Item = f32> + 'a >, usize),
 }
 
-impl<'a, T> Iterator for CpuTensorBufIter<'a, T> {
-    type Item = &'a T;
+impl<'a> Iterator for CpuTensorBufIter<'a> {
+    type Item = f32;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
-            CpuTensorBufIter::Slice(iter) => iter.next(),
-            CpuTensorBufIter::StepBy(iter) => iter.next(),
+            CpuTensorBufIter::Slice(iter) => iter.next().cloned(),
+            CpuTensorBufIter::StepBy(iter) => iter.next().cloned(),
             CpuTensorBufIter::Boxed(iter, _) => iter.next(),
         }
     }
 }
 
-impl<'a, T> ExactSizeIterator for CpuTensorBufIter<'a, T> {
+impl<'a> ExactSizeIterator for CpuTensorBufIter<'a> {
     fn len(&self) -> usize {
         match self {
             CpuTensorBufIter::Slice(iter) => iter.len(),

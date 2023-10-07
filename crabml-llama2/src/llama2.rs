@@ -426,7 +426,7 @@ impl<'a> Llama2Runner<'a> {
         // classifier into logits
         let logits = matmul(&self.weights.wcls, &x)?; // (vocab_size,
 
-        self.state.logits = logits.iter().cloned().collect::<Vec<_>>();
+        self.state.logits = logits.iter().collect::<Vec<_>>();
         Ok(&mut self.state.logits)
     }
 }

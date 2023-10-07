@@ -374,7 +374,7 @@ mod tests {
         // 1*1 + 2*2 + 3*3 = 1 + 4 + 9
         // 1*4 + 2*5 + 3*6 = 4 + 10 + 18
         let out = matmul(&w, &b)?;
-        assert_eq!(out.iter().cloned().collect::<Vec<_>>(), &[14.0, 32.0]);
+        assert_eq!(out.iter().collect::<Vec<_>>(), &[14.0, 32.0]);
 
         // 1, 2, 3
         // 4, 5, 6
@@ -391,7 +391,7 @@ mod tests {
         )?;
         let out = matmul(&w, &b)?;
         assert_eq!(
-            out.iter().cloned().collect::<Vec<_>>(),
+            out.iter().collect::<Vec<_>>(),
             &[38.0, 44.0, 50.0, 56.0, 83.0, 98.0, 113.0, 128.0]
         );
         assert_eq!(out.shape(), vec![2, 4]);
@@ -410,7 +410,7 @@ mod tests {
         let o = batch_matmul(&w, &b)?;
         assert_eq!(o.shape(), vec![2, 2, 1]);
         assert_eq!(
-            o.iter().cloned().collect::<Vec<_>>(),
+            o.iter().collect::<Vec<_>>(),
             vec![3.0, 12.0, 21.0, 30.0]
         );
         Ok(())

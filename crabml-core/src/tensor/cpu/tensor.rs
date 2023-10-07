@@ -182,21 +182,13 @@ impl<'a> CpuTensor<'a> {
             return Err((ErrorKind::TensorError, "not contiguous").into());
         }
 
-        let buf = match self.buf {
-            Cow::Owned(ref mut buf) => buf,
-            _ => unreachable!(),
-        };
-
         // on a contiguous tensor, if we move one position according to the axis, the step length must equals the stride
-        let buf = &mut buf[self.strider.at(&pos)?..];
-        let stride = self.strider.strides()[axis];
+        let start = self.strider.at(&pos)?;
         let count = self.strider.shape()[axis] - pos[axis];
+        let stride = self.strider.strides()[axis];
+        let end = start + count * stride + 1;
 
-        // whenever you wanna make a IterMut, the builtin functions like split_at_mut / chunks_mut are your friend
-        let iter = buf.chunks_mut(stride).take(count).map(|chunk| {
-            let (n, _) = chunk.split_first_mut().unwrap();
-            n
-        });
+        let iter = self.buf.iter_mut_between(start, end, stride);
         Ok(iter)
     }
 
@@ -205,33 +197,18 @@ impl<'a> CpuTensor<'a> {
         pos: Vec<usize>,
         axis: usize,
     ) -> Result<impl rayon::iter::IndexedParallelIterator<Item = &mut f32>> {
-        if !self.is_owned() {
-            return Err((ErrorKind::TensorError, "not owned").into());
-        }
-        if !self.is_contiguous() {
-            return Err((ErrorKind::TensorError, "not contiguous").into());
-        }
-
-        let buf = match self.buf {
-            Cow::Owned(ref mut buf) => buf,
-            _ => unreachable!(),
-        };
-
         // on a contiguous tensor, if we move one position according to the axis, the step length must equals the stride
-        let buf = &mut buf[self.strider.at(&pos)?..];
-        let stride = self.strider.strides()[axis];
+        let start = self.strider.at(&pos)?;
         let count = self.strider.shape()[axis] - pos[axis];
+        let stride = self.strider.strides()[axis];
+        let end = start + count * stride + 1;
 
-        // whenever you wanna make a IterMut, the builtin functions like split_at_mut / chunks_mut are your friend
-        let iter = buf.par_chunks_mut(stride).take(count).map(|chunk| {
-            let (n, _) = chunk.split_first_mut().unwrap();
-            n
-        });
+        let iter = self.buf.par_iter_mut_between(start, end, stride);
         Ok(iter)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &f32> {
-        self.strider.iter().map(|i| &self.buf[i])
+    pub fn iter(&self) -> impl Iterator<Item = f32> + '_ {
+        self.strider.iter().map(|i| self.buf.at_unchecked(i))
     }
 
     pub fn par_iter(&self) -> Result<impl IndexedParallelIterator<Item = &f32>> {
@@ -249,7 +226,7 @@ impl<'a> CpuTensor<'a> {
         if !self.is_contiguous() {
             return Err((ErrorKind::TensorError, "not contiguous").into());
         }
-        Ok(self.buf.to_mut().iter_mut())
+        Ok(self.buf.iter_mut())
     }
 
     pub fn par_iter_mut(&mut self) -> Result<impl IndexedParallelIterator<Item = &mut f32>> {
@@ -259,7 +236,7 @@ impl<'a> CpuTensor<'a> {
         if !self.is_contiguous() {
             return Err((ErrorKind::TensorError, "not contiguous").into());
         }
-        Ok(self.buf.to_mut().par_iter_mut())
+        Ok(self.buf.par_iter_mut())
     }
 
     pub fn is_contiguous(&self) -> bool {
@@ -272,7 +249,7 @@ impl<'a> CpuTensor<'a> {
 
     // only used on specialized performance critical cases
     pub fn buf(&self) -> &[f32] {
-        &self.buf
+        self.buf.buf()
     }
 
     // only used on specialized performance critical cases
@@ -280,7 +257,7 @@ impl<'a> CpuTensor<'a> {
         if !self.is_owned() {
             return Err((ErrorKind::TensorError, "not owned").into());
         }
-        Ok(self.buf.to_mut())
+        Ok(self.buf.buf_mut())
     }
 }
 
@@ -314,7 +291,7 @@ mod tests {
 
         let tr = t.view(&[2, 3])?;
         assert_eq!(
-            tr.iter().cloned().collect::<Vec<f32>>(),
+            tr.iter().collect::<Vec<f32>>(),
             vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         );
         Ok(())

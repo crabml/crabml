@@ -41,15 +41,7 @@ impl<'a> CpuTensor<'a> {
     }
 
     pub fn from_raw_bytes(buf: &'a [u8], shape: Vec<usize>) -> Result<Self> {
-        let len = buf.len();
-        assert_eq!(
-            len % std::mem::size_of::<f32>(),
-            0,
-            "Length of slice must be multiple of f32 size"
-        );
-        let new_len = len / std::mem::size_of::<f32>();
-        let ptr = buf.as_ptr() as *const f32;
-        let f32_buf = unsafe { slice::from_raw_parts(ptr, new_len) };
+        let f32_buf = CpuTensorBuf::from_raw_bytes(buf);
         Self::new(f32_buf, shape)
     }
 

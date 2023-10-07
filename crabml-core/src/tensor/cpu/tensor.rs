@@ -136,9 +136,7 @@ impl<'a> CpuTensor<'a> {
             if axis == self.shape().len() - 1 && pos[axis] == 0 {
                 let start = self.strider.at(pos)?;
                 let end = start + self.strider.shape()[axis];
-                return Ok(
-                    self.buf.iter_range(start, end, 1),
-                );
+                return Ok(self.buf.iter_range(start, end, 1));
             }
         }
 
@@ -161,7 +159,10 @@ impl<'a> CpuTensor<'a> {
         }
         let iter = self.buf.iter_range(start, end, stride);
         let iter = iter.flat_map(move |n| std::iter::repeat(n).take(axis_repeats));
-        return Ok(CpuTensorBufIter::Boxed(Box::new(iter), 2 + remains * axis_repeats));
+        return Ok(CpuTensorBufIter::Boxed(
+            Box::new(iter),
+            2 + remains * axis_repeats,
+        ));
     }
 
     pub fn iter_axis_mut(

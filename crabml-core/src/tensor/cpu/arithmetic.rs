@@ -409,10 +409,7 @@ mod tests {
 
         let o = batch_matmul(&w, &b)?;
         assert_eq!(o.shape(), vec![2, 2, 1]);
-        assert_eq!(
-            o.iter().collect::<Vec<_>>(),
-            vec![3.0, 12.0, 21.0, 30.0]
-        );
+        assert_eq!(o.iter().collect::<Vec<_>>(), vec![3.0, 12.0, 21.0, 30.0]);
         Ok(())
     }
 }

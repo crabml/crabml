@@ -1,14 +1,14 @@
-use std::slice;
 use rayon::{prelude::*, vec};
+use std::slice;
 
 #[derive(Debug)]
-pub enum CpuTensorBuf<'a, T: Copy+Send> {
+pub enum CpuTensorBuf<'a, T: Copy + Send> {
     Owned(Vec<T>),
     Flat(&'a [T]),
     // Quantized8,
 }
 
-impl<'a, T: Copy+Send> CpuTensorBuf<'a, T> {
+impl<'a, T: Copy + Send> CpuTensorBuf<'a, T> {
     pub fn at_unchecked(&self, pos: usize) -> T {
         match self {
             CpuTensorBuf::Owned(buf) => buf[pos],
@@ -82,7 +82,6 @@ impl<'a, T: Copy+Send> CpuTensorBuf<'a, T> {
         buf[start..end].par_iter_mut().step_by(step)
     }
 
-
     pub fn iter(&self) -> impl Iterator<Item = &T> {
         match self {
             CpuTensorBuf::Owned(buf) => buf.iter(),
@@ -141,7 +140,7 @@ impl<'a> CpuTensorBuf<'a, f32> {
     }
 }
 
-impl<T: Copy+Send> Clone for CpuTensorBuf<'_, T> {
+impl<T: Copy + Send> Clone for CpuTensorBuf<'_, T> {
     fn clone(&self) -> Self {
         match self {
             CpuTensorBuf::Owned(buf) => Self::Owned(buf.clone()),
@@ -150,19 +149,19 @@ impl<T: Copy+Send> Clone for CpuTensorBuf<'_, T> {
     }
 }
 
-impl<T: Copy+Send> Default for CpuTensorBuf<'_, T> {
+impl<T: Copy + Send> Default for CpuTensorBuf<'_, T> {
     fn default() -> Self {
         Self::Owned(Vec::new())
     }
 }
 
-impl<T: Copy+Send> From<Vec<T>> for CpuTensorBuf<'_, T> {
+impl<T: Copy + Send> From<Vec<T>> for CpuTensorBuf<'_, T> {
     fn from(buf: Vec<T>) -> Self {
         Self::Owned(buf)
     }
 }
 
-impl<'a, T: Copy+Send> From<&'a [T]> for CpuTensorBuf<'a, T> {
+impl<'a, T: Copy + Send> From<&'a [T]> for CpuTensorBuf<'a, T> {
     fn from(buf: &'a [T]) -> Self {
         Self::Flat(buf)
     }

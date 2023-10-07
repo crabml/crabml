@@ -193,6 +193,13 @@ impl<'a> CpuTensor<'a> {
         pos: Vec<usize>,
         axis: usize,
     ) -> Result<impl rayon::iter::IndexedParallelIterator<Item = &mut f32>> {
+        if !self.is_owned() {
+            return Err((ErrorKind::TensorError, "not owned").into());
+        }
+        if !self.is_contiguous() {
+            return Err((ErrorKind::TensorError, "not contiguous").into());
+        }
+
         // on a contiguous tensor, if we move one position according to the axis, the step length must equals the stride
         let start = self.strider.at(&pos)?;
         let remains = self.strider.shape()[axis] - pos[axis] - 1;

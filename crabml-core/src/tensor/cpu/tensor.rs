@@ -184,9 +184,9 @@ impl<'a> CpuTensor<'a> {
 
         // on a contiguous tensor, if we move one position according to the axis, the step length must equals the stride
         let start = self.strider.at(&pos)?;
-        let count = self.strider.shape()[axis] - pos[axis];
+        let remains = self.strider.shape()[axis] - pos[axis] - 1;
         let stride = self.strider.strides()[axis];
-        let end = start + count * stride + 1;
+        let end = start + remains * stride + 1;
 
         let iter = self.buf.iter_mut_between(start, end, stride);
         Ok(iter)
@@ -199,9 +199,9 @@ impl<'a> CpuTensor<'a> {
     ) -> Result<impl rayon::iter::IndexedParallelIterator<Item = &mut f32>> {
         // on a contiguous tensor, if we move one position according to the axis, the step length must equals the stride
         let start = self.strider.at(&pos)?;
-        let count = self.strider.shape()[axis] - pos[axis];
+        let remains = self.strider.shape()[axis] - pos[axis] - 1;
         let stride = self.strider.strides()[axis];
-        let end = start + count * stride + 1;
+        let end = start + remains * stride + 1;
 
         let iter = self.buf.par_iter_mut_between(start, end, stride);
         Ok(iter)

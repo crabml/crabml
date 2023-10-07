@@ -5,11 +5,12 @@ use rayon::prelude::*;
 use std::borrow::Cow;
 use std::slice;
 
+use crate::tensor::cpu::buf::CpuTensorBuf;
 use crate::tensor::strider::TensorStrider;
 
 #[derive(Debug, Clone, Default)]
 pub struct CpuTensor<'a> {
-    buf: Cow<'a, [f32]>,
+    buf: CpuTensorBuf<'a, f32>,
     strider: TensorStrider,
 }
 
@@ -19,7 +20,7 @@ pub struct CpuTensor<'a> {
 // change on the tensor is considered as a move operation, to reduce the need on
 // copying the owned buffer. Feel free to clone() the tensor.
 impl<'a> CpuTensor<'a> {
-    pub fn new(buf: impl Into<Cow<'a, [f32]>>, shape: Vec<usize>) -> Result<Self> {
+    pub fn new(buf: impl Into<CpuTensorBuf<'a, f32>>, shape: Vec<usize>) -> Result<Self> {
         let buf = buf.into();
         if buf.len() != shape.iter().product() {
             return Err(Error {
@@ -53,22 +54,9 @@ impl<'a> CpuTensor<'a> {
     }
 
     pub fn at(&self, idx: &[usize]) -> Result<f32> {
-        self.strider.at(idx).map(|offset| self.buf[offset])
-    }
-
-    pub fn copy_from(&mut self, pos: &[usize], t: &CpuTensor<'a>) -> Result<()> {
-        if !self.is_owned() {
-            return Err((ErrorKind::TensorError, "not owned").into());
-        }
-        if !self.is_contiguous() {
-            return Err((ErrorKind::TensorError, "not contiguous").into());
-        }
-
-        let idx = self.strider.at(pos)?;
-        let buf = &mut self.buf.to_mut()[idx..];
-
-        buf.iter_mut().zip(t.iter()).for_each(|(a, b)| *a = *b);
-        Ok(())
+        self.strider
+            .at(idx)
+            .map(|offset| self.buf.at_unchecked(offset))
     }
 
     pub fn extend(&mut self, t: &CpuTensor<'a>) -> Result<()> {
@@ -90,7 +78,7 @@ impl<'a> CpuTensor<'a> {
                 .into());
         }
 
-        self.buf.to_mut().extend(t.iter());
+        self.buf.extend(t.iter());
         let new_shape = {
             let mut shape = self.shape().to_vec();
             shape[0] += 1;
@@ -134,21 +122,18 @@ impl<'a> CpuTensor<'a> {
         'b: 'a,
     {
         Self {
-            buf: Cow::Borrowed(self.buf.as_ref()),
+            buf: self.buf.as_ref(),
             strider: self.strider.clone(),
         }
     }
 
     pub fn at_unchecked(&self, idx: &[usize]) -> f32 {
         let offset = self.strider.at_unchecked(idx);
-        self.buf[offset]
+        self.buf.at_unchecked(offset)
     }
 
     pub fn is_owned(&self) -> bool {
-        match self.buf {
-            Cow::Owned(_) => true,
-            _ => false,
-        }
+        self.buf.is_owned()
     }
 
     pub fn iter_axis(&'a self, pos: &[usize], axis: usize) -> Result<CpuTensorAxisIter<'a, f32>> {
@@ -156,8 +141,10 @@ impl<'a> CpuTensor<'a> {
         if self.strider.is_contiguous_on_axis(axis) {
             if axis == self.shape().len() - 1 && pos[axis] == 0 {
                 let start = self.strider.at(pos)?;
-                let buf = &self.buf[start..start + self.strider.shape()[axis]];
-                return Ok(CpuTensorAxisIter::Slice(buf.iter()));
+                let end = start + self.strider.shape()[axis];
+                return Ok(CpuTensorAxisIter::Boxed(Box::new(
+                    self.buf.iter_between(start, end, 1),
+                )));
             }
         }
 
@@ -167,23 +154,20 @@ impl<'a> CpuTensor<'a> {
         // iterate the original buf, and repeat each element `repeats[axis]` times.
         // if this axis is repeated, the original buf of this axis is `repeats[axis]` times smaller than
         // the shape. e.g. shape = [2, 6], repeats = [1, 2], then the actual buf is [2, 3]
-        if let Some(repeats) = self.strider.repeats() {
-            let remains = (self.strider.shape()[axis] - pos[axis]) / repeats[axis] - 1;
-            let buf = &self.buf[start..start + remains * stride + 1];
-            if repeats[axis] == 1 {
-                return Ok(CpuTensorAxisIter::StepBy(buf.iter().step_by(stride)));
-            }
-            let iter = buf
-                .iter()
-                .step_by(stride)
-                .flat_map(move |n| std::iter::repeat(n).take(repeats[axis]));
+        let axis_repeats = self
+            .strider
+            .repeats()
+            .map(|repeats| repeats[axis])
+            .unwrap_or(1);
+        let remains = (self.strider.shape()[axis] - pos[axis]) / axis_repeats - 1;
+        let end = start + remains * stride + 1;
+        if axis_repeats == 1 {
+            let iter = self.buf.iter_between(start, end, stride);
             return Ok(CpuTensorAxisIter::Boxed(Box::new(iter)));
         }
-
-        // normal case: to iterate arbitary axis, just step by the stride
-        let remains = self.strider.shape()[axis] - pos[axis] - 1;
-        let buf = &self.buf[start..start + remains * stride + 1];
-        return Ok(CpuTensorAxisIter::StepBy(buf.iter().step_by(stride)));
+        let iter = self.buf.iter_between(start, end, stride);
+        let iter = iter.flat_map(move |n| std::iter::repeat(n).take(axis_repeats));
+        return Ok(CpuTensorAxisIter::Boxed(Box::new(iter)));
     }
 
     pub fn iter_axis_mut(

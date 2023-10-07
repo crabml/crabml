@@ -29,14 +29,38 @@ impl<'a, T: Copy> CpuTensorBuf<'a, T> {
         }
     }
 
-    pub fn iter_between(&self, start: usize, end: usize, step: usize) -> impl Iterator<Item = &T> {
+    pub fn as_ref(&self) -> CpuTensorBuf<'_, T> {
+        match self {
+            CpuTensorBuf::Owned(buf) => CpuTensorBuf::Flat(buf),
+            CpuTensorBuf::Flat(buf) => CpuTensorBuf::Flat(buf),
+        }
+    }
+
+    pub fn extend(&mut self, iter: impl Iterator<Item = &'a T>) {
+        match self {
+            CpuTensorBuf::Owned(buf) => buf.extend(iter),
+            _ => unreachable!("only owned buffers can be extended"),
+        }
+    }
+
+    pub fn iter_between(
+        &self,
+        start: usize,
+        end: usize,
+        step: usize,
+    ) -> impl ExactSizeIterator<Item = &T> {
         match self {
             CpuTensorBuf::Owned(buf) => buf[start..end].iter().step_by(step),
             CpuTensorBuf::Flat(buf) => buf[start..end].iter().step_by(step),
         }
     }
 
-    pub fn iter_mut_between(&mut self, start: usize, end: usize, step: usize) -> impl Iterator<Item = &mut T> {
+    pub fn iter_mut_between(
+        &mut self,
+        start: usize,
+        end: usize,
+        step: usize,
+    ) -> impl ExactSizeIterator<Item = &mut T> {
         match self {
             CpuTensorBuf::Owned(buf) => buf[start..end].iter_mut().step_by(step),
             _ => unreachable!("only owned buffers can be mutable"),
@@ -70,6 +94,21 @@ impl<'a> CpuTensorBuf<'a, f32> {
         let ptr = buf.as_ptr() as *const f32;
         let f32_buf = unsafe { slice::from_raw_parts(ptr, new_len) };
         f32_buf.into()
+    }
+}
+
+impl<T: Copy> Clone for CpuTensorBuf<'_, T> {
+    fn clone(&self) -> Self {
+        match self {
+            CpuTensorBuf::Owned(buf) => Self::Owned(buf.clone()),
+            CpuTensorBuf::Flat(buf) => Self::Flat(buf),
+        }
+    }
+}
+
+impl<T: Copy> Default for CpuTensorBuf<'_, T> {
+    fn default() -> Self {
+        Self::Owned(Vec::new())
     }
 }
 

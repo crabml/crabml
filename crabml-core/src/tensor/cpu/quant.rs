@@ -15,10 +15,12 @@ impl BlockQ8_0 {
         unsafe { std::ptr::read(buf.as_ptr() as *const BlockQ8_0) }
     }
 
-    pub fn at(&self, idx: usize) -> f32 {
+    pub fn dequantize(&self, buf: &mut [f32]) {
         let d = self.d.to_f32();
-        let q = self.qs[idx];
-        q as f32 * d
+        for i in 0..32 {
+            let q = self.qs[i];
+            buf[i] = q as f32 * d;
+        }
     }
 }
 
@@ -60,33 +62,39 @@ impl<'a> BlockBufQ8_0<'a> {
             pos: start,
             end: end,
             step: step,
-            val: 0.0,
+            current_f32_buf: [0.0; 32],
+            current_block: usize::MAX,
         }
     }
 }
 
 pub struct BlockBufIterQ8_0<'a> {
     buf: &'a BlockBufQ8_0<'a>,
+    current_f32_buf: [f32; 32],
+    current_block: usize,
     pos: usize,
     end: usize,
     step: usize,
-    val: f32,
 }
 
 impl<'a> Iterator for BlockBufIterQ8_0<'a> {
     type Item = f32;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let block_idx = self.pos / BlockQ8_0::BLOCK_ELEMS;
-
         if self.pos >= self.end {
             return None;
         }
 
-        let block = self.buf.block_at(block_idx);
-        self.val = block.at(self.pos % 32);
+        let block_idx = self.pos / BlockQ8_0::BLOCK_ELEMS;
+        if block_idx != self.current_block {
+            let block = self.buf.block_at(block_idx);
+            block.dequantize(&mut self.current_f32_buf);
+            self.current_block = block_idx;
+        }
+
+        let val = self.current_f32_buf[self.pos % 32];
         self.pos += self.step;
-        Some(self.val)
+        Some(val)
     }
 }
 

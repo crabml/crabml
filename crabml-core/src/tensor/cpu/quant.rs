@@ -2,7 +2,7 @@ use half::f16;
 use rayon::prelude::*;
 
 #[repr(C, packed)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct QuantBlockQ8_0 {
     d: f16,       // delta
     qs: [i8; 32], // quants
@@ -29,16 +29,21 @@ impl QuantBlockQ8_0 {
 pub struct QuantBuf8_0<'a> {
     raw: &'a [u8],
     num_blocks: usize,
+    blocks: Vec<QuantBlockQ8_0>,
 }
 
 impl<'a> QuantBuf8_0<'a> {
     pub fn from_bytes(buf: &'a [u8]) -> Self {
         let block_mem = std::mem::size_of::<QuantBlockQ8_0>();
-        assert!(buf.len() % block_mem == 0);
+        // assert!(buf.len() % block_mem == 0);
         let num_blocks = buf.len() / block_mem;
+        let blocks = (0..num_blocks)
+            .map(|i| QuantBlockQ8_0::from_bytes(&buf[i * block_mem..(i + 1) * block_mem]))
+            .collect();
         Self {
             raw: buf,
             num_blocks,
+            blocks,
         }
     }
 
@@ -46,10 +51,11 @@ impl<'a> QuantBuf8_0<'a> {
         self.num_blocks * 32
     }
 
-    pub fn block_at(&self, idx: usize) -> QuantBlockQ8_0 {
-        let block_mem = std::mem::size_of::<QuantBlockQ8_0>();
-        let buf = &self.raw[idx * block_mem..(idx + 1) * block_mem];
-        QuantBlockQ8_0::from_bytes(buf)
+    pub fn block_at(&self, idx: usize) -> &QuantBlockQ8_0 {
+        // let block_mem = std::mem::size_of::<QuantBlockQ8_0>();
+        // let buf = &self.raw[idx * block_mem..(idx + 1) * block_mem];
+        // QuantBlockQ8_0::from_bytes(buf)
+        &self.blocks[idx]
     }
 
     pub fn iter_range(
@@ -68,27 +74,13 @@ impl<'a> QuantBuf8_0<'a> {
         }
     }
 
-    pub fn matmul_2d_1d(&self, rows: usize, rhs: &[f32], out: &mut [f32]) {
-        let cols = rhs.len();
-        assert!(self.len() == rows * cols);
+    pub fn matmul_2d_1d(&self, x: &[f32], out: &mut [f32]) {
+        let w_cols = x.len();
 
-        out.par_iter_mut().enumerate().for_each(|(i, o)| {
-            let mut current_dequant_buf = [0.0_f32; 32];
-            let mut current_block_idx = usize::MAX;
-            for j in 0..cols {
-                let offset = i * cols + j;
-                let block_idx = offset / 32;
-                if current_block_idx != block_idx {
-                    let block = self.block_at(block_idx);
-                    block.dequantize(&mut current_dequant_buf);
-                    current_block_idx = block_idx;
-                }
-                let mut sum = 0.0;
-                for k in 0..cols {
-                    sum += current_dequant_buf[offset % 32] * rhs[k];
-                }
-                *o = sum;
-            }
+        out.par_iter_mut().enumerate().for_each(|(w_row, o)| {
+            let w_row_iter = self.iter_range(w_row * w_cols, (w_row + 1) * w_cols, 1);
+            let x_iter = x.iter();
+            *o = w_row_iter.zip(x_iter).map(|(w, x)| w * x).sum();
         });
     }
 }

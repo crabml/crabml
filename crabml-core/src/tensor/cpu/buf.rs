@@ -29,6 +29,20 @@ impl<'a, T: Copy> CpuTensorBuf<'a, T> {
         }
     }
 
+    pub fn iter_between(&self, start: usize, end: usize, step: usize) -> impl Iterator<Item = &T> {
+        match self {
+            CpuTensorBuf::Owned(buf) => buf[start..end].iter().step_by(step),
+            CpuTensorBuf::Flat(buf) => buf[start..end].iter().step_by(step),
+        }
+    }
+
+    pub fn iter_mut_between(&mut self, start: usize, end: usize, step: usize) -> impl Iterator<Item = &mut T> {
+        match self {
+            CpuTensorBuf::Owned(buf) => buf[start..end].iter_mut().step_by(step),
+            _ => unreachable!("only owned buffers can be mutable"),
+        }
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = &T> {
         match self {
             CpuTensorBuf::Owned(buf) => buf.iter(),

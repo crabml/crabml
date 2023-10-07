@@ -1,4 +1,4 @@
-use rayon::{prelude::*, vec};
+use rayon::prelude::*;
 use std::slice;
 
 #[derive(Debug)]

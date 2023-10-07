@@ -20,7 +20,7 @@ impl<'a> CpuTensorBuf<'a> {
     pub fn from_raw_bytes(buf: &'a [u8], typ: GGMLType) -> Result<Self> {
         match typ {
             GGMLType::F32 => Ok(Self::from_raw_bytes_f32(buf)),
-            GGMLType::Q8_0 => Ok(CpuTensorBuf::Q8_0(BlockBufQ8_0::from_raw_bytes(buf))),
+            GGMLType::Q8_0 => Ok(CpuTensorBuf::Q8_0(BlockBufQ8_0::from_bytes(buf))),
             _ => unimplemented!(),
         }
     }

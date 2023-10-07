@@ -29,7 +29,7 @@ pub struct BlockBufQ8_0<'a> {
 }
 
 impl<'a> BlockBufQ8_0<'a> {
-    pub fn from_raw_bytes(buf: &'a [u8]) -> Self {
+    pub fn from_bytes(buf: &'a [u8]) -> Self {
         let num_blocks = buf.len() / std::mem::size_of::<BlockQ8_0>();
         Self {
             raw: buf,
@@ -94,13 +94,17 @@ mod tests {
 
     #[test]
     fn test_q80_block() {
-        let mut buf: [u8; 34] = [0x0; 34];
+        let mut buf: [u8; 34] = [0x1; 34];
         let d = bf16::from_f32(3.0).to_bits().to_le_bytes();
         buf[0] = d[0];
         buf[1] = d[1];
 
         let block = BlockQ8_0::from_bytes(&buf);
         assert_eq!(block.d.to_f32(), 3.0);
-        assert_eq!(block.qs, [0; 32]);
+        assert_eq!(block.qs, [1; 32]);
+
+        let bf = BlockBufQ8_0::from_bytes(&buf);
+        assert_eq!(bf.len(), 32);
+        assert_eq!(bf.iter_range(0, bf.len(), 1).collect::<Vec<_>>(), vec![3.0; 32]);
     }
 }

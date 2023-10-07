@@ -8,6 +8,8 @@ use std::slice;
 use crate::tensor::cpu::buf::CpuTensorBuf;
 use crate::tensor::strider::TensorStrider;
 
+use super::buf::CpuTensorBufIter;
+
 #[derive(Debug, Clone, Default)]
 pub struct CpuTensor<'a> {
     buf: CpuTensorBuf<'a, f32>,
@@ -128,14 +130,14 @@ impl<'a> CpuTensor<'a> {
         self.buf.is_owned()
     }
 
-    pub fn iter_axis(&'a self, pos: &[usize], axis: usize) -> Result<CpuTensorAxisIter<f32>> {
+    pub fn iter_axis(&'a self, pos: &[usize], axis: usize) -> Result<CpuTensorBufIter<f32>> {
         // speculize the fast path on iterating a contiguous memory buf
         if self.strider.is_contiguous_on_axis(axis) {
             if axis == self.shape().len() - 1 && pos[axis] == 0 {
                 let start = self.strider.at(pos)?;
                 let end = start + self.strider.shape()[axis];
                 return Ok(
-                    CpuTensorAxisIter::StepBy(self.buf.iter_between(start, end, 1)),
+                    self.buf.iter_between(start, end, 1),
                 );
             }
         }
@@ -155,11 +157,11 @@ impl<'a> CpuTensor<'a> {
         let end = start + remains * stride + 1;
         if axis_repeats == 1 {
             let iter = self.buf.iter_between(start, end, stride);
-            return Ok(CpuTensorAxisIter::StepBy(iter));
+            return Ok(iter);
         }
         let iter = self.buf.iter_between(start, end, stride);
         let iter = iter.flat_map(move |n| std::iter::repeat(n).take(axis_repeats));
-        return Ok(CpuTensorAxisIter::Boxed(Box::new(iter)));
+        return Ok(CpuTensorBufIter::Boxed(Box::new(iter), 2 + remains * axis_repeats));
     }
 
     pub fn iter_axis_mut(
@@ -250,25 +252,6 @@ impl<'a> CpuTensor<'a> {
             return Err((ErrorKind::TensorError, "not owned").into());
         }
         Ok(self.buf.buf_mut())
-    }
-}
-
-// a enum dispatcher seems 3 times faster than a trait object on the benchmarks
-pub enum CpuTensorAxisIter<'a, T> {
-    Slice(slice::Iter<'a, T>),
-    StepBy(std::iter::StepBy<std::slice::Iter<'a, T>>),
-    Boxed(Box<dyn Iterator<Item = &'a T> + 'a>),
-}
-
-impl<'a, T> Iterator for CpuTensorAxisIter<'a, T> {
-    type Item = &'a T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            CpuTensorAxisIter::Slice(iter) => iter.next(),
-            CpuTensorAxisIter::StepBy(iter) => iter.next(),
-            CpuTensorAxisIter::Boxed(iter) => iter.next(),
-        }
     }
 }
 

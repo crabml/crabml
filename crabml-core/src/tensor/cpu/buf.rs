@@ -49,10 +49,10 @@ impl<'a, T: Copy + Send> CpuTensorBuf<'a, T> {
         start: usize,
         end: usize,
         step: usize,
-    ) -> std::iter::StepBy<std::slice::Iter<'_, T>> {
+    ) -> CpuTensorBufIter<T> {
         match self {
-            CpuTensorBuf::Owned(buf) => buf[start..end].iter().step_by(step),
-            CpuTensorBuf::Flat(buf) => buf[start..end].iter().step_by(step),
+            CpuTensorBuf::Owned(buf) => CpuTensorBufIter::StepBy(buf[start..end].iter().step_by(step)),
+            CpuTensorBuf::Flat(buf) => CpuTensorBufIter::StepBy(buf[start..end].iter().step_by(step)),
         }
     }
 
@@ -164,5 +164,34 @@ impl<T: Copy + Send> From<Vec<T>> for CpuTensorBuf<'_, T> {
 impl<'a, T: Copy + Send> From<&'a [T]> for CpuTensorBuf<'a, T> {
     fn from(buf: &'a [T]) -> Self {
         Self::Flat(buf)
+    }
+}
+
+// a enum dispatcher seems 3 times faster than a trait object on the benchmarks
+pub enum CpuTensorBufIter<'a, T> {
+    Slice(slice::Iter<'a, T>),
+    StepBy(std::iter::StepBy<std::slice::Iter<'a, T>>),
+    Boxed(Box<dyn Iterator<Item = &'a T> + 'a>, usize),
+}
+
+impl<'a, T> Iterator for CpuTensorBufIter<'a, T> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            CpuTensorBufIter::Slice(iter) => iter.next(),
+            CpuTensorBufIter::StepBy(iter) => iter.next(),
+            CpuTensorBufIter::Boxed(iter, _) => iter.next(),
+        }
+    }
+}
+
+impl<'a, T> ExactSizeIterator for CpuTensorBufIter<'a, T> {
+    fn len(&self) -> usize {
+        match self {
+            CpuTensorBufIter::Slice(iter) => iter.len(),
+            CpuTensorBufIter::StepBy(iter) => iter.len(),
+            CpuTensorBufIter::Boxed(_, hint) => *hint,
+        }
     }
 }

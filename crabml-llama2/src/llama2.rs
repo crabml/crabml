@@ -4,6 +4,7 @@ use crabml::error::Error;
 use crabml::error::ErrorKind;
 use crabml::error::Result;
 use crabml::gguf::GGUFFile;
+use crabml::gguf::GGUFMetadata;
 use crabml::tensor::arithmetic::add_inplace;
 use crabml::tensor::arithmetic::batch_matmul;
 use crabml::tensor::arithmetic::div_scalar_inplace;
@@ -28,6 +29,7 @@ pub struct Llama2Config {
     pub n_kv_heads: usize,
     pub vocab_size: usize,
     pub seq_len: usize,
+    pub rms_norm_eps: f32,
 }
 
 impl Llama2Config {
@@ -66,6 +68,7 @@ pub struct Llama2Model<'a> {
     conf: Llama2Config,
     weights: Llama2Weights<'a>,
     tokenizer: Llama2Tokenizer,
+    metadata: &'a GGUFMetadata<'a>,
 }
 
 impl<'a> Llama2Model<'a> {
@@ -77,6 +80,7 @@ impl<'a> Llama2Model<'a> {
             conf,
             weights,
             tokenizer,
+            metadata: gf.metadata(),
         })
     }
 
@@ -86,6 +90,10 @@ impl<'a> Llama2Model<'a> {
 
     pub fn weights(&self) -> &Llama2Weights<'a> {
         &self.weights
+    }
+
+    pub fn metadata(&self) -> &'a GGUFMetadata<'a> {
+        self.metadata
     }
 
     pub fn tokenizer(&self) -> &Llama2Tokenizer {
@@ -181,7 +189,7 @@ impl<'a> Llama2Model<'a> {
             .map(|v| *v)
             .collect::<Vec<_>>();
 
-        let tensor = CpuTensor::from_raw_bytes(info.data(), dims)?;
+        let tensor = CpuTensor::from_raw_bytes(info.data(), info.typ(), dims)?;
         Ok(tensor)
     }
 
@@ -227,6 +235,10 @@ impl<'a> Llama2Model<'a> {
             .unwrap()
             .len();
         let embedding_dim = gf.metadata().get_u32("llama.embedding_length").unwrap() as usize;
+        let rms_norm_eps = gf
+            .metadata()
+            .get_f32("llama.attention.layer_norm_rms_epsilon")
+            .unwrap();
         Llama2Config {
             n_heads,
             n_kv_heads,
@@ -235,6 +247,7 @@ impl<'a> Llama2Model<'a> {
             hidden_dim,
             seq_len,
             vocab_size,
+            rms_norm_eps,
         }
     }
 }
@@ -288,7 +301,6 @@ impl<'a> Llama2Runner<'a> {
 
     pub fn forward(&mut self, token: usize, pos: usize) -> Result<&mut [f32]> {
         let embed_dim = self.conf.embedding_dim;
-        let kv_dim = self.conf.kv_dim();
         let n_heads = self.conf.n_heads;
         let n_kv_heads = self.conf.n_kv_heads;
         let head_size = self.conf.head_size();
@@ -298,7 +310,6 @@ impl<'a> Llama2Runner<'a> {
             .weights
             .token_embedding_table
             .iter_axis(&[token, 0], 1)?
-            .cloned()
             .collect::<Vec<_>>();
         let mut x = CpuTensor::new(content_row, vec![embed_dim])?;
 
@@ -308,7 +319,7 @@ impl<'a> Llama2Runner<'a> {
 
             // attention rnsnorm
             x = {
-                x = rms_norm_inplace(x, 1e-5)?;
+                x = rms_norm_inplace(x, self.conf.rms_norm_eps)?;
                 x = mul_inplace(x, &self.weights.rms_att_weight[l])?;
                 x
             };
@@ -418,7 +429,7 @@ impl<'a> Llama2Runner<'a> {
 
         // final rmsnorm
         x = {
-            x = rms_norm_inplace(x, 1e-5)?;
+            x = rms_norm_inplace(x, self.conf.rms_norm_eps)?;
             x = mul_inplace(x, &self.weights.rms_final_weight)?;
             x
         };
@@ -426,7 +437,7 @@ impl<'a> Llama2Runner<'a> {
         // classifier into logits
         let logits = matmul(&self.weights.wcls, &x)?; // (vocab_size,
 
-        self.state.logits = logits.iter().cloned().collect::<Vec<_>>();
+        self.state.logits = logits.iter().collect::<Vec<_>>();
         Ok(&mut self.state.logits)
     }
 }
@@ -584,6 +595,20 @@ mod tests {
             s,
             ". She was a shals to almals. She loved to shals to her mommy."
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_quantize_gguf() -> Result<()> {
+        let gl = GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-q8_0.gguf")?;
+        let gf = gl.open()?;
+        let lm = Llama2Model::from(&gf)?;
+
+        let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0);
+        let mut runner = Llama2Runner::new(&lm.conf, &lm.weights, &lm.tokenizer)?;
+        let output = runner.generate("Lily is a cat ", 10, &mut sampler)?;
+        let s = output.collect::<Result<Vec<String>>>()?.join("");
+        assert_eq!(s, "y. Sheaa is a very special cat.");
         Ok(())
     }
 }

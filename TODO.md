@@ -1,14 +1,7 @@
-- [x] support repeat in tensor
-- [x] benchmark matmuls
-- [x] add transpose
-- [x] add batched matmul: (b, m, n) @ (b, n, o) => (b, m, o)
-- [x] replace multi query attention with matmul with repeat
-  - key_cache: [seq, kv_head, head_size]
-  - key_cache = key_cache.repeat(1, n_head / n_kv_head, 1) => [seq, n_head, head_size]
-  - key_cache = key_cache.transpose(1, 0, 2) => [n_head, seq, head_size]
-  - q: [n_head, head_size]
-  - q = q.view([n_head, head_size, 1]) => [n_head, head_size, 1]
-  - attn_score = batch_matmul(key_cache, q)
-- [ ] support quantization
+- [x] support q8 quantization
+  - [x] zero copy q8 quantization with the zero-copy crate
+  - [x] have a test with https://huggingface.co/TheBloke/TinyLlama-1.1B-python-v0.1-GGUF/blob/main/tinyllama-1.1b-python-v0.1.Q8_0.gguf
+- [ ] add a specialized q8 vs f32 matmul to optimize a bit about the dog slot speed
+  - [ ] add typ to tensor
 - [ ] take the tensor & device framework
 - [ ] wgpu tensor support

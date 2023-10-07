@@ -137,7 +137,7 @@ impl<'a> CpuTensor<'a> {
                 let start = self.strider.at(pos)?;
                 let end = start + self.strider.shape()[axis];
                 return Ok(
-                    self.buf.iter_between(start, end, 1),
+                    self.buf.iter_range(start, end, 1),
                 );
             }
         }
@@ -156,10 +156,10 @@ impl<'a> CpuTensor<'a> {
         let remains = (self.strider.shape()[axis] - pos[axis]) / axis_repeats - 1;
         let end = start + remains * stride + 1;
         if axis_repeats == 1 {
-            let iter = self.buf.iter_between(start, end, stride);
+            let iter = self.buf.iter_range(start, end, stride);
             return Ok(iter);
         }
-        let iter = self.buf.iter_between(start, end, stride);
+        let iter = self.buf.iter_range(start, end, stride);
         let iter = iter.flat_map(move |n| std::iter::repeat(n).take(axis_repeats));
         return Ok(CpuTensorBufIter::Boxed(Box::new(iter), 2 + remains * axis_repeats));
     }
@@ -182,7 +182,7 @@ impl<'a> CpuTensor<'a> {
         let stride = self.strider.strides()[axis];
         let end = start + remains * stride + 1;
 
-        let iter = self.buf.iter_mut_between(start, end, stride);
+        let iter = self.buf.iter_range_mut(start, end, stride);
         Ok(iter)
     }
 
@@ -197,7 +197,7 @@ impl<'a> CpuTensor<'a> {
         let stride = self.strider.strides()[axis];
         let end = start + remains * stride + 1;
 
-        let iter = self.buf.par_iter_mut_between(start, end, stride);
+        let iter = self.buf.par_iter_range_mut(start, end, stride);
         Ok(iter)
     }
 

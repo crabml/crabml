@@ -1,6 +1,10 @@
 use rayon::prelude::*;
 use std::slice;
 
+/// All the quantized tensor are read-only.
+/// to implement a quantized tensor, we need to implement the following:
+/// - at_unchecked
+/// - iter_between
 #[derive(Debug)]
 pub enum CpuTensorBuf<'a, T: Copy + Send> {
     Owned(Vec<T>),
@@ -44,7 +48,7 @@ impl<'a, T: Copy + Send> CpuTensorBuf<'a, T> {
         }
     }
 
-    pub fn iter_between(
+    pub fn iter_range(
         &self,
         start: usize,
         end: usize,
@@ -56,7 +60,7 @@ impl<'a, T: Copy + Send> CpuTensorBuf<'a, T> {
         }
     }
 
-    pub fn iter_mut_between(
+    pub fn iter_range_mut(
         &mut self,
         start: usize,
         end: usize,
@@ -68,7 +72,7 @@ impl<'a, T: Copy + Send> CpuTensorBuf<'a, T> {
         }
     }
 
-    pub fn par_iter_mut_between(
+    pub fn par_iter_range_mut(
         &mut self,
         start: usize,
         end: usize,

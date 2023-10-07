@@ -128,15 +128,15 @@ impl<'a> CpuTensor<'a> {
         self.buf.is_owned()
     }
 
-    pub fn iter_axis(&'a self, pos: &[usize], axis: usize) -> Result<CpuTensorAxisIter<'a, f32>> {
+    pub fn iter_axis(&'a self, pos: &[usize], axis: usize) -> Result<CpuTensorAxisIter<f32>> {
         // speculize the fast path on iterating a contiguous memory buf
         if self.strider.is_contiguous_on_axis(axis) {
             if axis == self.shape().len() - 1 && pos[axis] == 0 {
                 let start = self.strider.at(pos)?;
                 let end = start + self.strider.shape()[axis];
-                return Ok(CpuTensorAxisIter::Boxed(Box::new(
-                    self.buf.iter_between(start, end, 1),
-                )));
+                return Ok(
+                    CpuTensorAxisIter::StepBy(self.buf.iter_between(start, end, 1)),
+                );
             }
         }
 
@@ -155,7 +155,7 @@ impl<'a> CpuTensor<'a> {
         let end = start + remains * stride + 1;
         if axis_repeats == 1 {
             let iter = self.buf.iter_between(start, end, stride);
-            return Ok(CpuTensorAxisIter::Boxed(Box::new(iter)));
+            return Ok(CpuTensorAxisIter::StepBy(iter));
         }
         let iter = self.buf.iter_between(start, end, stride);
         let iter = iter.flat_map(move |n| std::iter::repeat(n).take(axis_repeats));

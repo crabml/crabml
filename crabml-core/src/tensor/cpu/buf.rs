@@ -49,7 +49,7 @@ impl<'a, T: Copy + Send> CpuTensorBuf<'a, T> {
         start: usize,
         end: usize,
         step: usize,
-    ) -> impl ExactSizeIterator<Item = &T> {
+    ) -> std::iter::StepBy<std::slice::Iter<'_, T>> {
         match self {
             CpuTensorBuf::Owned(buf) => buf[start..end].iter().step_by(step),
             CpuTensorBuf::Flat(buf) => buf[start..end].iter().step_by(step),

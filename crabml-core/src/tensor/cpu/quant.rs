@@ -1,4 +1,5 @@
 use half::f16;
+use rayon::prelude::*;
 
 #[repr(C, packed)]
 #[derive(Debug)]
@@ -65,6 +66,28 @@ impl<'a> BlockBufQ8_0<'a> {
             current_f32_buf: [0.0; 32],
             current_block: usize::MAX,
         }
+    }
+
+    pub fn matmul_2d_1d(&self, rows: usize, rhs: &[f32], out: &mut [f32]) {
+        let cols = rhs.len();
+        assert!(self.len() == rows * cols);
+
+        out.par_iter_mut().enumerate().for_each(|(i, o)| {
+            let mut current_block_f32_buf = [0.0_f32; 32];
+            for j in 0..cols {
+                let offset = i * cols + j;
+                if offset % 32 == 0 {
+                    let block_idx = offset / 32;
+                    let block = self.block_at(block_idx);
+                    block.dequantize(&mut current_block_f32_buf);
+                }
+                let mut sum = 0.0;
+                for k in 0..cols {
+                    sum += current_block_f32_buf[offset % 32] * rhs[k];
+                }
+                *o = sum;
+            }
+        });
     }
 }
 

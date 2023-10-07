@@ -275,10 +275,17 @@ impl<'a> Llama2Runner<'a> {
         let state = Llama2State {
             logits: vec![0.0; conf.vocab_size],
             key_cache: (0..conf.n_layers)
-                .map(|_| CpuTensor::zeros(vec![0, conf.n_kv_heads, conf.head_size()]))
+                .map(|_| {
+                    CpuTensor::new(
+                        Vec::with_capacity(128 * conf.n_kv_heads * conf.head_size()),
+                        vec![0, conf.n_kv_heads, conf.head_size()],
+                    )
+                })
                 .collect::<Result<Vec<_>>>()?,
             value_cache: (0..conf.n_layers)
-                .map(|_| CpuTensor::zeros(vec![0, conf.n_kv_heads, conf.head_size()]))
+                .map(|_| CpuTensor::new(
+                    Vec::with_capacity(128 * conf.n_kv_heads * conf.head_size()),
+                    vec![0, conf.n_kv_heads, conf.head_size()]))
                 .collect::<Result<Vec<_>>>()?,
         };
 

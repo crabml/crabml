@@ -65,10 +65,10 @@ pub fn matmul<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'a>>
     require_tensor_contiguous(w)?;
 
     if w.typ() == GGMLType::F32 && x.is_contiguous() && x.shape().len() == 1 {
-       return matmul_specialized_f32_2d_1d(w, x);
+        return matmul_specialized_f32_2d_1d(w, x);
     }
     if w.typ() == GGMLType::Q8_0 && x.is_contiguous() && x.shape().len() == 1 {
-       return matmul_specialized_q8_0_2d_1d(w, x);
+        return matmul_specialized_q8_0_2d_1d(w, x);
     }
 
     if x.shape().len() == 1 {
@@ -95,7 +95,10 @@ pub fn matmul<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'a>>
     Ok(out)
 }
 
-pub fn matmul_specialized_f32_2d_1d<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'a>> {
+pub fn matmul_specialized_f32_2d_1d<'a>(
+    w: &CpuTensor<'a>,
+    x: &CpuTensor<'a>,
+) -> Result<CpuTensor<'a>> {
     let mut xout = CpuTensor::zeros(vec![w.shape()[0]])?;
     let wb = match w.buf() {
         CpuTensorBuf::F32(wb) => wb,
@@ -116,7 +119,10 @@ pub fn matmul_specialized_f32_2d_1d<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) ->
     Ok(xout)
 }
 
-pub fn matmul_specialized_q8_0_2d_1d<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'a>> {
+pub fn matmul_specialized_q8_0_2d_1d<'a>(
+    w: &CpuTensor<'a>,
+    x: &CpuTensor<'a>,
+) -> Result<CpuTensor<'a>> {
     let wb = match w.buf() {
         CpuTensorBuf::Q8_0(wb) => wb,
         _ => unreachable!("only Q8_0 buffers are supported"),
@@ -131,7 +137,6 @@ pub fn matmul_specialized_q8_0_2d_1d<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -
     wb.matmul_2d_1d(xb, &mut xout);
     CpuTensor::new(xout, vec![w.shape()[0]])
 }
-
 
 pub fn batch_matmul<'a, 'b>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'b>>
 where

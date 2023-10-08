@@ -18,7 +18,7 @@ pub fn rms_norm_inplace(mut x: CpuTensor<'_>, eps: f32) -> Result<CpuTensor<'_>>
     let len = x.shape()[0];
     let sum = x.iter_axis(&[0], 0)?.fold(0.0, |s, n| s + n * n);
     let rms = ((sum / len as f32) + eps).sqrt();
-    x.par_iter_axis_mut(vec![0], 0)?.for_each(|n| *n = *n / rms);
+    x.iter_axis_mut(vec![0], 0)?.for_each(|n| *n = *n / rms);
     Ok(x)
 }
 
@@ -32,7 +32,7 @@ pub fn mul_inplace<'a>(mut a: CpuTensor<'a>, b: &CpuTensor<'a>) -> Result<CpuTen
 }
 
 pub fn div_scalar_inplace<'a>(mut a: CpuTensor<'a>, b: f32) -> Result<CpuTensor<'a>> {
-    a.par_iter_mut()?.for_each(|ia| {
+    a.iter_mut()?.for_each(|ia| {
         *ia /= b;
     });
     Ok(a)
@@ -43,8 +43,8 @@ pub fn add_inplace<'a>(mut a: CpuTensor<'a>, b: &CpuTensor<'a>) -> Result<CpuTen
     require_tensor_contiguous(&a)?;
     require_tensor_contiguous(b)?;
 
-    a.par_iter_mut()?.zip(b.par_iter()?).for_each(|(ia, ib)| {
-        *ia += *ib;
+    a.iter_mut()?.zip(b.iter()).for_each(|(ia, ib)| {
+        *ia += ib;
     });
     Ok(a)
 }
@@ -53,7 +53,7 @@ pub fn silu_inplace<'a>(mut x: CpuTensor<'a>) -> Result<CpuTensor<'a>> {
     // for i in 0..buf.len() {
     //    buf[i] = buf[i] * (1.0 / (1.0 + (-buf[i]).exp()));
     // }
-    x.par_iter_mut()?
+    x.iter_mut()?
         .for_each(|n| *n = *n / (1.0 + (-*n).exp()));
     Ok(x)
 }
@@ -75,7 +75,7 @@ pub fn matmul<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'a>>
 
     if x.shape().len() == 1 {
         let mut out = CpuTensor::zeros(vec![w.shape()[0]])?;
-        let o_row_iter = out.par_iter_axis_mut(vec![0], 0)?; // (x_cols, )
+        let o_row_iter = out.iter_axis_mut(vec![0], 0)?; // (x_cols, )
         o_row_iter.enumerate().for_each(|(w_row, o)| {
             let w_row_iter = w.iter_axis(&[w_row, 0], 1).unwrap(); // (w_cols, )
             let x_col_iter = x.iter_axis(&[0], 0).unwrap(); // (w_cols, )
@@ -87,7 +87,7 @@ pub fn matmul<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'a>>
     let mut out = CpuTensor::zeros(vec![w.shape()[0], x.shape()[1]])?;
     let w_rows = w.shape()[0];
     for w_row in 0..w_rows {
-        let o_row_iter = out.par_iter_axis_mut(vec![w_row, 0], 1)?; // (x_cols, )
+        let o_row_iter = out.iter_axis_mut(vec![w_row, 0], 1)?; // (x_cols, )
         o_row_iter.enumerate().for_each(|(x_col, o)| {
             let w_row_iter = w.iter_axis(&[w_row, 0], 1).unwrap(); // (w_cols, )
             let x_col_iter = x.iter_axis(&[0, x_col], 0).unwrap(); // (w_cols, )
@@ -101,7 +101,6 @@ pub fn matmul_specialized_f32_2d_1d<'a>(
     w: &CpuTensor<'a>,
     x: &CpuTensor<'a>,
 ) -> Result<CpuTensor<'a>> {
-    let mut xout = CpuTensor::zeros(vec![w.shape()[0]])?;
     let wb = match w.buf() {
         CpuTensorBuf::F32(wb) => wb,
         _ => unreachable!("only f32 buffers are supported, got {:?}", w.typ()),
@@ -113,11 +112,14 @@ pub fn matmul_specialized_f32_2d_1d<'a>(
     };
     let x_dim = x.len();
 
-    xout.par_iter_mut()?.enumerate().for_each(|(w_row, xo)| {
+    let mut out = vec![0.0_f32; w.shape()[0]];
+    out.par_iter_mut().enumerate().for_each(|(w_row, xo)| {
         let wi = wb[w_row * x_dim..(w_row + 1) * x_dim].iter();
         let xi = xb.iter();
         *xo = wi.zip(xi).map(|(w, x)| w * x).sum::<f32>();
     });
+
+    let xout = CpuTensor::new(out, vec![w.shape()[0]])?;
     Ok(xout)
 }
 
@@ -208,7 +210,7 @@ pub fn softmax_inplace<'a>(mut t: CpuTensor<'a>, axis: usize) -> Result<CpuTenso
             acc += *val;
             acc
         });
-        t.par_iter_axis_mut(vec![row, 0], 1)?.for_each(|val| {
+        t.iter_axis_mut(vec![row, 0], 1)?.for_each(|val| {
             *val /= sum;
         });
     }

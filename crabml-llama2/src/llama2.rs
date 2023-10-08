@@ -283,9 +283,12 @@ impl<'a> Llama2Runner<'a> {
                 })
                 .collect::<Result<Vec<_>>>()?,
             value_cache: (0..conf.n_layers)
-                .map(|_| CpuTensor::new(
-                    Vec::with_capacity(128 * conf.n_kv_heads * conf.head_size()),
-                    vec![0, conf.n_kv_heads, conf.head_size()]))
+                .map(|_| {
+                    CpuTensor::new(
+                        Vec::with_capacity(128 * conf.n_kv_heads * conf.head_size()),
+                        vec![0, conf.n_kv_heads, conf.head_size()],
+                    )
+                })
                 .collect::<Result<Vec<_>>>()?,
         };
 

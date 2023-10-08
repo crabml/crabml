@@ -1,11 +1,13 @@
-use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::error::Result;
 use crate::gguf::GGMLType;
+use crate::tensor::cpu::buf::CpuTensorBuf;
+use crate::tensor::cpu::validation::require_tensor_contiguous;
+use crate::tensor::cpu::validation::require_tensor_dims;
+use crate::tensor::cpu::validation::require_tensor_matmul_2d_shapes;
+use crate::tensor::cpu::validation::require_tensor_shape;
 use crate::tensor::CpuTensor;
 use rayon::prelude::*;
-
-use crate::tensor::cpu::buf::CpuTensorBuf;
 
 ///! arithmetic.rs contains the tensor arithmetics operations like matmul, accum, etc.
 
@@ -215,54 +217,6 @@ pub fn softmax_inplace<'a>(mut t: CpuTensor<'a>, axis: usize) -> Result<CpuTenso
 }
 
 // q: (n_heads, head_size)
-// k_cache: (n_seq, n_kv_heads, head_size)
-// v_cache: (n_seq, n_kv_heads, head_size)
-// attn: (n_seq, )
-// out: (n_heads, head_size)
-pub fn multi_query_attention_specialized<'a>(
-    q: &CpuTensor<'a>,
-    k_cache: &CpuTensor<'a>,
-    v_cache: &CpuTensor<'a>,
-) -> Result<CpuTensor<'a>> {
-    require_tensor_contiguous(q)?;
-    require_tensor_contiguous(k_cache)?;
-    require_tensor_dims(k_cache, &[3])?;
-
-    let n_heads = q.shape()[0];
-    let n_kv_heads = k_cache.shape()[1];
-    let head_size = q.shape()[1];
-    let n_seq = k_cache.shape()[0];
-
-    let mut out = CpuTensor::zeros(vec![n_heads, head_size])?;
-    let mut attn = CpuTensor::zeros(vec![n_seq])?;
-
-    // get attention scores
-    for h in 0..n_heads {
-        let kvh = h / (n_heads / n_kv_heads);
-        attn.par_iter_mut()?.enumerate().for_each(|(tok, attn)| {
-            let q_head = q.iter_axis(&[h, 0], 1).unwrap(); // (head_size, )
-            let k_head = k_cache.iter_axis(&[tok, kvh, 0], 2).unwrap(); // (head_size, )
-            let score = q_head.zip(k_head).map(|(q, k)| q * k).sum::<f32>();
-            *attn = score / (head_size as f32).sqrt();
-        });
-
-        attn = attn.view(&[1, n_seq])?; // (1, n_seq
-        attn = softmax_inplace(attn, 1)?;
-
-        let kvh = h / (n_heads / n_kv_heads);
-        for (tok, attn) in attn.iter().enumerate() {
-            let v_head = v_cache.iter_axis(&[tok, kvh, 0], 2)?; // (head_size, )
-            let out_buf = out.iter_axis_mut(vec![h, 0], 1)?; // (head_size, )
-            for (i, (o, v)) in out_buf.zip(v_head).enumerate() {
-                *o += v * attn
-            }
-        }
-    }
-
-    Ok(out)
-}
-
-// q: (n_heads, head_size)
 pub fn rope_inplace<'a>(
     mut q: CpuTensor<'a>,
     mut k: CpuTensor<'a>,
@@ -294,74 +248,6 @@ pub fn rope_inplace<'a>(
         }
     }
     Ok((q, k))
-}
-
-fn require_tensor_shape(t: &CpuTensor, shape: &[usize]) -> Result<()> {
-    if !t.shape().eq(shape) {
-        return Err(Error {
-            kind: ErrorKind::TensorError,
-            message: format!("tensor shape is not {:?}, but {:?}", shape, t.shape(),),
-            cause: None,
-        });
-    }
-    Ok(())
-}
-
-fn require_tensor_owned(t: &CpuTensor) -> Result<()> {
-    if !t.is_owned() {
-        return Err(Error {
-            kind: ErrorKind::TensorError,
-            message: "not owned".into(),
-            cause: None,
-        });
-    }
-    Ok(())
-}
-
-fn require_tensor_dims(t: &CpuTensor, dims: &[usize]) -> Result<()> {
-    if !dims.contains(&t.shape().len()) {
-        return Err(Error {
-            kind: ErrorKind::TensorError,
-            message: format!(
-                "tensor is required for {} dimensions, but got {}",
-                dims.iter()
-                    .map(|d| d.to_string())
-                    .collect::<Vec<_>>()
-                    .join(" or "),
-                t.shape().len(),
-            ),
-            cause: None,
-        });
-    }
-
-    Ok(())
-}
-
-fn require_tensor_matmul_2d_shapes(t1: &CpuTensor, t2: &CpuTensor) -> Result<()> {
-    if t1.shape()[1] != t2.shape()[0] {
-        return Err(Error {
-            kind: ErrorKind::TensorError,
-            message: format!(
-                "mismatched tensor shapes on matmul: {:?} @ {:?}",
-                t1.shape(),
-                t2.shape()
-            ),
-            cause: None,
-        });
-    }
-    Ok(())
-}
-
-fn require_tensor_contiguous(t: &CpuTensor) -> Result<()> {
-    if !t.is_contiguous() {
-        return Err(Error {
-            kind: ErrorKind::TensorError,
-            message: format!("tensor need to be contiguous",),
-            cause: None,
-        });
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]

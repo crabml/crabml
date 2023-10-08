@@ -1,5 +1,4 @@
 use half::f16;
-use rayon::prelude::*;
 
 #[repr(C, packed)]
 #[derive(Debug, Clone)]
@@ -22,6 +21,20 @@ impl QuantBlockQ8_0 {
             let q = self.qs[i];
             buf[i] = q as f32 * d;
         }
+    }
+
+    pub fn vec_dot_f32(row: &[QuantBlockQ8_0], x: &[f32]) -> f32 {
+        assert!(row.len() * 32 == x.len());
+        let mut sum = 0.0;
+        for i in 0..row.len() {
+            let block = &row[i];
+            let d = block.d.to_f32();
+            for j in 0..32 {
+                let q = block.qs[j];
+                sum += q as f32 * d * x[i * 32 + j];
+            }
+        }
+        sum
     }
 }
 
@@ -51,11 +64,8 @@ impl<'a> QuantBuf8_0<'a> {
         self.num_blocks * 32
     }
 
-    pub fn block_at(&self, idx: usize) -> &QuantBlockQ8_0 {
-        // let block_mem = std::mem::size_of::<QuantBlockQ8_0>();
-        // let buf = &self.raw[idx * block_mem..(idx + 1) * block_mem];
-        // QuantBlockQ8_0::from_bytes(buf)
-        &self.blocks[idx]
+    pub fn blocks(&self) -> &[QuantBlockQ8_0] {
+        &self.blocks
     }
 
     pub fn iter_range(
@@ -72,16 +82,6 @@ impl<'a> QuantBuf8_0<'a> {
             current_f32_buf: [0.0; 32],
             current_block: usize::MAX,
         }
-    }
-
-    pub fn matmul_2d_1d(&self, x: &[f32], out: &mut [f32]) {
-        let w_cols = x.len();
-
-        out.par_iter_mut().enumerate().for_each(|(w_row, o)| {
-            let w_row_iter = self.iter_range(w_row * w_cols, (w_row + 1) * w_cols, 1);
-            let x_iter = x.iter();
-            *o = w_row_iter.zip(x_iter).map(|(w, x)| w * x).sum();
-        });
     }
 }
 
@@ -104,7 +104,7 @@ impl<'a> Iterator for BlockBufIterQ8_0<'a> {
 
         let block_idx = self.pos / QuantBlockQ8_0::BLOCK_ELEMS;
         if block_idx != self.current_block {
-            let block = self.buf.block_at(block_idx);
+            let block = &self.buf.blocks()[block_idx];
             block.dequantize(&mut self.current_f32_buf);
             self.current_block = block_idx;
         }

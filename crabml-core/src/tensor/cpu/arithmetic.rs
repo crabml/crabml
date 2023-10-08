@@ -9,6 +9,8 @@ use crate::tensor::cpu::validation::require_tensor_shape;
 use crate::tensor::CpuTensor;
 use rayon::prelude::*;
 
+use super::quant::QuantBlockQ8_0;
+
 ///! arithmetic.rs contains the tensor arithmetics operations like matmul, accum, etc.
 
 pub fn rms_norm_inplace(mut x: CpuTensor<'_>, eps: f32) -> Result<CpuTensor<'_>> {
@@ -136,9 +138,13 @@ pub fn matmul_specialized_q8_0_2d_1d<'a>(
         CpuTensorBuf::F32(xb) => *xb,
         _ => unreachable!("only f32 buffers are supported"),
     };
+    let w_cols = w.shape()[1];
 
     let mut xout: Vec<f32> = vec![0.0; w.shape()[0]];
-    wb.matmul_2d_1d(xb, &mut xout);
+    for (w_row, o) in xout.iter_mut().enumerate() {
+        let row = &wb.blocks()[w_row*w_cols/QuantBlockQ8_0::BLOCK_ELEMS..(w_row+1)*w_cols/QuantBlockQ8_0::BLOCK_ELEMS];
+        *o = QuantBlockQ8_0::vec_dot_f32(row, xb);
+    }
     CpuTensor::new(xout, vec![w.shape()[0]])
 }
 

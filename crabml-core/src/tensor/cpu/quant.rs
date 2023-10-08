@@ -1,4 +1,5 @@
 use half::f16;
+// use std::simd::f32x32;
 
 #[repr(C, packed)]
 #[derive(Debug, Clone)]
@@ -29,10 +30,12 @@ impl QuantBlockQ8_0 {
         for i in 0..row.len() {
             let block = &row[i];
             let d = block.d.to_f32();
+            let mut sum_block = 0.0;
             for j in 0..32 {
                 let q = block.qs[j];
-                sum += q as f32 * d * x[i * 32 + j];
+                sum_block += q as f32 * x[i * 32 + j];
             }
+            sum += sum_block * d;
         }
         sum
     }

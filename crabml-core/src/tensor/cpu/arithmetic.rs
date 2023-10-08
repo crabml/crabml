@@ -72,7 +72,7 @@ pub fn matmul<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'a>>
         return matmul_specialized_f32_2d_1d(w, x);
     }
     if w.typ() == GGMLType::Q8_0 && x.is_contiguous() && x.shape().len() == 1 {
-        return matmul_specialized_q8_0_2d_1d(w, x);
+        return matmul_specialized_q8_0_2d_f32_1d(w, x);
     }
 
     if x.shape().len() == 1 {
@@ -125,7 +125,7 @@ pub fn matmul_specialized_f32_2d_1d<'a>(
     Ok(xout)
 }
 
-pub fn matmul_specialized_q8_0_2d_1d<'a>(
+pub fn matmul_specialized_q8_0_2d_f32_1d<'a>(
     w: &CpuTensor<'a>,
     x: &CpuTensor<'a>,
 ) -> Result<CpuTensor<'a>> {

@@ -5,7 +5,7 @@ use crate::gguf::GGMLType;
 use crate::tensor::CpuTensor;
 use rayon::prelude::*;
 
-use super::buf::CpuTensorBuf;
+use crate::tensor::cpu::buf::CpuTensorBuf;
 
 ///! arithmetic.rs contains the tensor arithmetics operations like matmul, accum, etc.
 

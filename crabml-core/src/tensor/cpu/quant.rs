@@ -12,9 +12,12 @@ pub struct QuantBlockQ8_0 {
 impl QuantBlockQ8_0 {
     pub const BLOCK_ELEMS: usize = 32;
 
-    pub fn from_bytes(buf: &[u8]) -> Self {
-        assert_eq!(buf.len(), std::mem::size_of::<QuantBlockQ8_0>());
-        unsafe { std::ptr::read(buf.as_ptr() as *const QuantBlockQ8_0) }
+    pub fn from_bytes(data: &[u8]) -> &[QuantBlockQ8_0] {
+        let size = std::mem::size_of::<QuantBlockQ8_0>();
+        assert!(data.len() % size == 0, "data length must be a multiple of QuantBlockQ8_0 size");
+        unsafe {
+            std::slice::from_raw_parts(data.as_ptr() as *const QuantBlockQ8_0, data.len() / size)
+        }
     }
 
     pub fn dequantize(&self, buf: &mut [f32]) {
@@ -53,7 +56,6 @@ impl QuantBlockQ8_0 {
 pub struct QuantBuf8_0<'a> {
     raw: &'a [u8],
     num_blocks: usize,
-    blocks: Vec<QuantBlockQ8_0>,
 }
 
 impl<'a> QuantBuf8_0<'a> {
@@ -61,13 +63,9 @@ impl<'a> QuantBuf8_0<'a> {
         let block_mem = std::mem::size_of::<QuantBlockQ8_0>();
         // assert!(buf.len() % block_mem == 0);
         let num_blocks = buf.len() / block_mem;
-        let blocks = (0..num_blocks)
-            .map(|i| QuantBlockQ8_0::from_bytes(&buf[i * block_mem..(i + 1) * block_mem]))
-            .collect();
         Self {
             raw: buf,
             num_blocks,
-            blocks,
         }
     }
 
@@ -76,7 +74,7 @@ impl<'a> QuantBuf8_0<'a> {
     }
 
     pub fn blocks(&self) -> &[QuantBlockQ8_0] {
-        &self.blocks
+        QuantBlockQ8_0::from_bytes(self.raw)
     }
 
     pub fn iter_range(

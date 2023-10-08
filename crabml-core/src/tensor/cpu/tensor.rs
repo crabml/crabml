@@ -213,7 +213,11 @@ impl<'a> CpuTensor<'a> {
     }
 
     pub fn iter(&self) -> impl Iterator<Item = f32> + '_ {
-        self.strider.iter().map(|i| self.buf.at_unchecked(i))
+        if self.is_contiguous() {
+            return self.buf.iter();
+        }
+        let iter = self.strider.iter().map(|i| self.buf.at_unchecked(i));
+        CpuTensorBufIter::Boxed(Box::new(iter), self.len())
     }
 
     pub fn par_iter(&self) -> Result<impl IndexedParallelIterator<Item = &f32>> {

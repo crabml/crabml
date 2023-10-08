@@ -1,7 +1,11 @@
 - [x] support q8 quantization
   - [x] zero copy q8 quantization with the zero-copy crate
   - [x] have a test with https://huggingface.co/TheBloke/TinyLlama-1.1B-python-v0.1-GGUF/blob/main/tinyllama-1.1b-python-v0.1.Q8_0.gguf
-- [ ] add a specialized q8 vs f32 matmul to optimize a bit about the dog slot speed
-  - [ ] add typ to tensor
+- [x] add a specialized q8 vs f32 matmul to optimize a bit about the dog slot speed
+  - [x] add typ to tensor
+- [ ] try https://docs.rs/matrixmultiply/latest/matrixmultiply/fn.sgemm.html
+  - [ ] remove par_iter, par_iter_mut, it's better to expose the underlying buffer instead of abstract the iterator
+  - [ ] remove rayon if using this library is faster
+  - [ ] rearrange arithmetic to put every operator a seperate file
 - [ ] take the tensor & device framework
 - [ ] wgpu tensor support

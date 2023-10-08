@@ -1,6 +1,6 @@
 
 use half::f16;
-use std::simd::{f32x4, SimdFloat};
+use std::simd::{f32x4, i8x4, SimdFloat};
 
 #[repr(C, packed)]
 #[derive(Debug, Clone)]

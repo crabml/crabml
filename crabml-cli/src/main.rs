@@ -4,6 +4,7 @@ use crabml::gguf::GGUFFileLoader;
 use crabml_llama2::llama2::{Llama2Model, Llama2Runner};
 use crabml_llama2::sampler::Llama2Sampler;
 use std::io::Write;
+use std::time::Instant;
 
 #[derive(Parser, Debug)]
 struct CommandArgs {
@@ -31,6 +32,7 @@ struct CommandArgs {
 
 fn main() -> Result<()> {
     let args = CommandArgs::parse();
+    let start_time = Instant::now();
 
     // configure rayon
     let threads = num_cpus::get();
@@ -55,6 +57,7 @@ fn main() -> Result<()> {
                 tensor.dimensions()
             );
         }
+        println!("loaded model: {}ms", start_time.elapsed().as_millis());
     }
 
     let mut output = runner.generate(&args.prompt, args.steps, &mut sampler)?;

@@ -1,5 +1,6 @@
+
 use half::f16;
-// use std::simd::f32x32;
+use std::simd::{f32x4, SimdFloat};
 
 #[repr(C, packed)]
 #[derive(Debug, Clone)]
@@ -31,9 +32,16 @@ impl QuantBlockQ8_0 {
             let block = &row[i];
             let d = block.d.to_f32();
             let mut sum_block = 0.0;
-            for j in 0..32 {
-                let q = block.qs[j];
-                sum_block += q as f32 * x[i * 32 + j];
+            for j in 0..8 {
+                let qs = &block.qs[j * 4..(j + 1) * 4];
+                let qv = f32x4::from_array([qs[0] as f32, qs[1] as f32, qs[2] as f32, qs[3] as f32]);
+                let xv = f32x4::from_array([
+                    x[i * 32 + j * 4],
+                    x[i * 32 + j * 4 + 1],
+                    x[i * 32 + j * 4 + 2],
+                    x[i * 32 + j * 4 + 3],
+                ]);
+                sum_block += (qv * xv).reduce_sum();
             }
             sum += sum_block * d;
         }

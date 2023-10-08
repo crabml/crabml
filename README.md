@@ -8,5 +8,5 @@ Its goals are:
 
 - focus on inference only.
 - limit tensor operators to the bare minimum required for LLM inference.
-- allow inference on cheap hardware.
+- fast enough inferencing on cheap hardwares.
 - prioritize SIMD ahead of GPU.

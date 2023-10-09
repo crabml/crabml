@@ -1,6 +1,5 @@
-
 use half::f16;
-use std::simd::{f32x4, i8x4, SimdFloat};
+use std::simd::{f32x8, SimdFloat};
 
 #[repr(C, packed)]
 #[derive(Debug, Clone)]
@@ -14,7 +13,10 @@ impl QuantBlockQ8_0 {
 
     pub fn from_bytes(data: &[u8]) -> &[QuantBlockQ8_0] {
         let size = std::mem::size_of::<QuantBlockQ8_0>();
-        assert!(data.len() % size == 0, "data length must be a multiple of QuantBlockQ8_0 size");
+        assert!(
+            data.len() % size == 0,
+            "data length must be a multiple of QuantBlockQ8_0 size"
+        );
         unsafe {
             std::slice::from_raw_parts(data.as_ptr() as *const QuantBlockQ8_0, data.len() / size)
         }
@@ -35,15 +37,19 @@ impl QuantBlockQ8_0 {
             let block = &row[i];
             let d = block.d.to_f32();
             let mut sum_block = 0.0;
-            for j in 0..8 {
-                let qs = &block.qs[j * 4..(j + 1) * 4];
-                let qv = f32x4::from_array([qs[0] as f32, qs[1] as f32, qs[2] as f32, qs[3] as f32]);
-                let xv = f32x4::from_array([
-                    x[i * 32 + j * 4],
-                    x[i * 32 + j * 4 + 1],
-                    x[i * 32 + j * 4 + 2],
-                    x[i * 32 + j * 4 + 3],
+            for j in 0..4 {
+                let qs = &block.qs[j * 8..(j + 1) * 8];
+                let qv = f32x8::from_array([
+                    qs[0] as f32,
+                    qs[1] as f32,
+                    qs[2] as f32,
+                    qs[3] as f32,
+                    qs[4] as f32,
+                    qs[5] as f32,
+                    qs[6] as f32,
+                    qs[7] as f32,
                 ]);
+                let xv = f32x8::from_slice(&x[i * 32 + j * 8..i * 32 + (j + 1) * 8]);
                 sum_block += (qv * xv).reduce_sum();
             }
             sum += sum_block * d;
@@ -143,10 +149,10 @@ mod tests {
         buf[66] = 9;
         buf[67] = 9;
 
-        let block = QuantBlockQ8_0::from_bytes(&buf[0..34]);
-        assert_eq!(block.d.to_f32(), 3.0);
+        let blocks = QuantBlockQ8_0::from_bytes(&buf[0..34]);
+        assert_eq!(blocks[0].d.to_f32(), 3.0);
         assert_eq!(
-            block.qs,
+            blocks[0].qs,
             [
                 2, 3, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
                 1, 1, 1, 7

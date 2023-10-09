@@ -4,8 +4,11 @@
 - [x] add a specialized q8 vs f32 matmul to optimize a bit about the dog slot speed
   - [x] add typ to tensor
 - [ ] try https://docs.rs/matrixmultiply/latest/matrixmultiply/fn.sgemm.html
-  - [ ] remove par_iter, par_iter_mut, it's better to expose the underlying buffer instead of abstract the iterator
-  - [ ] remove rayon if using this library is faster
+  - [x] remove par_iter, par_iter_mut, it's better to expose the underlying buffer instead of abstract the iterator
+  - [x] remove rayon
+  - [x] simd for q8 quantization
+  - [ ] rename arithmetic to compute
+  - [ ] refactor buf: seperate a buf/f32.rs file which is Cow, and SIMD it
   - [ ] rearrange arithmetic to put every operator a seperate file
 - [ ] take the tensor & device framework
 - [ ] wgpu tensor support

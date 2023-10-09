@@ -55,8 +55,7 @@ pub fn silu_inplace<'a>(mut x: CpuTensor<'a>) -> Result<CpuTensor<'a>> {
     // for i in 0..buf.len() {
     //    buf[i] = buf[i] * (1.0 / (1.0 + (-buf[i]).exp()));
     // }
-    x.iter_mut()?
-        .for_each(|n| *n = *n / (1.0 + (-*n).exp()));
+    x.iter_mut()?.for_each(|n| *n = *n / (1.0 + (-*n).exp()));
     Ok(x)
 }
 
@@ -108,8 +107,7 @@ pub fn matmul_specialized_f32_2d_1d<'a>(
         _ => unreachable!("only f32 buffers are supported, got {:?}", w.typ()),
     };
     let xb = match x.buf() {
-        CpuTensorBuf::Owned(xb) => xb,
-        CpuTensorBuf::F32(xb) => *xb,
+        CpuTensorBuf::F32(xb) => xb,
         _ => unreachable!("only f32 buffers are supported"),
     };
     let x_dim = x.len();
@@ -134,17 +132,17 @@ pub fn matmul_specialized_q8_0_2d_f32_1d<'a>(
         _ => unreachable!("only Q8_0 buffers are supported"),
     };
     let xb = match x.buf() {
-        CpuTensorBuf::Owned(xb) => xb,
-        CpuTensorBuf::F32(xb) => *xb,
+        CpuTensorBuf::F32(xb) => xb,
         _ => unreachable!("only f32 buffers are supported"),
     };
     let w_cols = w.shape()[1];
 
     let mut xout: Vec<f32> = vec![0.0; w.shape()[0]];
-    for (w_row, o) in xout.iter_mut().enumerate() {
-        let row = &wb.blocks()[w_row*w_cols/QuantBlockQ8_0::BLOCK_ELEMS..(w_row+1)*w_cols/QuantBlockQ8_0::BLOCK_ELEMS];
+    xout.par_iter_mut().enumerate().for_each(|(w_row, o)| {
+        let row = &wb.blocks()[w_row * w_cols / QuantBlockQ8_0::BLOCK_ELEMS
+            ..(w_row + 1) * w_cols / QuantBlockQ8_0::BLOCK_ELEMS];
         *o = QuantBlockQ8_0::vec_dot_f32(row, xb);
-    }
+    });
     CpuTensor::new(xout, vec![w.shape()[0]])
 }
 

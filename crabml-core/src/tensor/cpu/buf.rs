@@ -1,4 +1,5 @@
 use rayon::prelude::*;
+use std::borrow::Cow;
 use std::slice;
 
 use crate::error::Result;
@@ -11,8 +12,7 @@ use super::quant::QuantBuf8_0;
 /// - iter_range
 #[derive(Debug)]
 pub enum CpuTensorBuf<'a> {
-    Owned(Vec<f32>),
-    F32(&'a [f32]),
+    F32(Cow<'a, [f32]>),
     Q8_0(QuantBuf8_0<'a>),
 }
 
@@ -27,7 +27,6 @@ impl<'a> CpuTensorBuf<'a> {
 
     pub fn at_unchecked(&self, pos: usize) -> f32 {
         match self {
-            CpuTensorBuf::Owned(buf) => buf[pos],
             CpuTensorBuf::F32(buf) => buf[pos],
             CpuTensorBuf::Q8_0(buf) => buf.iter_range(pos, pos + 1, 1).next().unwrap(),
         }
@@ -35,14 +34,13 @@ impl<'a> CpuTensorBuf<'a> {
 
     pub fn is_owned(&self) -> bool {
         match self {
-            CpuTensorBuf::Owned(_) => true,
+            CpuTensorBuf::F32(Cow::Owned(_)) => true,
             _ => false,
         }
     }
 
     pub fn len(&self) -> usize {
         match self {
-            CpuTensorBuf::Owned(buf) => buf.len(),
             CpuTensorBuf::F32(buf) => buf.len(),
             CpuTensorBuf::Q8_0(buf) => buf.len(),
         }
@@ -50,7 +48,6 @@ impl<'a> CpuTensorBuf<'a> {
 
     pub fn typ(&self) -> GGMLType {
         match self {
-            CpuTensorBuf::Owned(_) => GGMLType::F32,
             CpuTensorBuf::F32(_) => GGMLType::F32,
             CpuTensorBuf::Q8_0(_) => GGMLType::Q8_0,
         }
@@ -58,24 +55,20 @@ impl<'a> CpuTensorBuf<'a> {
 
     pub fn as_ref(&self) -> CpuTensorBuf<'_> {
         match self {
-            CpuTensorBuf::Owned(buf) => CpuTensorBuf::F32(buf),
-            CpuTensorBuf::F32(buf) => CpuTensorBuf::F32(buf),
+            CpuTensorBuf::F32(buf) => CpuTensorBuf::F32(Cow::Borrowed(buf.as_ref())),
             CpuTensorBuf::Q8_0(buf) => CpuTensorBuf::Q8_0(buf.clone()),
         }
     }
 
     pub fn extend(&mut self, iter: impl Iterator<Item = f32>) {
         match self {
-            CpuTensorBuf::Owned(buf) => buf.extend(iter),
+            CpuTensorBuf::F32(Cow::Owned(buf)) => buf.extend(iter),
             _ => unreachable!("only owned buffers can be extended"),
         }
     }
 
     pub fn iter_range(&self, start: usize, end: usize, step: usize) -> CpuTensorBufIter {
         match self {
-            CpuTensorBuf::Owned(buf) => {
-                CpuTensorBufIter::StepBy(buf[start..end].iter().step_by(step))
-            }
             CpuTensorBuf::F32(buf) => {
                 CpuTensorBufIter::StepBy(buf[start..end].iter().step_by(step))
             }
@@ -93,28 +86,13 @@ impl<'a> CpuTensorBuf<'a> {
         step: usize,
     ) -> impl ExactSizeIterator<Item = &mut f32> {
         match self {
-            CpuTensorBuf::Owned(buf) => buf[start..end].iter_mut().step_by(step),
+            CpuTensorBuf::F32(Cow::Owned(buf)) => buf[start..end].iter_mut().step_by(step),
             _ => unreachable!("only owned buffers can be mutable"),
         }
     }
 
-    pub fn par_iter_range_mut(
-        &mut self,
-        start: usize,
-        end: usize,
-        step: usize,
-    ) -> impl rayon::iter::IndexedParallelIterator<Item = &mut f32> {
-        let buf = match self {
-            CpuTensorBuf::Owned(buf) => buf,
-            _ => unreachable!("only owned buffers can be mutable"),
-        };
-
-        buf[start..end].par_iter_mut().step_by(step)
-    }
-
     pub fn iter(&self) -> CpuTensorBufIter {
         match self {
-            CpuTensorBuf::Owned(buf) => CpuTensorBufIter::Slice(buf.iter()),
             CpuTensorBuf::F32(buf) => CpuTensorBufIter::Slice(buf.iter()),
             CpuTensorBuf::Q8_0(buf) => {
                 CpuTensorBufIter::Boxed(Box::new(buf.iter_range(0, buf.len(), 1)), self.len())
@@ -122,24 +100,9 @@ impl<'a> CpuTensorBuf<'a> {
         }
     }
 
-    pub fn par_iter(&self) -> impl rayon::iter::IndexedParallelIterator<Item = &f32> {
-        match self {
-            CpuTensorBuf::Owned(buf) => buf.par_iter(),
-            CpuTensorBuf::F32(buf) => buf.par_iter(),
-            CpuTensorBuf::Q8_0(buf) => unimplemented!(),
-        }
-    }
-
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut f32> {
         match self {
-            CpuTensorBuf::Owned(buf) => buf.iter_mut(),
-            _ => unreachable!("only owned buffers can be mutable"),
-        }
-    }
-
-    pub fn par_iter_mut(&mut self) -> impl rayon::iter::IndexedParallelIterator<Item = &mut f32> {
-        match self {
-            CpuTensorBuf::Owned(buf) => buf.par_iter_mut(),
+            CpuTensorBuf::F32(Cow::Owned(buf)) => buf.iter_mut(),
             _ => unreachable!("only owned buffers can be mutable"),
         }
     }
@@ -159,7 +122,7 @@ impl<'a> CpuTensorBuf<'a> {
 
     pub fn buf_mut(&mut self) -> &mut [f32] {
         match self {
-            CpuTensorBuf::Owned(buf) => buf,
+            CpuTensorBuf::F32(Cow::Owned(buf)) => buf,
             _ => unreachable!("only owned buffers can be mutable"),
         }
     }
@@ -168,8 +131,7 @@ impl<'a> CpuTensorBuf<'a> {
 impl Clone for CpuTensorBuf<'_> {
     fn clone(&self) -> Self {
         match self {
-            CpuTensorBuf::Owned(buf) => Self::Owned(buf.clone()),
-            CpuTensorBuf::F32(buf) => Self::F32(buf),
+            CpuTensorBuf::F32(buf) => Self::F32(buf.clone()),
             CpuTensorBuf::Q8_0(buf) => Self::Q8_0(buf.clone()),
         }
     }
@@ -177,19 +139,19 @@ impl Clone for CpuTensorBuf<'_> {
 
 impl Default for CpuTensorBuf<'_> {
     fn default() -> Self {
-        Self::Owned(Vec::new())
+        Self::F32(Vec::new().into())
     }
 }
 
 impl From<Vec<f32>> for CpuTensorBuf<'_> {
     fn from(buf: Vec<f32>) -> Self {
-        Self::Owned(buf)
+        Self::F32(buf.into())
     }
 }
 
 impl<'a> From<&'a [f32]> for CpuTensorBuf<'a> {
     fn from(buf: &'a [f32]) -> Self {
-        Self::F32(buf)
+        Self::F32(buf.into())
     }
 }
 

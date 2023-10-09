@@ -69,11 +69,9 @@ pub fn matmul<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'a>>
     require_tensor_matmul_2d_shapes(w, x)?;
     require_tensor_contiguous(w)?;
 
-    if w.typ() == GGMLType::F32 && x.is_contiguous() && x.shape().len() == 1 {
-        return matmul_specialized_f32_2d_1d(w, x);
-    }
-    if w.typ() == GGMLType::Q8_0 && x.is_contiguous() && x.shape().len() == 1 {
-        return matmul_specialized_q8_0_2d_f32_1d(w, x);
+    match maybe_matmul_vec_2d_1d(w, x) {
+        Some(r) => return r,
+        _ => (),
     }
 
     if x.shape().len() == 1 {
@@ -125,33 +123,28 @@ pub fn matmul_specialized_f32_2d_1d<'a>(
     Ok(xout)
 }
 
-pub fn matmul_specialized_q8_0_2d_f32_1d<'a>(
+pub fn maybe_matmul_vec_2d_1d<'a>(
     w: &CpuTensor<'a>,
     x: &CpuTensor<'a>,
-) -> Result<CpuTensor<'a>> {
-    let wb = match w.buf() {
-        CpuTensorBuf::Q8_0(wb) => wb,
-        _ => unreachable!("only Q8_0 buffers are supported"),
-    };
-    let xb = match x.buf() {
-        CpuTensorBuf::F32(xb) => xb,
-        _ => unreachable!("only f32 buffers are supported"),
-    };
-    let w_cols = w.shape()[1];
-    let mut xout: Vec<f32> = vec![0.0; w.shape()[0]];
+) -> Option<Result<CpuTensor<'a>>> {
+    if !(w.is_contiguous() && x.is_contiguous()) {
+        return None
+    }
+    let mut out: Vec<f32> = vec![0.0; w.shape()[0]];
 
-    xout.par_iter_mut().enumerate().for_each(|(w_row, o)| {
-        let row =
-            &wb.blocks_between(w_row * w_cols / wb.block_elms(), (w_row + 1) * w_cols / wb.block_elms());
-        *o = wb.vec_dot_f32(row, xb);
-    });
-    CpuTensor::new(xout, vec![w.shape()[0]])
+    match (w.buf(), x.buf()) {
+        (CpuTensorBuf::Q8_0(wb), CpuTensorBuf::F32(xb)) => matmul_vec_generic_xxx_f32_2d_1d(wb, xb, &mut out),
+        (CpuTensorBuf::F32(wb), CpuTensorBuf::F32(xb)) => matmul_vec_generic_xxx_f32_2d_1d(wb, xb, &mut out),
+        _ => return None,
+    };
+
+    Some(CpuTensor::new(out, vec![w.shape()[0]]))
 }
 
-// wb: [w_rows, w_cols]
-// xb: [w_cols]
-// out: [w_rows]
-pub fn matmul_vec_generic_xxx_f32_2d_1d<'a, T: BlockVecCompute+Sync>(wb: T, xb: &[f32], out: &mut [f32]) {
+pub fn matmul_vec_generic_xxx_f32_2d_1d<'a, T: BlockVecCompute+Sync>(wb: &T, xb: &[f32], out: &mut [f32]) {
+    // wb: [w_rows, w_cols]
+    // xb: [w_cols]
+    // out: [w_rows]
     let w_cols = xb.len();
     out.par_iter_mut().enumerate().for_each(|(w_row, o)| {
         let row =

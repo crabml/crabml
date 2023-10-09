@@ -17,9 +17,9 @@ impl<'a> BlockVecCompute for Cow<'a, [f32]> {
 
     fn vec_dot_f32(&self, row: &[Self::BlockType], x: &[f32]) -> f32 {
         let mut acc = f32x32::splat(0.0);
-        for (i, block) in row.iter().enumerate() {
+        for (block_idx, block) in row.iter().enumerate() {
             let block = f32x32::from_slice(block);
-            let x = f32x32::splat(x[i]);
+            let x = f32x32::from_slice(&x[block_idx * 32..(block_idx + 1) * 32]);
             acc += block * x;
         }
         acc.reduce_sum()

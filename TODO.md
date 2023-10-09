@@ -7,8 +7,7 @@
   - [x] remove par_iter, par_iter_mut, it's better to expose the underlying buffer instead of abstract the iterator
   - [x] remove rayon
   - [x] simd for q8 quantization
-  - [ ] rename arithmetic to compute
-  - [ ] refactor buf: seperate a buf/f32.rs file which is Cow, and SIMD it
-  - [ ] rearrange arithmetic to put every operator a seperate file
+  - [x] rename arithmetic to compute
+  - [x] refactor buf: seperate a buf/f32.rs file which is Cow, and SIMD it
 - [ ] take the tensor & device framework
 - [ ] wgpu tensor support

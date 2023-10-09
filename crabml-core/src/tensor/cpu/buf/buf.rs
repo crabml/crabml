@@ -5,7 +5,7 @@ use std::slice;
 use crate::error::Result;
 use crate::gguf::GGMLType;
 
-use super::quant::QuantBuf8_0;
+use crate::tensor::cpu::buf::QuantBuf8_0;
 
 /// All the quantized tensor are read-only.
 /// to implement a quantized tensor, we need to implement the following:

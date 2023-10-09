@@ -7,9 +7,9 @@ use crate::tensor::cpu::validation::require_tensor_dims;
 use crate::tensor::cpu::validation::require_tensor_matmul_2d_shapes;
 use crate::tensor::cpu::validation::require_tensor_shape;
 use crate::tensor::CpuTensor;
+use crate::tensor::cpu::buf::QuantBlockQ8_0;
 use rayon::prelude::*;
 
-use super::quant::QuantBlockQ8_0;
 
 ///! arithmetic.rs contains the tensor arithmetics operations like matmul, accum, etc.
 

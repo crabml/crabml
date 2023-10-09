@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::simd::f32x32;
 use std::simd::SimdFloat;
+use std::simd::f32x8;
 
 use crate::error::ErrorKind;
 use crate::error::Result;
@@ -105,8 +106,34 @@ pub fn silu_inplace<'a>(mut x: CpuTensor<'a>) -> Result<CpuTensor<'a>> {
     // for i in 0..buf.len() {
     //    buf[i] = buf[i] * (1.0 / (1.0 + (-buf[i]).exp()));
     // }
+    if x.is_contiguous() {
+        if let CpuTensorBuf::F32(Cow::Owned(xb)) = x.buf_mut() {
+            silu_inplace_vec_f32(xb);
+            return Ok(x);
+        }
+    }
     x.iter_mut()?.for_each(|n| *n = *n / (1.0 + (-*n).exp()));
     Ok(x)
+}
+
+pub fn silu_inplace_vec_f32(buf: &mut [f32]) {
+    let chunks = buf.as_chunks_mut::<8>().0;
+    chunks.iter_mut().for_each(|chunk| {
+        let v0 = f32x8::from_slice(chunk);
+        let v1 = f32x8::from_array([
+            (-chunk[0]).exp(),
+            (-chunk[1]).exp(),
+            (-chunk[2]).exp(),
+            (-chunk[3]).exp(),
+            (-chunk[4]).exp(),
+            (-chunk[5]).exp(),
+            (-chunk[6]).exp(),
+            (-chunk[7]).exp(),
+        ]);
+        let v2 = v1 + f32x8::splat(1.0);
+        let v3 = v0 / v2;
+        v3.copy_to_slice(chunk);
+    })
 }
 
 // W (w_rows,w_cols) @ x (w_cols,x_cols) -> xout (w_rows,x_cols)
@@ -144,31 +171,6 @@ pub fn matmul<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'a>>
         });
     }
     Ok(out)
-}
-
-pub fn matmul_specialized_f32_2d_1d<'a>(
-    w: &CpuTensor<'a>,
-    x: &CpuTensor<'a>,
-) -> Result<CpuTensor<'a>> {
-    let wb = match w.buf() {
-        CpuTensorBuf::F32(wb) => wb,
-        _ => unreachable!("only f32 buffers are supported, got {:?}", w.typ()),
-    };
-    let xb = match x.buf() {
-        CpuTensorBuf::F32(xb) => xb,
-        _ => unreachable!("only f32 buffers are supported"),
-    };
-    let x_dim = x.len();
-
-    let mut out = vec![0.0_f32; w.shape()[0]];
-    out.par_iter_mut().enumerate().for_each(|(w_row, xo)| {
-        let wi = wb[w_row * x_dim..(w_row + 1) * x_dim].iter();
-        let xi = xb.iter();
-        *xo = wi.zip(xi).map(|(w, x)| w * x).sum::<f32>();
-    });
-
-    let xout = CpuTensor::new(out, vec![w.shape()[0]])?;
-    Ok(xout)
 }
 
 pub fn maybe_matmul_vec_2d_1d<'a>(

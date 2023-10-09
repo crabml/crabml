@@ -3,7 +3,6 @@ use bencher::benchmark_main;
 
 use bencher::Bencher;
 use crabml::tensor::compute::matmul;
-use crabml::tensor::compute::matmul_specialized_f32_2d_1d;
 use crabml::tensor::CpuTensor;
 use rayon::prelude::*;
 
@@ -62,14 +61,6 @@ fn benchmark_tensor_matmul(bench: &mut Bencher) {
     })
 }
 
-fn benchmark_tensor_matmul_specialized_2d_1d(bench: &mut Bencher) {
-    let w = CpuTensor::new(vec![1.0; 50000], vec![100, 500]).unwrap();
-    let b = CpuTensor::new(vec![1.0; 500], vec![500]).unwrap();
-    bench.iter(|| {
-        matmul_specialized_f32_2d_1d(&w, &b).unwrap();
-    })
-}
-
 fn benchmark_simple_matmul(bench: &mut Bencher) {
     let w = vec![1.0; 50000];
     let b = vec![1.0; 500];
@@ -103,6 +94,5 @@ benchmark_group!(
     benchmark_simple_matmul,
     benchmark_par_simple_matmul,
     benchmark_iter_simple_matmul,
-    benchmark_tensor_matmul_specialized_2d_1d,
 );
 benchmark_main!(benches);

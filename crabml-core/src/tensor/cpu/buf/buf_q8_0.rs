@@ -56,6 +56,10 @@ impl<'a> QuantBuf8_0<'a> {
         QuantBlockQ8_0::from_bytes(self.raw)
     }
 
+    pub fn block_elms(&self) -> usize {
+        QuantBlockQ8_0::BLOCK_ELEMS
+    }
+
     pub fn iter_range(
         &'a self,
         start: usize,

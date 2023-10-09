@@ -2,16 +2,15 @@ use crate::error::ErrorKind;
 use crate::error::Result;
 use crate::gguf::GGMLType;
 use crate::tensor::cpu::buf::CpuTensorBuf;
+use crate::tensor::cpu::buf::QuantBlockQ8_0;
 use crate::tensor::cpu::validation::require_tensor_contiguous;
 use crate::tensor::cpu::validation::require_tensor_dims;
 use crate::tensor::cpu::validation::require_tensor_matmul_2d_shapes;
 use crate::tensor::cpu::validation::require_tensor_shape;
 use crate::tensor::CpuTensor;
-use crate::tensor::cpu::buf::QuantBlockQ8_0;
 use rayon::prelude::*;
 
 use super::buf::QuantBuf8_0;
-
 
 ///! arithmetic.rs contains the tensor arithmetics operations like matmul, accum, etc.
 
@@ -141,8 +140,8 @@ pub fn matmul_specialized_q8_0_2d_f32_1d<'a>(
 
     let mut xout: Vec<f32> = vec![0.0; w.shape()[0]];
     xout.par_iter_mut().enumerate().for_each(|(w_row, o)| {
-        let row = &wb.blocks()[w_row * w_cols / QuantBlockQ8_0::BLOCK_ELEMS
-            ..(w_row + 1) * w_cols / QuantBlockQ8_0::BLOCK_ELEMS];
+        let row =
+            &wb.blocks()[w_row * w_cols / wb.block_elms()..(w_row + 1) * w_cols / wb.block_elms()];
         *o = QuantBuf8_0::vec_dot_f32(row, xb);
     });
     CpuTensor::new(xout, vec![w.shape()[0]])

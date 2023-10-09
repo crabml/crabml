@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::simd::f32x32;
-use std::simd::SimdFloat;
 use std::simd::f32x8;
+use std::simd::SimdFloat;
 
 use crate::error::ErrorKind;
 use crate::error::Result;
@@ -74,14 +74,12 @@ pub fn mul_inplace<'a>(mut a: CpuTensor<'a>, b: &CpuTensor<'a>) -> Result<CpuTen
 fn mul_inplace_vec_f32(a: &mut [f32], b: &[f32]) {
     let ac = a.as_chunks_mut::<32>().0;
     let bc = b.as_chunks::<32>().0;
-    ac.iter_mut().zip(bc).for_each(
-        |(a, b)| {
-            let mut va = f32x32::from_slice(a);
-            let vb = f32x32::from_slice(b);
-            va *= vb;
-            va.copy_to_slice(a);
-        },
-    );
+    ac.iter_mut().zip(bc).for_each(|(a, b)| {
+        let mut va = f32x32::from_slice(a);
+        let vb = f32x32::from_slice(b);
+        va *= vb;
+        va.copy_to_slice(a);
+    });
 }
 
 pub fn div_scalar_inplace<'a>(mut a: CpuTensor<'a>, b: f32) -> Result<CpuTensor<'a>> {
@@ -100,6 +98,17 @@ pub fn add_inplace<'a>(mut a: CpuTensor<'a>, b: &CpuTensor<'a>) -> Result<CpuTen
         *ia += ib;
     });
     Ok(a)
+}
+
+pub fn add_inplace_vec_f32(a: &mut [f32], b: &[f32]) {
+    let acs = a.as_chunks_mut::<32>().0;
+    let bcs = b.as_chunks::<32>().0;
+    acs.iter_mut().zip(bcs.iter()).for_each(|(ac, bc)| {
+        let mut va = f32x32::from_slice(ac);
+        let vb = f32x32::from_slice(bc);
+        va += vb;
+        va.copy_to_slice(ac);
+    });
 }
 
 pub fn silu_inplace<'a>(mut x: CpuTensor<'a>) -> Result<CpuTensor<'a>> {
@@ -138,9 +147,9 @@ pub fn silu_inplace_vec_f32(buf: &mut [f32]) {
 
 // W (w_rows,w_cols) @ x (w_cols,x_cols) -> xout (w_rows,x_cols)
 // W (w_rows,w_cols) @ x (w_cols,) -> xout (w_rows,)
-pub fn matmul<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'a>> {
+pub fn matmul_2d_1d<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'a>> {
     require_tensor_dims(w, &[2])?;
-    require_tensor_dims(x, &[1, 2])?;
+    require_tensor_dims(x, &[1])?;
     require_tensor_matmul_2d_shapes(w, x)?;
     require_tensor_contiguous(w)?;
 
@@ -149,28 +158,14 @@ pub fn matmul<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'a>>
         _ => (),
     }
 
-    if x.shape().len() == 1 {
-        let mut out = CpuTensor::zeros(vec![w.shape()[0]])?;
-        let o_row_iter = out.iter_axis_mut(vec![0], 0)?; // (x_cols, )
-        o_row_iter.enumerate().for_each(|(w_row, o)| {
-            let w_row_iter = w.iter_axis(&[w_row, 0], 1).unwrap(); // (w_cols, )
-            let x_col_iter = x.iter_axis(&[0], 0).unwrap(); // (w_cols, )
-            *o = w_row_iter.zip(x_col_iter).map(|(w, x)| w * x).sum::<f32>();
-        });
-        return Ok(out);
-    }
-
-    let mut out = CpuTensor::zeros(vec![w.shape()[0], x.shape()[1]])?;
-    let w_rows = w.shape()[0];
-    for w_row in 0..w_rows {
-        let o_row_iter = out.iter_axis_mut(vec![w_row, 0], 1)?; // (x_cols, )
-        o_row_iter.enumerate().for_each(|(x_col, o)| {
-            let w_row_iter = w.iter_axis(&[w_row, 0], 1).unwrap(); // (w_cols, )
-            let x_col_iter = x.iter_axis(&[0, x_col], 0).unwrap(); // (w_cols, )
-            *o = w_row_iter.zip(x_col_iter).map(|(w, x)| w * x).sum::<f32>();
-        });
-    }
-    Ok(out)
+    let mut out = CpuTensor::zeros(vec![w.shape()[0]])?;
+    let o_row_iter = out.iter_axis_mut(vec![0], 0)?; // (x_cols, )
+    o_row_iter.enumerate().for_each(|(w_row, o)| {
+        let w_row_iter = w.iter_axis(&[w_row, 0], 1).unwrap(); // (w_cols, )
+        let x_col_iter = x.iter_axis(&[0], 0).unwrap(); // (w_cols, )
+        *o = w_row_iter.zip(x_col_iter).map(|(w, x)| w * x).sum::<f32>();
+    });
+    return Ok(out);
 }
 
 pub fn maybe_matmul_vec_2d_1d<'a>(
@@ -371,7 +366,7 @@ mod tests {
         // 0
         // 1*1 + 2*2 + 3*3 = 1 + 4 + 9
         // 1*4 + 2*5 + 3*6 = 4 + 10 + 18
-        let out = matmul(&w, &b)?;
+        let out = matmul_2d_1d(&w, &b)?;
         assert_eq!(out.iter().collect::<Vec<_>>(), &[14.0, 32.0]);
 
         // 1, 2, 3
@@ -387,7 +382,7 @@ mod tests {
             ],
             vec![3, 4],
         )?;
-        let out = matmul(&w, &b)?;
+        let out = matmul_2d_1d(&w, &b)?;
         assert_eq!(
             out.iter().collect::<Vec<_>>(),
             &[38.0, 44.0, 50.0, 56.0, 83.0, 98.0, 113.0, 128.0]

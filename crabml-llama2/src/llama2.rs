@@ -8,7 +8,7 @@ use crabml::gguf::GGUFMetadata;
 use crabml::tensor::compute::add_inplace;
 use crabml::tensor::compute::batch_matmul;
 use crabml::tensor::compute::div_scalar_inplace;
-use crabml::tensor::compute::matmul;
+use crabml::tensor::compute::matmul_2d_1d;
 use crabml::tensor::compute::mul_inplace;
 use crabml::tensor::compute::rms_norm_inplace;
 use crabml::tensor::compute::rope_inplace;
@@ -339,9 +339,9 @@ impl<'a> Llama2Runner<'a> {
                 // wq: (embed_dim, embed_dim) @ x (embed_dim, ) => (embed_dim, )
                 // wk: (kv_dim, embed_dim) @ x (embed_dim, ) => (kv_dim, )
                 // wv: (kv_dim, embed_dim) @ x (embed_dim, ) => (kv_dim, )
-                let q = matmul(&self.weights.wq[l], &x)?;
-                let k = matmul(&self.weights.wk[l], &x)?;
-                let v = matmul(&self.weights.wv[l], &x)?;
+                let q = matmul_2d_1d(&self.weights.wq[l], &x)?;
+                let k = matmul_2d_1d(&self.weights.wk[l], &x)?;
+                let v = matmul_2d_1d(&self.weights.wv[l], &x)?;
 
                 (q, k, v)
             };
@@ -397,7 +397,7 @@ impl<'a> Llama2Runner<'a> {
                 let x_with_attn = x_with_attn.view(&[embed_dim])?;
 
                 // final matmul to get the output of the attention
-                matmul(&self.weights.wo[l], &x_with_attn)?
+                matmul_2d_1d(&self.weights.wo[l], &x_with_attn)?
             };
 
             // residual connection back into x
@@ -419,8 +419,8 @@ impl<'a> Llama2Runner<'a> {
                 // first calculate self.w1(x) and self.w3(x)
                 // w1: (hidden_dim, embed_dim) @ x (embed_dim, ) => (hidden_dim, )
                 // w3: (hidden_dim, embed_dim) @ x (embed_dim, ) => (hidden_dim, )
-                let mut h1 = matmul(&self.weights.w1[l], &x)?;
-                let h2 = matmul(&self.weights.w3[l], &x)?;
+                let mut h1 = matmul_2d_1d(&self.weights.w1[l], &x)?;
+                let h2 = matmul_2d_1d(&self.weights.w3[l], &x)?;
 
                 // F.silu; silu(x)=x*σ(x),where σ(x) is the logistic sigmoid
                 h1 = silu_inplace(h1)?;
@@ -429,7 +429,7 @@ impl<'a> Llama2Runner<'a> {
                 h1 = mul_inplace(h1, &h2)?;
 
                 // final matmul to get the output of the ffn
-                x = matmul(&self.weights.w2[l], &h1)?;
+                x = matmul_2d_1d(&self.weights.w2[l], &h1)?;
 
                 // residual connection
                 x = add_inplace(x, &x_orig_ffn)?;
@@ -445,7 +445,7 @@ impl<'a> Llama2Runner<'a> {
         };
 
         // classifier into logits
-        let logits = matmul(&self.weights.wcls, &x)?; // (vocab_size,
+        let logits = matmul_2d_1d(&self.weights.wcls, &x)?; // (vocab_size,
 
         self.state.logits = logits.iter().collect::<Vec<_>>();
         Ok(&mut self.state.logits)

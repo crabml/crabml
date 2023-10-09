@@ -3,8 +3,6 @@ use crate::error::ErrorKind;
 use crate::error::Result;
 use crate::gguf::GGMLType;
 use rayon::prelude::*;
-use std::borrow::Cow;
-use std::slice;
 
 use crate::tensor::cpu::buf::CpuTensorBuf;
 use crate::tensor::strider::TensorStrider;
@@ -46,6 +44,10 @@ impl<'a> CpuTensor<'a> {
     pub fn from_raw_bytes(buf: &'a [u8], typ: GGMLType, shape: Vec<usize>) -> Result<Self> {
         let buf = CpuTensorBuf::from_raw_bytes(buf, typ)?;
         Self::new(buf, shape)
+    }
+
+    pub fn typ(&self) -> GGMLType {
+        self.buf.typ()
     }
 
     pub fn at(&self, idx: &[usize]) -> Result<f32> {
@@ -188,38 +190,12 @@ impl<'a> CpuTensor<'a> {
         Ok(iter)
     }
 
-    pub fn par_iter_axis_mut(
-        &mut self,
-        pos: Vec<usize>,
-        axis: usize,
-    ) -> Result<impl rayon::iter::IndexedParallelIterator<Item = &mut f32>> {
-        if !self.is_owned() {
-            return Err((ErrorKind::TensorError, "not owned").into());
-        }
-        if !self.is_contiguous() {
-            return Err((ErrorKind::TensorError, "not contiguous").into());
-        }
-
-        // on a contiguous tensor, if we move one position according to the axis, the step length must equals the stride
-        let start = self.strider.at(&pos)?;
-        let remains = self.strider.shape()[axis] - pos[axis] - 1;
-        let stride = self.strider.strides()[axis];
-        let end = start + remains * stride + 1;
-
-        let iter = self.buf.par_iter_range_mut(start, end, stride);
-        Ok(iter)
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = f32> + '_ {
-        self.strider.iter().map(|i| self.buf.at_unchecked(i))
-    }
-
-    pub fn par_iter(&self) -> Result<impl IndexedParallelIterator<Item = &f32>> {
-        if !self.is_contiguous() {
-            return Err((ErrorKind::TensorError, "not contiguous").into());
+        if self.is_contiguous() {
+            return self.buf.iter();
         }
-
-        Ok(self.buf.par_iter())
+        let iter = self.strider.iter().map(|i| self.buf.at_unchecked(i));
+        CpuTensorBufIter::Boxed(Box::new(iter), self.len())
     }
 
     pub fn iter_mut(&mut self) -> Result<impl Iterator<Item = &mut f32>> {
@@ -232,16 +208,6 @@ impl<'a> CpuTensor<'a> {
         Ok(self.buf.iter_mut())
     }
 
-    pub fn par_iter_mut(&mut self) -> Result<impl IndexedParallelIterator<Item = &mut f32>> {
-        if !self.is_owned() {
-            return Err((ErrorKind::TensorError, "not owned").into());
-        }
-        if !self.is_contiguous() {
-            return Err((ErrorKind::TensorError, "not contiguous").into());
-        }
-        Ok(self.buf.par_iter_mut())
-    }
-
     pub fn is_contiguous(&self) -> bool {
         self.strider.is_contiguous()
     }
@@ -251,12 +217,16 @@ impl<'a> CpuTensor<'a> {
     }
 
     // only used on specialized performance critical cases
-    pub fn buf(&self) -> &[f32] {
-        self.buf.buf()
+    pub(crate) fn buf(&self) -> &CpuTensorBuf<'a> {
+        &self.buf
     }
 
-    // only used on specialized performance critical cases
-    pub fn buf_mut(&mut self) -> Result<&mut [f32]> {
+    pub(crate) fn buf_mut(&mut self) -> &mut CpuTensorBuf<'a> {
+        &mut self.buf
+    }
+
+    // TODO: only used in rope, remoe it later
+    pub(crate) fn f32_buf_mut(&mut self) -> Result<&mut [f32]> {
         if !self.is_owned() {
             return Err((ErrorKind::TensorError, "not owned").into());
         }
@@ -459,7 +429,7 @@ mod tests {
 
         assert_eq!(t1.shape(), &[2, 2, 3]);
         assert_eq!(
-            t1.buf(),
+            t1.iter().collect::<Vec<_>>(),
             &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
         );
         Ok(())

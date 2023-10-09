@@ -1,3 +1,7 @@
+use std::borrow::Cow;
+use std::simd::SimdFloat;
+use std::simd::f32x32;
+
 use crate::error::ErrorKind;
 use crate::error::Result;
 use crate::tensor::cpu::buf::BlockVecCompute;
@@ -15,12 +19,36 @@ pub fn rms_norm_inplace(mut x: CpuTensor<'_>, eps: f32) -> Result<CpuTensor<'_>>
     require_tensor_contiguous(&x)?;
     require_tensor_dims(&x, &[1])?;
 
+    match x.buf_mut() {
+        CpuTensorBuf::F32(Cow::Owned(xb)) => {
+            rms_norm_inplace_vec_f32(xb, eps);
+            return Ok(x);
+        }
+        _ => (),
+    }
+
     let len = x.shape()[0];
     let sum = x.iter_axis(&[0], 0)?.fold(0.0, |s, n| s + n * n);
     let rms = ((sum / len as f32) + eps).sqrt();
     x.iter_axis_mut(vec![0], 0)?.for_each(|n| *n = *n / rms);
     Ok(x)
 }
+
+fn rms_norm_inplace_vec_f32(x: &mut [f32], eps: f32) {
+    let len = x.len();
+    let mut sum = 0.0;
+    for chunk in x.as_chunks::<32>().0 {
+        let mut v = f32x32::from_slice(chunk);
+        v *= v;
+        sum += v.reduce_sum();
+    }
+    let rms = ((sum / len as f32) + eps).sqrt();
+    for chunk in x.as_chunks_mut::<32>().0 {
+        let mut v = f32x32::from_slice(chunk);
+        v /= f32x32::splat(rms);
+        v.copy_to_slice(chunk);
+    }
+} 
 
 pub fn mul_inplace<'a>(mut a: CpuTensor<'a>, b: &CpuTensor<'a>) -> Result<CpuTensor<'a>> {
     require_tensor_shape(&a, b.shape())?;
@@ -259,7 +287,7 @@ pub fn rope_inplace<'a>(
         let fci = val.sin();
         let rotn = if i < kv_dim { 2 } else { 1 }; // how many vectors? 2 = q & k, 1 = q only
         for v in 0..rotn {
-            let vec = if v == 0 { q.buf_mut()? } else { k.buf_mut()? };
+            let vec = if v == 0 { q.f32_buf_mut()? } else { k.f32_buf_mut()? };
             let v0 = vec[i];
             let v1 = vec[i + 1];
             vec[i] = v0 * fcr - v1 * fci;

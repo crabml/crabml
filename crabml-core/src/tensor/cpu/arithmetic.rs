@@ -10,6 +10,8 @@ use crate::tensor::CpuTensor;
 use crate::tensor::cpu::buf::QuantBlockQ8_0;
 use rayon::prelude::*;
 
+use super::buf::QuantBuf8_0;
+
 
 ///! arithmetic.rs contains the tensor arithmetics operations like matmul, accum, etc.
 
@@ -141,7 +143,7 @@ pub fn matmul_specialized_q8_0_2d_f32_1d<'a>(
     xout.par_iter_mut().enumerate().for_each(|(w_row, o)| {
         let row = &wb.blocks()[w_row * w_cols / QuantBlockQ8_0::BLOCK_ELEMS
             ..(w_row + 1) * w_cols / QuantBlockQ8_0::BLOCK_ELEMS];
-        *o = QuantBlockQ8_0::vec_dot_f32(row, xb);
+        *o = QuantBuf8_0::vec_dot_f32(row, xb);
     });
     CpuTensor::new(xout, vec![w.shape()[0]])
 }

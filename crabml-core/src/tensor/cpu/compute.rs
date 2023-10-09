@@ -1,14 +1,13 @@
 use crate::error::ErrorKind;
 use crate::error::Result;
+use crate::tensor::cpu::buf::BlockVecCompute;
 use crate::tensor::cpu::buf::CpuTensorBuf;
-use crate::tensor::cpu::assert::require_tensor_contiguous;
-use crate::tensor::cpu::assert::require_tensor_dims;
-use crate::tensor::cpu::assert::require_tensor_matmul_2d_shapes;
-use crate::tensor::cpu::assert::require_tensor_shape;
+use crate::tensor::cpu::validate::require_tensor_contiguous;
+use crate::tensor::cpu::validate::require_tensor_dims;
+use crate::tensor::cpu::validate::require_tensor_matmul_2d_shapes;
+use crate::tensor::cpu::validate::require_tensor_shape;
 use crate::tensor::CpuTensor;
 use rayon::prelude::*;
-
-use super::buf::buf::BlockVecCompute;
 
 ///! arithmetic.rs contains the tensor arithmetics operations like matmul, accum, etc.
 
@@ -125,27 +124,37 @@ pub fn maybe_matmul_vec_2d_1d<'a>(
     x: &CpuTensor<'a>,
 ) -> Option<Result<CpuTensor<'a>>> {
     if !(w.is_contiguous() && x.is_contiguous()) {
-        return None
+        return None;
     }
     let mut out: Vec<f32> = vec![0.0; w.shape()[0]];
 
     match (w.buf(), x.buf()) {
-        (CpuTensorBuf::Q8_0(wb), CpuTensorBuf::F32(xb)) => matmul_vec_generic_xxx_f32_2d_1d(wb, xb, &mut out),
-        (CpuTensorBuf::F32(wb), CpuTensorBuf::F32(xb)) => matmul_vec_generic_xxx_f32_2d_1d(wb, xb, &mut out),
+        (CpuTensorBuf::Q8_0(wb), CpuTensorBuf::F32(xb)) => {
+            matmul_vec_generic_xxx_f32_2d_1d(wb, xb, &mut out)
+        }
+        (CpuTensorBuf::F32(wb), CpuTensorBuf::F32(xb)) => {
+            matmul_vec_generic_xxx_f32_2d_1d(wb, xb, &mut out)
+        }
         _ => return None,
     };
 
     Some(CpuTensor::new(out, vec![w.shape()[0]]))
 }
 
-pub fn matmul_vec_generic_xxx_f32_2d_1d<'a, T: BlockVecCompute+Sync>(wb: &T, xb: &[f32], out: &mut [f32]) {
+pub fn matmul_vec_generic_xxx_f32_2d_1d<'a, T: BlockVecCompute + Sync>(
+    wb: &T,
+    xb: &[f32],
+    out: &mut [f32],
+) {
     // wb: [w_rows, w_cols]
     // xb: [w_cols]
     // out: [w_rows]
     let w_cols = xb.len();
     out.par_iter_mut().enumerate().for_each(|(w_row, o)| {
-        let row =
-            &wb.blocks_between(w_row * w_cols / wb.block_elms(), (w_row + 1) * w_cols / wb.block_elms());
+        let row = &wb.blocks_between(
+            w_row * w_cols / wb.block_elms(),
+            (w_row + 1) * w_cols / wb.block_elms(),
+        );
         *o = wb.vec_dot_f32(row, xb);
     });
 }

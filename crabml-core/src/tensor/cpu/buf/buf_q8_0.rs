@@ -19,9 +19,7 @@ impl BlockQ8_0 {
             data.len() % size == 0,
             "data length must be a multiple of QuantBlockQ8_0 size"
         );
-        unsafe {
-            std::slice::from_raw_parts(data.as_ptr() as *const BlockQ8_0, data.len() / size)
-        }
+        unsafe { std::slice::from_raw_parts(data.as_ptr() as *const BlockQ8_0, data.len() / size) }
     }
 
     pub fn dequantize(&self, buf: &mut [f32]) {

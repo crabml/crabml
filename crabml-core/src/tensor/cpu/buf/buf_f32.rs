@@ -1,4 +1,8 @@
-use std::{simd::{SimdFloat, f32x32}, borrow::Cow, slice};
+use std::{
+    borrow::Cow,
+    simd::{f32x32, SimdFloat},
+    slice,
+};
 
 use super::buf::BlockVecCompute;
 

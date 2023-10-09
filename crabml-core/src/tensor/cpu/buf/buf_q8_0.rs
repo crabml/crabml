@@ -1,6 +1,8 @@
 use half::f16;
 use std::simd::{f32x8, SimdFloat};
 
+use super::buf::BlockVecCompute;
+
 #[repr(C, packed)]
 #[derive(Debug, Clone)]
 pub struct QuantBlockQ8_0 {
@@ -52,14 +54,6 @@ impl<'a> QuantBuf8_0<'a> {
         self.num_blocks * 32
     }
 
-    pub fn blocks(&self) -> &[QuantBlockQ8_0] {
-        QuantBlockQ8_0::from_bytes(self.raw)
-    }
-
-    pub fn block_elms(&self) -> usize {
-        QuantBlockQ8_0::BLOCK_ELEMS
-    }
-
     pub fn iter_range(
         &'a self,
         start: usize,
@@ -75,8 +69,20 @@ impl<'a> QuantBuf8_0<'a> {
             current_block: usize::MAX,
         }
     }
+}
 
-    pub fn vec_dot_f32(row: &[QuantBlockQ8_0], x: &[f32]) -> f32 {
+impl<'a> BlockVecCompute for QuantBuf8_0<'a> {
+    type BlockType = QuantBlockQ8_0;
+
+    fn block_elms(&self) -> usize {
+        QuantBlockQ8_0::BLOCK_ELEMS
+    }
+
+    fn blocks(&self) -> &[Self::BlockType] {
+        QuantBlockQ8_0::from_bytes(self.raw)
+    }
+
+    fn vec_dot_f32(&self, row: &[Self::BlockType], x: &[f32]) -> f32 {
         assert!(row.len() * 32 == x.len());
         let mut sum = 0.0;
         for i in 0..row.len() {

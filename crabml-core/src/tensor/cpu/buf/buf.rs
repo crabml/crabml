@@ -1,4 +1,3 @@
-use rayon::prelude::*;
 use std::borrow::Cow;
 use std::slice;
 
@@ -182,4 +181,14 @@ impl<'a> ExactSizeIterator for CpuTensorBufIter<'a> {
             CpuTensorBufIter::Boxed(_, hint) => *hint,
         }
     }
+}
+
+pub trait BlockVecCompute {
+    type BlockType;
+
+    fn blocks(&self) -> &[Self::BlockType];
+
+    fn block_elms(&self) -> usize;
+
+    fn vec_dot_f32(&self, row: &[Self::BlockType], x: &[f32]) -> f32;
 }

@@ -5,22 +5,22 @@ use super::buf::BlockVecCompute;
 
 #[repr(C, packed)]
 #[derive(Debug, Clone)]
-pub struct QuantBlockQ8_0 {
+pub struct BlockQ8_0 {
     d: f16,       // delta
     qs: [i8; 32], // quants
 }
 
-impl QuantBlockQ8_0 {
+impl BlockQ8_0 {
     pub const BLOCK_ELEMS: usize = 32;
 
-    pub fn from_bytes(data: &[u8]) -> &[QuantBlockQ8_0] {
-        let size = std::mem::size_of::<QuantBlockQ8_0>();
+    pub fn from_bytes(data: &[u8]) -> &[BlockQ8_0] {
+        let size = std::mem::size_of::<BlockQ8_0>();
         assert!(
             data.len() % size == 0,
             "data length must be a multiple of QuantBlockQ8_0 size"
         );
         unsafe {
-            std::slice::from_raw_parts(data.as_ptr() as *const QuantBlockQ8_0, data.len() / size)
+            std::slice::from_raw_parts(data.as_ptr() as *const BlockQ8_0, data.len() / size)
         }
     }
 
@@ -34,20 +34,24 @@ impl QuantBlockQ8_0 {
 }
 
 #[derive(Debug, Clone)]
-pub struct QuantBuf8_0<'a> {
+pub struct QuantBufQ8_0<'a> {
     raw: &'a [u8],
     num_blocks: usize,
 }
 
-impl<'a> QuantBuf8_0<'a> {
+impl<'a> QuantBufQ8_0<'a> {
     pub fn from_bytes(buf: &'a [u8]) -> Self {
-        let block_mem = std::mem::size_of::<QuantBlockQ8_0>();
+        let block_mem = std::mem::size_of::<BlockQ8_0>();
         // assert!(buf.len() % block_mem == 0);
         let num_blocks = buf.len() / block_mem;
         Self {
             raw: buf,
             num_blocks,
         }
+    }
+
+    pub fn blocks(&self) -> &[BlockQ8_0] {
+        BlockQ8_0::from_bytes(self.raw)
     }
 
     pub fn len(&self) -> usize {
@@ -71,15 +75,16 @@ impl<'a> QuantBuf8_0<'a> {
     }
 }
 
-impl<'a> BlockVecCompute for QuantBuf8_0<'a> {
-    type BlockType = QuantBlockQ8_0;
+impl<'a> BlockVecCompute for QuantBufQ8_0<'a> {
+    type BlockType = BlockQ8_0;
 
     fn block_elms(&self) -> usize {
-        QuantBlockQ8_0::BLOCK_ELEMS
+        BlockQ8_0::BLOCK_ELEMS
     }
 
-    fn blocks(&self) -> &[Self::BlockType] {
-        QuantBlockQ8_0::from_bytes(self.raw)
+    fn blocks_between(&self, start: usize, end: usize) -> &[Self::BlockType] {
+        let blocks = BlockQ8_0::from_bytes(self.raw);
+        &blocks[start..end]
     }
 
     fn vec_dot_f32(&self, row: &[Self::BlockType], x: &[f32]) -> f32 {
@@ -111,7 +116,7 @@ impl<'a> BlockVecCompute for QuantBuf8_0<'a> {
 }
 
 pub struct BlockBufIterQ8_0<'a> {
-    buf: &'a QuantBuf8_0<'a>,
+    buf: &'a QuantBufQ8_0<'a>,
     current_f32_buf: [f32; 32],
     current_block: usize,
     pos: usize,
@@ -127,7 +132,7 @@ impl<'a> Iterator for BlockBufIterQ8_0<'a> {
             return None;
         }
 
-        let block_idx = self.pos / QuantBlockQ8_0::BLOCK_ELEMS;
+        let block_idx = self.pos / BlockQ8_0::BLOCK_ELEMS;
         if block_idx != self.current_block {
             let block = &self.buf.blocks()[block_idx];
             block.dequantize(&mut self.current_f32_buf);
@@ -159,7 +164,7 @@ mod tests {
         buf[66] = 9;
         buf[67] = 9;
 
-        let blocks = QuantBlockQ8_0::from_bytes(&buf[0..34]);
+        let blocks = BlockQ8_0::from_bytes(&buf[0..34]);
         assert_eq!(blocks[0].d.to_f32(), 3.0);
         assert_eq!(
             blocks[0].qs,
@@ -169,7 +174,7 @@ mod tests {
             ]
         );
 
-        let bf = QuantBuf8_0::from_bytes(&buf);
+        let bf = QuantBufQ8_0::from_bytes(&buf);
         assert_eq!(bf.len(), 64);
         assert_eq!(
             bf.iter_range(0, bf.len(), 1).collect::<Vec<_>>(),

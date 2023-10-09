@@ -4,7 +4,7 @@ use std::slice;
 use crate::error::Result;
 use crate::gguf::GGMLType;
 
-use crate::tensor::cpu::buf::QuantBuf8_0;
+use crate::tensor::cpu::buf::QuantBufQ8_0;
 
 /// All the quantized tensor are read-only.
 /// to implement a quantized tensor, we need to implement the following:
@@ -12,14 +12,14 @@ use crate::tensor::cpu::buf::QuantBuf8_0;
 #[derive(Debug)]
 pub enum CpuTensorBuf<'a> {
     F32(Cow<'a, [f32]>),
-    Q8_0(QuantBuf8_0<'a>),
+    Q8_0(QuantBufQ8_0<'a>),
 }
 
 impl<'a> CpuTensorBuf<'a> {
     pub fn from_raw_bytes(buf: &'a [u8], typ: GGMLType) -> Result<Self> {
         match typ {
             GGMLType::F32 => Ok(Self::from_raw_bytes_f32(buf)),
-            GGMLType::Q8_0 => Ok(CpuTensorBuf::Q8_0(QuantBuf8_0::from_bytes(buf))),
+            GGMLType::Q8_0 => Ok(CpuTensorBuf::Q8_0(QuantBufQ8_0::from_bytes(buf))),
             _ => unimplemented!(),
         }
     }
@@ -186,7 +186,7 @@ impl<'a> ExactSizeIterator for CpuTensorBufIter<'a> {
 pub trait BlockVecCompute {
     type BlockType;
 
-    fn blocks(&self) -> &[Self::BlockType];
+    fn blocks_between(&self, start: usize, end: usize) -> &[Self::BlockType];
 
     fn block_elms(&self) -> usize;
 

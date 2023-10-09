@@ -2,7 +2,7 @@ use crate::error::ErrorKind;
 use crate::error::Result;
 use crate::gguf::GGMLType;
 use crate::tensor::cpu::buf::CpuTensorBuf;
-use crate::tensor::cpu::buf::QuantBlockQ8_0;
+use crate::tensor::cpu::buf::BlockQ8_0;
 use crate::tensor::cpu::validation::require_tensor_contiguous;
 use crate::tensor::cpu::validation::require_tensor_dims;
 use crate::tensor::cpu::validation::require_tensor_matmul_2d_shapes;
@@ -10,7 +10,7 @@ use crate::tensor::cpu::validation::require_tensor_shape;
 use crate::tensor::CpuTensor;
 use rayon::prelude::*;
 
-use super::buf::QuantBuf8_0;
+use super::buf::QuantBufQ8_0;
 use super::buf::buf::BlockVecCompute;
 
 ///! arithmetic.rs contains the tensor arithmetics operations like matmul, accum, etc.
@@ -138,14 +138,26 @@ pub fn matmul_specialized_q8_0_2d_f32_1d<'a>(
         _ => unreachable!("only f32 buffers are supported"),
     };
     let w_cols = w.shape()[1];
-
     let mut xout: Vec<f32> = vec![0.0; w.shape()[0]];
+
     xout.par_iter_mut().enumerate().for_each(|(w_row, o)| {
         let row =
-            &wb.blocks()[w_row * w_cols / wb.block_elms()..(w_row + 1) * w_cols / wb.block_elms()];
+            &wb.blocks_between(w_row * w_cols / wb.block_elms(), (w_row + 1) * w_cols / wb.block_elms());
         *o = wb.vec_dot_f32(row, xb);
     });
     CpuTensor::new(xout, vec![w.shape()[0]])
+}
+
+// wb: [w_rows, w_cols]
+// xb: [w_cols]
+// out: [w_rows]
+pub fn matmul_vec_generic_xxx_f32_2d_1d<'a, T: BlockVecCompute+Sync>(wb: T, xb: &[f32], out: &mut [f32]) {
+    let w_cols = xb.len();
+    out.par_iter_mut().enumerate().for_each(|(w_row, o)| {
+        let row =
+            &wb.blocks_between(w_row * w_cols / wb.block_elms(), (w_row + 1) * w_cols / wb.block_elms());
+        *o = wb.vec_dot_f32(row, xb);
+    });
 }
 
 pub fn batch_matmul<'a, 'b>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'b>>

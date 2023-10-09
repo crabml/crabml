@@ -2,8 +2,8 @@ use bencher::benchmark_group;
 use bencher::benchmark_main;
 
 use bencher::Bencher;
-use crabml::tensor::arithmetic::matmul;
-use crabml::tensor::arithmetic::matmul_specialized_f32_2d_1d;
+use crabml::tensor::compute::matmul;
+use crabml::tensor::compute::matmul_specialized_f32_2d_1d;
 use crabml::tensor::CpuTensor;
 use rayon::prelude::*;
 

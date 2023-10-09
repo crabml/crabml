@@ -1,4 +1,4 @@
-pub mod arithmetic;
+pub mod compute;
 pub mod buf;
 pub mod tensor;
 pub mod validation;

@@ -1,6 +1,6 @@
 use std::borrow::Cow;
-use std::simd::SimdFloat;
 use std::simd::f32x32;
+use std::simd::SimdFloat;
 
 use crate::error::ErrorKind;
 use crate::error::Result;
@@ -36,6 +36,7 @@ pub fn rms_norm_inplace(mut x: CpuTensor<'_>, eps: f32) -> Result<CpuTensor<'_>>
 
 fn rms_norm_inplace_vec_f32(x: &mut [f32], eps: f32) {
     let len = x.len();
+    assert!(len % 32 == 0);
     let mut sum = 0.0;
     for chunk in x.as_chunks::<32>().0 {
         let mut v = f32x32::from_slice(chunk);
@@ -48,15 +49,38 @@ fn rms_norm_inplace_vec_f32(x: &mut [f32], eps: f32) {
         v /= f32x32::splat(rms);
         v.copy_to_slice(chunk);
     }
-} 
+}
 
 pub fn mul_inplace<'a>(mut a: CpuTensor<'a>, b: &CpuTensor<'a>) -> Result<CpuTensor<'a>> {
     require_tensor_shape(&a, b.shape())?;
+
+    if a.is_contiguous() && b.is_contiguous() {
+        match (a.buf_mut(), b.buf()) {
+            (CpuTensorBuf::F32(Cow::Owned(ab)), CpuTensorBuf::F32(bb)) => {
+                mul_inplace_vec_f32(ab, bb);
+                return Ok(a);
+            }
+            _ => (),
+        }
+    }
 
     for (ia, ib) in a.iter_mut()?.zip(b.iter()) {
         *ia *= ib;
     }
     Ok(a)
+}
+
+fn mul_inplace_vec_f32(a: &mut [f32], b: &[f32]) {
+    let ac = a.as_chunks_mut::<32>().0;
+    let bc = b.as_chunks::<32>().0;
+    ac.iter_mut().zip(bc).for_each(
+        |(a, b)| {
+            let mut va = f32x32::from_slice(a);
+            let vb = f32x32::from_slice(b);
+            va *= vb;
+            va.copy_to_slice(a);
+        },
+    );
 }
 
 pub fn div_scalar_inplace<'a>(mut a: CpuTensor<'a>, b: f32) -> Result<CpuTensor<'a>> {
@@ -287,7 +311,11 @@ pub fn rope_inplace<'a>(
         let fci = val.sin();
         let rotn = if i < kv_dim { 2 } else { 1 }; // how many vectors? 2 = q & k, 1 = q only
         for v in 0..rotn {
-            let vec = if v == 0 { q.f32_buf_mut()? } else { k.f32_buf_mut()? };
+            let vec = if v == 0 {
+                q.f32_buf_mut()?
+            } else {
+                k.f32_buf_mut()?
+            };
             let v0 = vec[i];
             let v1 = vec[i + 1];
             vec[i] = v0 * fcr - v1 * fci;

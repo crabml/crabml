@@ -7,8 +7,6 @@ use crate::gguf::GGMLType;
 use crate::tensor::cpu::buf::QuantBufQ8_0;
 
 /// All the quantized tensor are read-only.
-/// to implement a quantized tensor, we need to implement the following:
-/// - iter_range
 #[derive(Debug)]
 pub enum CpuTensorBuf<'a> {
     F32(Cow<'a, [f32]>),
@@ -106,7 +104,7 @@ impl<'a> CpuTensorBuf<'a> {
         }
     }
 
-    pub fn from_raw_bytes_f32(buf: &'a [u8]) -> Self {
+    fn from_raw_bytes_f32(buf: &'a [u8]) -> Self {
         let len = buf.len();
         assert_eq!(
             len % std::mem::size_of::<f32>(),

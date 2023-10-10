@@ -1,13 +1,7 @@
-- [x] support q8 quantization
-  - [x] zero copy q8 quantization with the zero-copy crate
-  - [x] have a test with https://huggingface.co/TheBloke/TinyLlama-1.1B-python-v0.1-GGUF/blob/main/tinyllama-1.1b-python-v0.1.Q8_0.gguf
-- [x] add a specialized q8 vs f32 matmul to optimize a bit about the dog slot speed
-  - [x] add typ to tensor
-- [ ] try https://docs.rs/matrixmultiply/latest/matrixmultiply/fn.sgemm.html
-  - [x] remove par_iter, par_iter_mut, it's better to expose the underlying buffer instead of abstract the iterator
-  - [x] remove rayon
-  - [x] simd for q8 quantization
-  - [x] rename arithmetic to compute
-  - [x] refactor buf: seperate a buf/f32.rs file which is Cow, and SIMD it
+- [ ] rearrange kv cache, do not permute on MQA phase
+- [ ] GGML could inference 2b q8_0 at 13 t/s without blas & acceleration
+    - [ ] stats to track each part's execution time
+    - [ ] rope
+- [ ] vectorize softmax
 - [ ] take the tensor & device framework
 - [ ] wgpu tensor support

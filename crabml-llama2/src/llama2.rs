@@ -509,6 +509,7 @@ impl<'a> Llama2RunnerOutputGenerator<'a> {
         // forward the transformer to get logits for the next token
         let start_time = Instant::now();
         let logits = self.runner.forward(self.token, self.pos)?;
+        self.total_time.add_assign(start_time.elapsed());
 
         // advance the state state machine
         let (next_token, is_prompt) = if self.pos < self.prompt_tokens.len() - 1 {
@@ -519,7 +520,6 @@ impl<'a> Llama2RunnerOutputGenerator<'a> {
             let token = self.sampler.sample(logits)?;
             (token, false)
         };
-        self.total_time.add_assign(start_time.elapsed());
 
         // data-dependent terminating condition: the BOS (=1) token delimits sequences
         if next_token == 1 {

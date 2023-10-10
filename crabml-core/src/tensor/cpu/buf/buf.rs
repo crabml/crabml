@@ -104,6 +104,13 @@ impl<'a> CpuTensorBuf<'a> {
         }
     }
 
+    pub fn vec_dot_f32(&self, offset: usize, x: &[f32]) -> f32 {
+        match self {
+            CpuTensorBuf::F32(buf) => buf.vec_dot_f32(offset, x),
+            CpuTensorBuf::Q8_0(buf) => buf.vec_dot_f32(offset, x),
+        }
+    }
+
     fn from_raw_bytes_f32(buf: &'a [u8]) -> Self {
         let len = buf.len();
         assert_eq!(
@@ -181,12 +188,6 @@ impl<'a> ExactSizeIterator for CpuTensorBufIter<'a> {
     }
 }
 
-pub trait BlockVecCompute {
-    type BlockType;
-
-    fn blocks_between(&self, start: usize, end: usize) -> &[Self::BlockType];
-
-    fn block_elms(&self) -> usize;
-
-    fn vec_dot_f32(&self, row: &[Self::BlockType], x: &[f32]) -> f32;
+pub trait BufVecDotF32 {
+    fn vec_dot_f32(&self, offset: usize, x: &[f32]) -> f32;
 }

@@ -56,6 +56,19 @@ impl<'a> CpuTensor<'a> {
             .map(|offset| self.buf.at_unchecked(offset))
     }
 
+    pub fn copy_from(&mut self, pos: &[usize], axis: usize, src: &CpuTensor<'a>) -> Result<()> {
+        if !self.is_owned() {
+            return Err((ErrorKind::TensorError, "not owned").into());
+        }
+        if !self.is_contiguous() {
+            return Err((ErrorKind::TensorError, "not contiguous").into());
+        }
+        
+        let iter = self.iter_axis_mut(pos.to_vec(), axis)?;
+        iter.zip(src.iter()).for_each(|(dst, src)| *dst = src);
+        Ok(())
+    }
+
     pub fn extend(&mut self, t: &CpuTensor<'a>) -> Result<()> {
         if !self.is_owned() {
             return Err((ErrorKind::TensorError, "not owned").into());
@@ -210,6 +223,10 @@ impl<'a> CpuTensor<'a> {
 
     pub fn is_contiguous(&self) -> bool {
         self.strider.is_contiguous()
+    }
+
+    pub fn is_contiguous_on_axis(&self, axis: usize) -> bool {
+        self.strider.is_contiguous_on_axis(axis)
     }
 
     pub fn shape(&self) -> &[usize] {

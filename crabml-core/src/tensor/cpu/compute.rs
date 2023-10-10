@@ -195,14 +195,22 @@ pub fn maybe_matmul_vec_2d_1d<'a>(
     let mut out: Vec<f32> = vec![0.0; w.shape()[0]];
 
     match (w.buf(), x.buf()) {
-        (CpuTensorBuf::F32(wb), CpuTensorBuf::F32(xb)) => matmul_vec_generic_xxx_f32_2d_1d(wb, xb, &mut out),
-        (CpuTensorBuf::Q8_0(wb), CpuTensorBuf::F32(xb)) => matmul_vec_generic_xxx_f32_2d_1d(wb, xb, &mut out),
+        (CpuTensorBuf::F32(wb), CpuTensorBuf::F32(xb)) => {
+            matmul_vec_generic_xxx_f32_2d_1d(wb, xb, &mut out)
+        }
+        (CpuTensorBuf::Q8_0(wb), CpuTensorBuf::F32(xb)) => {
+            matmul_vec_generic_xxx_f32_2d_1d(wb, xb, &mut out)
+        }
         _ => return None,
     };
     Some(CpuTensor::new(out, vec![w.shape()[0]]))
 }
 
-pub fn matmul_vec_generic_xxx_f32_2d_1d<'a, T: BufVecDotF32+Sync>(wb: &T, xb: &[f32], out: &mut [f32]) {
+pub fn matmul_vec_generic_xxx_f32_2d_1d<'a, T: BufVecDotF32 + Sync>(
+    wb: &T,
+    xb: &[f32],
+    out: &mut [f32],
+) {
     // wb: [w_rows, w_cols]
     // xb: [w_cols]
     // out: [w_rows]
@@ -213,12 +221,12 @@ pub fn matmul_vec_generic_xxx_f32_2d_1d<'a, T: BufVecDotF32+Sync>(wb: &T, xb: &[
     });
 }
 
-pub fn batch_matmul<'a, 'b>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'b>>
+pub fn batch_matmul_2d_1d<'a, 'b>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'b>>
 where
     'b: 'a,
 {
     require_tensor_dims(w, &[3])?;
-    require_tensor_dims(x, &[2, 3])?;
+    require_tensor_dims(x, &[2])?;
 
     if w.shape()[0] != x.shape()[0] || w.shape()[2] != x.shape()[1] {
         return Err((
@@ -232,7 +240,7 @@ where
             .into());
     }
 
-    if x.shape().len() == 2 {
+    if w.is_contiguous_on_axis(2) && x.is_contiguous_on_axis(1) {
         // (batch_size, w_rows, w_cols) @ (batch_size, w_cols, ) -> (batch_size, w_rows, )
         let batch_size = w.shape()[0];
         let w_rows = w.shape()[1];
@@ -240,30 +248,30 @@ where
         for b in 0..batch_size {
             let o_iter = out.iter_axis_mut(vec![b, 0], 1)?; // w_cols
             o_iter.enumerate().for_each(|(w_row, o)| {
-                let w_iter = w.iter_axis(&[b, w_row, 0], 2).unwrap(); // w_rows
-                let x_iter = x.iter_axis(&[b, 0], 1).unwrap(); // w_rows
-                *o = w_iter.zip(x_iter).map(|(w, x)| w * x).sum::<f32>();
+                let wb = w.buf_axis(&[b, w_row, 0], 2).unwrap();
+                let xb = match x.buf_axis(&[b, 0], 1).unwrap() {
+                    CpuTensorBuf::F32(xb) => xb,
+                    _ => unreachable!(),
+                };
+                *o = wb.vec_dot_f32(0, &xb);
             })
         }
         return Ok(out);
     }
 
+    // (batch_size, w_rows, w_cols) @ (batch_size, w_cols, ) -> (batch_size, w_rows, )
     let batch_size = w.shape()[0];
     let w_rows = w.shape()[1];
-    let x_cols = x.shape()[2];
-    let mut out = CpuTensor::zeros(vec![batch_size, w_rows, x_cols])?;
+    let mut out = CpuTensor::zeros(vec![batch_size, w_rows])?;
     for b in 0..batch_size {
-        for w_row in 0..w_rows {
-            let o_row_iter = out.iter_axis_mut(vec![b, w_row, 0], 2)?; // (x_cols, )
-            o_row_iter.enumerate().for_each(|(x_col, o)| {
-                let w_row_iter = w.iter_axis(&[b, w_row, 0], 2).unwrap(); // (w_rows, )
-                let x_col_iter = x.iter_axis(&[b, 0, x_col], 1).unwrap(); // (w_rows, )
-                *o = w_row_iter.zip(x_col_iter).map(|(w, x)| w * x).sum::<f32>();
-            });
-        }
+        let o_iter = out.iter_axis_mut(vec![b, 0], 1)?; // w_cols
+        o_iter.enumerate().for_each(|(w_row, o)| {
+            let w_iter = w.iter_axis(&[b, w_row, 0], 2).unwrap(); // w_rows
+            let x_iter = x.iter_axis(&[b, 0], 1).unwrap(); // w_cols
+            *o = w_iter.zip(x_iter).map(|(w, x)| w * x).sum::<f32>();
+        })
     }
-
-    Ok(out)
+    return Ok(out);
 }
 
 // t: (rows, cols)
@@ -405,7 +413,7 @@ mod tests {
         )?;
         let b = CpuTensor::new(vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0], vec![2, 3, 1])?;
 
-        let o = batch_matmul(&w, &b)?;
+        let o = batch_matmul_2d_1d(&w, &b)?;
         assert_eq!(o.shape(), vec![2, 2, 1]);
         assert_eq!(o.iter().collect::<Vec<_>>(), vec![3.0, 12.0, 21.0, 30.0]);
         Ok(())

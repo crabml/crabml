@@ -6,7 +6,7 @@ use crabml::error::Result;
 use crabml::gguf::GGUFFile;
 use crabml::gguf::GGUFMetadata;
 use crabml::tensor::compute::add_inplace;
-use crabml::tensor::compute::batch_matmul;
+use crabml::tensor::compute::batch_matmul_2d_1d;
 use crabml::tensor::compute::div_scalar_inplace;
 use crabml::tensor::compute::matmul_2d_1d;
 use crabml::tensor::compute::mul_inplace;
@@ -384,7 +384,7 @@ impl<'a> Llama2Runner<'a> {
                     .repeat(&[1, n_heads / n_kv_heads, 1])?
                     .transpose(&[1, 0, 2])?;
                 // (n_heads, n_seq, head_size) @ (n_head, head_size) => (n_heads, n_seq)
-                let attn = batch_matmul(&k_cache, &q)?;
+                let attn = batch_matmul_2d_1d(&k_cache, &q)?;
                 let attn = div_scalar_inplace(attn, (head_size as f32).sqrt())?;
                 let attn = softmax_inplace(attn, 1)?;
 
@@ -393,7 +393,7 @@ impl<'a> Llama2Runner<'a> {
                     .repeat(&[1, n_heads / n_kv_heads, 1])?
                     .transpose(&[1, 2, 0])?;
                 // (n_heads, head_size, n_seq) @ (n_heads, n_seq) => (n_heads, head_size)
-                let x_with_attn = batch_matmul(&v_cache, &attn)?; // (n_heads, head_size)
+                let x_with_attn = batch_matmul_2d_1d(&v_cache, &attn)?; // (n_heads, head_size)
                 let x_with_attn = x_with_attn.view(&[embed_dim])?;
 
                 // final matmul to get the output of the attention

@@ -63,7 +63,7 @@ impl<'a> CpuTensor<'a> {
         if !self.is_contiguous() {
             return Err((ErrorKind::TensorError, "not contiguous").into());
         }
-        
+
         let iter = self.iter_axis_mut(pos.to_vec(), axis)?;
         iter.zip(src.iter()).for_each(|(dst, src)| *dst = src);
         Ok(())
@@ -147,15 +147,6 @@ impl<'a> CpuTensor<'a> {
     }
 
     pub fn iter_axis(&'a self, pos: &[usize], axis: usize) -> Result<CpuTensorBufIter> {
-        // speculize the fast path on iterating a contiguous memory buf
-        if self.strider.is_contiguous_on_axis(axis) {
-            if axis == self.shape().len() - 1 && pos[axis] == 0 {
-                let start = self.strider.at(pos)?;
-                let end = start + self.strider.shape()[axis];
-                return Ok(self.buf.iter_range(start, end, 1));
-            }
-        }
-
         let stride = self.strider.strides()[axis];
         let start = self.strider.at(pos)?;
 
@@ -240,6 +231,16 @@ impl<'a> CpuTensor<'a> {
 
     pub(crate) fn buf_mut(&mut self) -> &mut CpuTensorBuf<'a> {
         &mut self.buf
+    }
+
+    pub(crate) fn buf_axis(&'a self, pos: &[usize], axis: usize) -> Result<CpuTensorBuf<'a>>{
+        if !self.is_contiguous_on_axis(axis) {
+            return Err((ErrorKind::TensorError, format!("not contiguous at axis {}, strides: {:?}", axis, self.strider.strides())).into());
+        }
+        let start = self.strider.at(&pos)?;
+        let remains = self.strider.shape()[axis] - pos[axis] - 1;
+        let end = start + remains + 1;
+        Ok(self.buf().range(start, end))
     }
 
     // TODO: only used in rope, remoe it later

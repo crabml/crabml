@@ -64,6 +64,13 @@ impl<'a> CpuTensorBuf<'a> {
         }
     }
 
+    pub fn range(&self, start: usize, end: usize) -> CpuTensorBuf<'_> {
+        match self {
+            CpuTensorBuf::F32(buf) => CpuTensorBuf::F32(Cow::Borrowed(&buf[start..end])),
+            CpuTensorBuf::Q8_0(buf) => CpuTensorBuf::Q8_0(buf.range(start, end)),
+        }
+    }
+
     pub fn iter_range(&self, start: usize, end: usize, step: usize) -> CpuTensorBufIter {
         match self {
             CpuTensorBuf::F32(buf) => {

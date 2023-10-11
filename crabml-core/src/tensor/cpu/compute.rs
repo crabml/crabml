@@ -214,10 +214,12 @@ pub fn matmul_vec_generic_xxx_f32_2d_1d<'a, T: BufVecDotF32 + Sync>(
     // wb: [w_rows, w_cols]
     // xb: [w_cols]
     // out: [w_rows]
-    let w_cols = xb.len();
-    out.par_iter_mut().enumerate().for_each(|(w_row, o)| {
-        let offset = w_row * w_cols;
-        *o = wb.vec_dot_f32(offset, xb);
+    let xb_len = xb.len();
+    out.par_chunks_mut(128).enumerate().for_each(|(rows_batch_idx, o)| {
+        for (row_offset, o) in o.into_iter().enumerate() {
+            let offset = (rows_batch_idx * 128 + row_offset) * xb_len;
+            *o = wb.vec_dot_f32(offset, &xb);
+        }
     });
 }
 

@@ -252,6 +252,15 @@ impl<'a> Llama2Model<'a> {
     }
 }
 
+#[derive(Default, Debug)]
+pub struct Llama2Stats {
+    pub rms_norm_elapsed: Duration,
+    pub matmul_qkv_elapsed: Duration,
+    pub rope_elapsed: Duration,
+    pub ffn_elapsed: Duration,
+    pub mqa_elapsed: Duration,
+}
+
 struct Llama2State<'a> {
     logits: Vec<f32>, // output logits (vocab_size, )
     // ProbIndex *probindex; // buffer used in top-p sampling
@@ -264,6 +273,7 @@ pub struct Llama2Runner<'a> {
     state: Llama2State<'a>,
     weights: &'a Llama2Weights<'a>,
     tokenizer: &'a Llama2Tokenizer,
+    stats: Llama2Stats,
 }
 
 impl<'a> Llama2Runner<'a> {
@@ -297,6 +307,7 @@ impl<'a> Llama2Runner<'a> {
             state,
             weights,
             tokenizer,
+            stats: Default::default(),
         })
     }
 
@@ -329,29 +340,36 @@ impl<'a> Llama2Runner<'a> {
 
             // attention rnsnorm
             x = {
+                let track_time = Instant::now();
                 x = rms_norm_inplace(x, self.conf.rms_norm_eps)?;
                 x = mul_inplace(x, &self.weights.rms_att_weight[l])?;
+                self.stats.rms_norm_elapsed.add_assign(track_time.elapsed());
                 x
             };
 
             // matmul qkv for every head
             let (q, k, v) = {
+                let track_time = Instant::now();
                 // wq: (embed_dim, embed_dim) @ x (embed_dim, ) => (embed_dim, )
                 // wk: (kv_dim, embed_dim) @ x (embed_dim, ) => (kv_dim, )
                 // wv: (kv_dim, embed_dim) @ x (embed_dim, ) => (kv_dim, )
                 let q = matmul_2d_1d(&self.weights.wq[l], &x)?;
                 let k = matmul_2d_1d(&self.weights.wk[l], &x)?;
                 let v = matmul_2d_1d(&self.weights.wv[l], &x)?;
+                self.stats.matmul_qkv_elapsed.add_assign(track_time.elapsed());
 
                 (q, k, v)
             };
 
             // ROPE
             let (q, k) = {
+                let track_time = Instant::now();
                 let q = q.view(&[n_heads, head_size])?;
                 let k = k.view(&[n_kv_heads, head_size])?;
 
-                rope_inplace(q, k, pos, 1.0, 10000_f32)?
+                let (q, k) = rope_inplace(q, k, pos, 1.0, 10000_f32)?;
+                self.stats.rope_elapsed.add_assign(track_time.elapsed());
+                (q, k)
             };
 
             // save to kv cache
@@ -364,6 +382,7 @@ impl<'a> Llama2Runner<'a> {
 
             // multi query attention
             x = {
+                let track_time = Instant::now();
                 let q = q.view(&[n_heads, head_size])?;
                 let k_cache = self.state.key_cache[l].as_ref();
                 let v_cache = self.state.value_cache[l].as_ref();
@@ -397,7 +416,9 @@ impl<'a> Llama2Runner<'a> {
                 let x_with_attn = x_with_attn.view(&[embed_dim])?;
 
                 // final matmul to get the output of the attention
-                matmul_2d_1d(&self.weights.wo[l], &x_with_attn)?
+                let x = matmul_2d_1d(&self.weights.wo[l], &x_with_attn)?;
+                self.stats.mqa_elapsed.add_assign(track_time.elapsed());
+                x
             };
 
             // residual connection back into x
@@ -405,6 +426,7 @@ impl<'a> Llama2Runner<'a> {
 
             // ffn
             x = {
+                let track_time = Instant::now();
                 // save for redidual connection
                 let x_orig_ffn = x.clone();
 
@@ -433,6 +455,7 @@ impl<'a> Llama2Runner<'a> {
 
                 // residual connection
                 x = add_inplace(x, &x_orig_ffn)?;
+                self.stats.ffn_elapsed.add_assign(track_time.elapsed());
                 x
             }
         }
@@ -497,6 +520,10 @@ impl<'a> Llama2RunnerOutputGenerator<'a> {
         let total_time = self.total_time.as_secs_f32();
         self.pos as f32 / total_time
     }
+
+    pub fn stats(&self) -> &Llama2Stats {
+        &self.runner.stats
+    } 
 
     fn forward_next(&mut self) -> Result<Option<String>> {
         if self.pos >= self.steps + self.prompt_tokens.len() {

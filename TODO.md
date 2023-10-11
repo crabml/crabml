@@ -1,6 +1,7 @@
-- [ ] rearrange kv cache, do not permute on MQA phase
+- [x] rearrange kv cache, do not permute on MQA phase
 - [ ] GGML could inference 2b q8_0 at 13 t/s without blas & acceleration
-    - [ ] stats to track each part's execution time
+    - [x] stats to track each part's execution time: FFN is the slowest part
+    - [ ] tiled x matmul
     - [ ] rope
 - [ ] vectorize softmax
 - [ ] take the tensor & device framework

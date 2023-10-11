@@ -71,6 +71,7 @@ fn main() -> Result<()> {
         output.average_tokens_per_seconds(),
         threads
     );
+    println!("{:?}", output.stats());
 
     Ok(())
 }

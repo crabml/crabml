@@ -1,5 +1,5 @@
 pub mod buf;
-pub mod compute;
+pub mod arithmetic;
 pub mod tensor;
 pub mod validate;
 

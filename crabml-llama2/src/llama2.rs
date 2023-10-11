@@ -356,7 +356,9 @@ impl<'a> Llama2Runner<'a> {
                 let q = matmul_2d_1d(&self.weights.wq[l], &x)?;
                 let k = matmul_2d_1d(&self.weights.wk[l], &x)?;
                 let v = matmul_2d_1d(&self.weights.wv[l], &x)?;
-                self.stats.matmul_qkv_elapsed.add_assign(track_time.elapsed());
+                self.stats
+                    .matmul_qkv_elapsed
+                    .add_assign(track_time.elapsed());
 
                 (q, k, v)
             };
@@ -523,7 +525,7 @@ impl<'a> Llama2RunnerOutputGenerator<'a> {
 
     pub fn stats(&self) -> &Llama2Stats {
         &self.runner.stats
-    } 
+    }
 
     fn forward_next(&mut self) -> Result<Option<String>> {
         if self.pos >= self.steps + self.prompt_tokens.len() {

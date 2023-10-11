@@ -233,9 +233,17 @@ impl<'a> CpuTensor<'a> {
         &mut self.buf
     }
 
-    pub(crate) fn buf_axis(&'a self, pos: &[usize], axis: usize) -> Result<CpuTensorBuf<'a>>{
+    pub(crate) fn buf_axis(&'a self, pos: &[usize], axis: usize) -> Result<CpuTensorBuf<'a>> {
         if !self.is_contiguous_on_axis(axis) {
-            return Err((ErrorKind::TensorError, format!("not contiguous at axis {}, strides: {:?}", axis, self.strider.strides())).into());
+            return Err((
+                ErrorKind::TensorError,
+                format!(
+                    "not contiguous at axis {}, strides: {:?}",
+                    axis,
+                    self.strider.strides()
+                ),
+            )
+                .into());
         }
         let start = self.strider.at(&pos)?;
         let remains = self.strider.shape()[axis] - pos[axis] - 1;

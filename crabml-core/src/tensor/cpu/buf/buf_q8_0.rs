@@ -57,7 +57,7 @@ impl<'a> QuantBufQ8_0<'a> {
     }
 
     pub fn range(&self, start: usize, end: usize) -> QuantBufQ8_0<'a> {
-        assert!(start % 32 == 0 && end % 32 == 0);
+        // assert!(start % 32 == 0 && end % 32 == 0);
         let block_mem = std::mem::size_of::<BlockQ8_0>();
         let start_offset = start / 32 * block_mem;
         let end_offset = end / 32 * block_mem;

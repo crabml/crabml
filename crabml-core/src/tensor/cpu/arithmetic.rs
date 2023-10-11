@@ -11,6 +11,7 @@ use crate::tensor::cpu::validate::require_tensor_dims;
 use crate::tensor::cpu::validate::require_tensor_matmul_2d_shapes;
 use crate::tensor::cpu::validate::require_tensor_shape;
 use crate::tensor::CpuTensor;
+use matrixmultiply::sgemm;
 use rayon::prelude::*;
 
 use super::buf::BufVecDotF32;
@@ -196,7 +197,7 @@ pub fn maybe_matmul_vec_2d_1d<'a>(
 
     match (w.buf(), x.buf()) {
         (CpuTensorBuf::F32(wb), CpuTensorBuf::F32(xb)) => {
-            matmul_vec_generic_xxx_f32_2d_1d(wb, xb, &mut out)
+            matmul_vec_generic_f32_f32_2d_1d(wb, xb, &mut out)
         }
         (CpuTensorBuf::Q8_0(wb), CpuTensorBuf::F32(xb)) => {
             matmul_vec_generic_xxx_f32_2d_1d(wb, xb, &mut out)
@@ -215,7 +216,7 @@ pub fn matmul_vec_generic_xxx_f32_2d_1d<'a, T: BufVecDotF32 + Sync>(
     // xb: [w_cols]
     // out: [w_rows]
     // spilit xb into tiles, each tile fit into L1 cache
-    let x_tile_size = 512;
+    let x_tile_size = 256;
     let o_tile_size = out.len() / 16;
     let w_cols = xb.len();
     out.par_chunks_mut(o_tile_size)
@@ -230,6 +231,40 @@ pub fn matmul_vec_generic_xxx_f32_2d_1d<'a, T: BufVecDotF32 + Sync>(
             })
         });
 }
+
+pub fn matmul_vec_generic_f32_f32_2d_1d(
+    wb: &[f32],
+    xb: &[f32],
+    out: &mut [f32],
+) {
+    // wb: [w_rows, w_cols]
+    // xb: [w_cols]
+    // out: [w_rows]
+    // spilit xb into tiles, each tile fit into L1 cache
+
+    // A: [m, k] -> [out.len(), xb.len()]
+    // B: [k, n] -> [xb.len(), 1]
+    // C: [m, n] -> [out.len(), 1]
+    unsafe {
+    let m = out.len();
+    let k = xb.len();
+    let n = 1;
+    let alpha = 1.0;
+    let beta = 1.0;
+    let a = wb.as_ptr();
+    let b = xb.as_ptr();
+    let c = out.as_mut_ptr();
+    let rsa = k as isize;
+    let csa = 1;
+    let rsb = 1;
+    let csb = 1;
+    let rsc = 1;
+    let csc = 1;
+
+    sgemm(m, k, n, alpha, a, rsa, csa, b, rsb, csb, beta, c, rsc, csc)
+    }
+}
+
 
 pub fn batch_matmul_2d_1d<'a, 'b>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'b>>
 where

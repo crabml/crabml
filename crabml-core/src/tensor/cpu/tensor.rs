@@ -2,7 +2,6 @@ use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::error::Result;
 use crate::gguf::GGMLType;
-use rayon::prelude::*;
 
 use crate::tensor::cpu::buf::CpuTensorBuf;
 use crate::tensor::strider::TensorStrider;

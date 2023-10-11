@@ -214,13 +214,15 @@ pub fn matmul_vec_generic_xxx_f32_2d_1d<'a, T: BufVecDotF32 + Sync>(
     // wb: [w_rows, w_cols]
     // xb: [w_cols]
     // out: [w_rows]
-    let xb_len = xb.len();
-    out.par_chunks_mut(128).enumerate().for_each(|(rows_batch_idx, o)| {
-        for (row_offset, o) in o.into_iter().enumerate() {
-            let offset = (rows_batch_idx * 128 + row_offset) * xb_len;
-            *o = wb.vec_dot_f32(offset, &xb);
+    // spilit xb into tiles, each tile fit into L1 cache
+    let tile_size = 2048;
+    let w_rows = out.len();
+    let w_cols = xb.len();
+    xb.chunks(tile_size).enumerate().for_each(|(tn, xt)| {
+        for w_row in 0..w_rows {
+            out[w_row] += wb.vec_dot_f32(w_row*w_cols + tn * tile_size, xt);
         }
-    });
+    })
 }
 
 pub fn batch_matmul_2d_1d<'a, 'b>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'b>>

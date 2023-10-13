@@ -12,6 +12,7 @@ use crabml::tensor::compute::matmul_2d_1d;
 use crabml::tensor::compute::mul_inplace;
 use crabml::tensor::compute::rms_norm_inplace;
 use crabml::tensor::compute::rope_inplace;
+use crabml::tensor::compute::rope_inplace2;
 use crabml::tensor::compute::silu_inplace;
 use crabml::tensor::compute::softmax_inplace;
 use crabml::tensor::CpuTensor;
@@ -30,6 +31,7 @@ pub struct Llama2Config {
     pub vocab_size: usize,
     pub seq_len: usize,
     pub rms_norm_eps: f32,
+    pub n_rot: usize,
 }
 
 impl Llama2Config {
@@ -239,6 +241,7 @@ impl<'a> Llama2Model<'a> {
             .metadata()
             .get_f32("llama.attention.layer_norm_rms_epsilon")
             .unwrap();
+        let n_rot = gf.metadata().get_u32("llama.rope.dimension_count").unwrap() as usize;
         Llama2Config {
             n_heads,
             n_kv_heads,
@@ -248,6 +251,7 @@ impl<'a> Llama2Model<'a> {
             seq_len,
             vocab_size,
             rms_norm_eps,
+            n_rot,
         }
     }
 }
@@ -351,7 +355,9 @@ impl<'a> Llama2Runner<'a> {
                 let q = q.view(&[n_heads, head_size])?;
                 let k = k.view(&[n_kv_heads, head_size])?;
 
-                rope_inplace(q, k, pos, 1.0, 10000_f32)?
+                let q = rope_inplace2(q, pos, self.conf.n_rot)?;
+                let k = rope_inplace2(k, pos, self.conf.n_rot)?;
+                (q, k)
             };
 
             // save to kv cache
@@ -613,12 +619,14 @@ mod tests {
         let gl = GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-q8_0.gguf")?;
         let gf = gl.open()?;
         let lm = Llama2Model::from(&gf)?;
+        assert_eq!(lm.conf().n_rot, 48);
+        assert_eq!(lm.conf().head_size(), 48);
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0);
         let mut runner = Llama2Runner::new(&lm.conf, &lm.weights, &lm.tokenizer)?;
-        let output = runner.generate("Lily is a cat ", 10, &mut sampler)?;
+        let output = runner.generate("Lily is a cute cat, ", 10, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
-        assert_eq!(s, "y. Sheaa is a very special cat.");
+        assert_eq!(s, "gry. She was a very brave and curious girl.");
         Ok(())
     }
 }

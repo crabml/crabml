@@ -284,6 +284,34 @@ pub fn softmax_inplace<'a>(mut t: CpuTensor<'a>, axis: usize) -> Result<CpuTenso
     Ok(t)
 }
 
+pub fn rope_inplace2<'a>(mut q: CpuTensor<'a>, pos: usize, rope_dims: usize) -> Result<CpuTensor<'a>> {
+    require_tensor_contiguous(&q)?;
+    require_tensor_dims(&q, &[2])?;
+
+    let n_heads = q.shape()[0];
+    let head_size = q.shape()[1];
+    let qb = q.f32_buf_mut()?;
+
+ 
+    // apply RoPE rotation for each head
+    for h in 0..n_heads {
+        for i in 0..rope_dims/2 {
+            let theta_scale = 10000_f32.powf(0.0 - 2.0 * i as f32 / head_size as f32);
+            let theta = pos as f32 * theta_scale;
+
+            let cos_theta = theta.cos();
+            let sin_theta = theta.sin();
+            let qp = &mut qb[h * head_size + i*2..];
+            let qp0 = qp[0];
+            let qp1 = qp[1];
+            qp[0] = qp0 * cos_theta - qp1 * sin_theta;
+            qp[1] = qp0 * sin_theta + qp1 * cos_theta;
+        }
+    }
+
+    Ok(q)
+} 
+
 // q: (n_heads, head_size)
 pub fn rope_inplace<'a>(
     mut q: CpuTensor<'a>,
@@ -291,6 +319,7 @@ pub fn rope_inplace<'a>(
     pos: usize,
     freq_base: f32,
     freq_scale: f32,
+    _n_rot: usize,
 ) -> Result<(CpuTensor<'a>, CpuTensor<'a>)> {
     require_tensor_contiguous(&q)?;
     require_tensor_contiguous(&k)?;

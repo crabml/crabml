@@ -2,15 +2,14 @@ use crabml::error::Result;
 use std::collections::HashMap;
 
 type Token = String;
-
 type TokenID = usize;
 
 pub struct Llama2Tokenizer {
-    tokens: Vec<String>,
+    tokens: Vec<Token>,
     token_scores: Vec<f32>,
-    token_ids: HashMap<String, usize>,
-    bos_token: usize,
-    eos_token: usize,
+    token_ids: HashMap<String, TokenID>,
+    bos_token: TokenID,
+    eos_token: TokenID,
     // the state on decoding
     byte_pieces: [u8; 256],
     token_buf_len: usize,
@@ -20,15 +19,14 @@ impl Llama2Tokenizer {
     pub fn new(
         tokens: Vec<String>,
         token_scores: Vec<f32>,
-        bos_token: usize,
-        eos_token: usize,
+        bos_token: TokenID,
+        eos_token: TokenID,
     ) -> Self {
         let token_ids = tokens
             .iter()
             .enumerate()
             .map(|(i, v)| (v.clone(), i))
             .collect();
-
         let mut byte_pieces = [0u8; 256];
         for (i, p) in byte_pieces.iter_mut().enumerate() {
             *p = i as u8
@@ -49,7 +47,7 @@ impl Llama2Tokenizer {
         &self.tokens
     }
 
-    pub fn decode(&self, prev_token: usize, token: usize) -> Result<String> {
+    pub fn decode(&self, prev_token: usize, token: usize) -> Result<Token> {
         let mut piece: &[u8] = self.tokens[token].as_bytes();
         // following BOS (1) token, sentencepiece decoder strips any leading whitespace (see PR #89)
         if prev_token == 1 && piece[0] == b' ' {
@@ -72,11 +70,11 @@ impl Llama2Tokenizer {
 
     // encode the string text (input) into an upper-bound preallocated tokens[] array
     // bos != 0 means prepend the BOS token (=1), eos != 0 means append the EOS token (=2)
-    pub fn encode(&self, text: &str, bos: bool, eos: bool) -> Result<Vec<usize>> {
+    pub fn encode(&self, text: &str, bos: bool, eos: bool) -> Result<Vec<TokenID>> {
         // create a temporary buffer that will store merge candidates of always two consecutive tokens
         // *2 for concat, +1 for null terminator +2 for UTF8 (in case max_token_length is 1)
         let mut token_buf = String::with_capacity(self.token_buf_len * 2 + 1 + 2);
-        let mut tokens: Vec<usize> = vec![];
+        let mut tokens: Vec<TokenID> = vec![];
 
         if bos {
             tokens.push(self.bos_token);

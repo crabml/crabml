@@ -1,24 +1,29 @@
 use crabml::error::Result;
 use std::collections::HashMap;
 
+type Token = String;
+
+type TokenID = usize;
+
 pub struct Llama2Tokenizer {
-    vocab: Vec<String>,
-    vocab_scores: Vec<f32>,
-    byte_pieces: [u8; 256],
-    token_buf_len: usize,
-    vocab_index: HashMap<String, usize>,
+    tokens: Vec<String>,
+    token_scores: Vec<f32>,
+    token_ids: HashMap<String, usize>,
     bos_token: usize,
     eos_token: usize,
+    // the state on decoding
+    byte_pieces: [u8; 256],
+    token_buf_len: usize,
 }
 
 impl Llama2Tokenizer {
     pub fn new(
-        vocab: Vec<String>,
-        vocab_scores: Vec<f32>,
+        tokens: Vec<String>,
+        token_scores: Vec<f32>,
         bos_token: usize,
         eos_token: usize,
     ) -> Self {
-        let vocab_index = vocab
+        let token_ids = tokens
             .iter()
             .enumerate()
             .map(|(i, v)| (v.clone(), i))
@@ -30,9 +35,9 @@ impl Llama2Tokenizer {
         }
 
         Self {
-            vocab,
-            vocab_index,
-            vocab_scores,
+            tokens,
+            token_ids,
+            token_scores,
             token_buf_len: 128,
             byte_pieces,
             bos_token,
@@ -41,11 +46,11 @@ impl Llama2Tokenizer {
     }
 
     pub fn vocab(&self) -> &[String] {
-        &self.vocab
+        &self.tokens
     }
 
     pub fn decode(&self, prev_token: usize, token: usize) -> Result<String> {
-        let mut piece: &[u8] = self.vocab[token].as_bytes();
+        let mut piece: &[u8] = self.tokens[token].as_bytes();
         // following BOS (1) token, sentencepiece decoder strips any leading whitespace (see PR #89)
         if prev_token == 1 && piece[0] == b' ' {
             piece = &piece[1..];
@@ -82,7 +87,7 @@ impl Llama2Tokenizer {
         // TODO: pretty sure this isn't correct in the general case but I don't have the
         // energy to read more of the sentencepiece code to figure out what it's doing
         if !text.starts_with('\u{0}') {
-            if let Some(dummy_prefix) = self.vocab_index.get(" ") {
+            if let Some(dummy_prefix) = self.token_ids.get(" ") {
                 tokens.push(*dummy_prefix);
             }
         }
@@ -91,7 +96,7 @@ impl Llama2Tokenizer {
         for ch in chars {
             token_buf.clear();
             token_buf.push(ch);
-            if let Some(tok) = self.vocab_index.get(&token_buf) {
+            if let Some(tok) = self.token_ids.get(&token_buf) {
                 // we found this codepoint in vocab, add it as a token
                 tokens.push(*tok);
             } else {
@@ -113,10 +118,10 @@ impl Llama2Tokenizer {
 
             while i < (tokens.len() - 1) {
                 token_buf.clear();
-                token_buf.push_str(&self.vocab[tokens[i]]);
-                token_buf.push_str(&self.vocab[tokens[i + 1]]);
-                if let Some(tok) = self.vocab_index.get(&token_buf) {
-                    let new_score = self.vocab_scores[*tok];
+                token_buf.push_str(&self.tokens[tokens[i]]);
+                token_buf.push_str(&self.tokens[tokens[i + 1]]);
+                if let Some(tok) = self.token_ids.get(&token_buf) {
+                    let new_score = self.token_scores[*tok];
                     if new_score > best_score {
                         best_score = new_score;
                         best_idx = Some(i);

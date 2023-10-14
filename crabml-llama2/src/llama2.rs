@@ -1,5 +1,4 @@
 use crate::sampler::Llama2Sampler;
-use crabml::tokenizer::BPETokenizer;
 use crabml::error::Error;
 use crabml::error::ErrorKind;
 use crabml::error::Result;
@@ -15,6 +14,7 @@ use crabml::tensor::compute::rope_inplace;
 use crabml::tensor::compute::silu_inplace;
 use crabml::tensor::compute::softmax_inplace;
 use crabml::tensor::CpuTensor;
+use crabml::tokenizer::BPETokenizer;
 use std::ops::AddAssign;
 use std::time::Duration;
 use std::time::Instant;

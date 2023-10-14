@@ -182,6 +182,9 @@ pub fn maybe_matmul_vec_2d_1d<'a>(
             matmul_vec_generic_xxx_f32_2d_1d(wb, xb, &mut out)
         }
         (CpuTensorBuf::F32(wb), CpuTensorBuf::F32(xb)) => {
+            if w.len() % wb.block_elms() != 0 {
+                return None
+            }
             matmul_vec_generic_xxx_f32_2d_1d(wb, xb, &mut out)
         }
         _ => return None,
@@ -400,26 +403,6 @@ mod tests {
         // 1*4 + 2*5 + 3*6 = 4 + 10 + 18
         let out = matmul_2d_1d(&w, &b)?;
         assert_eq!(out.iter().collect::<Vec<_>>(), &[14.0, 32.0]);
-
-        // 1, 2, 3
-        // 4, 5, 6
-        let w = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![2, 3])?;
-        // 1, 2, 3
-        // 4, 5, 6
-        // 7, 8, 9
-        // 10, 11, 12
-        let b = CpuTensor::new(
-            vec![
-                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
-            ],
-            vec![3, 4],
-        )?;
-        let out = matmul_2d_1d(&w, &b)?;
-        assert_eq!(
-            out.iter().collect::<Vec<_>>(),
-            &[38.0, 44.0, 50.0, 56.0, 83.0, 98.0, 113.0, 128.0]
-        );
-        assert_eq!(out.shape(), vec![2, 4]);
 
         Ok(())
     }

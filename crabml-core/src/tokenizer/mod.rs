@@ -1,3 +1,3 @@
 mod bpe;
 
-pub use bpe::BPETokenizer;
+pub use bpe::GGMLTokenizer;

@@ -4,7 +4,7 @@ use std::collections::HashMap;
 type Token = String;
 type TokenID = usize;
 
-pub struct BPETokenizer {
+pub struct GGMLTokenizer {
     tokens: Vec<Token>,
     token_scores: Vec<f32>,
     token_ids: HashMap<String, TokenID>,
@@ -15,7 +15,7 @@ pub struct BPETokenizer {
     token_buf_len: usize,
 }
 
-impl BPETokenizer {
+impl GGMLTokenizer {
     pub fn new(
         tokens: Vec<String>,
         token_scores: Vec<f32>,
@@ -78,16 +78,6 @@ impl BPETokenizer {
 
         if bos {
             tokens.push(self.bos_token);
-        }
-
-        // add_dummy_prefix is true by default
-        // so prepend a dummy prefix token to the input string, but only if text != ""
-        // TODO: pretty sure this isn't correct in the general case but I don't have the
-        // energy to read more of the sentencepiece code to figure out what it's doing
-        if !text.starts_with('\u{0}') {
-            if let Some(dummy_prefix) = self.token_ids.get(" ") {
-                tokens.push(*dummy_prefix);
-            }
         }
 
         let chars = text.chars();
@@ -169,7 +159,7 @@ mod tests {
             .iter()
             .cloned()
             .collect::<Vec<_>>();
-        let tk = BPETokenizer::new(tokens, token_scores, 1, 2);
+        let tk = GGMLTokenizer::new(tokens, token_scores, 1, 2);
 
         let tests = vec![
             (

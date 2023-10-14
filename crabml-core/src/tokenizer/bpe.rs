@@ -1,10 +1,10 @@
-use crabml::error::Result;
+use crate::error::Result;
 use std::collections::HashMap;
 
 type Token = String;
 type TokenID = usize;
 
-pub struct Llama2Tokenizer {
+pub struct BPETokenizer {
     tokens: Vec<Token>,
     token_scores: Vec<f32>,
     token_ids: HashMap<String, TokenID>,
@@ -15,7 +15,7 @@ pub struct Llama2Tokenizer {
     token_buf_len: usize,
 }
 
-impl Llama2Tokenizer {
+impl BPETokenizer {
     pub fn new(
         tokens: Vec<String>,
         token_scores: Vec<f32>,

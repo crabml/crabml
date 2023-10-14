@@ -1,5 +1,5 @@
 use crate::sampler::Llama2Sampler;
-use crate::tokenizer::Llama2Tokenizer;
+use crabml::tokenizer::BPETokenizer;
 use crabml::error::Error;
 use crabml::error::ErrorKind;
 use crabml::error::Result;
@@ -12,7 +12,6 @@ use crabml::tensor::compute::matmul_2d_1d;
 use crabml::tensor::compute::mul_inplace;
 use crabml::tensor::compute::rms_norm_inplace;
 use crabml::tensor::compute::rope_inplace;
-use crabml::tensor::compute::rope_inplace2;
 use crabml::tensor::compute::silu_inplace;
 use crabml::tensor::compute::softmax_inplace;
 use crabml::tensor::CpuTensor;
@@ -31,7 +30,7 @@ pub struct Llama2Config {
     pub vocab_size: usize,
     pub seq_len: usize,
     pub rms_norm_eps: f32,
-    pub n_rot: usize,
+    pub rope_dim: usize,
 }
 
 impl Llama2Config {
@@ -69,7 +68,7 @@ pub struct Llama2Weights<'a> {
 pub struct Llama2Model<'a> {
     conf: Llama2Config,
     weights: Llama2Weights<'a>,
-    tokenizer: Llama2Tokenizer,
+    tokenizer: BPETokenizer,
     metadata: &'a GGUFMetadata<'a>,
 }
 
@@ -98,7 +97,7 @@ impl<'a> Llama2Model<'a> {
         self.metadata
     }
 
-    pub fn tokenizer(&self) -> &Llama2Tokenizer {
+    pub fn tokenizer(&self) -> &BPETokenizer {
         &self.tokenizer
     }
 
@@ -195,7 +194,7 @@ impl<'a> Llama2Model<'a> {
         Ok(tensor)
     }
 
-    fn load_tokenizer(gf: &GGUFFile) -> Llama2Tokenizer {
+    fn load_tokenizer(gf: &GGUFFile) -> BPETokenizer {
         let vocab = gf
             .metadata()
             .get_string_array("tokenizer.ggml.tokens")
@@ -218,7 +217,7 @@ impl<'a> Llama2Model<'a> {
             .metadata()
             .get_u32("tokenizer.ggml.bos_token_id")
             .unwrap() as usize;
-        Llama2Tokenizer::new(vocab, vocab_scores, bos_token, eos_token)
+        BPETokenizer::new(vocab, vocab_scores, bos_token, eos_token)
     }
 
     fn load_config(gf: &GGUFFile) -> Llama2Config {
@@ -251,7 +250,7 @@ impl<'a> Llama2Model<'a> {
             seq_len,
             vocab_size,
             rms_norm_eps,
-            n_rot,
+            rope_dim: n_rot,
         }
     }
 }
@@ -267,14 +266,14 @@ pub struct Llama2Runner<'a> {
     conf: Llama2Config,
     state: Llama2State<'a>,
     weights: &'a Llama2Weights<'a>,
-    tokenizer: &'a Llama2Tokenizer,
+    tokenizer: &'a BPETokenizer,
 }
 
 impl<'a> Llama2Runner<'a> {
     pub fn new(
         conf: &Llama2Config,
         weights: &'a Llama2Weights<'a>,
-        tokenizer: &'a Llama2Tokenizer,
+        tokenizer: &'a BPETokenizer,
     ) -> Result<Self> {
         let state = Llama2State {
             logits: vec![0.0; conf.vocab_size],
@@ -355,8 +354,8 @@ impl<'a> Llama2Runner<'a> {
                 let q = q.view(&[n_heads, head_size])?;
                 let k = k.view(&[n_kv_heads, head_size])?;
 
-                let q = rope_inplace2(q, pos, self.conf.n_rot)?;
-                let k = rope_inplace2(k, pos, self.conf.n_rot)?;
+                let q = rope_inplace(q, pos, self.conf.rope_dim)?;
+                let k = rope_inplace(k, pos, self.conf.rope_dim)?;
                 (q, k)
             };
 
@@ -619,7 +618,7 @@ mod tests {
         let gl = GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-q8_0.gguf")?;
         let gf = gl.open()?;
         let lm = Llama2Model::from(&gf)?;
-        assert_eq!(lm.conf().n_rot, 48);
+        assert_eq!(lm.conf().rope_dim, 48);
         assert_eq!(lm.conf().head_size(), 48);
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0);

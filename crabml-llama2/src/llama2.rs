@@ -565,38 +565,6 @@ mod tests {
     use crabml::gguf::GGUFFileLoader;
 
     #[test]
-    fn test_gguf_tokenizer() -> Result<()> {
-        let gf_loader = GGUFFileLoader::new("../testdata/tinyllamas-stories-260k-f32.gguf")?;
-        let gf = gf_loader.open()?;
-        let lm = Llama2Model::from(&gf)?;
-        let tk = lm.tokenizer;
-
-        assert_eq!(tk.decode(2, 3)?, "\u{0}");
-        assert_eq!(tk.decode(2, 5)?, "\u{2}");
-        assert_eq!(tk.decode(2, 6)?, "\u{3}");
-        assert_eq!(tk.decode(2, 100)?, "a");
-
-        let tests = vec![
-            (
-                "hello, world",
-                "<s> - he - ll - o - , - <0x20> - w - or - ld - </s>",
-            ),
-            ("tiktok", "<s> - t - i - k - t - o - k - </s>"),
-        ];
-
-        for tt in tests {
-            let tokens = tk.encode(tt.0, true, true)?;
-            let tokens_in_string = tokens
-                .iter()
-                .map(|t| tk.vocab()[*t].clone())
-                .collect::<Vec<String>>()
-                .join(" - ");
-            assert_eq!(tokens_in_string, tt.1, "failed to encode {}", tt.0);
-        }
-        Ok(())
-    }
-
-    #[test]
     fn test_generate_gguf() -> Result<()> {
         let gl = GGUFFileLoader::new("../testdata/tinyllamas-stories-260k-f32.gguf")?;
         let gf = gl.open()?;

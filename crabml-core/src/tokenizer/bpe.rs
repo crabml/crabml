@@ -144,3 +144,50 @@ impl BPETokenizer {
         Ok(tokens)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::gguf::GGUFFileLoader;
+    use super::*;
+
+    #[test]
+    fn test_gguf_tokenizer() -> Result<()> {
+        let gf_loader = GGUFFileLoader::new("../testdata/tinyllamas-stories-15M-f32.gguf")?;
+        let gf = gf_loader.open()?;
+
+        let tokens = gf
+            .metadata()
+            .get_string_array("tokenizer.ggml.tokens")
+            .unwrap()
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>();
+        let token_scores = gf
+            .metadata()
+            .get_f32_array("tokenizer.ggml.scores")
+            .unwrap()
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        let tk = BPETokenizer::new(tokens, token_scores, 1, 2);
+
+        let tests = vec![
+            (
+                "hello, world",
+                "<s> - hello - , - <0x20> - world - </s>",
+            ),
+            ("tiktok", "<s> - t - ik - tok - </s>"),
+        ];
+
+        for tt in tests {
+            let tokens = tk.encode(tt.0, true, true)?;
+            let tokens_in_string = tokens
+                .iter()
+                .map(|t| tk.vocab()[*t].clone())
+                .collect::<Vec<String>>()
+                .join(" - ");
+            assert_eq!(tokens_in_string, tt.1, "failed to encode {}", tt.0);
+        }
+        Ok(())
+    }
+}

@@ -1,40 +1,43 @@
-use crabml::error::Result;
 use std::collections::HashMap;
 
-pub struct Llama2Tokenizer {
-    vocab: Vec<String>,
-    vocab_scores: Vec<f32>,
-    token_buf_len: usize,
+use crate::error::Result;
+
+type Token = String;
+type TokenID = usize;
+
+pub struct GGMLTokenizer {
+    tokens: Vec<Token>,
+    token_scores: Vec<f32>,
+    token_ids: HashMap<String, TokenID>,
+    bos_token: TokenID,
+    eos_token: TokenID,
+    // the state on decoding
     byte_pieces: [u8; 256],
-    vocab_index: HashMap<String, usize>,
-    bos_token: usize,
-    eos_token: usize,
+    token_buf_len: usize,
 }
 
-impl Llama2Tokenizer {
+impl GGMLTokenizer {
     pub fn new(
-        vocab: Vec<String>,
-        vocab_scores: Vec<f32>,
-        token_buf_len: usize,
-        bos_token: usize,
-        eos_token: usize,
+        tokens: Vec<String>,
+        token_scores: Vec<f32>,
+        bos_token: TokenID,
+        eos_token: TokenID,
     ) -> Self {
-        let vocab_index = vocab
+        let token_ids = tokens
             .iter()
             .enumerate()
             .map(|(i, v)| (v.clone(), i))
             .collect();
-
         let mut byte_pieces = [0u8; 256];
         for (i, p) in byte_pieces.iter_mut().enumerate() {
             *p = i as u8
         }
 
         Self {
-            vocab,
-            vocab_index,
-            vocab_scores,
-            token_buf_len,
+            tokens,
+            token_ids,
+            token_scores,
+            token_buf_len: 128,
             byte_pieces,
             bos_token,
             eos_token,
@@ -42,11 +45,11 @@ impl Llama2Tokenizer {
     }
 
     pub fn vocab(&self) -> &[String] {
-        &self.vocab
+        &self.tokens
     }
 
-    pub fn decode(&self, prev_token: usize, token: usize) -> Result<String> {
-        let mut piece: &[u8] = self.vocab[token].as_bytes();
+    pub fn decode(&self, prev_token: usize, token: usize) -> Result<Token> {
+        let mut piece: &[u8] = self.tokens[token].as_bytes();
         // following BOS (1) token, sentencepiece decoder strips any leading whitespace (see PR #89)
         if prev_token == 1 && piece[0] == b' ' {
             piece = &piece[1..];
@@ -61,50 +64,28 @@ impl Llama2Tokenizer {
             }
         }
 
-        let mut s = String::from_utf8_lossy(piece).to_string();
+        let mut s = String::from_utf8(piece.to_vec()).unwrap();
         s = s.replace('▁', " ");
         Ok(s)
     }
 
-    #[allow(dead_code)]
-    pub fn decode_string(&self, tokens: &[usize]) -> Result<String> {
-        let mut result = String::new();
-        let mut prev_token = 0;
-        for token in tokens {
-            let piece = self.decode(prev_token, *token)?;
-            result.push_str(&piece);
-            prev_token = *token;
-        }
-        Ok(result)
-    }
-
     // encode the string text (input) into an upper-bound preallocated tokens[] array
     // bos != 0 means prepend the BOS token (=1), eos != 0 means append the EOS token (=2)
-    pub fn encode(&self, text: &str, bos: bool, eos: bool) -> Result<Vec<usize>> {
+    pub fn encode(&self, text: &str, bos: bool, eos: bool) -> Result<Vec<TokenID>> {
         // create a temporary buffer that will store merge candidates of always two consecutive tokens
         // *2 for concat, +1 for null terminator +2 for UTF8 (in case max_token_length is 1)
         let mut token_buf = String::with_capacity(self.token_buf_len * 2 + 1 + 2);
-        let mut tokens: Vec<usize> = vec![];
+        let mut tokens: Vec<TokenID> = vec![];
 
         if bos {
             tokens.push(self.bos_token);
-        }
-
-        // add_dummy_prefix is true by default
-        // so prepend a dummy prefix token to the input string, but only if text != ""
-        // TODO: pretty sure this isn't correct in the general case but I don't have the
-        // energy to read more of the sentencepiece code to figure out what it's doing
-        if !text.starts_with('\u{0}') {
-            if let Some(dummy_prefix) = self.vocab_index.get(" ") {
-                tokens.push(*dummy_prefix);
-            }
         }
 
         let chars = text.chars();
         for ch in chars {
             token_buf.clear();
             token_buf.push(ch);
-            if let Some(tok) = self.vocab_index.get(&token_buf) {
+            if let Some(tok) = self.token_ids.get(&token_buf) {
                 // we found this codepoint in vocab, add it as a token
                 tokens.push(*tok);
             } else {
@@ -126,10 +107,10 @@ impl Llama2Tokenizer {
 
             while i < (tokens.len() - 1) {
                 token_buf.clear();
-                token_buf.push_str(&self.vocab[tokens[i]]);
-                token_buf.push_str(&self.vocab[tokens[i + 1]]);
-                if let Some(tok) = self.vocab_index.get(&token_buf) {
-                    let new_score = self.vocab_scores[*tok];
+                token_buf.push_str(&self.tokens[tokens[i]]);
+                token_buf.push_str(&self.tokens[tokens[i + 1]]);
+                if let Some(tok) = self.token_ids.get(&token_buf) {
+                    let new_score = self.token_scores[*tok];
                     if new_score > best_score {
                         best_score = new_score;
                         best_idx = Some(i);
@@ -152,5 +133,49 @@ impl Llama2Tokenizer {
         }
 
         Ok(tokens)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::gguf::GGUFFileLoader;
+
+    #[test]
+    fn test_gguf_tokenizer() -> Result<()> {
+        let gf_loader = GGUFFileLoader::new("../testdata/tinyllamas-stories-15M-f32.gguf")?;
+        let gf = gf_loader.open()?;
+
+        let tokens = gf
+            .metadata()
+            .get_string_array("tokenizer.ggml.tokens")
+            .unwrap()
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>();
+        let token_scores = gf
+            .metadata()
+            .get_f32_array("tokenizer.ggml.scores")
+            .unwrap()
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        let tk = GGMLTokenizer::new(tokens, token_scores, 1, 2);
+
+        let tests = vec![
+            ("hello, world", "<s> - hello - , - <0x20> - world - </s>"),
+            ("tiktok", "<s> - t - ik - tok - </s>"),
+        ];
+
+        for tt in tests {
+            let tokens = tk.encode(tt.0, true, true)?;
+            let tokens_in_string = tokens
+                .iter()
+                .map(|t| tk.vocab()[*t].clone())
+                .collect::<Vec<String>>()
+                .join(" - ");
+            assert_eq!(tokens_in_string, tt.1, "failed to encode {}", tt.0);
+        }
+        Ok(())
     }
 }

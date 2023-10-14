@@ -1,10 +1,12 @@
+use std::io::Write;
+use std::time::Instant;
+
 use clap::Parser;
 use crabml::error::Result;
 use crabml::gguf::GGUFFileLoader;
-use crabml_llama2::llama2::{Llama2Model, Llama2Runner};
+use crabml_llama2::llama2::Llama2Model;
+use crabml_llama2::llama2::Llama2Runner;
 use crabml_llama2::sampler::Llama2Sampler;
-use std::io::Write;
-use std::time::Instant;
 
 #[derive(Parser, Debug)]
 struct CommandArgs {
@@ -61,6 +63,7 @@ fn main() -> Result<()> {
     }
 
     let mut output = runner.generate(&args.prompt, args.steps, &mut sampler)?;
+    print!("{}", &args.prompt);
     for token in output.by_ref() {
         print!("{}", token?);
         std::io::stdout().flush().unwrap();

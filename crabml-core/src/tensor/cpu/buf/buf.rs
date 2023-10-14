@@ -3,7 +3,6 @@ use std::slice;
 
 use crate::error::Result;
 use crate::gguf::GGMLType;
-
 use crate::tensor::cpu::buf::QuantBufQ8_0;
 
 /// All the quantized tensor are read-only.

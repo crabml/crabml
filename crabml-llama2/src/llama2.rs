@@ -1,5 +1,8 @@
-use crate::sampler::Llama2Sampler;
-use crate::tokenizer::Llama2Tokenizer;
+use std::ops::AddAssign;
+use std::time::Duration;
+use std::time::Instant;
+use std::vec;
+
 use crabml::error::Error;
 use crabml::error::ErrorKind;
 use crabml::error::Result;
@@ -12,14 +15,12 @@ use crabml::tensor::compute::matmul_2d_1d;
 use crabml::tensor::compute::mul_inplace;
 use crabml::tensor::compute::rms_norm_inplace;
 use crabml::tensor::compute::rope_inplace;
-use crabml::tensor::compute::rope_inplace2;
 use crabml::tensor::compute::silu_inplace;
 use crabml::tensor::compute::softmax_inplace;
 use crabml::tensor::CpuTensor;
-use std::ops::AddAssign;
-use std::time::Duration;
-use std::time::Instant;
-use std::vec;
+use crabml::tokenizer::GGMLTokenizer;
+
+use crate::sampler::Llama2Sampler;
 
 #[derive(Debug, Copy, Clone)]
 pub struct Llama2Config {
@@ -31,7 +32,7 @@ pub struct Llama2Config {
     pub vocab_size: usize,
     pub seq_len: usize,
     pub rms_norm_eps: f32,
-    pub n_rot: usize,
+    pub rope_dim: usize,
 }
 
 impl Llama2Config {
@@ -69,7 +70,7 @@ pub struct Llama2Weights<'a> {
 pub struct Llama2Model<'a> {
     conf: Llama2Config,
     weights: Llama2Weights<'a>,
-    tokenizer: Llama2Tokenizer,
+    tokenizer: GGMLTokenizer,
     metadata: &'a GGUFMetadata<'a>,
 }
 
@@ -98,7 +99,7 @@ impl<'a> Llama2Model<'a> {
         self.metadata
     }
 
-    pub fn tokenizer(&self) -> &Llama2Tokenizer {
+    pub fn tokenizer(&self) -> &GGMLTokenizer {
         &self.tokenizer
     }
 
@@ -178,7 +179,7 @@ impl<'a> Llama2Model<'a> {
                     kind: ErrorKind::IOError,
                     message: format!("failed to find tensor {}", name),
                     cause: None,
-                })
+                });
             }
             Some(info) => info.clone(),
         };
@@ -195,7 +196,7 @@ impl<'a> Llama2Model<'a> {
         Ok(tensor)
     }
 
-    fn load_tokenizer(gf: &GGUFFile) -> Llama2Tokenizer {
+    fn load_tokenizer(gf: &GGUFFile) -> GGMLTokenizer {
         let vocab = gf
             .metadata()
             .get_string_array("tokenizer.ggml.tokens")
@@ -218,7 +219,7 @@ impl<'a> Llama2Model<'a> {
             .metadata()
             .get_u32("tokenizer.ggml.bos_token_id")
             .unwrap() as usize;
-        Llama2Tokenizer::new(vocab, vocab_scores, 27, bos_token, eos_token)
+        GGMLTokenizer::new(vocab, vocab_scores, bos_token, eos_token)
     }
 
     fn load_config(gf: &GGUFFile) -> Llama2Config {
@@ -251,7 +252,7 @@ impl<'a> Llama2Model<'a> {
             seq_len,
             vocab_size,
             rms_norm_eps,
-            n_rot,
+            rope_dim: n_rot,
         }
     }
 }
@@ -267,14 +268,14 @@ pub struct Llama2Runner<'a> {
     conf: Llama2Config,
     state: Llama2State<'a>,
     weights: &'a Llama2Weights<'a>,
-    tokenizer: &'a Llama2Tokenizer,
+    tokenizer: &'a GGMLTokenizer,
 }
 
 impl<'a> Llama2Runner<'a> {
     pub fn new(
         conf: &Llama2Config,
         weights: &'a Llama2Weights<'a>,
-        tokenizer: &'a Llama2Tokenizer,
+        tokenizer: &'a GGMLTokenizer,
     ) -> Result<Self> {
         let state = Llama2State {
             logits: vec![0.0; conf.vocab_size],
@@ -355,8 +356,8 @@ impl<'a> Llama2Runner<'a> {
                 let q = q.view(&[n_heads, head_size])?;
                 let k = k.view(&[n_kv_heads, head_size])?;
 
-                let q = rope_inplace2(q, pos, self.conf.n_rot)?;
-                let k = rope_inplace2(k, pos, self.conf.n_rot)?;
+                let q = rope_inplace(q, pos, self.conf.rope_dim)?;
+                let k = rope_inplace(k, pos, self.conf.rope_dim)?;
                 (q, k)
             };
 
@@ -562,64 +563,34 @@ impl<'a> Iterator for Llama2RunnerOutputGenerator<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crabml::gguf::GGUFFileLoader;
 
-    #[test]
-    fn test_gguf_tokenizer() -> Result<()> {
-        let gf_loader = GGUFFileLoader::new("../testdata/tinyllamas-stories-260k-f32.gguf")?;
-        let gf = gf_loader.open()?;
-        let lm = Llama2Model::from(&gf)?;
-        let tk = lm.tokenizer;
-
-        assert_eq!(tk.decode(2, 3)?, "\u{0}");
-        assert_eq!(tk.decode(2, 5)?, "\u{2}");
-        assert_eq!(tk.decode(2, 6)?, "\u{3}");
-        assert_eq!(tk.decode(2, 100)?, "a");
-
-        let tests = vec![
-            (
-                "hello, world",
-                "<s> - he - ll - o - , - <0x20> - w - or - ld - </s>",
-            ),
-            ("tiktok", "<s> - t - i - k - t - o - k - </s>"),
-        ];
-
-        for tt in tests {
-            let tokens = tk.encode(tt.0, true, true)?;
-            let tokens_in_string = tokens
-                .iter()
-                .map(|t| tk.vocab()[*t].clone())
-                .collect::<Vec<String>>()
-                .join(" - ");
-            assert_eq!(tokens_in_string, tt.1, "failed to encode {}", tt.0);
-        }
-        Ok(())
-    }
+    use super::*;
 
     #[test]
-    fn test_generate_gguf() -> Result<()> {
-        let gl = GGUFFileLoader::new("../testdata/tinyllamas-stories-260k-f32.gguf")?;
+    fn test_generate_f32() -> Result<()> {
+        let gl: GGUFFileLoader =
+            GGUFFileLoader::new("../testdata/tinyllamas-stories-15M-f32.gguf")?;
         let gf = gl.open()?;
         let lm = Llama2Model::from(&gf)?;
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0);
         let mut runner = Llama2Runner::new(&lm.conf, &lm.weights, &lm.tokenizer)?;
-        let output = runner.generate("Lily is a cat ", 30, &mut sampler)?;
+        let output = runner.generate("Lily is a cat", 30, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
         assert_eq!(
             s,
-            ". She was a shals to almals. She loved to shals to her mommy."
+            ". Sheaa is a very hairy cat. Sheaa likes to play with her toys and her friends. She likes to make"
         );
         Ok(())
     }
 
     #[test]
-    fn test_quantize_gguf() -> Result<()> {
+    fn test_generate_q8_0() -> Result<()> {
         let gl = GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-q8_0.gguf")?;
         let gf = gl.open()?;
         let lm = Llama2Model::from(&gf)?;
-        assert_eq!(lm.conf().n_rot, 48);
+        assert_eq!(lm.conf().rope_dim, 48);
         assert_eq!(lm.conf().head_size(), 48);
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0);

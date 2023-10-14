@@ -3,6 +3,8 @@ use std::simd::f32x32;
 use std::simd::f32x8;
 use std::simd::SimdFloat;
 
+use rayon::prelude::*;
+
 use crate::error::ErrorKind;
 use crate::error::Result;
 use crate::tensor::cpu::buf::BlockVecCompute;
@@ -12,9 +14,8 @@ use crate::tensor::cpu::validate::require_tensor_dims;
 use crate::tensor::cpu::validate::require_tensor_matmul_2d_shapes;
 use crate::tensor::cpu::validate::require_tensor_shape;
 use crate::tensor::CpuTensor;
-use rayon::prelude::*;
 
-///! arithmetic.rs contains the tensor arithmetics operations like matmul, accum, etc.
+/// ! arithmetic.rs contains the tensor arithmetics operations like matmul, accum, etc.
 
 pub fn rms_norm_inplace(mut x: CpuTensor<'_>, eps: f32) -> Result<CpuTensor<'_>> {
     require_tensor_contiguous(&x)?;
@@ -182,6 +183,9 @@ pub fn maybe_matmul_vec_2d_1d<'a>(
             matmul_vec_generic_xxx_f32_2d_1d(wb, xb, &mut out)
         }
         (CpuTensorBuf::F32(wb), CpuTensorBuf::F32(xb)) => {
+            if w.len() % wb.block_elms() != 0 {
+                return None;
+            }
             matmul_vec_generic_xxx_f32_2d_1d(wb, xb, &mut out)
         }
         _ => return None,
@@ -209,11 +213,9 @@ pub fn matmul_vec_generic_xxx_f32_2d_1d<'a, T: BlockVecCompute + Sync>(
 }
 
 pub fn batch_matmul<'a, 'b>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'b>>
-where
-    'b: 'a,
-{
+where 'b: 'a {
     require_tensor_dims(w, &[3])?;
-    require_tensor_dims(x, &[2, 3])?;
+    require_tensor_dims(x, &[2])?;
 
     if w.shape()[0] != x.shape()[0] || w.shape()[2] != x.shape()[1] {
         return Err((
@@ -227,38 +229,19 @@ where
             .into());
     }
 
-    if x.shape().len() == 2 {
-        // (batch_size, w_rows, w_cols) @ (batch_size, w_cols, ) -> (batch_size, w_rows, )
-        let batch_size = w.shape()[0];
-        let w_rows = w.shape()[1];
-        let mut out = CpuTensor::zeros(vec![batch_size, w_rows])?;
-        for b in 0..batch_size {
-            let o_iter = out.iter_axis_mut(vec![b, 0], 1)?; // w_cols
-            o_iter.enumerate().for_each(|(w_row, o)| {
-                let w_iter = w.iter_axis(&[b, w_row, 0], 2).unwrap(); // w_rows
-                let x_iter = x.iter_axis(&[b, 0], 1).unwrap(); // w_rows
-                *o = w_iter.zip(x_iter).map(|(w, x)| w * x).sum::<f32>();
-            })
-        }
-        return Ok(out);
-    }
-
+    // (batch_size, w_rows, w_cols) @ (batch_size, w_cols, ) -> (batch_size, w_rows, )
     let batch_size = w.shape()[0];
     let w_rows = w.shape()[1];
-    let x_cols = x.shape()[2];
-    let mut out = CpuTensor::zeros(vec![batch_size, w_rows, x_cols])?;
+    let mut out = CpuTensor::zeros(vec![batch_size, w_rows])?;
     for b in 0..batch_size {
-        for w_row in 0..w_rows {
-            let o_row_iter = out.iter_axis_mut(vec![b, w_row, 0], 2)?; // (x_cols, )
-            o_row_iter.enumerate().for_each(|(x_col, o)| {
-                let w_row_iter = w.iter_axis(&[b, w_row, 0], 2).unwrap(); // (w_rows, )
-                let x_col_iter = x.iter_axis(&[b, 0, x_col], 1).unwrap(); // (w_rows, )
-                *o = w_row_iter.zip(x_col_iter).map(|(w, x)| w * x).sum::<f32>();
-            });
-        }
+        let o_iter = out.iter_axis_mut(vec![b, 0], 1)?; // w_cols
+        o_iter.enumerate().for_each(|(w_row, o)| {
+            let w_iter = w.iter_axis(&[b, w_row, 0], 2).unwrap(); // w_rows
+            let x_iter = x.iter_axis(&[b, 0], 1).unwrap(); // w_rows
+            *o = w_iter.zip(x_iter).map(|(w, x)| w * x).sum::<f32>();
+        })
     }
-
-    Ok(out)
+    return Ok(out);
 }
 
 // t: (rows, cols)
@@ -284,7 +267,11 @@ pub fn softmax_inplace<'a>(mut t: CpuTensor<'a>, axis: usize) -> Result<CpuTenso
     Ok(t)
 }
 
-pub fn rope_inplace2<'a>(mut q: CpuTensor<'a>, pos: usize, rope_dims: usize) -> Result<CpuTensor<'a>> {
+pub fn rope_inplace<'a>(
+    mut q: CpuTensor<'a>,
+    pos: usize,
+    rope_dims: usize,
+) -> Result<CpuTensor<'a>> {
     require_tensor_contiguous(&q)?;
     require_tensor_dims(&q, &[2])?;
 
@@ -292,16 +279,15 @@ pub fn rope_inplace2<'a>(mut q: CpuTensor<'a>, pos: usize, rope_dims: usize) -> 
     let head_size = q.shape()[1];
     let qb = q.f32_buf_mut()?;
 
- 
     // apply RoPE rotation for each head
     for h in 0..n_heads {
-        for i in 0..rope_dims/2 {
+        for i in 0..rope_dims / 2 {
             let theta_scale = 10000_f32.powf(0.0 - 2.0 * i as f32 / head_size as f32);
             let theta = pos as f32 * theta_scale;
 
             let cos_theta = theta.cos();
             let sin_theta = theta.sin();
-            let qp = &mut qb[h * head_size + i*2..];
+            let qp = &mut qb[h * head_size + i * 2..];
             let qp0 = qp[0];
             let qp1 = qp[1];
             qp[0] = qp0 * cos_theta - qp1 * sin_theta;
@@ -310,10 +296,10 @@ pub fn rope_inplace2<'a>(mut q: CpuTensor<'a>, pos: usize, rope_dims: usize) -> 
     }
 
     Ok(q)
-} 
+}
 
 // q: (n_heads, head_size)
-pub fn rope_inplace<'a>(
+pub fn rope_inplace_old<'a>(
     mut q: CpuTensor<'a>,
     mut k: CpuTensor<'a>,
     pos: usize,
@@ -368,16 +354,14 @@ mod tests {
 
         let mut v = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
         simple_rmsnorm(&mut v);
-        assert_eq!(
-            v,
-            vec![0.2567762, 0.5135524, 0.77032864, 1.0271049, 1.2838811, 1.5406573]
-        );
+        assert_eq!(v, vec![
+            0.2567762, 0.5135524, 0.77032864, 1.0271049, 1.2838811, 1.5406573
+        ]);
         let mut v = vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
         simple_rmsnorm(&mut v);
-        assert_eq!(
-            v,
-            vec![0.999995, 0.999995, 0.999995, 0.999995, 0.999995, 0.999995]
-        );
+        assert_eq!(v, vec![
+            0.999995, 0.999995, 0.999995, 0.999995, 0.999995, 0.999995
+        ]);
 
         Ok(())
     }
@@ -398,40 +382,6 @@ mod tests {
         let out = matmul_2d_1d(&w, &b)?;
         assert_eq!(out.iter().collect::<Vec<_>>(), &[14.0, 32.0]);
 
-        // 1, 2, 3
-        // 4, 5, 6
-        let w = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![2, 3])?;
-        // 1, 2, 3
-        // 4, 5, 6
-        // 7, 8, 9
-        // 10, 11, 12
-        let b = CpuTensor::new(
-            vec![
-                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
-            ],
-            vec![3, 4],
-        )?;
-        let out = matmul_2d_1d(&w, &b)?;
-        assert_eq!(
-            out.iter().collect::<Vec<_>>(),
-            &[38.0, 44.0, 50.0, 56.0, 83.0, 98.0, 113.0, 128.0]
-        );
-        assert_eq!(out.shape(), vec![2, 4]);
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_batch_matmul() -> Result<()> {
-        let w = CpuTensor::new(
-            vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0],
-            vec![2, 2, 3],
-        )?;
-        let b = CpuTensor::new(vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0], vec![2, 3, 1])?;
-
-        let o = batch_matmul(&w, &b)?;
-        assert_eq!(o.shape(), vec![2, 2, 1]);
-        assert_eq!(o.iter().collect::<Vec<_>>(), vec![3.0, 12.0, 21.0, 30.0]);
         Ok(())
     }
 }

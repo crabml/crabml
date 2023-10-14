@@ -1,7 +1,8 @@
-use crate::error::{ErrorKind, Result};
-use crate::tensor::strider::TensorStrider;
+use std::cell::RefCell;
+use std::rc::Rc;
 
-use std::{cell::RefCell, rc::Rc};
+use crate::error::Result;
+use crate::tensor::strider::TensorStrider;
 
 type TensorID = usize;
 
@@ -138,19 +139,19 @@ impl<D: TensorDevice> Tensor<D> {
         })
     }
 
-    pub fn repeat(self, n: usize, axis: usize) -> Result<Self> {
+    pub fn repeat(self, _n: usize, _axis: usize) -> Result<Self> {
         todo!()
     }
 
-    pub fn mul(self, t: &Self) -> Result<Self> {
+    pub fn mul(self, _t: &Self) -> Result<Self> {
         todo!()
     }
 
-    pub fn add(self, t: &Self) -> Result<Self> {
+    pub fn add(self, _t: &Self) -> Result<Self> {
         todo!()
     }
 
-    pub fn matmul(&self, t: &Self) -> Result<Self> {
+    pub fn matmul(&self, _t: &Self) -> Result<Self> {
         todo!()
     }
 }

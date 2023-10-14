@@ -137,8 +137,8 @@ impl GGMLTokenizer {
 
 #[cfg(test)]
 mod tests {
-    use crate::gguf::GGUFFileLoader;
     use super::*;
+    use crate::gguf::GGUFFileLoader;
 
     #[test]
     fn test_gguf_tokenizer() -> Result<()> {
@@ -162,10 +162,7 @@ mod tests {
         let tk = GGMLTokenizer::new(tokens, token_scores, 1, 2);
 
         let tests = vec![
-            (
-                "hello, world",
-                "<s> - hello - , - <0x20> - world - </s>",
-            ),
+            ("hello, world", "<s> - hello - , - <0x20> - world - </s>"),
             ("tiktok", "<s> - t - ik - tok - </s>"),
         ];
 

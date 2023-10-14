@@ -566,7 +566,8 @@ mod tests {
 
     #[test]
     fn test_generate_f32() -> Result<()> {
-        let gl: GGUFFileLoader = GGUFFileLoader::new("../testdata/tinyllamas-stories-15M-f32.gguf")?;
+        let gl: GGUFFileLoader =
+            GGUFFileLoader::new("../testdata/tinyllamas-stories-15M-f32.gguf")?;
         let gf = gl.open()?;
         let lm = Llama2Model::from(&gf)?;
 

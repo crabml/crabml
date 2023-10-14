@@ -65,18 +65,6 @@ impl Llama2Tokenizer {
         Ok(s)
     }
 
-    #[allow(dead_code)]
-    pub fn decode_string(&self, tokens: &[usize]) -> Result<String> {
-        let mut result = String::new();
-        let mut prev_token = 0;
-        for token in tokens {
-            let piece = self.decode(prev_token, *token)?;
-            result.push_str(&piece);
-            prev_token = *token;
-        }
-        Ok(result)
-    }
-
     // encode the string text (input) into an upper-bound preallocated tokens[] array
     // bos != 0 means prepend the BOS token (=1), eos != 0 means append the EOS token (=2)
     pub fn encode(&self, text: &str, bos: bool, eos: bool) -> Result<Vec<usize>> {

@@ -61,7 +61,7 @@ impl Llama2Tokenizer {
             }
         }
 
-        let mut s = String::from_utf8_lossy(piece).to_string();
+        let mut s = String::from_utf8(piece.to_vec()).unwrap();
         s = s.replace('▁', " ");
         Ok(s)
     }

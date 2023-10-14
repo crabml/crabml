@@ -61,6 +61,7 @@ fn main() -> Result<()> {
     }
 
     let mut output = runner.generate(&args.prompt, args.steps, &mut sampler)?;
+    print!("{}", &args.prompt);
     for token in output.by_ref() {
         print!("{}", token?);
         std::io::stdout().flush().unwrap();

@@ -1,5 +1,3 @@
-use std::cell::RefCell;
-
 use crate::error::ErrorKind;
 use crate::error::Result;
 
@@ -13,7 +11,6 @@ pub struct TensorStrider {
 impl TensorStrider {
     pub fn new(shape: Vec<usize>) -> Self {
         let strides = Self::compute_strides(&shape);
-        let dims = shape.len();
         Self {
             shape,
             strides,
@@ -82,7 +79,7 @@ impl TensorStrider {
     pub fn iter(&self) -> impl Iterator<Item = usize> + '_ {
         let mut pos = vec![0; self.shape.len()];
         let shape = &self.shape;
-        (0..self.len()).into_iter().map(move |i| {
+        (0..self.len()).into_iter().map(move |_i| {
             let v = self.at_unchecked(&pos);
             Self::increment_pos(&mut pos, shape);
             v
@@ -340,10 +337,9 @@ mod tests {
         // 2, 2, 5, 5
         let s = s.repeat(vec![1, 2])?;
         assert_eq!(s.shape(), &[3, 4]);
-        assert_eq!(
-            s.iter().collect::<Vec<_>>(),
-            vec![0, 0, 3, 3, 1, 1, 4, 4, 2, 2, 5, 5]
-        );
+        assert_eq!(s.iter().collect::<Vec<_>>(), vec![
+            0, 0, 3, 3, 1, 1, 4, 4, 2, 2, 5, 5
+        ]);
 
         // test transpose after repeat
 
@@ -353,20 +349,18 @@ mod tests {
         // 3, 4, 5
         // 3, 4, 5
         assert_eq!(s.shape(), &[4, 3]);
-        assert_eq!(
-            s.iter().collect::<Vec<_>>(),
-            vec![0, 1, 2, 0, 1, 2, 3, 4, 5, 3, 4, 5]
-        );
+        assert_eq!(s.iter().collect::<Vec<_>>(), vec![
+            0, 1, 2, 0, 1, 2, 3, 4, 5, 3, 4, 5
+        ]);
 
         // 0, 0, 3, 3
         // 1, 1, 4, 4
         // 2, 2, 5, 5
         let s = s.transpose(&[1, 0])?;
         assert_eq!(s.shape(), &[3, 4]);
-        assert_eq!(
-            s.iter().collect::<Vec<_>>(),
-            vec![0, 0, 3, 3, 1, 1, 4, 4, 2, 2, 5, 5]
-        );
+        assert_eq!(s.iter().collect::<Vec<_>>(), vec![
+            0, 0, 3, 3, 1, 1, 4, 4, 2, 2, 5, 5
+        ]);
         Ok(())
     }
 

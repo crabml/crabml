@@ -1,5 +1,6 @@
-use crate::error::Result;
 use std::collections::HashMap;
+
+use crate::error::Result;
 
 type Token = String;
 type TokenID = usize;

@@ -1,4 +1,8 @@
-use crate::sampler::Llama2Sampler;
+use std::ops::AddAssign;
+use std::time::Duration;
+use std::time::Instant;
+use std::vec;
+
 use crabml::error::Error;
 use crabml::error::ErrorKind;
 use crabml::error::Result;
@@ -15,10 +19,8 @@ use crabml::tensor::compute::silu_inplace;
 use crabml::tensor::compute::softmax_inplace;
 use crabml::tensor::CpuTensor;
 use crabml::tokenizer::GGMLTokenizer;
-use std::ops::AddAssign;
-use std::time::Duration;
-use std::time::Instant;
-use std::vec;
+
+use crate::sampler::Llama2Sampler;
 
 #[derive(Debug, Copy, Clone)]
 pub struct Llama2Config {
@@ -177,7 +179,7 @@ impl<'a> Llama2Model<'a> {
                     kind: ErrorKind::IOError,
                     message: format!("failed to find tensor {}", name),
                     cause: None,
-                })
+                });
             }
             Some(info) => info.clone(),
         };
@@ -561,8 +563,9 @@ impl<'a> Iterator for Llama2RunnerOutputGenerator<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crabml::gguf::GGUFFileLoader;
+
+    use super::*;
 
     #[test]
     fn test_generate_f32() -> Result<()> {

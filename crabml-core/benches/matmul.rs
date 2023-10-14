@@ -1,6 +1,5 @@
 use bencher::benchmark_group;
 use bencher::benchmark_main;
-
 use bencher::Bencher;
 use crabml::tensor::compute::matmul_2d_1d;
 use crabml::tensor::CpuTensor;

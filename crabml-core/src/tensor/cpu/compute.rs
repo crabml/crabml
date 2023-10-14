@@ -3,6 +3,8 @@ use std::simd::f32x32;
 use std::simd::f32x8;
 use std::simd::SimdFloat;
 
+use rayon::prelude::*;
+
 use crate::error::ErrorKind;
 use crate::error::Result;
 use crate::tensor::cpu::buf::BlockVecCompute;
@@ -12,9 +14,8 @@ use crate::tensor::cpu::validate::require_tensor_dims;
 use crate::tensor::cpu::validate::require_tensor_matmul_2d_shapes;
 use crate::tensor::cpu::validate::require_tensor_shape;
 use crate::tensor::CpuTensor;
-use rayon::prelude::*;
 
-///! arithmetic.rs contains the tensor arithmetics operations like matmul, accum, etc.
+/// ! arithmetic.rs contains the tensor arithmetics operations like matmul, accum, etc.
 
 pub fn rms_norm_inplace(mut x: CpuTensor<'_>, eps: f32) -> Result<CpuTensor<'_>> {
     require_tensor_contiguous(&x)?;
@@ -212,9 +213,7 @@ pub fn matmul_vec_generic_xxx_f32_2d_1d<'a, T: BlockVecCompute + Sync>(
 }
 
 pub fn batch_matmul<'a, 'b>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'b>>
-where
-    'b: 'a,
-{
+where 'b: 'a {
     require_tensor_dims(w, &[3])?;
     require_tensor_dims(x, &[2])?;
 
@@ -355,16 +354,14 @@ mod tests {
 
         let mut v = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
         simple_rmsnorm(&mut v);
-        assert_eq!(
-            v,
-            vec![0.2567762, 0.5135524, 0.77032864, 1.0271049, 1.2838811, 1.5406573]
-        );
+        assert_eq!(v, vec![
+            0.2567762, 0.5135524, 0.77032864, 1.0271049, 1.2838811, 1.5406573
+        ]);
         let mut v = vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
         simple_rmsnorm(&mut v);
-        assert_eq!(
-            v,
-            vec![0.999995, 0.999995, 0.999995, 0.999995, 0.999995, 0.999995]
-        );
+        assert_eq!(v, vec![
+            0.999995, 0.999995, 0.999995, 0.999995, 0.999995, 0.999995
+        ]);
 
         Ok(())
     }

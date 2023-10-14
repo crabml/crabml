@@ -1,4 +1,3 @@
-use crate::math::softmax;
 use crabml::error::Error;
 use crabml::error::ErrorKind;
 use crabml::error::Result;
@@ -113,5 +112,17 @@ impl Llama2Sampler {
                 message: format!("failed to sample from logits"),
                 cause: None,
             })
+    }
+}
+
+pub fn softmax(a: &mut [f32]) {
+    let max = a.iter().fold(f32::NAN, |a, b| a.max(*b));
+    let mut sum = 0.0;
+    for a in a.iter_mut() {
+        *a = (*a - max).exp();
+        sum += *a;
+    }
+    for a in a.iter_mut() {
+        *a /= sum;
     }
 }

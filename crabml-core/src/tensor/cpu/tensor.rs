@@ -1,13 +1,10 @@
+use super::buf::CpuTensorBufIter;
 use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::error::Result;
 use crate::gguf::GGMLType;
-use rayon::prelude::*;
-
 use crate::tensor::cpu::buf::CpuTensorBuf;
 use crate::tensor::strider::TensorStrider;
-
-use super::buf::CpuTensorBufIter;
 
 #[derive(Debug, Clone, Default)]
 pub struct CpuTensor<'a> {
@@ -115,9 +112,7 @@ impl<'a> CpuTensor<'a> {
     }
 
     pub fn as_ref<'b>(&'b self) -> CpuTensor<'a>
-    where
-        'b: 'a,
-    {
+    where 'b: 'a {
         Self {
             buf: self.buf.as_ref(),
             strider: self.strider.clone(),
@@ -244,10 +239,9 @@ mod tests {
         let t = t.view(&[3, 2])?;
 
         let tr = t.view(&[2, 3])?;
-        assert_eq!(
-            tr.iter().collect::<Vec<f32>>(),
-            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        );
+        assert_eq!(tr.iter().collect::<Vec<f32>>(), vec![
+            1.0, 2.0, 3.0, 4.0, 5.0, 6.0
+        ]);
         Ok(())
     }
 
@@ -257,7 +251,7 @@ mod tests {
             tensor: &'a CpuTensor<'a>,
             input: (Vec<usize>, usize),
             want: Vec<f32>,
-        };
+        }
 
         // 1, 2, 3
         // 4, 5, 6
@@ -358,7 +352,7 @@ mod tests {
             tensor: &'a CpuTensor<'a>,
             input: (Vec<usize>, usize),
             want: Vec<f32>,
-        };
+        }
 
         // 0, 1, 2
         // 3, 4, 5
@@ -428,10 +422,9 @@ mod tests {
         t1.extend(&t2)?;
 
         assert_eq!(t1.shape(), &[2, 2, 3]);
-        assert_eq!(
-            t1.iter().collect::<Vec<_>>(),
-            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
-        );
+        assert_eq!(t1.iter().collect::<Vec<_>>(), &[
+            1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0
+        ]);
         Ok(())
     }
 }

@@ -4,8 +4,8 @@ use std::collections::HashMap;
 pub struct Llama2Tokenizer {
     vocab: Vec<String>,
     vocab_scores: Vec<f32>,
-    token_buf_len: usize,
     byte_pieces: [u8; 256],
+    token_buf_len: usize,
     vocab_index: HashMap<String, usize>,
     bos_token: usize,
     eos_token: usize,
@@ -15,7 +15,6 @@ impl Llama2Tokenizer {
     pub fn new(
         vocab: Vec<String>,
         vocab_scores: Vec<f32>,
-        token_buf_len: usize,
         bos_token: usize,
         eos_token: usize,
     ) -> Self {
@@ -34,7 +33,7 @@ impl Llama2Tokenizer {
             vocab,
             vocab_index,
             vocab_scores,
-            token_buf_len,
+            token_buf_len: 128,
             byte_pieces,
             bos_token,
             eos_token,

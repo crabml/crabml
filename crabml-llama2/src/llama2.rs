@@ -218,7 +218,7 @@ impl<'a> Llama2Model<'a> {
             .metadata()
             .get_u32("tokenizer.ggml.bos_token_id")
             .unwrap() as usize;
-        Llama2Tokenizer::new(vocab, vocab_scores, 27, bos_token, eos_token)
+        Llama2Tokenizer::new(vocab, vocab_scores, bos_token, eos_token)
     }
 
     fn load_config(gf: &GGUFFile) -> Llama2Config {

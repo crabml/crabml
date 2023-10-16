@@ -153,6 +153,7 @@ pub fn matmul_2d_1d<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTenso
     require_tensor_dims(x, &[1])?;
     require_tensor_matmul_2d_shapes(w, x)?;
     require_tensor_contiguous(w)?;
+    require_tensor_contiguous(x)?;
 
     match maybe_matmul_vec_2d_1d(w, x) {
         Some(r) => return r,

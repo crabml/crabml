@@ -24,6 +24,26 @@ impl BlockQ8_0 {
         unsafe { std::slice::from_raw_parts(data.as_ptr() as *const BlockQ8_0, data.len() / size) }
     }
 
+    pub fn quantize(data: &[f32]) -> Vec<BlockQ8_0> {
+        let mut bs: Vec<BlockQ8_0> = vec![];
+        let chunks = data.chunks(32);
+        for chunk in chunks {
+            let mut max = f32::MIN;
+            for i in 0..32 {
+                if chunk[i] > max {
+                    max = chunk[i];
+                }
+            }
+            let d = f16::from_f32(max / 127.0);
+            let mut qs = [0_i8; 32];
+            for i in 0..32 {
+                qs[i] = (chunk[i] / d.to_f32()).round() as i8;
+            }
+            bs.push(BlockQ8_0 { d, qs })
+        }
+        bs
+    }
+
     pub fn dequantize(&self, buf: &mut [f32]) {
         let d = self.d.to_f32();
         for i in 0..32 {

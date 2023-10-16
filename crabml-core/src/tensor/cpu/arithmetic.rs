@@ -3,11 +3,14 @@ use std::simd::f32x32;
 use std::simd::f32x8;
 use std::simd::SimdFloat;
 
+use half::f16;
 use rayon::prelude::*;
 
+use super::buf::buf_q8_0::vec_dot_q8_0_f16;
+use super::buf::QuantBufQ8_0;
 use crate::error::ErrorKind;
 use crate::error::Result;
-use crate::tensor::cpu::buf::BlockVecCompute;
+use crate::tensor::cpu::buf::BufVecDot;
 use crate::tensor::cpu::buf::CpuTensorBuf;
 use crate::tensor::cpu::validate::require_tensor_contiguous;
 use crate::tensor::cpu::validate::require_tensor_dims;
@@ -153,6 +156,7 @@ pub fn matmul_2d_1d<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTenso
     require_tensor_dims(x, &[1])?;
     require_tensor_matmul_2d_shapes(w, x)?;
     require_tensor_contiguous(w)?;
+    require_tensor_contiguous(x)?;
 
     match maybe_matmul_vec_2d_1d(w, x) {
         Some(r) => return r,
@@ -180,10 +184,10 @@ pub fn maybe_matmul_vec_2d_1d<'a>(
 
     match (w.buf(), x.buf()) {
         (CpuTensorBuf::Q8_0(wb), CpuTensorBuf::F32(xb)) => {
-            matmul_vec_generic_xxx_f32_2d_1d(wb, xb, &mut out)
+            matmul_vec_q8_0_f32_2d_1d(wb, xb, &mut out)
         }
         (CpuTensorBuf::F32(wb), CpuTensorBuf::F32(xb)) => {
-            if w.len() % wb.block_elms() != 0 {
+            if w.len() % 32 != 0 {
                 return None;
             }
             matmul_vec_generic_xxx_f32_2d_1d(wb, xb, &mut out)
@@ -194,7 +198,7 @@ pub fn maybe_matmul_vec_2d_1d<'a>(
     Some(CpuTensor::new(out, vec![w.shape()[0]]))
 }
 
-pub fn matmul_vec_generic_xxx_f32_2d_1d<'a, T: BlockVecCompute + Sync>(
+pub fn matmul_vec_generic_xxx_f32_2d_1d<'a, T: BufVecDot + Sync>(
     wb: &T,
     xb: &[f32],
     out: &mut [f32],
@@ -204,12 +208,38 @@ pub fn matmul_vec_generic_xxx_f32_2d_1d<'a, T: BlockVecCompute + Sync>(
     // out: [w_rows]
     let w_cols = xb.len();
     out.par_iter_mut().enumerate().for_each(|(w_row, o)| {
-        let row = &wb.blocks_between(
-            w_row * w_cols / wb.block_elms(),
-            (w_row + 1) * w_cols / wb.block_elms(),
-        );
-        *o = wb.vec_dot_f32(row, xb);
+        let offset = w_row * w_cols;
+        *o = wb.vec_dot_f32(offset, xb);
     });
+}
+
+pub fn matmul_vec_q8_0_f32_2d_1d<'a>(wb: &QuantBufQ8_0<'a>, xb: &[f32], out: &mut [f32]) {
+    // wb: [w_rows, w_cols]
+    // xb: [w_cols]
+    // out: [w_rows]
+    let w_cols = xb.len();
+    let xb16 = xb.iter().map(|x| f16::from_f32(*x)).collect::<Vec<_>>();
+    let xb_chunk_size: usize = 32;
+    let xb_chunks: &[[f16; 32]] = xb16.as_chunks().0; // to keep it in L1 cache
+    assert!(
+        xb16.len() % xb_chunk_size == 0,
+        "xb16.len() need to be a multiple of {}, but got {}",
+        xb_chunk_size,
+        xb16.len()
+    );
+    let out_chunk_size = out.len() / 32;
+    out.par_chunks_mut(out_chunk_size)
+        .enumerate()
+        .for_each(move |(o_chunk_idx, o_chunk)| {
+            for (oi, o) in o_chunk.iter_mut().enumerate() {
+                let w_row = o_chunk_idx * out_chunk_size + oi;
+                for (xb_chunk_idx, xb_chunk) in xb_chunks.iter().enumerate() {
+                    let w_offset = w_row * w_cols + xb_chunk_size * xb_chunk_idx;
+                    let wbq = wb.blocks_range(w_offset, w_offset + xb_chunk_size);
+                    *o += vec_dot_q8_0_f16(wbq, xb_chunk);
+                }
+            }
+        });
 }
 
 pub fn batch_matmul<'a, 'b>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'b>>

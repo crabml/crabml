@@ -8,15 +8,15 @@ use crabml::error::ErrorKind;
 use crabml::error::Result;
 use crabml::gguf::GGUFFile;
 use crabml::gguf::GGUFMetadata;
-use crabml::tensor::compute::add_inplace;
-use crabml::tensor::compute::batch_matmul;
-use crabml::tensor::compute::div_scalar_inplace;
-use crabml::tensor::compute::matmul_2d_1d;
-use crabml::tensor::compute::mul_inplace;
-use crabml::tensor::compute::rms_norm_inplace;
-use crabml::tensor::compute::rope_inplace;
-use crabml::tensor::compute::silu_inplace;
-use crabml::tensor::compute::softmax_inplace;
+use crabml::tensor::arithmetic::add_inplace;
+use crabml::tensor::arithmetic::batch_matmul;
+use crabml::tensor::arithmetic::div_scalar_inplace;
+use crabml::tensor::arithmetic::matmul_2d_1d;
+use crabml::tensor::arithmetic::mul_inplace;
+use crabml::tensor::arithmetic::rms_norm_inplace;
+use crabml::tensor::arithmetic::rope_inplace;
+use crabml::tensor::arithmetic::silu_inplace;
+use crabml::tensor::arithmetic::softmax_inplace;
 use crabml::tensor::CpuTensor;
 use crabml::tokenizer::BpeTokenizer;
 
@@ -580,7 +580,7 @@ mod tests {
         let s = output.collect::<Result<Vec<String>>>()?.join("");
         assert_eq!(
             s,
-            ". Sheaa is a very hairy cat. Sheaa likes to play with her toys and her friends. She likes to make"
+            " who likes to play with yarn. She has many colors of yarn in her box. She likes to make shapes with yarn and show"
         );
         Ok(())
     }
@@ -597,7 +597,7 @@ mod tests {
         let mut runner = Llama2Runner::new(&lm.conf, &lm.weights, &lm.tokenizer)?;
         let output = runner.generate("Lily is a cute cat, ", 10, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
-        assert_eq!(s, "gry. She was a very brave and curious girl.");
+        assert_eq!(s, "3 years old. She likes to play with her");
         Ok(())
     }
 }

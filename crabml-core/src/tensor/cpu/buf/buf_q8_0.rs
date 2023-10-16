@@ -2,8 +2,9 @@ use std::simd::f32x8;
 use std::simd::SimdFloat;
 
 use half::f16;
+use half::slice::HalfFloatSliceExt;
 
-use super::buf::BlockVecCompute;
+use super::buf::BufVecDot;
 
 #[repr(C, packed)]
 #[derive(Debug, Clone)]
@@ -22,6 +23,26 @@ impl BlockQ8_0 {
             "data length must be a multiple of QuantBlockQ8_0 size"
         );
         unsafe { std::slice::from_raw_parts(data.as_ptr() as *const BlockQ8_0, data.len() / size) }
+    }
+
+    pub fn quantize(data: &[f32]) -> Vec<BlockQ8_0> {
+        let mut bs: Vec<BlockQ8_0> = vec![];
+        let chunks = data.chunks(32);
+        for chunk in chunks {
+            let mut max = f32::MIN;
+            for i in 0..32 {
+                if chunk[i] > max {
+                    max = chunk[i];
+                }
+            }
+            let d = f16::from_f32(max / 127.0);
+            let mut qs = [0_i8; 32];
+            for i in 0..32 {
+                qs[i] = (chunk[i] / d.to_f32()).round() as i8;
+            }
+            bs.push(BlockQ8_0 { d, qs })
+        }
+        bs
     }
 
     pub fn dequantize(&self, buf: &mut [f32]) {
@@ -54,6 +75,10 @@ impl<'a> QuantBufQ8_0<'a> {
         BlockQ8_0::from_bytes(self.raw)
     }
 
+    pub fn blocks_range(&self, start: usize, end: usize) -> &[BlockQ8_0] {
+        &self.blocks()[start / 32..end / 32]
+    }
+
     pub fn len(&self) -> usize {
         self.num_blocks * 32
     }
@@ -75,19 +100,10 @@ impl<'a> QuantBufQ8_0<'a> {
     }
 }
 
-impl<'a> BlockVecCompute for QuantBufQ8_0<'a> {
-    type BlockType = BlockQ8_0;
-
-    fn block_elms(&self) -> usize {
-        BlockQ8_0::BLOCK_ELEMS
-    }
-
-    fn blocks_between(&self, start: usize, end: usize) -> &[Self::BlockType] {
+impl<'a> BufVecDot for QuantBufQ8_0<'a> {
+    fn vec_dot_f32(&self, offset: usize, x: &[f32]) -> f32 {
         let blocks = BlockQ8_0::from_bytes(self.raw);
-        &blocks[start..end]
-    }
-
-    fn vec_dot_f32(&self, row: &[Self::BlockType], x: &[f32]) -> f32 {
+        let row = &blocks[offset / 32..(offset + x.len()) / 32];
         assert!(row.len() * 32 == x.len());
         let mut sum = 0.0;
         for i in 0..row.len() {
@@ -113,6 +129,70 @@ impl<'a> BlockVecCompute for QuantBufQ8_0<'a> {
         }
         sum
     }
+}
+
+pub fn vec_dot_q8_0_f16(w: &[BlockQ8_0], x: &[f16]) -> f32 {
+    let mut sum = 0.0;
+    for (xb, wb) in x.chunks(32).zip(w.iter()) {
+        let mut sum_block = 0.0;
+        for j in 0..4 {
+            let qv = f32x8::from_array([
+                wb.qs[j * 8] as f32,
+                wb.qs[j * 8 + 1] as f32,
+                wb.qs[j * 8 + 2] as f32,
+                wb.qs[j * 8 + 3] as f32,
+                wb.qs[j * 8 + 4] as f32,
+                wb.qs[j * 8 + 5] as f32,
+                wb.qs[j * 8 + 6] as f32,
+                wb.qs[j * 8 + 7] as f32,
+            ]);
+            let xv = f32x8::from_array([
+                xb[j * 8].to_f32(),
+                xb[j * 8 + 1].to_f32(),
+                xb[j * 8 + 2].to_f32(),
+                xb[j * 8 + 3].to_f32(),
+                xb[j * 8 + 4].to_f32(),
+                xb[j * 8 + 5].to_f32(),
+                xb[j * 8 + 6].to_f32(),
+                xb[j * 8 + 7].to_f32(),
+            ]);
+            sum_block += (qv * xv).reduce_sum();
+        }
+        sum += sum_block * wb.d.to_f32();
+    }
+    sum
+}
+
+pub fn vec_dot_q8_0_q8_0(w: &[BlockQ8_0], x: &[BlockQ8_0]) -> f32 {
+    let mut sum = 0.0;
+    for (xb, wb) in x.iter().zip(w.iter()) {
+        let mut sum_block = 0.0;
+        for j in 0..4 {
+            let qv = f32x8::from_array([
+                wb.qs[j * 8] as f32,
+                wb.qs[j * 8 + 1] as f32,
+                wb.qs[j * 8 + 2] as f32,
+                wb.qs[j * 8 + 3] as f32,
+                wb.qs[j * 8 + 4] as f32,
+                wb.qs[j * 8 + 5] as f32,
+                wb.qs[j * 8 + 6] as f32,
+                wb.qs[j * 8 + 7] as f32,
+            ]);
+            let xv = f32x8::from_array([
+                xb.qs[j * 8] as f32,
+                xb.qs[j * 8 + 1] as f32,
+                xb.qs[j * 8 + 2] as f32,
+                xb.qs[j * 8 + 3] as f32,
+                xb.qs[j * 8 + 4] as f32,
+                xb.qs[j * 8 + 5] as f32,
+                xb.qs[j * 8 + 6] as f32,
+                xb.qs[j * 8 + 7] as f32,
+            ]);
+            sum_block += (qv * xv).reduce_sum();
+        }
+        sum += sum_block * wb.d.to_f32() * xb.d.to_f32();
+    }
+    sum
 }
 
 pub struct BlockBufIterQ8_0<'a> {

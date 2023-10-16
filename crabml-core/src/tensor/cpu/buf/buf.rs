@@ -180,12 +180,6 @@ impl<'a> ExactSizeIterator for CpuTensorBufIter<'a> {
     }
 }
 
-pub trait BlockVecCompute {
-    type BlockType;
-
-    fn blocks_between(&self, start: usize, end: usize) -> &[Self::BlockType];
-
-    fn block_elms(&self) -> usize;
-
-    fn vec_dot_f32(&self, row: &[Self::BlockType], x: &[f32]) -> f32;
+pub trait BufVecDot {
+    fn vec_dot_f32(&self, row: usize, x: &[f32]) -> f32;
 }

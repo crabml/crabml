@@ -3,6 +3,7 @@ use std::simd::f32x32;
 use std::simd::f32x8;
 use std::simd::SimdFloat;
 
+use half::f16;
 use rayon::prelude::*;
 
 use crate::error::ErrorKind;
@@ -14,6 +15,11 @@ use crate::tensor::cpu::validate::require_tensor_dims;
 use crate::tensor::cpu::validate::require_tensor_matmul_2d_shapes;
 use crate::tensor::cpu::validate::require_tensor_shape;
 use crate::tensor::CpuTensor;
+
+use super::buf::BlockQ8_0;
+use super::buf::QuantBufQ8_0;
+use super::buf::buf_q8_0::vec_dot_q8_0_f16;
+use super::buf::buf_q8_0::vec_dot_q8_0_q8_0;
 
 /// ! arithmetic.rs contains the tensor arithmetics operations like matmul, accum, etc.
 
@@ -181,7 +187,7 @@ pub fn maybe_matmul_vec_2d_1d<'a>(
 
     match (w.buf(), x.buf()) {
         (CpuTensorBuf::Q8_0(wb), CpuTensorBuf::F32(xb)) => {
-            matmul_vec_generic_xxx_f32_2d_1d(wb, xb, &mut out)
+            matmul_vec_q8_0_f32_2d_1d(wb, xb, &mut out)
         }
         (CpuTensorBuf::F32(wb), CpuTensorBuf::F32(xb)) => {
             if w.len() % 32 != 0 {
@@ -207,6 +213,23 @@ pub fn matmul_vec_generic_xxx_f32_2d_1d<'a, T: BufVecDot + Sync>(
     out.par_iter_mut().enumerate().for_each(|(w_row, o)| {
         let offset = w_row * w_cols;
         *o = wb.vec_dot_f32(offset, xb);
+    });
+}
+
+pub fn matmul_vec_q8_0_f32_2d_1d<'a>(
+    wb: &QuantBufQ8_0<'a>,
+    xb: &[f32],
+    out: &mut [f32],
+) {
+    // wb: [w_rows, w_cols]
+    // xb: [w_cols]
+    // out: [w_rows]
+    let w_cols = xb.len();
+    let xb16 = xb.iter().map(|x| f16::from_f32(*x)).collect::<Vec<_>>();
+    out.par_iter_mut().enumerate().for_each(|(w_row, o)| {
+        let offset = w_row * w_cols;
+        let wbq = wb.blocks_range(offset, offset+w_cols);
+        *o = vec_dot_q8_0_f16(wbq, &xb16);
     });
 }
 

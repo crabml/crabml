@@ -6,7 +6,7 @@ use crate::tensor::strider::TensorStrider;
 
 type TensorID = usize;
 
-pub enum TensorDeviceOp {
+pub enum TensorComputeOp {
     AllocTensor {
         strider: TensorStrider,
     },
@@ -33,11 +33,9 @@ pub enum TensorDeviceOp {
     },
 
     RopeInplace {
-        q: TensorID,
-        k: TensorID,
+        t: TensorID,
         pos: usize,
-        freq_base: f32,
-        freq_scale: f32,
+        rope_dim: usize,
     },
 
     SiluInplace {
@@ -69,10 +67,10 @@ pub enum TensorDeviceOp {
 /// the pool of the tensors, each tensor is identified by a unique TensorID. The tensor
 /// may located in the CPU or GPU memory, you can not directly acccess its data except
 /// calling `export_tensor()` to load the tensor's data into the host's memory.
-pub trait TensorDevice {
+pub trait TensorBackend {
     type DataType;
 
-    fn process_op(&mut self, op: TensorDeviceOp) -> Result<Option<TensorID>>;
+    fn process_op(&mut self, op: TensorComputeOp) -> Result<Option<TensorID>>;
 
     fn import_tensor(&mut self, shape: &[usize], data: &[Self::DataType]) -> TensorID;
 
@@ -82,25 +80,25 @@ pub trait TensorDevice {
 }
 
 #[derive(Clone)]
-pub struct Tensor<D: TensorDevice> {
+pub struct Tensor<D: TensorBackend> {
     id: TensorID,
     strider: TensorStrider,
-    device: Rc<RefCell<D>>,
+    backend: Rc<RefCell<D>>,
 }
 
-impl<D: TensorDevice> Tensor<D> {
+impl<D: TensorBackend> Tensor<D> {
     pub fn zeros(shape: Vec<usize>, device: Rc<RefCell<D>>) -> Result<Self> {
         let strider: TensorStrider = TensorStrider::new(shape.clone());
         let id = device
             .borrow_mut()
-            .process_op(TensorDeviceOp::AllocTensor {
+            .process_op(TensorComputeOp::AllocTensor {
                 strider: strider.clone(),
             })?
             .unwrap();
         Ok(Self {
             id,
             strider,
-            device,
+            backend: device,
         })
     }
 
@@ -113,9 +111,9 @@ impl<D: TensorDevice> Tensor<D> {
     }
 
     pub fn copy_from(&mut self, pos: &[usize], src: &Self) -> Result<()> {
-        self.device
+        self.backend
             .borrow_mut()
-            .process_op(TensorDeviceOp::CopyFrom {
+            .process_op(TensorComputeOp::CopyFrom {
                 dst: self.id,
                 pos: pos.to_vec(),
                 src: src.id,
@@ -126,16 +124,16 @@ impl<D: TensorDevice> Tensor<D> {
     pub fn view(self, shape: Vec<usize>) -> Result<Self> {
         let strider = self.strider.view(shape)?;
 
-        self.device
+        self.backend
             .borrow_mut()
-            .process_op(TensorDeviceOp::EditTensor {
+            .process_op(TensorComputeOp::EditTensor {
                 t: self.id,
                 strider: strider.clone(),
             })?;
         Ok(Self {
             strider,
             id: self.id,
-            device: self.device.clone(),
+            backend: self.backend.clone(),
         })
     }
 
@@ -156,11 +154,11 @@ impl<D: TensorDevice> Tensor<D> {
     }
 }
 
-impl<D: TensorDevice> Drop for Tensor<D> {
+impl<D: TensorBackend> Drop for Tensor<D> {
     fn drop(&mut self) {
-        self.device
+        self.backend
             .borrow_mut()
-            .process_op(TensorDeviceOp::RecycleTensor { t: self.id })
+            .process_op(TensorComputeOp::RecycleTensor { t: self.id })
             .unwrap();
     }
 }

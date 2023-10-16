@@ -1,7 +1,7 @@
 use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::error::Result;
-use crate::tensor::cpu::CpuTensor;
+use crate::backends::cpu::CpuTensor;
 
 pub fn require_tensor_shape(t: &CpuTensor, shape: &[usize]) -> Result<()> {
     if !t.shape().eq(shape) {

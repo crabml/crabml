@@ -282,7 +282,7 @@ pub fn rope_inplace<'a>(
     // apply RoPE rotation for each head
     for h in 0..n_heads {
         for i in 0..rope_dims / 2 {
-            let theta_scale = 10000_f32.powf(0.0 - 2.0 * i as f32 / head_size as f32);
+            let theta_scale = 10000_f32.powf(-2.0 * i as f32 / head_size as f32);
             let theta = pos as f32 * theta_scale;
 
             let cos_theta = theta.cos();

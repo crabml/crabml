@@ -18,7 +18,7 @@ use crabml::tensor::compute::rope_inplace;
 use crabml::tensor::compute::silu_inplace;
 use crabml::tensor::compute::softmax_inplace;
 use crabml::tensor::CpuTensor;
-use crabml::tokenizer::GGMLTokenizer;
+use crabml::tokenizer::BpeTokenizer;
 
 use crate::sampler::Llama2Sampler;
 
@@ -70,7 +70,7 @@ pub struct Llama2Weights<'a> {
 pub struct Llama2Model<'a> {
     conf: Llama2Config,
     weights: Llama2Weights<'a>,
-    tokenizer: GGMLTokenizer,
+    tokenizer: BpeTokenizer,
     metadata: &'a GGUFMetadata<'a>,
 }
 
@@ -99,7 +99,7 @@ impl<'a> Llama2Model<'a> {
         self.metadata
     }
 
-    pub fn tokenizer(&self) -> &GGMLTokenizer {
+    pub fn tokenizer(&self) -> &BpeTokenizer {
         &self.tokenizer
     }
 
@@ -196,7 +196,7 @@ impl<'a> Llama2Model<'a> {
         Ok(tensor)
     }
 
-    fn load_tokenizer(gf: &GGUFFile) -> GGMLTokenizer {
+    fn load_tokenizer(gf: &GGUFFile) -> BpeTokenizer {
         let vocab = gf
             .metadata()
             .get_string_array("tokenizer.ggml.tokens")
@@ -219,7 +219,7 @@ impl<'a> Llama2Model<'a> {
             .metadata()
             .get_u32("tokenizer.ggml.bos_token_id")
             .unwrap() as usize;
-        GGMLTokenizer::new(vocab, vocab_scores, bos_token, eos_token)
+        BpeTokenizer::new(vocab, vocab_scores, bos_token, eos_token)
     }
 
     fn load_config(gf: &GGUFFile) -> Llama2Config {
@@ -268,14 +268,14 @@ pub struct Llama2Runner<'a> {
     conf: Llama2Config,
     state: Llama2State<'a>,
     weights: &'a Llama2Weights<'a>,
-    tokenizer: &'a GGMLTokenizer,
+    tokenizer: &'a BpeTokenizer,
 }
 
 impl<'a> Llama2Runner<'a> {
     pub fn new(
         conf: &Llama2Config,
         weights: &'a Llama2Weights<'a>,
-        tokenizer: &'a GGMLTokenizer,
+        tokenizer: &'a BpeTokenizer,
     ) -> Result<Self> {
         let state = Llama2State {
             logits: vec![0.0; conf.vocab_size],

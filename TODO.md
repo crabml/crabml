@@ -1,4 +1,7 @@
-- [ ] align the result with ggml at temp 0
-  - [ ] align the result of tokenizer with llm-rs
+- [ ] align the result with ggml with a f32 model at temp 0
+  - how to align with ggml?
+    - for the tokenizers, can seek the tests in ggml.
+    - plot the token ids & kv cache in ggml
+  - [ ] align the result of tokenizer with ggml
 - [ ] take the tensor & device framework
 - [ ] wgpu tensor support

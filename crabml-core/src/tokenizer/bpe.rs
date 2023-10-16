@@ -5,7 +5,7 @@ use crate::error::Result;
 type Token = String;
 type TokenID = usize;
 
-pub struct GGMLTokenizer {
+pub struct BpeTokenizer {
     tokens: Vec<Token>,
     token_scores: Vec<f32>,
     token_ids: HashMap<String, TokenID>,
@@ -16,7 +16,7 @@ pub struct GGMLTokenizer {
     token_buf_len: usize,
 }
 
-impl GGMLTokenizer {
+impl BpeTokenizer {
     pub fn new(
         tokens: Vec<String>,
         token_scores: Vec<f32>,
@@ -48,6 +48,10 @@ impl GGMLTokenizer {
         &self.tokens
     }
 
+    pub fn token(&self, token_id: TokenID) -> Token {
+        self.tokens[token_id].clone()
+    }
+
     pub fn decode(&self, prev_token: usize, token: usize) -> Result<Token> {
         let mut piece: &[u8] = self.tokens[token].as_bytes();
         // following BOS (1) token, sentencepiece decoder strips any leading whitespace (see PR #89)
@@ -77,8 +81,20 @@ impl GGMLTokenizer {
         let mut token_buf = String::with_capacity(self.token_buf_len * 2 + 1 + 2);
         let mut tokens: Vec<TokenID> = vec![];
 
+        let text = text.replace(' ', "▁");
+
         if bos {
             tokens.push(self.bos_token);
+        }
+
+        // add_dummy_prefix is true by default
+        // so prepend a dummy prefix token to the input string, but only if text != ""
+        // TODO: pretty sure this isn't correct in the general case but I don't have the
+        // energy to read more of the sentencepiece code to figure out what it's doing
+        if !text.starts_with('\u{0}') {
+            if let Some(dummy_prefix) = self.token_ids.get("▁") {
+                tokens.push(*dummy_prefix);
+            }
         }
 
         let chars = text.chars();
@@ -160,11 +176,31 @@ mod tests {
             .iter()
             .cloned()
             .collect::<Vec<_>>();
-        let tk = GGMLTokenizer::new(tokens, token_scores, 1, 2);
+        let tk = BpeTokenizer::new(tokens, token_scores, 1, 2);
 
         let tests = vec![
-            ("hello, world", "<s> - hello - , - <0x20> - world - </s>"),
-            ("tiktok", "<s> - t - ik - tok - </s>"),
+            (10842, "▁Captain"),
+            (6813, "▁America"),
+            (29901, ":"),
+            (29871, "▁"),
+            (260, "▁t"),
+            (10373, "ictures"),
+            (287, "ed"),
+            (259, "▁▁"),
+            (1218, "ating"),
+        ];
+        for (token_id, token) in tests {
+            let got = tk.token(token_id);
+            assert_eq!(token, got);
+        }
+
+        let tests = vec![
+            (
+                "Captain America: ",
+                "<s> - ▁Captain - ▁America - : - ▁ - </s>",
+            ),
+            ("hello, world", "<s> - ▁hello - , - ▁world - </s>"),
+            ("tiktok", "<s> - ▁t - ik - tok - </s>"),
         ];
 
         for tt in tests {

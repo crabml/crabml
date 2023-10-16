@@ -661,12 +661,7 @@ pub struct GGUFTensorInfo<'a> {
 }
 
 impl<'a> GGUFTensorInfo<'a> {
-    pub fn new(
-        name: String,
-        dimensions: Vec<usize>,
-        typ: GGMLType,
-        data: &'a [u8],
-    ) -> Self {
+    pub fn new(name: String, dimensions: Vec<usize>, typ: GGMLType, data: &'a [u8]) -> Self {
         Self {
             name,
             dimensions,

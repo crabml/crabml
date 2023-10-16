@@ -580,7 +580,7 @@ mod tests {
         let s = output.collect::<Result<Vec<String>>>()?.join("");
         assert_eq!(
             s,
-            ". Sheaa is a very hairy cat. Sheaa likes to play with her toys and her friends. She likes to make"
+            " who likes to play with yarn. She has many colors of yarn in her box. She likes to make shapes with yarn and show"
         );
         Ok(())
     }
@@ -597,7 +597,7 @@ mod tests {
         let mut runner = Llama2Runner::new(&lm.conf, &lm.weights, &lm.tokenizer)?;
         let output = runner.generate("Lily is a cute cat, ", 10, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
-        assert_eq!(s, "gry. She was a very brave and curious girl.");
+        assert_eq!(s, "3 years old. She likes to play with her");
         Ok(())
     }
 }

@@ -219,8 +219,8 @@ pub fn matmul_vec_q8_0_f32_2d_1d<'a>(wb: &QuantBufQ8_0<'a>, xb: &[f32], out: &mu
     // out: [w_rows]
     let w_cols = xb.len();
     let xb16 = xb.iter().map(|x| f16::from_f32(*x)).collect::<Vec<_>>();
-    let xb_chunk_size: usize = 320;
-    let xb_chunks: &[[f16; 320]] = xb16.as_chunks().0; // to keep it in L1 cache
+    let xb_chunk_size: usize = 32;
+    let xb_chunks: &[[f16; 32]] = xb16.as_chunks().0; // to keep it in L1 cache
     assert!(
         xb16.len() % xb_chunk_size == 0,
         "xb16.len() need to be a multiple of {}, but got {}",

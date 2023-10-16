@@ -6,7 +6,7 @@ use super::buf::BufVecDot;
 
 impl<'a> BufVecDot for Cow<'a, [f32]> {
     fn vec_dot_f32(&self, offset: usize, x: &[f32]) -> f32 {
-        let chunks = self[offset..offset+x.len()].chunks(32);
+        let chunks = self[offset..offset + x.len()].chunks(32);
         let mut acc = f32x32::splat(0.0);
         for (chunk_idx, chunk) in chunks.enumerate() {
             let block = f32x32::from_slice(chunk);

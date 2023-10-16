@@ -2,6 +2,7 @@ use std::simd::f32x8;
 use std::simd::SimdFloat;
 
 use half::f16;
+use half::slice::HalfFloatSliceExt;
 
 use super::buf::BufVecDot;
 
@@ -75,7 +76,7 @@ impl<'a> QuantBufQ8_0<'a> {
     }
 
     pub fn blocks_range(&self, start: usize, end: usize) -> &[BlockQ8_0] {
-        &self.blocks()[start/32..end/32]
+        &self.blocks()[start / 32..end / 32]
     }
 
     pub fn len(&self) -> usize {
@@ -136,24 +137,24 @@ pub fn vec_dot_q8_0_f16(w: &[BlockQ8_0], x: &[f16]) -> f32 {
         let mut sum_block = 0.0;
         for j in 0..4 {
             let qv = f32x8::from_array([
-                wb.qs[j*8] as f32,
-                wb.qs[j*8+1] as f32,
-                wb.qs[j*8+2] as f32,
-                wb.qs[j*8+3] as f32,
-                wb.qs[j*8+4] as f32,
-                wb.qs[j*8+5] as f32,
-                wb.qs[j*8+6] as f32,
-                wb.qs[j*8+7] as f32,
+                wb.qs[j * 8] as f32,
+                wb.qs[j * 8 + 1] as f32,
+                wb.qs[j * 8 + 2] as f32,
+                wb.qs[j * 8 + 3] as f32,
+                wb.qs[j * 8 + 4] as f32,
+                wb.qs[j * 8 + 5] as f32,
+                wb.qs[j * 8 + 6] as f32,
+                wb.qs[j * 8 + 7] as f32,
             ]);
             let xv = f32x8::from_array([
-                xb[j*8].to_f32(),
-                xb[j*8+1].to_f32(),
-                xb[j*8+2].to_f32(),
-                xb[j*8+3].to_f32(),
-                xb[j*8+4].to_f32(),
-                xb[j*8+5].to_f32(),
-                xb[j*8+6].to_f32(),
-                xb[j*8+7].to_f32(),
+                xb[j * 8].to_f32(),
+                xb[j * 8 + 1].to_f32(),
+                xb[j * 8 + 2].to_f32(),
+                xb[j * 8 + 3].to_f32(),
+                xb[j * 8 + 4].to_f32(),
+                xb[j * 8 + 5].to_f32(),
+                xb[j * 8 + 6].to_f32(),
+                xb[j * 8 + 7].to_f32(),
             ]);
             sum_block += (qv * xv).reduce_sum();
         }
@@ -168,24 +169,24 @@ pub fn vec_dot_q8_0_q8_0(w: &[BlockQ8_0], x: &[BlockQ8_0]) -> f32 {
         let mut sum_block = 0.0;
         for j in 0..4 {
             let qv = f32x8::from_array([
-                wb.qs[j*8] as f32,
-                wb.qs[j*8+1] as f32,
-                wb.qs[j*8+2] as f32,
-                wb.qs[j*8+3] as f32,
-                wb.qs[j*8+4] as f32,
-                wb.qs[j*8+5] as f32,
-                wb.qs[j*8+6] as f32,
-                wb.qs[j*8+7] as f32,
+                wb.qs[j * 8] as f32,
+                wb.qs[j * 8 + 1] as f32,
+                wb.qs[j * 8 + 2] as f32,
+                wb.qs[j * 8 + 3] as f32,
+                wb.qs[j * 8 + 4] as f32,
+                wb.qs[j * 8 + 5] as f32,
+                wb.qs[j * 8 + 6] as f32,
+                wb.qs[j * 8 + 7] as f32,
             ]);
             let xv = f32x8::from_array([
-                xb.qs[j*8] as f32,
-                xb.qs[j*8+1] as f32,
-                xb.qs[j*8+2] as f32,
-                xb.qs[j*8+3] as f32,
-                xb.qs[j*8+4] as f32,
-                xb.qs[j*8+5] as f32,
-                xb.qs[j*8+6] as f32,
-                xb.qs[j*8+7] as f32,
+                xb.qs[j * 8] as f32,
+                xb.qs[j * 8 + 1] as f32,
+                xb.qs[j * 8 + 2] as f32,
+                xb.qs[j * 8 + 3] as f32,
+                xb.qs[j * 8 + 4] as f32,
+                xb.qs[j * 8 + 5] as f32,
+                xb.qs[j * 8 + 6] as f32,
+                xb.qs[j * 8 + 7] as f32,
             ]);
             sum_block += (qv * xv).reduce_sum();
         }

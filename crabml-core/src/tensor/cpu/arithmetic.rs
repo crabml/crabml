@@ -6,6 +6,8 @@ use std::simd::SimdFloat;
 use half::f16;
 use rayon::prelude::*;
 
+use super::buf::buf_q8_0::vec_dot_q8_0_f16;
+use super::buf::QuantBufQ8_0;
 use crate::error::ErrorKind;
 use crate::error::Result;
 use crate::tensor::cpu::buf::BufVecDot;
@@ -15,9 +17,6 @@ use crate::tensor::cpu::validate::require_tensor_dims;
 use crate::tensor::cpu::validate::require_tensor_matmul_2d_shapes;
 use crate::tensor::cpu::validate::require_tensor_shape;
 use crate::tensor::CpuTensor;
-
-use super::buf::QuantBufQ8_0;
-use super::buf::buf_q8_0::vec_dot_q8_0_f16;
 
 /// ! arithmetic.rs contains the tensor arithmetics operations like matmul, accum, etc.
 
@@ -214,26 +213,33 @@ pub fn matmul_vec_generic_xxx_f32_2d_1d<'a, T: BufVecDot + Sync>(
     });
 }
 
-pub fn matmul_vec_q8_0_f32_2d_1d<'a>(
-    wb: &QuantBufQ8_0<'a>,
-    xb: &[f32],
-    out: &mut [f32],
-) {
+pub fn matmul_vec_q8_0_f32_2d_1d<'a>(wb: &QuantBufQ8_0<'a>, xb: &[f32], out: &mut [f32]) {
     // wb: [w_rows, w_cols]
     // xb: [w_cols]
     // out: [w_rows]
     let w_cols = xb.len();
     let xb16 = xb.iter().map(|x| f16::from_f32(*x)).collect::<Vec<_>>();
-    let xb_chunk_size = 320;
-    let xb_chunks = xb16.chunks(xb_chunk_size); // to keep it in L1 cache
-    assert!(xb16.len() % xb_chunk_size == 0, "xb16.len() need to be a multiple of {}, but got {}", xb_chunk_size, xb16.len());
-    for (xb_chunk_idx, xb_chunk) in xb_chunks.enumerate() {
-        out.iter_mut().enumerate().for_each(|(w_row, o)| {
-            let w_offset = w_row * w_cols + xb_chunk_size * xb_chunk_idx;
-            let wbq = wb.blocks_range(w_offset, w_offset+xb_chunk_size);
-            *o += vec_dot_q8_0_f16(wbq, xb_chunk);
+    let xb_chunk_size: usize = 320;
+    let xb_chunks: &[[f16; 320]] = xb16.as_chunks().0; // to keep it in L1 cache
+    assert!(
+        xb16.len() % xb_chunk_size == 0,
+        "xb16.len() need to be a multiple of {}, but got {}",
+        xb_chunk_size,
+        xb16.len()
+    );
+    let out_chunk_size = out.len() / 32;
+    out.par_chunks_mut(out_chunk_size)
+        .enumerate()
+        .for_each(move |(o_chunk_idx, o_chunk)| {
+            for (oi, o) in o_chunk.iter_mut().enumerate() {
+                let w_row = o_chunk_idx * out_chunk_size + oi;
+                for (xb_chunk_idx, xb_chunk) in xb_chunks.iter().enumerate() {
+                    let w_offset = w_row * w_cols + xb_chunk_size * xb_chunk_idx;
+                    let wbq = wb.blocks_range(w_offset, w_offset + xb_chunk_size);
+                    *o += vec_dot_q8_0_f16(wbq, xb_chunk);
+                }
+            }
         });
-    }
 }
 
 pub fn batch_matmul<'a, 'b>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'b>>

@@ -126,6 +126,38 @@ impl<'a> BufVecDot for QuantBufQ8_0<'a> {
     }
 }
 
+fn vec_dot_q8_0_q8_0(w: &[BlockQ8_0], x: &[BlockQ8_0]) -> f32 {
+    let mut sum = 0.0;
+    for (xb, wb) in x.iter().zip(w.iter()) {
+        let mut sum_block = 0.0;
+        for j in 0..4 {
+            let qv = f32x8::from_array([
+                wb.qs[j*8] as f32,
+                wb.qs[j*8+1] as f32,
+                wb.qs[j*8+2] as f32,
+                wb.qs[j*8+3] as f32,
+                wb.qs[j*8+4] as f32,
+                wb.qs[j*8+5] as f32,
+                wb.qs[j*8+6] as f32,
+                wb.qs[j*8+7] as f32,
+            ]);
+            let xv = f32x8::from_array([
+                xb.qs[j*8] as f32,
+                xb.qs[j*8+1] as f32,
+                xb.qs[j*8+2] as f32,
+                xb.qs[j*8+3] as f32,
+                xb.qs[j*8+4] as f32,
+                xb.qs[j*8+5] as f32,
+                xb.qs[j*8+6] as f32,
+                xb.qs[j*8+7] as f32,
+            ]);
+            sum_block += (qv * xv).reduce_sum();
+        }
+        sum += sum_block * wb.d.to_f32() * xb.d.to_f32();
+    }
+    sum
+}
+
 pub struct BlockBufIterQ8_0<'a> {
     buf: &'a QuantBufQ8_0<'a>,
     current_f32_buf: [f32; 32],

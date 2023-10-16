@@ -7,7 +7,7 @@ use rayon::prelude::*;
 
 use crate::error::ErrorKind;
 use crate::error::Result;
-use crate::tensor::cpu::buf::BlockVecCompute;
+use crate::tensor::cpu::buf::BufVecDot;
 use crate::tensor::cpu::buf::CpuTensorBuf;
 use crate::tensor::cpu::validate::require_tensor_contiguous;
 use crate::tensor::cpu::validate::require_tensor_dims;
@@ -183,7 +183,7 @@ pub fn maybe_matmul_vec_2d_1d<'a>(
             matmul_vec_generic_xxx_f32_2d_1d(wb, xb, &mut out)
         }
         (CpuTensorBuf::F32(wb), CpuTensorBuf::F32(xb)) => {
-            if w.len() % wb.block_elms() != 0 {
+            if w.len() % 32 != 0 {
                 return None;
             }
             matmul_vec_generic_xxx_f32_2d_1d(wb, xb, &mut out)
@@ -194,7 +194,7 @@ pub fn maybe_matmul_vec_2d_1d<'a>(
     Some(CpuTensor::new(out, vec![w.shape()[0]]))
 }
 
-pub fn matmul_vec_generic_xxx_f32_2d_1d<'a, T: BlockVecCompute + Sync>(
+pub fn matmul_vec_generic_xxx_f32_2d_1d<'a, T: BufVecDot + Sync>(
     wb: &T,
     xb: &[f32],
     out: &mut [f32],
@@ -204,11 +204,8 @@ pub fn matmul_vec_generic_xxx_f32_2d_1d<'a, T: BlockVecCompute + Sync>(
     // out: [w_rows]
     let w_cols = xb.len();
     out.par_iter_mut().enumerate().for_each(|(w_row, o)| {
-        let row = &wb.blocks_between(
-            w_row * w_cols / wb.block_elms(),
-            (w_row + 1) * w_cols / wb.block_elms(),
-        );
-        *o = wb.vec_dot_f32(row, xb);
+        let offset = w_row * w_cols;
+        *o = wb.vec_dot_f32(offset, xb);
     });
 }
 

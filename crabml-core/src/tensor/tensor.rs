@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::error::Result;
 use crate::tensor::strider::TensorStrider;
 
@@ -18,6 +19,10 @@ pub enum TensorComputeOp {
     EditTensor {
         t: TensorID,
         strider: TensorStrider,
+    },
+
+    RefTensor {
+        t: TensorID,
     },
 
     CopyFrom {
@@ -68,13 +73,13 @@ pub enum TensorComputeOp {
 /// may located in the CPU or GPU memory, you can not directly acccess its data except
 /// calling `export_tensor()` to load the tensor's data into the host's memory.
 pub trait TensorBackend {
-    type DataType;
+    fn append_op(&mut self, op: TensorComputeOp) -> Result<Option<TensorID>>;
 
     fn process_op(&mut self, op: TensorComputeOp) -> Result<Option<TensorID>>;
 
-    fn import_tensor(&mut self, shape: &[usize], data: &[Self::DataType]) -> TensorID;
+    fn import_tensor(&mut self, shape: &[usize], buf: &CpuTensorBuf) -> TensorID;
 
-    fn export_tensor(self, t: TensorID, data: &mut [Self::DataType]) -> Result<()>;
+    fn export_tensor(self, t: TensorID, data: &mut [f32]) -> Result<()>;
 
     fn name(&self) -> &'static str;
 }
@@ -91,7 +96,7 @@ impl<D: TensorBackend> Tensor<D> {
         let strider: TensorStrider = TensorStrider::new(shape.clone());
         let id = device
             .borrow_mut()
-            .process_op(TensorComputeOp::AllocTensor {
+            .append_op(TensorComputeOp::AllocTensor {
                 strider: strider.clone(),
             })?
             .unwrap();
@@ -113,7 +118,7 @@ impl<D: TensorBackend> Tensor<D> {
     pub fn copy_from(&mut self, pos: &[usize], src: &Self) -> Result<()> {
         self.backend
             .borrow_mut()
-            .process_op(TensorComputeOp::CopyFrom {
+            .append_op(TensorComputeOp::CopyFrom {
                 dst: self.id,
                 pos: pos.to_vec(),
                 src: src.id,
@@ -126,7 +131,7 @@ impl<D: TensorBackend> Tensor<D> {
 
         self.backend
             .borrow_mut()
-            .process_op(TensorComputeOp::EditTensor {
+            .append_op(TensorComputeOp::EditTensor {
                 t: self.id,
                 strider: strider.clone(),
             })?;
@@ -158,7 +163,7 @@ impl<D: TensorBackend> Drop for Tensor<D> {
     fn drop(&mut self) {
         self.backend
             .borrow_mut()
-            .process_op(TensorComputeOp::RecycleTensor { t: self.id })
+            .append_op(TensorComputeOp::RecycleTensor { t: self.id })
             .unwrap();
     }
 }

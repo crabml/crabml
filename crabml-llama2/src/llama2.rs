@@ -3,11 +3,6 @@ use std::time::Duration;
 use std::time::Instant;
 use std::vec;
 
-use crabml::error::Error;
-use crabml::error::ErrorKind;
-use crabml::error::Result;
-use crabml::gguf::GGUFFile;
-use crabml::gguf::GGUFMetadata;
 use crabml::backends::cpu::arithmetic::add_inplace;
 use crabml::backends::cpu::arithmetic::batch_matmul;
 use crabml::backends::cpu::arithmetic::div_scalar_inplace;
@@ -18,6 +13,11 @@ use crabml::backends::cpu::arithmetic::rope_inplace;
 use crabml::backends::cpu::arithmetic::silu_inplace;
 use crabml::backends::cpu::arithmetic::softmax_inplace;
 use crabml::backends::cpu::CpuTensor;
+use crabml::error::Error;
+use crabml::error::ErrorKind;
+use crabml::error::Result;
+use crabml::gguf::GGUFFile;
+use crabml::gguf::GGUFMetadata;
 use crabml::tokenizer::BpeTokenizer;
 
 use crate::sampler::Llama2Sampler;

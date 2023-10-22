@@ -1,9 +1,9 @@
 use std::borrow::Cow;
 use std::slice;
 
+use crate::backends::cpu::buf::QuantBufQ8_0;
 use crate::error::Result;
 use crate::gguf::GGMLType;
-use crate::backends::cpu::buf::QuantBufQ8_0;
 
 /// All the quantized tensor are read-only.
 #[derive(Debug)]

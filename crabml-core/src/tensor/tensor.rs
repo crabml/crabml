@@ -46,13 +46,13 @@ pub enum TensorOp {
     },
 
     MulInplace {
-        t1: TensorOpVar,
-        t2: TensorOpVar,
+        lhs: TensorOpVar,
+        rhs: TensorOpVar,
     },
 
     AddInplace {
-        t1: TensorOpVar,
-        t2: TensorOpVar,
+        lhs: TensorOpVar,
+        rhs: TensorOpVar,
     },
 
     RmsNormInplace {
@@ -89,7 +89,11 @@ pub struct Tensor<'a, D: TensorBackend<'a>> {
 }
 
 impl<'a, D: TensorBackend<'a>> Tensor<'a, D> {
-    pub fn from_cpu(shape: &[usize], buf: CpuTensorBuf<'a>, backend: Rc<RefCell<D>>) -> Result<Self> {
+    pub fn from_cpu(
+        shape: &[usize],
+        buf: CpuTensorBuf<'a>,
+        backend: Rc<RefCell<D>>,
+    ) -> Result<Self> {
         let strider: TensorStrider = TensorStrider::new(shape.to_vec());
         let buf_id = backend.borrow_mut().import_buf(buf)?;
         Ok(Self {
@@ -127,19 +131,16 @@ impl<'a, D: TensorBackend<'a>> Tensor<'a, D> {
         self.strider.shape()
     }
 
-
     pub fn len(&self) -> usize {
         self.strider.len()
     }
 
     pub fn copy_from(&mut self, pos: &[usize], src: &Self) -> Result<()> {
-        self.backend
-            .borrow_mut()
-            .process_op(TensorOp::CopyFrom {
-                dst: self.as_op_var(),
-                pos: pos.to_vec(),
-                src: src.as_op_var(),
-            })?;
+        self.backend.borrow_mut().process_op(TensorOp::CopyFrom {
+            dst: self.as_op_var(),
+            pos: pos.to_vec(),
+            src: src.as_op_var(),
+        })?;
         Ok(())
     }
 
@@ -163,12 +164,20 @@ impl<'a, D: TensorBackend<'a>> Tensor<'a, D> {
         })
     }
 
-    pub fn mul(self, _t: &Self) -> Result<Self> {
-        todo!()
+    pub fn mul(self, rhs: &Self) -> Result<Self> {
+        self.backend.borrow_mut().process_op(TensorOp::MulInplace {
+            lhs: self.as_op_var(),
+            rhs: rhs.as_op_var(),
+        })?;
+        Ok(self)
     }
 
-    pub fn add(self, _t: &Self) -> Result<Self> {
-        todo!()
+    pub fn add(self, rhs: &Self) -> Result<Self> {
+        self.backend.borrow_mut().process_op(TensorOp::AddInplace {
+            lhs: self.as_op_var(),
+            rhs: rhs.as_op_var(),
+        })?;
+        Ok(self)
     }
 
     pub fn matmul(&self, _t: &Self) -> Result<Self> {
@@ -180,7 +189,9 @@ impl<'a, D: TensorBackend<'a>> Drop for Tensor<'a, D> {
     fn drop(&mut self) {
         self.backend
             .borrow_mut()
-            .process_op(TensorOp::RecycleTensor { t: self.as_op_var() })
+            .process_op(TensorOp::RecycleTensor {
+                t: self.as_op_var(),
+            })
             .unwrap();
     }
 }

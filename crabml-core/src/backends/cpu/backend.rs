@@ -1,11 +1,10 @@
+use super::buf::CpuTensorBuf;
 use crate::error::ErrorKind;
+use crate::error::Result;
 use crate::tensor::tensor::TensorBackend;
 use crate::tensor::tensor::TensorBufID;
 use crate::tensor::tensor::TensorOp;
 use crate::tensor::tensor::TensorOpVar;
-use crate::error::Result;
-
-use super::buf::CpuTensorBuf;
 
 pub struct CpuTensorBackend<'a> {
     bufs: Vec<CpuTensorBuf<'a>>,
@@ -29,11 +28,25 @@ impl<'a> TensorBackend<'a> for CpuTensorBackend<'a> {
         let buf = &self.bufs[buf_id];
         let buf = match buf {
             CpuTensorBuf::F32(buf) => buf,
-            _ => return Err((ErrorKind::InvalidArgs, format!("only f32 buf can be exported, but got {}", buf.typ())).into()),
+            _ => {
+                return Err((
+                    ErrorKind::InvalidArgs,
+                    format!("only f32 buf can be exported, but got {}", buf.typ()),
+                )
+                    .into());
+            }
         };
 
         if buf.len() != dst.len() {
-            return Err((ErrorKind::InvalidArgs, format!("mismatched buf len, want {}, but got {}", dst.len(), buf.len())).into());
+            return Err((
+                ErrorKind::InvalidArgs,
+                format!(
+                    "mismatched buf len, want {}, but got {}",
+                    dst.len(),
+                    buf.len()
+                ),
+            )
+                .into());
         }
 
         dst.copy_from_slice(buf);

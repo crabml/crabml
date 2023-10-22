@@ -1,9 +1,9 @@
 use super::buf::CpuTensorBufIter;
+use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::error::Result;
 use crate::gguf::GGMLType;
-use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::tensor::strider::TensorStrider;
 
 #[derive(Debug, Clone, Default)]

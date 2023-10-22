@@ -264,6 +264,12 @@ impl TensorStrider {
     }
 }
 
+impl From<Vec<usize>> for TensorStrider {
+    fn from(shape: Vec<usize>) -> Self {
+        Self::new(shape)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

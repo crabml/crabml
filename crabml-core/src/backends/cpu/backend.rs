@@ -1,3 +1,5 @@
+use super::CpuTensor;
+use super::arithmetic::add_inplace;
 use super::buf::CpuTensorBuf;
 use crate::error::ErrorKind;
 use crate::error::Result;
@@ -10,9 +12,33 @@ pub struct CpuTensorBackend<'a> {
     bufs: Vec<CpuTensorBuf<'a>>,
 }
 
+impl CpuTensorBackend<'_> {
+    pub fn new() -> Self {
+        Self { bufs: Vec::new() }
+    }
+
+    pub fn get_tensor(&self, op_var: &TensorOpVar) -> Result<CpuTensor> {
+        let buf = self.bufs[op_var.buf_id].as_ref();
+        CpuTensor::new(buf, op_var.strider.clone())
+    }
+
+    pub fn take(&self, op_var: &TensorOpVar) -> Result<CpuTensor> {
+        let buf = self.bufs[op_var.buf_id].as_ref();
+        CpuTensor::new(buf, op_var.strider.clone())
+    }
+}
+
 impl<'a> TensorBackend<'a> for CpuTensorBackend<'a> {
     fn process_op(&mut self, op: TensorOp) -> Result<Option<TensorOpVar>> {
-        todo!()
+        match &op {
+            TensorOp::AddInplace { lhs, rhs } => {
+                let lhs = self.get_tensor(lhs)?;
+                let rhs = self.get_tensor(rhs)?;
+                add_inplace(lhs, &rhs);
+            }
+            _ => todo!(),
+        }
+        Ok(None)
     }
 
     fn import_buf(&mut self, buf: CpuTensorBuf<'a>) -> Result<TensorBufID> {
@@ -55,5 +81,14 @@ impl<'a> TensorBackend<'a> for CpuTensorBackend<'a> {
 
     fn name(&self) -> &'static str {
         "cpu"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cpu_backend() {
     }
 }

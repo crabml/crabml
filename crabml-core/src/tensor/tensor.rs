@@ -9,8 +9,8 @@ pub type TensorBufID = usize;
 
 #[derive(Clone, Debug)]
 pub struct TensorOpVar {
-    buf_id: usize,
-    strider: TensorStrider,
+    pub buf_id: usize,
+    pub strider: TensorStrider,
 }
 
 #[derive(Clone, Debug)]
@@ -24,9 +24,9 @@ pub enum TensorOp {
     },
 
     CopyFrom {
-        dst: TensorOpVar,
-        pos: Vec<usize>,
         src: TensorOpVar,
+        pos: Vec<usize>,
+        dst: TensorOpVar,
     },
 
     MatMul {

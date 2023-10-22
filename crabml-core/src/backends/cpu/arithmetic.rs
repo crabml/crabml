@@ -316,10 +316,10 @@ pub fn softmax_inplace<'a>(mut t: CpuTensor<'a>, axis: usize) -> Result<CpuTenso
 }
 
 pub fn rope_inplace<'a>(
-    mut q: CpuTensor<'a>,
+    q: &mut CpuTensor<'a>,
     pos: usize,
     rope_dims: usize,
-) -> Result<CpuTensor<'a>> {
+) -> Result<()> {
     require_tensor_contiguous(&q)?;
     require_tensor_dims(&q, &[2])?;
 
@@ -343,7 +343,7 @@ pub fn rope_inplace<'a>(
         }
     }
 
-    Ok(q)
+    Ok(())
 }
 
 // q: (n_heads, head_size)

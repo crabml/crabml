@@ -358,19 +358,24 @@ impl<'a> Llama2Runner<'a> {
                 let v = wv.matmul(&x)?;
 
 
-                let q = CpuTensor::new(q.to_vec()?, x.shape().to_vec())?;
-                let k = CpuTensor::new(k.to_vec()?, x.shape().to_vec())?;
-                let v = CpuTensor::new(v.to_vec()?, x.shape().to_vec())?;
+                let q = CpuTensor::new(q.to_vec()?, q.shape().to_vec())?;
+                let k = CpuTensor::new(k.to_vec()?, k.shape().to_vec())?;
+                let v = CpuTensor::new(v.to_vec()?, v.shape().to_vec())?;
                 (q, k, v)
             };
 
             // ROPE
             let (q, k) = {
+                let q = Tensor::from_cpu(q, backend.clone())?;
+                let k = Tensor::from_cpu(k, backend.clone())?;
+
                 let q = q.view(&[n_heads, head_size])?;
                 let k = k.view(&[n_kv_heads, head_size])?;
+                let q = q.rope(pos, self.conf.rope_dim)?;
+                let k = k.rope(pos, self.conf.rope_dim)?;
 
-                let q = rope_inplace(q, pos, self.conf.rope_dim)?;
-                let k = rope_inplace(k, pos, self.conf.rope_dim)?;
+                let q = CpuTensor::new(q.to_vec()?, q.shape().to_vec())?;
+                let k = CpuTensor::new(k.to_vec()?, k.shape().to_vec())?;
                 (q, k)
             };
 

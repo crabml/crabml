@@ -7,6 +7,7 @@ use super::arithmetic::add_inplace;
 use super::arithmetic::matmul_2d_1d_no_alloc;
 use super::arithmetic::mul_inplace;
 use super::arithmetic::rms_norm_inplace;
+use super::arithmetic::rope_inplace;
 use super::buf::CpuTensorBuf;
 use super::pool::CpuTensorPool;
 use crate::error::Result;
@@ -48,6 +49,10 @@ impl<'a> TensorBackend<'a> for CpuTensorBackend<'a> {
             TensorOp::RmsNormInplace { t, eps } => {
                 let mut t = self.pool.load(t)?;
                 rms_norm_inplace(&mut t, *eps)?;
+            }
+            TensorOp::RopeInplace { t, pos, rope_dim } => {
+                let mut t = self.pool.load(t)?;
+                rope_inplace(&mut t, *pos, *rope_dim)?;
             }
             TensorOp::MulInplace { lhs, rhs } => {
                 let mut lhs = self.pool.load(lhs)?;

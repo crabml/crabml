@@ -171,8 +171,8 @@ impl<'a, D: TensorBackend<'a>> Tensor<'a, D> {
         Ok(())
     }
 
-    pub fn view(self, shape: Vec<usize>) -> Result<Self> {
-        let strider = self.strider.view(shape)?;
+    pub fn view(self, shape: &[usize]) -> Result<Self> {
+        let strider = self.strider.view(shape.to_vec())?;
         Ok(Self {
             strider,
             buf_id: self.buf_id,
@@ -234,6 +234,15 @@ impl<'a, D: TensorBackend<'a>> Tensor<'a, D> {
                 t: self.as_op_var(),
                 eps,
             })?;
+        Ok(self)
+    }
+
+    pub fn rope(self, pos: usize, rope_dim: usize) -> Result<Self> {
+        self.backend.borrow_mut().process_op(TensorOp::RopeInplace {
+            t: self.as_op_var(),
+            pos,
+            rope_dim,
+        })?;
         Ok(self)
     }
 

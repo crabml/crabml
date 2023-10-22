@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use super::arithmetic::add_inplace;
+use super::arithmetic::rms_norm_inplace;
 use super::buf::CpuTensorBuf;
 use super::pool::CpuTensorPool;
 use crate::error::Result;
@@ -26,13 +27,17 @@ impl CpuTensorBackend<'_> {
 impl<'a> TensorBackend<'a> for CpuTensorBackend<'a> {
     fn process_op(&mut self, op: TensorOp) -> Result<Option<TensorOpVar>> {
         match &op {
+            TensorOp::RecycleTensor { t } => {
+                self.pool.recycle(t)?;
+            }
+            TensorOp::RmsNormInplace { t, eps } => {
+                let mut t = self.pool.load(t)?;
+                rms_norm_inplace(&mut t, *eps)?;
+            }
             TensorOp::AddInplace { lhs, rhs } => {
                 let mut lhs = self.pool.load(lhs)?;
                 let rhs = self.pool.load(rhs)?;
                 add_inplace(&mut lhs, &rhs)?;
-            }
-            TensorOp::RecycleTensor { t } => {
-                self.pool.recycle(t)?;
             }
             _ => todo!("unimplemented: {:?}", op),
         }

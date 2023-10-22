@@ -69,6 +69,7 @@ pub enum TensorOp {
 
     RmsNormInplace {
         t: TensorOpVar,
+        eps: f32,
     },
 }
 

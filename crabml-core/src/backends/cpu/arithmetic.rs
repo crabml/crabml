@@ -20,14 +20,14 @@ use crate::error::Result;
 
 /// ! arithmetic.rs contains the tensor arithmetics operations like matmul, accum, etc.
 
-pub fn rms_norm_inplace(mut x: CpuTensor<'_>, eps: f32) -> Result<CpuTensor<'_>> {
+pub fn rms_norm_inplace(x: &mut CpuTensor<'_>, eps: f32) -> Result<()> {
     require_tensor_contiguous(&x)?;
     require_tensor_dims(&x, &[1])?;
 
     match x.buf_mut() {
         CpuTensorBuf::F32(Cow::Owned(xb)) => {
             rms_norm_inplace_vec_f32(xb, eps);
-            return Ok(x);
+            return Ok(());
         }
         _ => (),
     }
@@ -36,7 +36,7 @@ pub fn rms_norm_inplace(mut x: CpuTensor<'_>, eps: f32) -> Result<CpuTensor<'_>>
     let sum = x.iter_axis(&[0], 0)?.fold(0.0, |s, n| s + n * n);
     let rms = ((sum / len as f32) + eps).sqrt();
     x.iter_axis_mut(vec![0], 0)?.for_each(|n| *n = *n / rms);
-    Ok(x)
+    Ok(())
 }
 
 fn rms_norm_inplace_vec_f32(x: &mut [f32], eps: f32) {

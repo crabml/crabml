@@ -334,7 +334,7 @@ impl<'a> Llama2Runner<'a> {
 
             // attention rnsnorm
             x = {
-                x = rms_norm_inplace(x, self.conf.rms_norm_eps)?;
+                rms_norm_inplace(&mut x, self.conf.rms_norm_eps)?;
                 x = mul_inplace(x, &self.weights.rms_att_weight[l])?;
                 x
             };
@@ -417,7 +417,7 @@ impl<'a> Llama2Runner<'a> {
 
                 // ffn rmsnorm
                 x = {
-                    x = rms_norm_inplace(x, 1e-5)?;
+                    rms_norm_inplace(&mut x, 1e-5)?;
                     x = mul_inplace(x, &self.weights.rms_ffn_weight[l])?;
                     x
                 };
@@ -446,7 +446,7 @@ impl<'a> Llama2Runner<'a> {
 
         // final rmsnorm
         x = {
-            x = rms_norm_inplace(x, self.conf.rms_norm_eps)?;
+            rms_norm_inplace(&mut x, self.conf.rms_norm_eps)?;
             x = mul_inplace(x, &self.weights.rms_final_weight)?;
             x
         };

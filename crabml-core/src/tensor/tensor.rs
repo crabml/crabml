@@ -50,6 +50,11 @@ pub enum TensorOp {
         rhs: TensorOpVar,
     },
 
+    DivScalarInplace {
+        t: TensorOpVar,
+        scalar: f32,
+    },
+
     AddInplace {
         lhs: TensorOpVar,
         rhs: TensorOpVar,

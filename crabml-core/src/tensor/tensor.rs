@@ -92,9 +92,9 @@ pub struct Tensor<D: TensorBackend> {
 }
 
 impl<D: TensorBackend> Tensor<D> {
-    pub fn zeros(shape: Vec<usize>, device: Rc<RefCell<D>>) -> Result<Self> {
+    pub fn zeros(shape: Vec<usize>, backend: Rc<RefCell<D>>) -> Result<Self> {
         let strider: TensorStrider = TensorStrider::new(shape.clone());
-        let id = device
+        let id = backend
             .borrow_mut()
             .append_op(TensorComputeOp::AllocTensor {
                 strider: strider.clone(),
@@ -103,7 +103,7 @@ impl<D: TensorBackend> Tensor<D> {
         Ok(Self {
             id,
             strider,
-            backend: device,
+            backend,
         })
     }
 

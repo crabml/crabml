@@ -1,3 +1,9 @@
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::ops::Deref;
+use std::ops::DerefMut;
+use std::rc::Rc;
+
 use super::CpuTensor;
 use super::arithmetic::add_inplace;
 use super::buf::CpuTensorBuf;
@@ -7,6 +13,59 @@ use crate::tensor::tensor::TensorBackend;
 use crate::tensor::tensor::TensorBufID;
 use crate::tensor::tensor::TensorOp;
 use crate::tensor::tensor::TensorOpVar;
+
+pub struct CpuTensorPool<'a> {
+    bufs: Rc<RefCell<HashMap<TensorBufID, CpuTensorBuf<'a>>>>,
+    next_buf_id: usize,
+}
+
+pub struct PooledCpuTensorRef<'a> {
+    buf_id: TensorBufID,
+    tensor: Option<CpuTensor<'a>>,
+    bufs: Rc<RefCell<HashMap<TensorBufID, CpuTensorBuf<'a>>>>,
+}
+
+impl<'a> Deref for PooledCpuTensorRef<'a> {
+    type Target = CpuTensor<'a>;
+
+    fn deref(&self) -> &Self::Target {
+        self.tensor.as_ref().unwrap()
+    }
+}
+
+impl<'a> DerefMut for PooledCpuTensorRef<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.tensor.as_mut().unwrap()
+    }
+}
+
+impl Drop for PooledCpuTensorRef<'_> {
+    fn drop(&mut self) {
+        let buf = self.tensor.take().unwrap().into_buf();
+        self.bufs.borrow_mut().insert(self.buf_id, buf);
+    }
+}
+
+impl<'a> CpuTensorPool<'a> {
+    pub fn new() -> Self {
+        Self {
+            bufs: Rc::new(RefCell::new(HashMap::new())),
+            next_buf_id: 0,
+        }
+    }
+
+    pub fn load(&self, op_var: &TensorOpVar) -> Result<Option<CpuTensor>> {
+        let bufs = self.bufs.borrow();
+        let buf = bufs.get(&op_var.buf_id);
+        let buf = match buf {
+            Some(buf) => buf,
+            None => return Ok(None),
+        };
+
+        let tensor = CpuTensor::new(buf.clone(), op_var.strider.clone())?;
+        Ok(Some(tensor))
+    }   
+}
 
 pub struct CpuTensorBackend<'a> {
     bufs: Vec<CpuTensorBuf<'a>>,

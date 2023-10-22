@@ -222,6 +222,10 @@ impl<'a> CpuTensor<'a> {
         &mut self.buf
     }
 
+    pub fn into_buf(self) -> CpuTensorBuf<'a> {
+        self.buf
+    }
+
     // TODO: only used in rope, remoe it later
     pub(crate) fn f32_buf_mut(&mut self) -> Result<&mut [f32]> {
         if !self.is_owned() {

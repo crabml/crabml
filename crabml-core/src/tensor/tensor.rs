@@ -5,7 +5,7 @@ use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::error::Result;
 use crate::tensor::strider::TensorStrider;
 
-type TensorBufID = usize;
+pub type TensorBufID = usize;
 
 #[derive(Clone, Debug)]
 pub struct TensorOpVar {
@@ -71,11 +71,11 @@ pub enum TensorOp {
 /// may located in the CPU or GPU memory, you can not directly acccess its data except
 /// calling `export_tensor()` to load the tensor's data into the host's memory.
 pub trait TensorBackend<'a> {
-    fn append_op(&mut self, op: TensorOp) -> Result<Option<TensorOpVar>>;
+    fn process_op(&mut self, op: TensorOp) -> Result<Option<TensorOpVar>>;
 
-    fn import_tensor(&mut self, shape: &[usize], buf: &'a CpuTensorBuf) -> TensorOpVar;
+    fn import_buf(&mut self, buf: CpuTensorBuf<'a>) -> Result<TensorBufID>;
 
-    fn export_tensor(self, t: TensorOpVar, data: &mut [f32]) -> Result<()>;
+    fn export_buf(self, buf_id: TensorBufID, data: &mut [f32]) -> Result<()>;
 
     fn name(&self) -> &'static str;
 }
@@ -89,11 +89,22 @@ pub struct Tensor<'a, D: TensorBackend<'a>> {
 }
 
 impl<'a, D: TensorBackend<'a>> Tensor<'a, D> {
-    pub fn zeros(shape: Vec<usize>, backend: Rc<RefCell<D>>) -> Result<Self> {
-        let strider: TensorStrider = TensorStrider::new(shape.clone());
+    pub fn from_cpu(shape: &[usize], buf: CpuTensorBuf<'a>, backend: Rc<RefCell<D>>) -> Result<Self> {
+        let strider: TensorStrider = TensorStrider::new(shape.to_vec());
+        let buf_id = backend.borrow_mut().import_buf(buf)?;
+        Ok(Self {
+            buf_id,
+            strider,
+            backend: backend.clone(),
+            _phantom: std::marker::PhantomData,
+        })
+    }
+
+    pub fn zeros(shape: &[usize], backend: Rc<RefCell<D>>) -> Result<Self> {
+        let strider: TensorStrider = TensorStrider::new(shape.to_vec());
         let op_var = backend
             .borrow_mut()
-            .append_op(TensorOp::AllocTensor {
+            .process_op(TensorOp::AllocTensor {
                 strider: strider.clone(),
             })?
             .unwrap();
@@ -124,7 +135,7 @@ impl<'a, D: TensorBackend<'a>> Tensor<'a, D> {
     pub fn copy_from(&mut self, pos: &[usize], src: &Self) -> Result<()> {
         self.backend
             .borrow_mut()
-            .append_op(TensorOp::CopyFrom {
+            .process_op(TensorOp::CopyFrom {
                 dst: self.as_op_var(),
                 pos: pos.to_vec(),
                 src: src.as_op_var(),
@@ -169,7 +180,7 @@ impl<'a, D: TensorBackend<'a>> Drop for Tensor<'a, D> {
     fn drop(&mut self) {
         self.backend
             .borrow_mut()
-            .append_op(TensorOp::RecycleTensor { t: self.as_op_var() })
+            .process_op(TensorOp::RecycleTensor { t: self.as_op_var() })
             .unwrap();
     }
 }

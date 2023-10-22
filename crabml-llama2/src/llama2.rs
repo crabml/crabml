@@ -481,7 +481,7 @@ impl<'a> Llama2RunnerOutputGenerator<'a> {
         let prompt_tokens = runner.tokenizer.encode(prompt, true, false)?;
         if prompt_tokens.is_empty() {
             return Err(Error {
-                kind: ErrorKind::BadInput,
+                kind: ErrorKind::InvalidArgs,
                 message: "something is wrong, expected at least 1 prompt token".to_string(),
                 cause: None,
             });

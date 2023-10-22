@@ -18,6 +18,7 @@ pub struct TensorOpVar {
 pub enum TensorOp {
     AllocTensor {
         shape: Vec<usize>,
+        zeros: bool,
     },
 
     RecycleTensor {
@@ -117,6 +118,7 @@ impl<'a, D: TensorBackend<'a>> Tensor<'a, D> {
             .borrow_mut()
             .process_op(TensorOp::AllocTensor {
                 shape: strider.shape().to_vec(),
+                zeros: true,
             })?
             .unwrap();
         Ok(Self {
@@ -223,6 +225,7 @@ impl<'a, D: TensorBackend<'a>> Tensor<'a, D> {
 
         let out = self.backend.borrow_mut().process_op(TensorOp::AllocTensor {
             shape: out_shape,
+            zeros: false,
         })?.unwrap();
 
         self.backend.borrow_mut().process_op(TensorOp::MatMul {

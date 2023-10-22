@@ -93,15 +93,15 @@ pub fn div_scalar_inplace<'a>(mut a: CpuTensor<'a>, b: f32) -> Result<CpuTensor<
     Ok(a)
 }
 
-pub fn add_inplace<'a>(mut a: CpuTensor<'a>, b: &CpuTensor<'a>) -> Result<CpuTensor<'a>> {
-    require_tensor_shape(&a, b.shape())?;
-    require_tensor_contiguous(&a)?;
+pub fn add_inplace<'a>(a: &mut CpuTensor<'a>, b: &CpuTensor<'a>) -> Result<()> {
+    require_tensor_shape(a, b.shape())?;
+    require_tensor_contiguous(a)?;
     require_tensor_contiguous(b)?;
 
     a.iter_mut()?.zip(b.iter()).for_each(|(ia, ib)| {
         *ia += ib;
     });
-    Ok(a)
+    Ok(())
 }
 
 pub fn add_inplace_vec_f32(a: &mut [f32], b: &[f32]) {

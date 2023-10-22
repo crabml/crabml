@@ -14,6 +14,9 @@ pub enum ErrorKind {
 
     /// raised on manuplating tensors, like dimension mismatch
     TensorError,
+
+    ///
+    TensorNotFound
 }
 
 #[derive(Debug)]

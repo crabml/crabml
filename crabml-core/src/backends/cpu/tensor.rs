@@ -18,24 +18,29 @@ pub struct CpuTensor<'a> {
 // change on the tensor is considered as a move operation, to reduce the need on
 // copying the owned buffer. Feel free to clone() the tensor.
 impl<'a> CpuTensor<'a> {
-    pub fn new(buf: impl Into<CpuTensorBuf<'a>>, strider: impl Into<TensorStrider>) -> Result<Self> {
+    pub fn new(
+        buf: impl Into<CpuTensorBuf<'a>>,
+        strider: impl Into<TensorStrider>,
+    ) -> Result<Self> {
         let buf = buf.into();
         let strider = strider.into();
         if buf.len() != strider.iter().product() {
             return Err(Error {
                 kind: ErrorKind::TensorError,
-                message: format!("invalid shape {:?} for data of length {}", strider.shape(), buf.len()),
+                message: format!(
+                    "invalid shape {:?} for data of length {}",
+                    strider.shape(),
+                    buf.len()
+                ),
                 cause: None,
             });
         }
 
-        Ok(Self {
-            buf,
-            strider,
-        })
+        Ok(Self { buf, strider })
     }
 
-    pub fn zeros(shape: Vec<usize>) -> Result<Self> {
+    pub fn zeros(shape: impl Into<Vec<usize>>) -> Result<Self> {
+        let shape = shape.into();
         let buf = vec![0.0; shape.iter().product()];
         Self::new(buf, shape)
     }

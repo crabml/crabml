@@ -408,7 +408,7 @@ impl<'a> Llama2Runner<'a> {
             };
 
             // residual connection back into x
-            x = add_inplace(x, &x_attn_orig)?;
+            add_inplace(&mut x, &x_attn_orig)?;
 
             // ffn
             x = {
@@ -439,7 +439,7 @@ impl<'a> Llama2Runner<'a> {
                 x = matmul_2d_1d(&self.weights.w2[l], &h1)?;
 
                 // residual connection
-                x = add_inplace(x, &x_orig_ffn)?;
+                add_inplace(&mut x, &x_orig_ffn)?;
                 x
             }
         }

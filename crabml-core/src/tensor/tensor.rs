@@ -5,8 +5,6 @@ use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::error::Result;
 use crate::tensor::strider::TensorStrider;
 
-type TensorID = usize;
-
 type TensorBufID = usize;
 
 #[derive(Clone, Debug)]
@@ -72,24 +70,25 @@ pub enum TensorOp {
 /// the pool of the tensors, each tensor is identified by a unique TensorID. The tensor
 /// may located in the CPU or GPU memory, you can not directly acccess its data except
 /// calling `export_tensor()` to load the tensor's data into the host's memory.
-pub trait TensorBackend {
+pub trait TensorBackend<'a> {
     fn append_op(&mut self, op: TensorOp) -> Result<Option<TensorOpVar>>;
 
-    fn import_tensor(&mut self, shape: &[usize], buf: &CpuTensorBuf) -> TensorOpVar;
+    fn import_tensor(&mut self, shape: &[usize], buf: &'a CpuTensorBuf) -> TensorOpVar;
 
-    fn export_tensor(self, t: TensorID, data: &mut [f32]) -> Result<()>;
+    fn export_tensor(self, t: TensorOpVar, data: &mut [f32]) -> Result<()>;
 
     fn name(&self) -> &'static str;
 }
 
 #[derive(Clone)]
-pub struct Tensor<D: TensorBackend> {
+pub struct Tensor<'a, D: TensorBackend<'a>> {
     buf_id: TensorBufID,
     strider: TensorStrider,
     backend: Rc<RefCell<D>>,
+    _phantom: std::marker::PhantomData<&'a D>,
 }
 
-impl<D: TensorBackend> Tensor<D> {
+impl<'a, D: TensorBackend<'a>> Tensor<'a, D> {
     pub fn zeros(shape: Vec<usize>, backend: Rc<RefCell<D>>) -> Result<Self> {
         let strider: TensorStrider = TensorStrider::new(shape.clone());
         let op_var = backend
@@ -102,6 +101,7 @@ impl<D: TensorBackend> Tensor<D> {
             buf_id: op_var.buf_id,
             strider,
             backend,
+            _phantom: std::marker::PhantomData,
         })
     }
 
@@ -138,6 +138,7 @@ impl<D: TensorBackend> Tensor<D> {
             strider,
             buf_id: self.buf_id,
             backend: self.backend.clone(),
+            _phantom: std::marker::PhantomData,
         })
     }
 
@@ -147,6 +148,7 @@ impl<D: TensorBackend> Tensor<D> {
             strider,
             buf_id: self.buf_id,
             backend: self.backend.clone(),
+            _phantom: std::marker::PhantomData,
         })
     }
 
@@ -163,7 +165,7 @@ impl<D: TensorBackend> Tensor<D> {
     }
 }
 
-impl<D: TensorBackend> Drop for Tensor<D> {
+impl<'a, D: TensorBackend<'a>> Drop for Tensor<'a, D> {
     fn drop(&mut self) {
         self.backend
             .borrow_mut()

@@ -31,13 +31,18 @@ pub enum TensorOp {
         t: TensorOpVar,
     },
 
-    CopyFrom {
-        src: TensorOpVar,
-        pos: Vec<usize>,
+    ExtendTensor {
         dst: TensorOpVar,
+        src: TensorOpVar,
     },
 
     MatMul {
+        out: TensorOpVar,
+        lhs: TensorOpVar,
+        rhs: TensorOpVar,
+    },
+
+    BatchMatMul {
         out: TensorOpVar,
         lhs: TensorOpVar,
         rhs: TensorOpVar,
@@ -64,8 +69,8 @@ pub enum TensorOp {
     },
 
     DivScalarInplace {
-        t: TensorOpVar,
-        scalar: f32,
+        lhs: TensorOpVar,
+        rhs: f32,
     },
 
     AddInplace {
@@ -162,10 +167,9 @@ impl<'a, D: TensorBackend<'a>> Tensor<'a, D> {
         self.strider.len()
     }
 
-    pub fn copy_from(&mut self, pos: &[usize], src: &Self) -> Result<()> {
-        self.backend.borrow_mut().process_op(TensorOp::CopyFrom {
+    pub fn extend(&mut self, src: &Self) -> Result<()> {
+        self.backend.borrow_mut().process_op(TensorOp::ExtendTensor {
             dst: self.as_op_var(),
-            pos: pos.to_vec(),
             src: src.as_op_var(),
         })?;
         Ok(())
@@ -181,8 +185,8 @@ impl<'a, D: TensorBackend<'a>> Tensor<'a, D> {
         })
     }
 
-    pub fn repeat(self, repeats: Vec<usize>) -> Result<Self> {
-        let strider = self.strider.repeat(repeats)?;
+    pub fn repeat(self, repeats: &[usize]) -> Result<Self> {
+        let strider = self.strider.repeat(repeats.to_vec())?;
         Ok(Self {
             strider,
             buf_id: self.buf_id,
@@ -205,6 +209,14 @@ impl<'a, D: TensorBackend<'a>> Tensor<'a, D> {
         self.backend.borrow_mut().process_op(TensorOp::MulInplace {
             lhs: self.as_op_var(),
             rhs: rhs.as_op_var(),
+        })?;
+        Ok(self)
+    }
+
+    pub fn div_scalar(self, rhs: f32) -> Result<Self> {
+        self.backend.borrow_mut().process_op(TensorOp::DivScalarInplace {
+            lhs: self.as_op_var(),
+            rhs,
         })?;
         Ok(self)
     }
@@ -261,6 +273,32 @@ impl<'a, D: TensorBackend<'a>> Tensor<'a, D> {
         })?.unwrap();
 
         self.backend.borrow_mut().process_op(TensorOp::MatMul {
+            out: out.clone(),
+            lhs: self.as_op_var(),
+            rhs: rhs.as_op_var(),
+        })?;
+
+        Ok(Self {
+            buf_id: out.buf_id,
+            strider: out.strider.clone(),
+            backend: self.backend.clone(),
+            _phantom: std::marker::PhantomData,
+        })
+    }
+
+    pub fn batch_matmul(&self, rhs: &Self) -> Result<Self> {
+        let out_shape = if rhs.shape().len() == 2 {
+            vec![self.shape()[0], self.shape()[1]]
+        } else {
+            panic!("unimplemented");
+        };
+
+        let out = self.backend.borrow_mut().process_op(TensorOp::AllocTensor {
+            shape: out_shape,
+            zeros: false,
+        })?.unwrap();
+
+        self.backend.borrow_mut().process_op(TensorOp::BatchMatMul {
             out: out.clone(),
             lhs: self.as_op_var(),
             rhs: rhs.as_op_var(),

@@ -86,11 +86,11 @@ fn mul_inplace_vec_f32(a: &mut [f32], b: &[f32]) {
     });
 }
 
-pub fn div_scalar_inplace<'a>(mut a: CpuTensor<'a>, b: f32) -> Result<CpuTensor<'a>> {
+pub fn div_scalar_inplace<'a>(a: &mut CpuTensor<'a>, b: f32) -> Result<()> {
     a.iter_mut()?.for_each(|ia| {
         *ia /= b;
     });
-    Ok(a)
+    Ok(())
 }
 
 pub fn add_inplace<'a>(a: &mut CpuTensor<'a>, b: &CpuTensor<'a>) -> Result<()> {
@@ -260,6 +260,37 @@ pub fn matmul_vec_q8_0_f32_2d_1d<'a>(wb: &QuantBufQ8_0<'a>, xb: &[f32], out: &mu
         });
 }
 
+pub fn batch_matmul_no_alloc<'a, 'b>(out: &mut CpuTensor<'a>, w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<()>
+where 'b: 'a {
+    require_tensor_dims(w, &[3])?;
+    require_tensor_dims(x, &[2])?;
+
+    if w.shape()[0] != x.shape()[0] || w.shape()[2] != x.shape()[1] {
+        return Err((
+            ErrorKind::TensorError,
+            format!(
+                "mismatched tensor shapes on batch matmul: {:?} @ {:?}",
+                w.shape(),
+                x.shape()
+            ),
+        )
+            .into());
+    }
+
+    // (batch_size, w_rows, w_cols) @ (batch_size, w_cols, ) -> (batch_size, w_rows, )
+    let batch_size = w.shape()[0];
+    let w_rows = w.shape()[1];
+    for b in 0..batch_size {
+        let o_iter = out.iter_axis_mut(vec![b, 0], 1)?; // w_cols
+        o_iter.enumerate().for_each(|(w_row, o)| {
+            let w_iter = w.iter_axis(&[b, w_row, 0], 2).unwrap(); // w_rows
+            let x_iter = x.iter_axis(&[b, 0], 1).unwrap(); // w_rows
+            *o = w_iter.zip(x_iter).map(|(w, x)| w * x).sum::<f32>();
+        })
+    }
+    return Ok(());
+}
+
 pub fn batch_matmul<'a, 'b>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'b>>
 where 'b: 'a {
     require_tensor_dims(w, &[3])?;
@@ -293,7 +324,7 @@ where 'b: 'a {
 }
 
 // t: (rows, cols)
-pub fn softmax_inplace<'a>(mut t: CpuTensor<'a>, axis: usize) -> Result<CpuTensor<'a>> {
+pub fn softmax_inplace<'a>(t: &mut CpuTensor<'a>, axis: usize) -> Result<()> {
     require_tensor_dims(&t, &[2])?;
 
     if axis != 1 {
@@ -312,7 +343,7 @@ pub fn softmax_inplace<'a>(mut t: CpuTensor<'a>, axis: usize) -> Result<CpuTenso
         });
     }
 
-    Ok(t)
+    Ok(())
 }
 
 pub fn rope_inplace<'a>(

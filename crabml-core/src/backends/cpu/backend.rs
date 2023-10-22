@@ -4,10 +4,13 @@ use std::rc::Rc;
 use rayon::slice::RChunks;
 
 use super::arithmetic::add_inplace;
+use super::arithmetic::batch_matmul_no_alloc;
+use super::arithmetic::div_scalar_inplace;
 use super::arithmetic::matmul_2d_1d_no_alloc;
 use super::arithmetic::mul_inplace;
 use super::arithmetic::rms_norm_inplace;
 use super::arithmetic::rope_inplace;
+use super::arithmetic::softmax_inplace;
 use super::buf::CpuTensorBuf;
 use super::pool::CpuTensorPool;
 use crate::error::Result;
@@ -40,11 +43,22 @@ impl<'a> TensorBackend<'a> for CpuTensorBackend<'a> {
                 let buf_id = self.pool.alloc(shape, *zeros)?;
                 return TensorOpVar::new(buf_id, TensorStrider::new(shape.to_vec()));
             }
+            TensorOp::ExtendTensor { dst, src } => {
+                let mut dst = self.pool.load(dst)?;
+                let src = self.pool.load(src)?;
+                dst.extend(&src)?;
+            }
             TensorOp::MatMul { out, lhs, rhs } => {
                 let mut out = self.pool.load(out)?;
                 let lhs = self.pool.load(lhs)?;
                 let rhs = self.pool.load(rhs)?;
                 matmul_2d_1d_no_alloc(&mut out, &lhs, &rhs)?;
+            }
+            TensorOp::BatchMatMul { out, lhs, rhs } => {
+                let mut out = self.pool.load(out)?;
+                let lhs = self.pool.load(lhs)?;
+                let rhs = self.pool.load(rhs)?;
+                batch_matmul_no_alloc(&mut out, &lhs, &rhs)?;
             }
             TensorOp::RmsNormInplace { t, eps } => {
                 let mut t = self.pool.load(t)?;
@@ -58,6 +72,14 @@ impl<'a> TensorBackend<'a> for CpuTensorBackend<'a> {
                 let mut lhs = self.pool.load(lhs)?;
                 let rhs = self.pool.load(rhs)?;
                 mul_inplace(&mut lhs, &rhs)?;
+            }
+            TensorOp::DivScalarInplace { lhs, rhs } => {
+                let mut lhs = self.pool.load(lhs)?;
+                div_scalar_inplace(&mut lhs, *rhs)?
+            }
+            TensorOp::SoftmaxInplace { t, axis } => {
+                let mut t= self.pool.load(t)?;
+                softmax_inplace(&mut t, *axis)?;
             }
             TensorOp::AddInplace { lhs, rhs } => {
                 let mut lhs = self.pool.load(lhs)?;

@@ -17,7 +17,7 @@ pub struct TensorOpVar {
 #[derive(Clone, Debug)]
 pub enum TensorOp {
     AllocTensor {
-        strider: TensorStrider,
+        shape: Vec<usize>,
     },
 
     RecycleTensor {
@@ -116,7 +116,7 @@ impl<'a, D: TensorBackend<'a>> Tensor<'a, D> {
         let op_var = backend
             .borrow_mut()
             .process_op(TensorOp::AllocTensor {
-                strider: strider.clone(),
+                shape: strider.shape().to_vec(),
             })?
             .unwrap();
         Ok(Self {
@@ -176,6 +176,16 @@ impl<'a, D: TensorBackend<'a>> Tensor<'a, D> {
         })
     }
 
+    pub fn transpose(self, perm: &[usize]) -> Result<Self> {
+        let strider = self.strider.transpose(perm)?;
+        Ok(Self {
+            strider,
+            buf_id: self.buf_id,
+            backend: self.backend.clone(),
+            _phantom: std::marker::PhantomData,
+        })
+    }
+
     pub fn mul(self, rhs: &Self) -> Result<Self> {
         self.backend.borrow_mut().process_op(TensorOp::MulInplace {
             lhs: self.as_op_var(),
@@ -192,8 +202,41 @@ impl<'a, D: TensorBackend<'a>> Tensor<'a, D> {
         Ok(self)
     }
 
-    pub fn matmul(&self, _t: &Self) -> Result<Self> {
-        todo!()
+    pub fn softmax(self, axis: usize) -> Result<Self> {
+        self.backend
+            .borrow_mut()
+            .process_op(TensorOp::SoftmaxInplace {
+                t: self.as_op_var(),
+                axis,
+            })?;
+        Ok(self)
+    }
+
+    pub fn matmul(&self, rhs: &Self) -> Result<Self> {
+        // TODO: validate shape here
+
+        let out_shape = if rhs.shape().len() == 2 {
+            vec![self.shape()[0], rhs.shape()[1]]
+        } else {
+            vec![self.shape()[0]]
+        };
+
+        let out = self.backend.borrow_mut().process_op(TensorOp::AllocTensor {
+            shape: out_shape,
+        })?.unwrap();
+
+        self.backend.borrow_mut().process_op(TensorOp::MatMul {
+            out: out.clone(),
+            lhs: self.as_op_var(),
+            rhs: rhs.as_op_var(),
+        })?;
+
+        Ok(Self {
+            buf_id: out.buf_id,
+            strider: out.strider.clone(),
+            backend: self.backend.clone(),
+            _phantom: std::marker::PhantomData,
+        })
     }
 }
 

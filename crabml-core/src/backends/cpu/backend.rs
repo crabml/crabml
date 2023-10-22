@@ -17,15 +17,16 @@ use crate::tensor::tensor::TensorOpVar;
 pub struct CpuTensorPool<'a> {
     bufs: Rc<RefCell<HashMap<TensorBufID, CpuTensorBuf<'a>>>>,
     next_buf_id: usize,
+    recycled_bufs: Vec<TensorBufID>,
 }
 
-pub struct PooledCpuTensorRef<'a> {
+pub struct CpuTensorPooledRef<'a> {
     buf_id: TensorBufID,
     tensor: Option<CpuTensor<'a>>,
     bufs: Rc<RefCell<HashMap<TensorBufID, CpuTensorBuf<'a>>>>,
 }
 
-impl<'a> Deref for PooledCpuTensorRef<'a> {
+impl<'a> Deref for CpuTensorPooledRef<'a> {
     type Target = CpuTensor<'a>;
 
     fn deref(&self) -> &Self::Target {
@@ -33,13 +34,13 @@ impl<'a> Deref for PooledCpuTensorRef<'a> {
     }
 }
 
-impl<'a> DerefMut for PooledCpuTensorRef<'a> {
+impl<'a> DerefMut for CpuTensorPooledRef<'a> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.tensor.as_mut().unwrap()
     }
 }
 
-impl Drop for PooledCpuTensorRef<'_> {
+impl Drop for CpuTensorPooledRef<'_> {
     fn drop(&mut self) {
         let buf = self.tensor.take().unwrap().into_buf();
         self.bufs.borrow_mut().insert(self.buf_id, buf);
@@ -50,19 +51,29 @@ impl<'a> CpuTensorPool<'a> {
     pub fn new() -> Self {
         Self {
             bufs: Rc::new(RefCell::new(HashMap::new())),
+            recycled_bufs: vec![],
             next_buf_id: 0,
         }
     }
 
+    pub fn import(&mut self, buf: CpuTensorBuf<'a>) -> Result<()> {
+        let buf_id = self.next_buf_id;
+
+        let mut bufs = self.bufs.borrow_mut();
+        bufs.insert(buf_id, buf);
+        self.next_buf_id += 1;
+        Ok(())
+    }
+
     pub fn load(&self, op_var: &TensorOpVar) -> Result<Option<CpuTensor>> {
-        let bufs = self.bufs.borrow();
-        let buf = bufs.get(&op_var.buf_id);
+        let mut bufs = self.bufs.borrow_mut();
+        let buf = bufs.remove(&op_var.buf_id);
         let buf = match buf {
             Some(buf) => buf,
             None => return Ok(None),
         };
 
-        let tensor = CpuTensor::new(buf.clone(), op_var.strider.clone())?;
+        let tensor = CpuTensor::new(buf, op_var.strider.clone())?;
         Ok(Some(tensor))
     }   
 }

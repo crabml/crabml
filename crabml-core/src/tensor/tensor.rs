@@ -135,6 +135,12 @@ impl<'a, D: TensorBackend<'a>> Tensor<'a, D> {
         Ok(())
     }
 
+    pub fn to_vec(&self) -> Result<Vec<f32>> {
+        let mut buf = vec![0.0; self.strider.len()];
+        self.export(&mut buf)?;
+        Ok(buf)
+    }
+
     fn as_op_var(&self) -> TensorOpVar {
         TensorOpVar {
             buf_id: self.buf_id,
@@ -211,6 +217,16 @@ impl<'a, D: TensorBackend<'a>> Tensor<'a, D> {
             .process_op(TensorOp::SoftmaxInplace {
                 t: self.as_op_var(),
                 axis,
+            })?;
+        Ok(self)
+    }
+
+    pub fn rms_norm(self, eps: f32) -> Result<Self> {
+        self.backend
+            .borrow_mut()
+            .process_op(TensorOp::RmsNormInplace {
+                t: self.as_op_var(),
+                eps,
             })?;
         Ok(self)
     }

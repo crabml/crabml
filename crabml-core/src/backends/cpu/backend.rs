@@ -1,7 +1,10 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use rayon::slice::RChunks;
+
 use super::arithmetic::add_inplace;
+use super::arithmetic::mul_inplace;
 use super::arithmetic::rms_norm_inplace;
 use super::buf::CpuTensorBuf;
 use super::pool::CpuTensorPool;
@@ -33,6 +36,11 @@ impl<'a> TensorBackend<'a> for CpuTensorBackend<'a> {
             TensorOp::RmsNormInplace { t, eps } => {
                 let mut t = self.pool.load(t)?;
                 rms_norm_inplace(&mut t, *eps)?;
+            }
+            TensorOp::MulInplace { lhs, rhs } => {
+                let mut lhs = self.pool.load(lhs)?;
+                let rhs = self.pool.load(rhs)?;
+                mul_inplace(&mut lhs, &rhs)?;
             }
             TensorOp::AddInplace { lhs, rhs } => {
                 let mut lhs = self.pool.load(lhs)?;

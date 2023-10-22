@@ -13,11 +13,13 @@ use crabml::backends::cpu::arithmetic::rope_inplace;
 use crabml::backends::cpu::arithmetic::silu_inplace;
 use crabml::backends::cpu::arithmetic::softmax_inplace;
 use crabml::backends::cpu::CpuTensor;
+use crabml::backends::cpu::backend::CpuTensorBackend;
 use crabml::error::Error;
 use crabml::error::ErrorKind;
 use crabml::error::Result;
 use crabml::gguf::GGUFFile;
 use crabml::gguf::GGUFMetadata;
+use crabml::tensor::tensor::Tensor;
 use crabml::tokenizer::BpeTokenizer;
 
 use crate::sampler::Llama2Sampler;
@@ -327,6 +329,7 @@ impl<'a> Llama2Runner<'a> {
             .iter_axis(&[token, 0], 1)?
             .collect::<Vec<_>>();
         let mut x = CpuTensor::new(content_row, vec![embed_dim])?;
+        let backend = CpuTensorBackend::new();
 
         // forward all the layers
         for l in 0..self.conf.n_layers {
@@ -334,9 +337,11 @@ impl<'a> Llama2Runner<'a> {
 
             // attention rnsnorm
             x = {
-                rms_norm_inplace(&mut x, self.conf.rms_norm_eps)?;
-                x = mul_inplace(x, &self.weights.rms_att_weight[l])?;
-                x
+                let x = Tensor::from_cpu(x, backend.clone())?;
+                let x = x.rms_norm(self.conf.rms_norm_eps)?;
+                let rms_att_weight = Tensor::from_cpu(self.weights.rms_att_weight[l].clone(), backend.clone())?;
+                let x = x.mul(&rms_att_weight)?;
+                CpuTensor::new(x.to_vec()?, x.shape().to_vec())?
             };
 
             // matmul qkv for every head
@@ -418,7 +423,7 @@ impl<'a> Llama2Runner<'a> {
                 // ffn rmsnorm
                 x = {
                     rms_norm_inplace(&mut x, 1e-5)?;
-                    x = mul_inplace(x, &self.weights.rms_ffn_weight[l])?;
+                    mul_inplace(&mut x, &self.weights.rms_ffn_weight[l])?;
                     x
                 };
 
@@ -433,7 +438,7 @@ impl<'a> Llama2Runner<'a> {
                 h1 = silu_inplace(h1)?;
 
                 // elementwise multiply with w3(x)
-                h1 = mul_inplace(h1, &h2)?;
+                mul_inplace(&mut h1, &h2)?;
 
                 // final matmul to get the output of the ffn
                 x = matmul_2d_1d(&self.weights.w2[l], &h1)?;
@@ -447,7 +452,7 @@ impl<'a> Llama2Runner<'a> {
         // final rmsnorm
         x = {
             rms_norm_inplace(&mut x, self.conf.rms_norm_eps)?;
-            x = mul_inplace(x, &self.weights.rms_final_weight)?;
+            mul_inplace(&mut x, &self.weights.rms_final_weight)?;
             x
         };
 

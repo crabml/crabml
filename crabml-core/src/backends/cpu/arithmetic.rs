@@ -56,14 +56,14 @@ fn rms_norm_inplace_vec_f32(x: &mut [f32], eps: f32) {
     }
 }
 
-pub fn mul_inplace<'a>(mut a: CpuTensor<'a>, b: &CpuTensor<'a>) -> Result<CpuTensor<'a>> {
+pub fn mul_inplace<'a>(a: &mut CpuTensor<'a>, b: &CpuTensor<'a>) -> Result<()> {
     require_tensor_shape(&a, b.shape())?;
 
     if a.is_contiguous() && b.is_contiguous() {
         match (a.buf_mut(), b.buf()) {
             (CpuTensorBuf::F32(Cow::Owned(ab)), CpuTensorBuf::F32(bb)) => {
                 mul_inplace_vec_f32(ab, bb);
-                return Ok(a);
+                return Ok(());
             }
             _ => (),
         }
@@ -72,7 +72,7 @@ pub fn mul_inplace<'a>(mut a: CpuTensor<'a>, b: &CpuTensor<'a>) -> Result<CpuTen
     for (ia, ib) in a.iter_mut()?.zip(b.iter()) {
         *ia *= ib;
     }
-    Ok(a)
+    Ok(())
 }
 
 fn mul_inplace_vec_f32(a: &mut [f32], b: &[f32]) {

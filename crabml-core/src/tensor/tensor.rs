@@ -14,6 +14,12 @@ pub struct TensorOpVar {
     pub strider: TensorStrider,
 }
 
+impl TensorOpVar {
+    pub fn new(buf_id: usize, strider: TensorStrider) -> Result<Option<Self>> {
+        Ok(Some(Self { buf_id, strider }))
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum TensorOp {
     AllocTensor {

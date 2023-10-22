@@ -349,10 +349,18 @@ impl<'a> Llama2Runner<'a> {
                 // wq: (embed_dim, embed_dim) @ x (embed_dim, ) => (embed_dim, )
                 // wk: (kv_dim, embed_dim) @ x (embed_dim, ) => (kv_dim, )
                 // wv: (kv_dim, embed_dim) @ x (embed_dim, ) => (kv_dim, )
-                let q = matmul_2d_1d(&self.weights.wq[l], &x)?;
-                let k = matmul_2d_1d(&self.weights.wk[l], &x)?;
-                let v = matmul_2d_1d(&self.weights.wv[l], &x)?;
+                let x = Tensor::from_cpu(x, backend.clone())?;
+                let wq = Tensor::from_cpu(self.weights.wq[l].clone(), backend.clone())?;
+                let wk = Tensor::from_cpu(self.weights.wk[l].clone(), backend.clone())?;
+                let wv = Tensor::from_cpu(self.weights.wv[l].clone(), backend.clone())?;
+                let q = wq.matmul(&x)?;
+                let k = wk.matmul(&x)?;
+                let v = wv.matmul(&x)?;
 
+
+                let q = CpuTensor::new(q.to_vec()?, x.shape().to_vec())?;
+                let k = CpuTensor::new(k.to_vec()?, x.shape().to_vec())?;
+                let v = CpuTensor::new(v.to_vec()?, x.shape().to_vec())?;
                 (q, k, v)
             };
 

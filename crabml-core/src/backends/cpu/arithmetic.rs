@@ -151,6 +151,24 @@ pub fn silu_inplace_vec_f32(buf: &mut [f32]) {
 
 // W (w_rows,w_cols) @ x (w_cols,x_cols) -> xout (w_rows,x_cols)
 // W (w_rows,w_cols) @ x (w_cols,) -> xout (w_rows,)
+pub fn matmul_2d_1d_no_alloc<'a>(out: &mut CpuTensor<'a>, w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<()> {
+    require_tensor_dims(w, &[2])?;
+    require_tensor_dims(x, &[1])?;
+    require_tensor_matmul_2d_shapes(w, x)?;
+    require_tensor_contiguous(w)?;
+    require_tensor_contiguous(x)?;
+
+    let o_row_iter = out.iter_axis_mut(vec![0], 0)?; // (x_cols, )
+    o_row_iter.enumerate().for_each(|(w_row, o)| {
+        let w_row_iter = w.iter_axis(&[w_row, 0], 1).unwrap(); // (w_cols, )
+        let x_col_iter = x.iter_axis(&[0], 0).unwrap(); // (w_cols, )
+        *o = w_row_iter.zip(x_col_iter).map(|(w, x)| w * x).sum::<f32>();
+    });
+    return Ok(());
+}
+
+// W (w_rows,w_cols) @ x (w_cols,x_cols) -> xout (w_rows,x_cols)
+// W (w_rows,w_cols) @ x (w_cols,) -> xout (w_rows,)
 pub fn matmul_2d_1d<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'a>> {
     require_tensor_dims(w, &[2])?;
     require_tensor_dims(x, &[1])?;

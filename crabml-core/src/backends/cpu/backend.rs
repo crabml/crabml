@@ -4,11 +4,13 @@ use std::rc::Rc;
 use rayon::slice::RChunks;
 
 use super::arithmetic::add_inplace;
+use super::arithmetic::matmul_2d_1d_no_alloc;
 use super::arithmetic::mul_inplace;
 use super::arithmetic::rms_norm_inplace;
 use super::buf::CpuTensorBuf;
 use super::pool::CpuTensorPool;
 use crate::error::Result;
+use crate::tensor::strider::TensorStrider;
 use crate::tensor::tensor::TensorBackend;
 use crate::tensor::tensor::TensorBufID;
 use crate::tensor::tensor::TensorOp;
@@ -32,6 +34,16 @@ impl<'a> TensorBackend<'a> for CpuTensorBackend<'a> {
         match &op {
             TensorOp::RecycleTensor { t } => {
                 self.pool.recycle(t)?;
+            }
+            TensorOp::AllocTensor { shape, zeros } => {
+                let buf_id = self.pool.alloc(shape, *zeros)?;
+                return TensorOpVar::new(buf_id, TensorStrider::new(shape.to_vec()));
+            }
+            TensorOp::MatMul { out, lhs, rhs } => {
+                let mut out = self.pool.load(out)?;
+                let lhs = self.pool.load(lhs)?;
+                let rhs = self.pool.load(rhs)?;
+                matmul_2d_1d_no_alloc(&mut out, &lhs, &rhs)?;
             }
             TensorOp::RmsNormInplace { t, eps } => {
                 let mut t = self.pool.load(t)?;

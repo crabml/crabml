@@ -4,7 +4,6 @@ use std::rc::Rc;
 use super::arithmetic::add_inplace;
 use super::buf::CpuTensorBuf;
 use super::pool::CpuTensorPool;
-use crate::error::ErrorKind;
 use crate::error::Result;
 use crate::tensor::tensor::TensorBackend;
 use crate::tensor::tensor::TensorBufID;

@@ -51,6 +51,11 @@ pub enum TensorOp {
         rhs: TensorOpVar,
     },
 
+    SoftmaxInplace {
+        t: TensorOpVar,
+        axis: usize,
+    },
+
     DivScalarInplace {
         t: TensorOpVar,
         scalar: f32,

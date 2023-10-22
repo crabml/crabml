@@ -16,7 +16,7 @@ pub enum ErrorKind {
     TensorError,
 
     ///
-    TensorNotFound
+    TensorNotFound,
 }
 
 #[derive(Debug)]

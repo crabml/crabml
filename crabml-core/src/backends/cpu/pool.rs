@@ -78,7 +78,7 @@ impl<'a> CpuTensorPool<'a> {
         let buf = bufs.remove(&op_var.buf_id);
         let buf = match buf {
             Some(buf) => buf,
-            None => return Err((ErrorKind::TensorNotFound, "invalid buf_id").into())
+            None => return Err((ErrorKind::TensorNotFound, "invalid buf_id").into()),
         };
 
         let tensor = CpuTensor::new(buf, op_var.strider.clone())?;
@@ -94,12 +94,12 @@ impl<'a> CpuTensorPool<'a> {
         let buf = bufs.get(&buf_id);
         let buf = match buf {
             Some(buf) => buf,
-            None => return Err((ErrorKind::TensorNotFound, "invalid buf_id").into())
+            None => return Err((ErrorKind::TensorNotFound, "invalid buf_id").into()),
         };
 
         let buf = match buf {
             CpuTensorBuf::F32(buf) => buf,
-            _ => return Err((ErrorKind::TensorNotFound, "only f32 buf can be exported").into())
+            _ => return Err((ErrorKind::TensorNotFound, "only f32 buf can be exported").into()),
         };
         dst.copy_from_slice(buf);
         Ok(())

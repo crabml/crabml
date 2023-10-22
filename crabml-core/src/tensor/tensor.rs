@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::backends::cpu::buf::CpuTensorBuf;
+use crate::backends::CpuTensor;
 use crate::error::Result;
 use crate::tensor::strider::TensorStrider;
 
@@ -80,7 +81,7 @@ pub trait TensorBackend<'a> {
 
     fn import_buf(&mut self, buf: CpuTensorBuf<'a>) -> Result<TensorBufID>;
 
-    fn export_buf(self, buf_id: TensorBufID, data: &mut [f32]) -> Result<()>;
+    fn export_buf(&self, buf_id: TensorBufID, data: &mut [f32]) -> Result<()>;
 
     fn name(&self) -> &'static str;
 }
@@ -94,13 +95,9 @@ pub struct Tensor<'a, D: TensorBackend<'a>> {
 }
 
 impl<'a, D: TensorBackend<'a>> Tensor<'a, D> {
-    pub fn from_cpu(
-        shape: &[usize],
-        buf: CpuTensorBuf<'a>,
-        backend: Rc<RefCell<D>>,
-    ) -> Result<Self> {
-        let strider: TensorStrider = TensorStrider::new(shape.to_vec());
-        let buf_id = backend.borrow_mut().import_buf(buf)?;
+    pub fn from_cpu(src: CpuTensor<'a>, backend: Rc<RefCell<D>>) -> Result<Self> {
+        let strider = src.strider().clone();
+        let buf_id = backend.borrow_mut().import_buf(src.into_buf())?;
         Ok(Self {
             buf_id,
             strider,
@@ -123,6 +120,11 @@ impl<'a, D: TensorBackend<'a>> Tensor<'a, D> {
             backend,
             _phantom: std::marker::PhantomData,
         })
+    }
+
+    pub fn export(&self, dst: &mut [f32]) -> Result<()> {
+        self.backend.borrow_mut().export_buf(self.buf_id, dst)?;
+        Ok(())
     }
 
     fn as_op_var(&self) -> TensorOpVar {

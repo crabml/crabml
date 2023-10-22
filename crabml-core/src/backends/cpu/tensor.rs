@@ -24,7 +24,7 @@ impl<'a> CpuTensor<'a> {
     ) -> Result<Self> {
         let buf = buf.into();
         let strider = strider.into();
-        if buf.len() != strider.iter().product() {
+        if buf.len() != strider.len() {
             return Err(Error {
                 kind: ErrorKind::TensorError,
                 message: format!(
@@ -52,6 +52,10 @@ impl<'a> CpuTensor<'a> {
 
     pub fn typ(&self) -> GGMLType {
         self.buf.typ()
+    }
+
+    pub fn strider(&self) -> &TensorStrider {
+        &self.strider
     }
 
     pub fn at(&self, idx: &[usize]) -> Result<f32> {

@@ -49,6 +49,11 @@ impl<'a> TensorBackend<'a> for CpuTensorBackend<'a> {
                 let src = self.pool.load(src)?;
                 dst.extend(&src)?;
             }
+            TensorOp::CopyFrom { dst, src, pos, len } => {
+                let mut dst = self.pool.load(dst)?;
+                let src = self.pool.load(src)?;
+                dst.copy_from(&src, pos, *len)?;
+            }
             TensorOp::MatMul { out, lhs, rhs } => {
                 let mut out = self.pool.load(out)?;
                 let lhs = self.pool.load(lhs)?;

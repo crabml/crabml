@@ -278,8 +278,8 @@ impl<'a> Llama2Model<'a> {
 struct Llama2State<'a> {
     logits: Vec<f32>, // output logits (vocab_size, )
     // ProbIndex *probindex; // buffer used in top-p sampling
-    key_cache: Vec<CpuTensor<'a>>,   // (layer, seq_len, kv_dim)
-    value_cache: Vec<CpuTensor<'a>>, // (layer, seq_len, kv_dim)
+    key_cache: Vec<Tensor<'a>>,   // (layer, seq_len, kv_dim)
+    value_cache: Vec<Tensor<'a>>, // (layer, seq_len, kv_dim)
 }
 
 pub struct Llama2Runner<'a> {
@@ -287,6 +287,7 @@ pub struct Llama2Runner<'a> {
     state: Llama2State<'a>,
     weights: &'a Llama2Weights<'a>,
     tokenizer: &'a BpeTokenizer,
+    backend: TensorBackendRef<'a>,
 }
 
 impl<'a> Llama2Runner<'a> {
@@ -294,23 +295,26 @@ impl<'a> Llama2Runner<'a> {
         conf: &Llama2Config,
         weights: &'a Llama2Weights<'a>,
         tokenizer: &'a BpeTokenizer,
+        backend: TensorBackendRef<'a>,
     ) -> Result<Self> {
         let state = Llama2State {
             logits: vec![0.0; conf.vocab_size],
             key_cache: (0..conf.n_layers)
                 .map(|_| {
-                    CpuTensor::new(
+                    let cpu_tensor = CpuTensor::new(
                         Vec::with_capacity(128 * conf.n_kv_heads * conf.head_size()),
                         vec![0, conf.n_kv_heads, conf.head_size()],
-                    )
+                    ).unwrap();
+                    Tensor::from_cpu(cpu_tensor, backend.clone())
                 })
                 .collect::<Result<Vec<_>>>()?,
             value_cache: (0..conf.n_layers)
                 .map(|_| {
-                    CpuTensor::new(
+                    let cpu_tensor = CpuTensor::new(
                         Vec::with_capacity(128 * conf.n_kv_heads * conf.head_size()),
                         vec![0, conf.n_kv_heads, conf.head_size()],
-                    )
+                    ).unwrap();
+                    Tensor::from_cpu(cpu_tensor, backend.clone())
                 })
                 .collect::<Result<Vec<_>>>()?,
         };
@@ -320,6 +324,7 @@ impl<'a> Llama2Runner<'a> {
             state,
             weights,
             tokenizer,
+            backend,
         })
     }
 
@@ -337,15 +342,11 @@ impl<'a> Llama2Runner<'a> {
         let n_heads = self.conf.n_heads;
         let n_kv_heads = self.conf.n_kv_heads;
         let head_size = self.conf.head_size();
+        let backend = self.backend.clone();
 
         // copy the token embedding into x
-        let content_row = self
-            .weights
-            .token_embedding_table
-            .iter_axis(&[token, 0], 1)?
-            .collect::<Vec<_>>();
-        let mut x = CpuTensor::new(content_row, vec![embed_dim])?;
-        let backend = CpuTensorBackend::new();
+        let x = Tensor::zeros(&[embed_dim], backend.clone())?;
+        x.copy_from(&self.weights.token_embedding_table, &[token, 0], embed_dim);
 
         // forward all the layers
         for l in 0..self.conf.n_layers {
@@ -353,11 +354,9 @@ impl<'a> Llama2Runner<'a> {
 
             // attention rnsnorm
             x = {
-                let x = Tensor::from_cpu(x, backend.clone())?;
                 let x = x.rms_norm(self.conf.rms_norm_eps)?;
-                let rms_att_weight = Tensor::from_cpu(self.weights.rms_att_weight[l].clone(), backend.clone())?;
-                let x = x.mul(&rms_att_weight)?;
-                CpuTensor::new(x.to_vec()?, x.shape().to_vec())?
+                let x = x.mul(&self.weights.rms_att_weight[l])?;
+                x
             };
 
             // matmul qkv for every head
@@ -365,33 +364,20 @@ impl<'a> Llama2Runner<'a> {
                 // wq: (embed_dim, embed_dim) @ x (embed_dim, ) => (embed_dim, )
                 // wk: (kv_dim, embed_dim) @ x (embed_dim, ) => (kv_dim, )
                 // wv: (kv_dim, embed_dim) @ x (embed_dim, ) => (kv_dim, )
-                let x = Tensor::from_cpu(x, backend.clone())?;
-                let wq = Tensor::from_cpu(self.weights.wq[l].clone(), backend.clone())?;
-                let wk = Tensor::from_cpu(self.weights.wk[l].clone(), backend.clone())?;
-                let wv = Tensor::from_cpu(self.weights.wv[l].clone(), backend.clone())?;
-                let q = wq.matmul(&x)?;
-                let k = wk.matmul(&x)?;
-                let v = wv.matmul(&x)?;
+                let q = self.weights.wq[l].matmul(&x)?;
+                let k = self.weights.wk[l].matmul(&x)?;
+                let v = self.weights.wv[l].matmul(&x)?;
 
-
-                let q = CpuTensor::new(q.to_vec()?, q.shape().to_vec())?;
-                let k = CpuTensor::new(k.to_vec()?, k.shape().to_vec())?;
-                let v = CpuTensor::new(v.to_vec()?, v.shape().to_vec())?;
                 (q, k, v)
             };
 
             // ROPE
             let (q, k) = {
-                let q = Tensor::from_cpu(q, backend.clone())?;
-                let k = Tensor::from_cpu(k, backend.clone())?;
-
                 let q = q.view(&[n_heads, head_size])?;
                 let k = k.view(&[n_kv_heads, head_size])?;
                 let q = q.rope(pos, self.conf.rope_dim)?;
                 let k = k.rope(pos, self.conf.rope_dim)?;
 
-                let q = CpuTensor::new(q.to_vec()?, q.shape().to_vec())?;
-                let k = CpuTensor::new(k.to_vec()?, k.shape().to_vec())?;
                 (q, k)
             };
 
@@ -409,9 +395,8 @@ impl<'a> Llama2Runner<'a> {
                 // let k_cache = self.state.key_cache[l].as_ref();
                 // let v_cache = self.state.value_cache[l].as_ref();
 
-                let k_cache = Tensor::from_cpu(self.state.key_cache[l].clone(), backend.clone())?;
-                let v_cache = Tensor::from_cpu(self.state.value_cache[l].clone(), backend.clone())?;
-                let q = Tensor::from_cpu(q, backend.clone())?;
+                let k_cache = self.state.key_cache[l].clone();
+                let v_cache = self.state.value_cache[l].clone();
 
                 // - key_cache: [seq, kv_head, head_size]
                 // - key_cache = key_cache.repeat(1, n_head / n_kv_head, 1) => [seq, n_head, head_size]
@@ -442,10 +427,8 @@ impl<'a> Llama2Runner<'a> {
                 let x_with_attn = x_with_attn.view(&[embed_dim])?;
 
                 // final matmul to get the output of the attention
-                let wo = Tensor::from_cpu(self.weights.wo[l].clone(), backend.clone())?;
-                let x = wo.matmul(&x_with_attn)?;
+                let x = self.weights.wo[l].matmul(&x_with_attn)?;
                 
-                let x = CpuTensor::new(x.to_vec()?, x.shape().to_vec())?;
                 x
             };
 

@@ -64,6 +64,20 @@ impl<'a> CpuTensor<'a> {
             .map(|offset| self.buf.at_unchecked(offset))
     }
 
+    pub fn copy_from(&mut self, t: &CpuTensor<'a>, pos: &[usize], len: usize) -> Result<()> {
+        if !self.is_owned() {
+            return Err((ErrorKind::TensorError, "not owned").into());
+        }
+        if !self.is_contiguous() {
+            return Err((ErrorKind::TensorError, "not contiguous").into());
+        }
+
+        self.iter_mut()?.zip(t.iter_from(pos)?.take(len)).for_each(|(dst, src)| {
+            *dst = src;
+        });
+        Ok(())
+    }
+
     pub fn extend(&mut self, t: &CpuTensor<'a>) -> Result<()> {
         if !self.is_owned() {
             return Err((ErrorKind::TensorError, "not owned").into());
@@ -202,6 +216,16 @@ impl<'a> CpuTensor<'a> {
         }
         let iter = self.strider.iter().map(|i| self.buf.at_unchecked(i));
         CpuTensorBufIter::Boxed(Box::new(iter), self.len())
+    }
+
+    pub fn iter_from(&self, pos: &[usize]) -> Result<impl Iterator<Item = f32> + '_> {
+        if self.is_contiguous() {
+            return Ok(self.buf.iter());
+        }
+
+        let start = self.strider.at(pos).unwrap();
+        let iter = (start..self.strider.len()).map(|i| self.buf.at_unchecked(i));
+        Ok(CpuTensorBufIter::Boxed(Box::new(iter), self.len()))
     }
 
     pub fn iter_mut(&mut self) -> Result<impl Iterator<Item = &mut f32>> {

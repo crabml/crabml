@@ -36,6 +36,13 @@ pub enum TensorOp {
         src: TensorOpVar,
     },
 
+    CopyFrom {
+        dst: TensorOpVar,
+        src: TensorOpVar,
+        pos: Vec<usize>,
+        len: usize,
+    },
+
     MatMul {
         out: TensorOpVar,
         lhs: TensorOpVar,
@@ -170,6 +177,16 @@ impl<'a> Tensor<'a> {
         self.backend.borrow_mut().process_op(TensorOp::ExtendTensor {
             dst: self.as_op_var(),
             src: src.as_op_var(),
+        })?;
+        Ok(())
+    }
+
+    pub fn copy_from(&mut self, src: &Self, pos: &[usize], len: usize) -> Result<()> {
+        self.backend.borrow_mut().process_op(TensorOp::CopyFrom {
+            dst: self.as_op_var(),
+            src: src.as_op_var(),
+            pos: pos.to_vec(),
+            len,
         })?;
         Ok(())
     }

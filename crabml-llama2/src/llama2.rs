@@ -81,10 +81,9 @@ pub struct Llama2Model<'a> {
 }
 
 impl<'a> Llama2Model<'a> {
-    pub fn from(gf: &'a GGUFFile<'a>) -> Result<Self> {
+    pub fn from(gf: &'a GGUFFile<'a>, backend: TensorBackendRef) -> Result<Self> {
         let conf = Self::load_config(gf);
         let tokenizer = Self::load_tokenizer(gf);
-        let backend = CpuTensorBackend::new();
         let weights = Self::load_weights(gf, conf.n_layers, backend.clone())?;
         Ok(Self {
             conf,
@@ -395,8 +394,8 @@ impl<'a> Llama2Runner<'a> {
                 // let k_cache = self.state.key_cache[l].as_ref();
                 // let v_cache = self.state.value_cache[l].as_ref();
 
-                let k_cache = self.state.key_cache[l].clone();
-                let v_cache = self.state.value_cache[l].clone();
+                let k_cache = self.state.key_cache[l].as_ref();
+                let v_cache = self.state.value_cache[l].as_ref();
 
                 // - key_cache: [seq, kv_head, head_size]
                 // - key_cache = key_cache.repeat(1, n_head / n_kv_head, 1) => [seq, n_head, head_size]
@@ -433,7 +432,7 @@ impl<'a> Llama2Runner<'a> {
             };
 
             // residual connection back into x
-            add_inplace(&mut x, &x_attn_orig)?;
+            let x = x.add(&x_attn_orig)?;
 
             // ffn
             x = {
@@ -442,8 +441,8 @@ impl<'a> Llama2Runner<'a> {
 
                 // ffn rmsnorm
                 x = {
-                    rms_norm_inplace(&mut x, 1e-5)?;
-                    mul_inplace(&mut x, &self.weights.rms_ffn_weight[l])?;
+                    let x = x.rms_norm(self.conf.rms_norm_eps)?;
+                    let x = x.mul(&self.weights.rms_ffn_weight[l])?;
                     x
                 };
 
@@ -594,13 +593,14 @@ mod tests {
 
     #[test]
     fn test_generate_f32() -> Result<()> {
+        let backend = CpuTensorBackend::new();
         let gl: GGUFFileLoader =
             GGUFFileLoader::new("../testdata/tinyllamas-stories-15M-f32.gguf")?;
         let gf = gl.open()?;
-        let lm = Llama2Model::from(&gf)?;
+        let lm = Llama2Model::from(&gf, backend.clone())?;
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0);
-        let mut runner = Llama2Runner::new(&lm.conf, &lm.weights, &lm.tokenizer)?;
+        let mut runner = Llama2Runner::new(&lm.conf, &lm.weights, &lm.tokenizer, backend.clone())?;
         let output = runner.generate("Lily is a cat", 30, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
         assert_eq!(
@@ -612,14 +612,15 @@ mod tests {
 
     #[test]
     fn test_generate_q8_0() -> Result<()> {
+        let backend = CpuTensorBackend::new();
         let gl = GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-q8_0.gguf")?;
         let gf = gl.open()?;
-        let lm = Llama2Model::from(&gf)?;
+        let lm = Llama2Model::from(&gf, backend.clone())?;
         assert_eq!(lm.conf().rope_dim, 48);
         assert_eq!(lm.conf().head_size(), 48);
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0);
-        let mut runner = Llama2Runner::new(&lm.conf, &lm.weights, &lm.tokenizer)?;
+        let mut runner = Llama2Runner::new(&lm.conf, &lm.weights, &lm.tokenizer, backend.clone())?;
         let output = runner.generate("Lily is a cute cat, ", 10, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
         assert_eq!(s, "3 years old. She likes to play with her");

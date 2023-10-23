@@ -113,7 +113,6 @@ pub trait TensorBackend<'a> {
 
 pub type TensorBackendRef<'a> = Rc<RefCell<dyn TensorBackend<'a>>>;
 
-#[derive(Clone)]
 pub struct Tensor<'a> {
     buf_id: TensorBufID,
     strider: TensorStrider,
@@ -145,6 +144,14 @@ impl<'a> Tensor<'a> {
             strider,
             backend,
         })
+    }
+
+    pub fn as_ref(&self) -> Self {
+        Self {
+            buf_id: self.buf_id,
+            strider: self.strider.clone(),
+            backend: self.backend.clone(),
+        }
     }
 
     pub fn export(&self, dst: &mut [f32]) -> Result<()> {
@@ -321,6 +328,30 @@ impl<'a> Tensor<'a> {
             strider: out.strider.clone(),
             backend: self.backend.clone(),
         })
+    }
+}
+
+impl<'a> Clone for Tensor<'a> {
+    fn clone(&self) -> Self {
+        let dst = self.backend.borrow_mut().process_op(TensorOp::AllocTensor {
+            shape: self.shape().to_vec(),
+            zeros: false,
+        }).unwrap().unwrap();
+
+        self.backend
+            .borrow_mut()
+            .process_op(TensorOp::CopyFrom {
+                dst: dst.clone(),
+                src: self.as_op_var(),
+                pos: vec![0; self.shape().len()],
+                len: self.len(),
+            }).unwrap();
+
+        Self {
+            buf_id: dst.buf_id,
+            strider: self.strider.clone(),
+            backend: self.backend.clone(),
+        }
     }
 }
 

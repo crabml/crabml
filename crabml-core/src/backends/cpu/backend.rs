@@ -10,6 +10,7 @@ use super::arithmetic::matmul_2d_1d_no_alloc;
 use super::arithmetic::mul_inplace;
 use super::arithmetic::rms_norm_inplace;
 use super::arithmetic::rope_inplace;
+use super::arithmetic::silu_inplace;
 use super::arithmetic::softmax_inplace;
 use super::buf::CpuTensorBuf;
 use super::pool::CpuTensorPool;
@@ -86,7 +87,10 @@ impl<'a> TensorBackend<'a> for CpuTensorBackend<'a> {
                 let rhs = self.pool.load(rhs)?;
                 add_inplace(&mut lhs, &rhs)?;
             }
-            _ => todo!("unimplemented: {:?}", op),
+            TensorOp::SiluInplace { t } => {
+                let mut t = self.pool.load(t)?;
+                silu_inplace(&mut t)?;
+            }
         }
         Ok(None)
     }

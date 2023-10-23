@@ -115,18 +115,18 @@ pub fn add_inplace_vec_f32(a: &mut [f32], b: &[f32]) {
     });
 }
 
-pub fn silu_inplace<'a>(mut x: CpuTensor<'a>) -> Result<CpuTensor<'a>> {
+pub fn silu_inplace<'a>(x: &mut CpuTensor<'a>) -> Result<()> {
     // for i in 0..buf.len() {
     //    buf[i] = buf[i] * (1.0 / (1.0 + (-buf[i]).exp()));
     // }
     if x.is_contiguous() {
         if let CpuTensorBuf::F32(Cow::Owned(xb)) = x.buf_mut() {
             silu_inplace_vec_f32(xb);
-            return Ok(x);
+            return Ok(());
         }
     }
     x.iter_mut()?.for_each(|n| *n = *n / (1.0 + (-*n).exp()));
-    Ok(x)
+    Ok(())
 }
 
 pub fn silu_inplace_vec_f32(buf: &mut [f32]) {

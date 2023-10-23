@@ -456,7 +456,7 @@ impl<'a> Llama2Runner<'a> {
                 let h2 = matmul_2d_1d(&self.weights.w3[l], &x)?;
 
                 // F.silu; silu(x)=x*σ(x),where σ(x) is the logistic sigmoid
-                h1 = silu_inplace(h1)?;
+                silu_inplace(&mut h1)?;
 
                 // elementwise multiply with w3(x)
                 mul_inplace(&mut h1, &h2)?;

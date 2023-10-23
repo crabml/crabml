@@ -14,8 +14,8 @@ use crabml::backends::cpu::arithmetic::rms_norm_inplace;
 use crabml::backends::cpu::arithmetic::rope_inplace;
 use crabml::backends::cpu::arithmetic::silu_inplace;
 use crabml::backends::cpu::arithmetic::softmax_inplace;
-use crabml::backends::cpu::CpuTensor;
 use crabml::backends::cpu::backend::CpuTensorBackend;
+use crabml::backends::cpu::CpuTensor;
 use crabml::error::Error;
 use crabml::error::ErrorKind;
 use crabml::error::Result;
@@ -110,7 +110,11 @@ impl<'a> Llama2Model<'a> {
         &self.tokenizer
     }
 
-    fn load_weights(gf: &'a GGUFFile<'a>, n_layers: usize, backend: TensorBackendRef) -> Result<Llama2Weights<'a>> {
+    fn load_weights(
+        gf: &'a GGUFFile<'a>,
+        n_layers: usize,
+        backend: TensorBackendRef,
+    ) -> Result<Llama2Weights<'a>> {
         // [64 (dim), 512 (vocab_size)]
         let token_embedding_table = Self::load_tensor(gf, "token_embd.weight", backend.clone())?;
         let mut wq = vec![];
@@ -126,7 +130,7 @@ impl<'a> Llama2Model<'a> {
             wq.push(Self::load_tensor(
                 gf,
                 &format!("blk.{}.attn_q.weight", layer),
-                backend.clone()
+                backend.clone(),
             )?);
             wk.push(Self::load_tensor(
                 gf,
@@ -188,7 +192,11 @@ impl<'a> Llama2Model<'a> {
         })
     }
 
-    pub(crate) fn load_tensor(gf: &'a GGUFFile<'a>, name: &str, backend: TensorBackendRef) -> Result<Tensor<'a>> {
+    pub(crate) fn load_tensor(
+        gf: &'a GGUFFile<'a>,
+        name: &str,
+        backend: TensorBackendRef,
+    ) -> Result<Tensor<'a>> {
         let info = match gf.get_tensor_info(name) {
             None => {
                 return Err(Error {
@@ -303,7 +311,8 @@ impl<'a> Llama2Runner<'a> {
                     let cpu_tensor = CpuTensor::new(
                         Vec::with_capacity(128 * conf.n_kv_heads * conf.head_size()),
                         vec![0, conf.n_kv_heads, conf.head_size()],
-                    ).unwrap();
+                    )
+                    .unwrap();
                     Tensor::from_cpu(cpu_tensor, backend.clone())
                 })
                 .collect::<Result<Vec<_>>>()?,
@@ -312,7 +321,8 @@ impl<'a> Llama2Runner<'a> {
                     let cpu_tensor = CpuTensor::new(
                         Vec::with_capacity(128 * conf.n_kv_heads * conf.head_size()),
                         vec![0, conf.n_kv_heads, conf.head_size()],
-                    ).unwrap();
+                    )
+                    .unwrap();
                     Tensor::from_cpu(cpu_tensor, backend.clone())
                 })
                 .collect::<Result<Vec<_>>>()?,
@@ -427,7 +437,6 @@ impl<'a> Llama2Runner<'a> {
 
                 // final matmul to get the output of the attention
                 let x = self.weights.wo[l].matmul(&x_with_attn)?;
-                
                 x
             };
 

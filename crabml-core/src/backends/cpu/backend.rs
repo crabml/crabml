@@ -84,7 +84,7 @@ impl<'a> TensorBackend<'a> for CpuTensorBackend<'a> {
                 div_scalar_inplace(&mut lhs, *rhs)?
             }
             TensorOp::SoftmaxInplace { t, axis } => {
-                let mut t= self.pool.load(t)?;
+                let mut t = self.pool.load(t)?;
                 softmax_inplace(&mut t, *axis)?;
             }
             TensorOp::AddInplace { lhs, rhs } => {

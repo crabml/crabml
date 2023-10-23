@@ -72,9 +72,11 @@ impl<'a> CpuTensor<'a> {
             return Err((ErrorKind::TensorError, "not contiguous").into());
         }
 
-        self.iter_mut()?.zip(t.iter_from(pos)?.take(len)).for_each(|(dst, src)| {
-            *dst = src;
-        });
+        self.iter_mut()?
+            .zip(t.iter_from(pos)?.take(len))
+            .for_each(|(dst, src)| {
+                *dst = src;
+            });
         Ok(())
     }
 

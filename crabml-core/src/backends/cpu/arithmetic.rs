@@ -151,7 +151,11 @@ pub fn silu_inplace_vec_f32(buf: &mut [f32]) {
 
 // W (w_rows,w_cols) @ x (w_cols,x_cols) -> xout (w_rows,x_cols)
 // W (w_rows,w_cols) @ x (w_cols,) -> xout (w_rows,)
-pub fn matmul_2d_1d_no_alloc<'a>(out: &mut CpuTensor<'a>, w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<()> {
+pub fn matmul_2d_1d_no_alloc<'a>(
+    out: &mut CpuTensor<'a>,
+    w: &CpuTensor<'a>,
+    x: &CpuTensor<'a>,
+) -> Result<()> {
     require_tensor_dims(w, &[2])?;
     require_tensor_dims(x, &[1])?;
     require_tensor_matmul_2d_shapes(w, x)?;
@@ -260,8 +264,14 @@ pub fn matmul_vec_q8_0_f32_2d_1d<'a>(wb: &QuantBufQ8_0<'a>, xb: &[f32], out: &mu
         });
 }
 
-pub fn batch_matmul_no_alloc<'a, 'b>(out: &mut CpuTensor<'a>, w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<()>
-where 'b: 'a {
+pub fn batch_matmul_no_alloc<'a, 'b>(
+    out: &mut CpuTensor<'a>,
+    w: &CpuTensor<'a>,
+    x: &CpuTensor<'a>,
+) -> Result<()>
+where
+    'b: 'a,
+{
     require_tensor_dims(w, &[3])?;
     require_tensor_dims(x, &[2])?;
 
@@ -346,11 +356,7 @@ pub fn softmax_inplace<'a>(t: &mut CpuTensor<'a>, axis: usize) -> Result<()> {
     Ok(())
 }
 
-pub fn rope_inplace<'a>(
-    q: &mut CpuTensor<'a>,
-    pos: usize,
-    rope_dims: usize,
-) -> Result<()> {
+pub fn rope_inplace<'a>(q: &mut CpuTensor<'a>, pos: usize, rope_dims: usize) -> Result<()> {
     require_tensor_contiguous(&q)?;
     require_tensor_dims(&q, &[2])?;
 

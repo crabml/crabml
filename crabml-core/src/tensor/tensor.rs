@@ -181,10 +181,12 @@ impl<'a> Tensor<'a> {
     }
 
     pub fn extend(&mut self, src: &Self) -> Result<()> {
-        self.backend.borrow_mut().process_op(TensorOp::ExtendTensor {
-            dst: self.as_op_var(),
-            src: src.as_op_var(),
-        })?;
+        self.backend
+            .borrow_mut()
+            .process_op(TensorOp::ExtendTensor {
+                dst: self.as_op_var(),
+                src: src.as_op_var(),
+            })?;
         Ok(())
     }
 
@@ -234,10 +236,12 @@ impl<'a> Tensor<'a> {
     }
 
     pub fn div_scalar(self, rhs: f32) -> Result<Self> {
-        self.backend.borrow_mut().process_op(TensorOp::DivScalarInplace {
-            lhs: self.as_op_var(),
-            rhs,
-        })?;
+        self.backend
+            .borrow_mut()
+            .process_op(TensorOp::DivScalarInplace {
+                lhs: self.as_op_var(),
+                rhs,
+            })?;
         Ok(self)
     }
 
@@ -270,11 +274,13 @@ impl<'a> Tensor<'a> {
     }
 
     pub fn rope(self, pos: usize, rope_dim: usize) -> Result<Self> {
-        self.backend.borrow_mut().process_op(TensorOp::RopeInplace {
-            t: self.as_op_var(),
-            pos,
-            rope_dim,
-        })?;
+        self.backend
+            .borrow_mut()
+            .process_op(TensorOp::RopeInplace {
+                t: self.as_op_var(),
+                pos,
+                rope_dim,
+            })?;
         Ok(self)
     }
 
@@ -287,10 +293,14 @@ impl<'a> Tensor<'a> {
             vec![self.shape()[0]]
         };
 
-        let out = self.backend.borrow_mut().process_op(TensorOp::AllocTensor {
-            shape: out_shape,
-            zeros: false,
-        })?.unwrap();
+        let out = self
+            .backend
+            .borrow_mut()
+            .process_op(TensorOp::AllocTensor {
+                shape: out_shape,
+                zeros: false,
+            })?
+            .unwrap();
 
         self.backend.borrow_mut().process_op(TensorOp::MatMul {
             out: out.clone(),
@@ -312,16 +322,22 @@ impl<'a> Tensor<'a> {
             panic!("unimplemented");
         };
 
-        let out = self.backend.borrow_mut().process_op(TensorOp::AllocTensor {
-            shape: out_shape,
-            zeros: false,
-        })?.unwrap();
+        let out = self
+            .backend
+            .borrow_mut()
+            .process_op(TensorOp::AllocTensor {
+                shape: out_shape,
+                zeros: false,
+            })?
+            .unwrap();
 
-        self.backend.borrow_mut().process_op(TensorOp::BatchMatMul {
-            out: out.clone(),
-            lhs: self.as_op_var(),
-            rhs: rhs.as_op_var(),
-        })?;
+        self.backend
+            .borrow_mut()
+            .process_op(TensorOp::BatchMatMul {
+                out: out.clone(),
+                lhs: self.as_op_var(),
+                rhs: rhs.as_op_var(),
+            })?;
 
         Ok(Self {
             buf_id: out.buf_id,
@@ -333,10 +349,15 @@ impl<'a> Tensor<'a> {
 
 impl<'a> Clone for Tensor<'a> {
     fn clone(&self) -> Self {
-        let dst = self.backend.borrow_mut().process_op(TensorOp::AllocTensor {
-            shape: self.shape().to_vec(),
-            zeros: false,
-        }).unwrap().unwrap();
+        let dst = self
+            .backend
+            .borrow_mut()
+            .process_op(TensorOp::AllocTensor {
+                shape: self.shape().to_vec(),
+                zeros: false,
+            })
+            .unwrap()
+            .unwrap();
 
         self.backend
             .borrow_mut()
@@ -345,7 +366,8 @@ impl<'a> Clone for Tensor<'a> {
                 src: self.as_op_var(),
                 pos: vec![0; self.shape().len()],
                 len: self.len(),
-            }).unwrap();
+            })
+            .unwrap();
 
         Self {
             buf_id: dst.buf_id,

@@ -104,27 +104,27 @@ pub trait TensorBackend<'a> {
     fn name(&self) -> &'static str;
 }
 
+pub type TensorBackendRef<'a> = Rc<RefCell<dyn TensorBackend<'a>>>;
+
 #[derive(Clone)]
-pub struct Tensor<'a, D: TensorBackend<'a>> {
+pub struct Tensor<'a> {
     buf_id: TensorBufID,
     strider: TensorStrider,
-    backend: Rc<RefCell<D>>,
-    _phantom: std::marker::PhantomData<&'a D>,
+    backend: Rc<RefCell<dyn TensorBackend<'a>>>,
 }
 
-impl<'a, D: TensorBackend<'a>> Tensor<'a, D> {
-    pub fn from_cpu(src: CpuTensor<'a>, backend: Rc<RefCell<D>>) -> Result<Self> {
+impl<'a> Tensor<'a> {
+    pub fn from_cpu(src: CpuTensor<'a>, backend: TensorBackendRef<'a>) -> Result<Self> {
         let strider = src.strider().clone();
         let buf_id = backend.borrow_mut().import_buf(src.into_buf())?;
         Ok(Self {
             buf_id,
             strider,
             backend: backend.clone(),
-            _phantom: std::marker::PhantomData,
         })
     }
 
-    pub fn zeros(shape: &[usize], backend: Rc<RefCell<D>>) -> Result<Self> {
+    pub fn zeros(shape: &[usize], backend: Rc<RefCell<dyn TensorBackend<'a>>>) -> Result<Self> {
         let strider: TensorStrider = TensorStrider::new(shape.to_vec());
         let op_var = backend
             .borrow_mut()
@@ -137,7 +137,6 @@ impl<'a, D: TensorBackend<'a>> Tensor<'a, D> {
             buf_id: op_var.buf_id,
             strider,
             backend,
-            _phantom: std::marker::PhantomData,
         })
     }
 
@@ -181,7 +180,6 @@ impl<'a, D: TensorBackend<'a>> Tensor<'a, D> {
             strider,
             buf_id: self.buf_id,
             backend: self.backend.clone(),
-            _phantom: std::marker::PhantomData,
         })
     }
 
@@ -191,7 +189,6 @@ impl<'a, D: TensorBackend<'a>> Tensor<'a, D> {
             strider,
             buf_id: self.buf_id,
             backend: self.backend.clone(),
-            _phantom: std::marker::PhantomData,
         })
     }
 
@@ -201,7 +198,6 @@ impl<'a, D: TensorBackend<'a>> Tensor<'a, D> {
             strider,
             buf_id: self.buf_id,
             backend: self.backend.clone(),
-            _phantom: std::marker::PhantomData,
         })
     }
 
@@ -282,7 +278,6 @@ impl<'a, D: TensorBackend<'a>> Tensor<'a, D> {
             buf_id: out.buf_id,
             strider: out.strider.clone(),
             backend: self.backend.clone(),
-            _phantom: std::marker::PhantomData,
         })
     }
 
@@ -308,12 +303,11 @@ impl<'a, D: TensorBackend<'a>> Tensor<'a, D> {
             buf_id: out.buf_id,
             strider: out.strider.clone(),
             backend: self.backend.clone(),
-            _phantom: std::marker::PhantomData,
         })
     }
 }
 
-impl<'a, D: TensorBackend<'a>> Drop for Tensor<'a, D> {
+impl<'a> Drop for Tensor<'a> {
     fn drop(&mut self) {
         self.backend
             .borrow_mut()

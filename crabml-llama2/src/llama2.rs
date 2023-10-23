@@ -1,4 +1,6 @@
+use std::cell::RefCell;
 use std::ops::AddAssign;
+use std::rc::Rc;
 use std::time::Duration;
 use std::time::Instant;
 use std::vec;
@@ -20,6 +22,8 @@ use crabml::error::Result;
 use crabml::gguf::GGUFFile;
 use crabml::gguf::GGUFMetadata;
 use crabml::tensor::tensor::Tensor;
+use crabml::tensor::tensor::TensorBackend;
+use crabml::tensor::tensor::TensorBackendRef;
 use crabml::tokenizer::BpeTokenizer;
 
 use crate::sampler::Llama2Sampler;
@@ -47,26 +51,25 @@ impl Llama2Config {
     }
 }
 
-#[derive(Default)]
 pub struct Llama2Weights<'a> {
     // token embedding table
-    token_embedding_table: CpuTensor<'a>, // (vocab_size, dim)
+    token_embedding_table: Tensor<'a>, // (vocab_size, dim)
     // weights for rmsnorms
-    rms_att_weight: Vec<CpuTensor<'a>>, // (layer, dim) rmsnorm weights
-    rms_ffn_weight: Vec<CpuTensor<'a>>, // (layer, dim)
+    rms_att_weight: Vec<Tensor<'a>>, // (layer, dim) rmsnorm weights
+    rms_ffn_weight: Vec<Tensor<'a>>, // (layer, dim)
     // weights for matmuls
-    wq: Vec<CpuTensor<'a>>, // (layer, embedding_dim, embedding_dim)
-    wk: Vec<CpuTensor<'a>>, // (layer, kv_dim, embedding_dim)
-    wv: Vec<CpuTensor<'a>>, // (layer, kv_dim, embedding_dim)
-    wo: Vec<CpuTensor<'a>>, // (layer, embedding_dim, embedding_dim)
+    wq: Vec<Tensor<'a>>, // (layer, embedding_dim, embedding_dim)
+    wk: Vec<Tensor<'a>>, // (layer, kv_dim, embedding_dim)
+    wv: Vec<Tensor<'a>>, // (layer, kv_dim, embedding_dim)
+    wo: Vec<Tensor<'a>>, // (layer, embedding_dim, embedding_dim)
     // weights for ffn
-    w1: Vec<CpuTensor<'a>>, // (layer, hidden_dim, embedding_dim)
-    w2: Vec<CpuTensor<'a>>, // (layer, embedding_dim, hidden_dim)
-    w3: Vec<CpuTensor<'a>>, // (layer, hidden_dim, embedding_dim)
+    w1: Vec<Tensor<'a>>, // (layer, hidden_dim, embedding_dim)
+    w2: Vec<Tensor<'a>>, // (layer, embedding_dim, hidden_dim)
+    w3: Vec<Tensor<'a>>, // (layer, hidden_dim, embedding_dim)
     // final rmsnorm
-    rms_final_weight: CpuTensor<'a>, // (dim, )
+    rms_final_weight: Tensor<'a>, // (dim, )
     // (optional) classifier weights for the logits, on the last layer
-    wcls: CpuTensor<'a>, // (vocab_size, dim)
+    wcls: Tensor<'a>, // (vocab_size, dim)
 }
 
 pub struct Llama2Model<'a> {
@@ -74,17 +77,20 @@ pub struct Llama2Model<'a> {
     weights: Llama2Weights<'a>,
     tokenizer: BpeTokenizer,
     metadata: &'a GGUFMetadata<'a>,
+    backend: Rc<RefCell<dyn TensorBackend<'a>>>,
 }
 
 impl<'a> Llama2Model<'a> {
     pub fn from(gf: &'a GGUFFile<'a>) -> Result<Self> {
         let conf = Self::load_config(gf);
-        let weights = Self::load_weights(gf, conf.n_layers)?;
         let tokenizer = Self::load_tokenizer(gf);
+        let backend = CpuTensorBackend::new();
+        let weights = Self::load_weights(gf, conf.n_layers, backend.clone())?;
         Ok(Self {
             conf,
             weights,
             tokenizer,
+            backend,
             metadata: gf.metadata(),
         })
     }
@@ -105,9 +111,9 @@ impl<'a> Llama2Model<'a> {
         &self.tokenizer
     }
 
-    fn load_weights(gf: &'a GGUFFile<'a>, n_layers: usize) -> Result<Llama2Weights<'a>> {
+    fn load_weights(gf: &'a GGUFFile<'a>, n_layers: usize, backend: TensorBackendRef) -> Result<Llama2Weights<'a>> {
         // [64 (dim), 512 (vocab_size)]
-        let token_embedding_table = Self::load_tensor(gf, "token_embd.weight")?;
+        let token_embedding_table = Self::load_tensor(gf, "token_embd.weight", backend.clone())?;
         let mut wq = vec![];
         let mut wk = vec![];
         let mut wv = vec![];
@@ -121,43 +127,52 @@ impl<'a> Llama2Model<'a> {
             wq.push(Self::load_tensor(
                 gf,
                 &format!("blk.{}.attn_q.weight", layer),
+                backend.clone()
             )?);
             wk.push(Self::load_tensor(
                 gf,
                 &format!("blk.{}.attn_k.weight", layer),
+                backend.clone(),
             )?);
             wv.push(Self::load_tensor(
                 gf,
                 &format!("blk.{}.attn_v.weight", layer),
+                backend.clone(),
             )?);
             wo.push(Self::load_tensor(
                 gf,
                 &format!("blk.{}.attn_output.weight", layer),
+                backend.clone(),
             )?);
             // (hidden_dim:172, embedding_dim:64)
             w1.push(Self::load_tensor(
                 gf,
                 &format!("blk.{}.ffn_gate.weight", layer),
+                backend.clone(),
             )?);
             w2.push(Self::load_tensor(
                 gf,
                 &format!("blk.{}.ffn_down.weight", layer),
+                backend.clone(),
             )?);
             w3.push(Self::load_tensor(
                 gf,
                 &format!("blk.{}.ffn_up.weight", layer),
+                backend.clone(),
             )?);
             rms_att_weight.push(Self::load_tensor(
                 gf,
                 &format!("blk.{}.attn_norm.weight", layer),
+                backend.clone(),
             )?);
             rms_ffn_weight.push(Self::load_tensor(
                 gf,
                 &format!("blk.{}.ffn_norm.weight", layer),
+                backend.clone(),
             )?);
         }
-        let rms_final_weight = Self::load_tensor(gf, "output_norm.weight")?;
-        let wcls = Self::load_tensor(gf, "output.weight")?;
+        let rms_final_weight = Self::load_tensor(gf, "output_norm.weight", backend.clone())?;
+        let wcls = Self::load_tensor(gf, "output.weight", backend.clone())?;
         Ok(Llama2Weights {
             token_embedding_table,
             wq,
@@ -174,7 +189,7 @@ impl<'a> Llama2Model<'a> {
         })
     }
 
-    pub(crate) fn load_tensor(gf: &'a GGUFFile<'a>, name: &str) -> Result<CpuTensor<'a>> {
+    pub(crate) fn load_tensor(gf: &'a GGUFFile<'a>, name: &str, backend: TensorBackendRef) -> Result<Tensor<'a>> {
         let info = match gf.get_tensor_info(name) {
             None => {
                 return Err(Error {
@@ -194,7 +209,8 @@ impl<'a> Llama2Model<'a> {
             .map(|v| *v)
             .collect::<Vec<_>>();
 
-        let tensor = CpuTensor::from_raw_bytes(info.data(), info.typ(), dims)?;
+        let cpu_tensor = CpuTensor::from_raw_bytes(info.data(), info.typ(), dims)?;
+        let tensor = Tensor::from_cpu(cpu_tensor, backend)?;
         Ok(tensor)
     }
 

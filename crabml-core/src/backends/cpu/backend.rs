@@ -25,8 +25,8 @@ pub struct CpuTensorBackend<'a> {
     pool: CpuTensorPool<'a>,
 }
 
-impl CpuTensorBackend<'_> {
-    pub fn new() -> Rc<RefCell<Self>> {
+impl<'a> CpuTensorBackend<'a> {
+    pub fn new<'b>() -> Rc<RefCell<dyn TensorBackend<'a> + 'a>> {
         let backend = Self {
             pool: CpuTensorPool::new(),
         };

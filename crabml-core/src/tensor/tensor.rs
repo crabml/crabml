@@ -15,8 +15,7 @@ pub trait Tensor<'a>: Sized + Clone + TensorArithmetics {
 
     fn transpose(self, shape: &[usize]) -> Result<Self>;
 
-    fn as_ref<'b>(&'b self) -> Self
-    where 'b: 'a;
+    // fn as_ref(&'a self) -> Self;
 
     fn extend(&mut self, rhs: &Self) -> Result<()>;
 

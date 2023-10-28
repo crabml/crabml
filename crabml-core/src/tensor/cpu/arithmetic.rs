@@ -173,7 +173,7 @@ impl<'a> TensorArithmetics for CpuTensor<'a> {
     }
 }
 
-pub fn batch_matmul<'a, 'b>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'b>> where 'a: 'b {
+pub fn batch_matmul<'a, 'b>(w: &'b CpuTensor<'a>, x: &'b CpuTensor<'a>) -> Result<CpuTensor<'a>> where 'a: 'b {
     require_tensor_dims(w, &[3])?;
     require_tensor_dims(x, &[2])?;
 

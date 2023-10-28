@@ -30,6 +30,14 @@ impl<'a> CpuTensor<'a> {
         self.pool.clone()
     }
 
+    pub fn as_ref<'b>(&'b self) -> CpuTensor<'a> where 'b: 'a {
+        Self {
+            buf: self.buf.as_ref(),
+            strider: self.strider.clone(),
+            pool: self.pool.clone(),
+        }
+    }
+
     pub fn at(&self, idx: &[usize]) -> Result<f32> {
         self.strider
             .at(idx)
@@ -38,15 +46,6 @@ impl<'a> CpuTensor<'a> {
 
     pub fn len(&self) -> usize {
         self.strider.len()
-    }
-
-    pub fn as_ref<'b>(&'b self) -> CpuTensor<'a>
-    where 'b: 'a {
-        Self {
-            buf: self.buf.as_ref(),
-            strider: self.strider.clone(),
-            pool: self.pool.clone(),
-        }
     }
 
     pub fn at_unchecked(&self, idx: &[usize]) -> f32 {
@@ -244,14 +243,6 @@ impl<'a> Tensor<'a> for CpuTensor<'a> {
         })
     }
 
-    fn as_ref<'b>(&'b self) -> Self
-    where 'b: 'a {
-        Self {
-            buf: self.buf.as_ref(),
-            strider: self.strider.clone(),
-            pool: self.pool.clone(),
-        }
-    }
 
     fn extend(&mut self, t: &Self) -> Result<()> {
         if !self.is_owned() {

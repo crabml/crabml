@@ -26,6 +26,10 @@ impl<'a> CpuTensor<'a> {
         self.buf.typ()
     }
 
+    pub fn pool(&self) -> CpuTensorPoolRef<'a> {
+        self.pool.clone()
+    }
+
     pub fn at(&self, idx: &[usize]) -> Result<f32> {
         self.strider
             .at(idx)
@@ -304,7 +308,7 @@ mod tests {
     #[test]
     fn test_tensor_view() -> Result<()> {
         let pool = CpuTensorPool::new();
-        let t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], pool)?;
+        let t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], pool.clone())?;
         let t = t.view(&[3, 2])?;
 
         let tr = t.view(&[2, 3])?;
@@ -325,7 +329,7 @@ mod tests {
         // 1, 2, 3
         // 4, 5, 6
         let pool = CpuTensorPool::new();
-        let t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], pool)?;
+        let t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], pool.clone())?;
 
         let tests = vec![
             Test {
@@ -355,7 +359,7 @@ mod tests {
         // iter_axis with repeat
         // 1, 1, 2, 2, 3, 3
         // 4, 4, 5, 5, 6, 6
-        let t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], pool)?;
+        let t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], pool.clone())?;
         let t = t.repeat(&[1, 2])?;
 
         let tests = vec![
@@ -470,7 +474,7 @@ mod tests {
     #[test]
     fn test_tensor_iter_axis_mut() -> Result<()> {
         let pool = CpuTensorPool::new();
-        let mut t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], pool)?;
+        let mut t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], pool.clone())?;
         let r = t
             .iter_axis_mut(vec![0, 0], 1)?
             .map(|f| *f)
@@ -492,8 +496,8 @@ mod tests {
         // 1 2
         // 3 4
         let pool = CpuTensorPool::new();
-        let t1 = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0], &[2, 2], pool)?;
-        let mut t2 = CpuTensor::new(vec![0.0; 2], &[2], pool)?;
+        let t1 = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0], &[2, 2], pool.clone())?;
+        let mut t2 = CpuTensor::new(vec![0.0; 2], &[2], pool.clone())?;
 
         t2.copy_from(&t1, &[1, 0], 2)?;
         assert_eq!(t2.iter().collect::<Vec<_>>(), vec![3.0, 4.0]);
@@ -507,7 +511,7 @@ mod tests {
     #[test]
     fn test_extend() -> Result<()> {
         let pool = CpuTensorPool::new();
-        let mut t1 = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[1, 2, 3], pool)?;
+        let mut t1 = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[1, 2, 3], pool.clone())?;
         let t2 = CpuTensor::new(vec![1.0; 6], &[2, 3], pool)?;
         t1.extend(&t2)?;
 

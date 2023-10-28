@@ -16,6 +16,7 @@ use crate::tensor::cpu::validate::require_tensor_contiguous;
 use crate::tensor::cpu::validate::require_tensor_dims;
 use crate::tensor::cpu::validate::require_tensor_matmul_2d_shapes;
 use crate::tensor::cpu::validate::require_tensor_shape;
+use crate::tensor::tensor::Tensor;
 use crate::tensor::tensor::TensorArithmetics;
 use crate::tensor::CpuTensor;
 
@@ -75,7 +76,7 @@ impl<'a> TensorArithmetics for CpuTensor<'a> {
             _ => (),
         }
 
-        let mut out = CpuTensor::zeros(vec![w.shape()[0]])?;
+        let mut out = CpuTensor::alloc(&[w.shape()[0]], w.pool())?;
         let o_row_iter = out.iter_axis_mut(vec![0], 0)?; // (x_cols, )
         o_row_iter.enumerate().for_each(|(w_row, o)| {
             let w_row_iter = w.iter_axis(&[w_row, 0], 1).unwrap(); // (w_cols, )
@@ -172,7 +173,7 @@ impl<'a> TensorArithmetics for CpuTensor<'a> {
     }
 }
 
-pub fn batch_matmul<'a, 'b>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'b>> where 'b: 'a {
+pub fn batch_matmul<'a, 'b>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'b>> where 'a: 'b {
     require_tensor_dims(w, &[3])?;
     require_tensor_dims(x, &[2])?;
 
@@ -191,7 +192,7 @@ pub fn batch_matmul<'a, 'b>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuT
     // (batch_size, w_rows, w_cols) @ (batch_size, w_cols, ) -> (batch_size, w_rows, )
     let batch_size = w.shape()[0];
     let w_rows = w.shape()[1];
-    let mut out = CpuTensor::zeros(vec![batch_size, w_rows])?;
+    let mut out = CpuTensor::alloc(&[batch_size, w_rows], w.pool())?;
     for b in 0..batch_size {
         let o_iter = out.iter_axis_mut(vec![b, 0], 1)?; // w_cols
         o_iter.enumerate().for_each(|(w_row, o)| {
@@ -284,7 +285,7 @@ pub fn maybe_matmul_vec_2d_1d<'a>(
         _ => return None,
     };
 
-    Some(CpuTensor::new(out, vec![w.shape()[0]]))
+    Some(CpuTensor::new(out, &[w.shape()[0]], w.pool()))
 }
 
 pub fn matmul_vec_generic_xxx_f32_2d_1d<'a, T: BufVecDot + Sync>(
@@ -371,6 +372,8 @@ pub fn rope_inplace_old<'a>(
 
 #[cfg(test)]
 mod tests {
+    use crate::tensor::cpu::tensor::CpuTensorPool;
+
     use super::*;
 
     #[test]
@@ -402,11 +405,12 @@ mod tests {
     fn test_matmul() -> Result<()> {
         // 1, 2, 3
         // 4, 5, 6
-        let w = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![2, 3])?;
+        let pool = CpuTensorPool::new();
+        let w = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], pool.clone())?;
         // 1
         // 2
         // 3
-        let b = CpuTensor::new(vec![1.0, 2.0, 3.0], vec![3])?;
+        let b = CpuTensor::new(vec![1.0, 2.0, 3.0], &[3], pool.clone())?;
         // 0
         // 0
         // 1*1 + 2*2 + 3*3 = 1 + 4 + 9

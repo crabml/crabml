@@ -210,8 +210,8 @@ impl<'a> CpuTensor<'a> {
     }
 
     pub fn iter_from(&self, pos: &[usize]) -> Result<impl Iterator<Item = f32> + '_> {
-        if self.is_contiguous() {
-            return Ok(self.buf.iter());
+        if !self.is_contiguous() {
+            return Err((ErrorKind::TensorError, "not contiguous").into());
         }
 
         let start = self.strider.at(pos).unwrap();
@@ -437,6 +437,22 @@ mod tests {
             .map(|f| *f)
             .collect::<Vec<_>>();
         assert_eq!(r, vec![1.0, 4.0]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_copy_from() -> Result<()> {
+        // 1 2
+        // 3 4
+        let t1 = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0], vec![2, 2])?;
+        let mut t2 = CpuTensor::new(vec![0.0; 2], vec![2])?;
+
+        t2.copy_from(&t1, &[1, 0], 2)?;
+        assert_eq!(t2.iter().collect::<Vec<_>>(), vec![3.0, 4.0]);
+
+        t2.copy_from(&t1, &[0, 0], 2)?;
+        assert_eq!(t2.iter().collect::<Vec<_>>(), vec![1.0, 2.0]);
 
         Ok(())
     }

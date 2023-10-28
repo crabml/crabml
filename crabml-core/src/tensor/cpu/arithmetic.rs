@@ -41,16 +41,48 @@ impl<'a> TensorArithmetics for CpuTensor<'a> {
         Ok(self)
     }
 
-    fn add_inplace(self, y: &Self) -> Result<Self> {
-        todo!()
+    fn add_inplace(self, b: &Self) -> Result<Self> {
+        let mut a = self;
+        require_tensor_shape(&a, b.shape())?;
+        require_tensor_contiguous(&a)?;
+        require_tensor_contiguous(b)?;
+
+        a.iter_mut()?.zip(b.iter()).for_each(|(ia, ib)| {
+            *ia += ib;
+        });
+        Ok(a)
     }
 
-    fn div_scalar_inplace(self, y: f32) -> Result<Self> {
-        todo!()
+    fn div_scalar_inplace(mut self, b: f32) -> Result<Self> {
+        self.iter_mut()?.for_each(|ia| {
+            *ia /= b;
+        });
+        Ok(self)
     }
 
-    fn matmul(&self, y: &Self) -> Result<Self> {
-        todo!()
+    // W (w_rows,w_cols) @ x (w_cols,x_cols) -> xout (w_rows,x_cols)
+    // W (w_rows,w_cols) @ x (w_cols,) -> xout (w_rows,)
+    fn matmul(&self, x: &Self) -> Result<Self> {
+        let w = self;
+        require_tensor_dims(w, &[2])?;
+        require_tensor_dims(x, &[1])?;
+        require_tensor_matmul_2d_shapes(w, x)?;
+        require_tensor_contiguous(w)?;
+        require_tensor_contiguous(x)?;
+    
+        match maybe_matmul_vec_2d_1d(w, x) {
+            Some(r) => return r,
+            _ => (),
+        }
+    
+        let mut out = CpuTensor::zeros(vec![w.shape()[0]])?;
+        let o_row_iter = out.iter_axis_mut(vec![0], 0)?; // (x_cols, )
+        o_row_iter.enumerate().for_each(|(w_row, o)| {
+            let w_row_iter = w.iter_axis(&[w_row, 0], 1).unwrap(); // (w_cols, )
+            let x_col_iter = x.iter_axis(&[0], 0).unwrap(); // (w_cols, )
+            *o = w_row_iter.zip(x_col_iter).map(|(w, x)| w * x).sum::<f32>();
+        });
+        return Ok(out);
     }
 
     fn batch_matmul(&self, y: &Self) -> Result<Self> {
@@ -121,24 +153,6 @@ fn mul_inplace_vec_f32(a: &mut [f32], b: &[f32]) {
     });
 }
 
-pub fn div_scalar_inplace<'a>(mut a: CpuTensor<'a>, b: f32) -> Result<CpuTensor<'a>> {
-    a.iter_mut()?.for_each(|ia| {
-        *ia /= b;
-    });
-    Ok(a)
-}
-
-pub fn add_inplace<'a>(mut a: CpuTensor<'a>, b: &CpuTensor<'a>) -> Result<CpuTensor<'a>> {
-    require_tensor_shape(&a, b.shape())?;
-    require_tensor_contiguous(&a)?;
-    require_tensor_contiguous(b)?;
-
-    a.iter_mut()?.zip(b.iter()).for_each(|(ia, ib)| {
-        *ia += ib;
-    });
-    Ok(a)
-}
-
 pub fn add_inplace_vec_f32(a: &mut [f32], b: &[f32]) {
     let acs = a.as_chunks_mut::<32>().0;
     let bcs = b.as_chunks::<32>().0;
@@ -170,29 +184,6 @@ pub fn silu_inplace_vec_f32(buf: &mut [f32]) {
     })
 }
 
-// W (w_rows,w_cols) @ x (w_cols,x_cols) -> xout (w_rows,x_cols)
-// W (w_rows,w_cols) @ x (w_cols,) -> xout (w_rows,)
-pub fn matmul_2d_1d<'a>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'a>> {
-    require_tensor_dims(w, &[2])?;
-    require_tensor_dims(x, &[1])?;
-    require_tensor_matmul_2d_shapes(w, x)?;
-    require_tensor_contiguous(w)?;
-    require_tensor_contiguous(x)?;
-
-    match maybe_matmul_vec_2d_1d(w, x) {
-        Some(r) => return r,
-        _ => (),
-    }
-
-    let mut out = CpuTensor::zeros(vec![w.shape()[0]])?;
-    let o_row_iter = out.iter_axis_mut(vec![0], 0)?; // (x_cols, )
-    o_row_iter.enumerate().for_each(|(w_row, o)| {
-        let w_row_iter = w.iter_axis(&[w_row, 0], 1).unwrap(); // (w_cols, )
-        let x_col_iter = x.iter_axis(&[0], 0).unwrap(); // (w_cols, )
-        *o = w_row_iter.zip(x_col_iter).map(|(w, x)| w * x).sum::<f32>();
-    });
-    return Ok(out);
-}
 
 pub fn maybe_matmul_vec_2d_1d<'a>(
     w: &CpuTensor<'a>,
@@ -430,7 +421,7 @@ mod tests {
         // 0
         // 1*1 + 2*2 + 3*3 = 1 + 4 + 9
         // 1*4 + 2*5 + 3*6 = 4 + 10 + 18
-        let out = matmul_2d_1d(&w, &b)?;
+        let out = w.matmul(&b)?;
         assert_eq!(out.iter().collect::<Vec<_>>(), &[14.0, 32.0]);
 
         Ok(())

@@ -8,10 +8,7 @@ use crabml::error::ErrorKind;
 use crabml::error::Result;
 use crabml::gguf::GGUFFile;
 use crabml::gguf::GGUFMetadata;
-use crabml::tensor::arithmetic::add_inplace;
 use crabml::tensor::arithmetic::batch_matmul;
-use crabml::tensor::arithmetic::div_scalar_inplace;
-use crabml::tensor::arithmetic::matmul_2d_1d;
 use crabml::tensor::arithmetic::rope_inplace;
 use crabml::tensor::arithmetic::softmax_inplace;
 use crabml::tensor::tensor::Tensor;
@@ -339,9 +336,9 @@ impl<'a> Llama2Runner<'a> {
                 // wq: (embed_dim, embed_dim) @ x (embed_dim, ) => (embed_dim, )
                 // wk: (kv_dim, embed_dim) @ x (embed_dim, ) => (kv_dim, )
                 // wv: (kv_dim, embed_dim) @ x (embed_dim, ) => (kv_dim, )
-                let q = matmul_2d_1d(&self.weights.wq[l], &x)?;
-                let k = matmul_2d_1d(&self.weights.wk[l], &x)?;
-                let v = matmul_2d_1d(&self.weights.wv[l], &x)?;
+                let q = self.weights.wq[l].matmul(&x)?;
+                let k = self.weights.wk[l].matmul(&x)?;
+                let v = self.weights.wv[l].matmul(&x)?;
 
                 (q, k, v)
             };
@@ -387,7 +384,7 @@ impl<'a> Llama2Runner<'a> {
                     .transpose(&[1, 0, 2])?;
                 // (n_heads, n_seq, head_size) @ (n_head, head_size) => (n_heads, n_seq)
                 let attn = batch_matmul(&k_cache, &q)?;
-                let attn = div_scalar_inplace(attn, (head_size as f32).sqrt())?;
+                let attn = attn.div_scalar_inplace((head_size as f32).sqrt())?;
                 let attn = softmax_inplace(attn, 1)?;
 
                 // get the weighted sum of the values and attention scores
@@ -399,11 +396,11 @@ impl<'a> Llama2Runner<'a> {
                 let x_with_attn = x_with_attn.view(&[embed_dim])?;
 
                 // final matmul to get the output of the attention
-                matmul_2d_1d(&self.weights.wo[l], &x_with_attn)?
+                self.weights.wo[l].matmul(&x_with_attn)?
             };
 
             // residual connection back into x
-            x = add_inplace(x, &x_attn_orig)?;
+            x = x.add_inplace(&x_attn_orig)?;
 
             // ffn
             x = {
@@ -421,8 +418,8 @@ impl<'a> Llama2Runner<'a> {
                 // first calculate self.w1(x) and self.w3(x)
                 // w1: (hidden_dim, embed_dim) @ x (embed_dim, ) => (hidden_dim, )
                 // w3: (hidden_dim, embed_dim) @ x (embed_dim, ) => (hidden_dim, )
-                let mut h1 = matmul_2d_1d(&self.weights.w1[l], &x)?;
-                let h2 = matmul_2d_1d(&self.weights.w3[l], &x)?;
+                let mut h1 = self.weights.w1[l].matmul(&x)?;
+                let h2 = self.weights.w3[l].matmul(&x)?;
 
                 // F.silu; silu(x)=x*σ(x),where σ(x) is the logistic sigmoid
                 h1 = h1.silu_inplace()?;
@@ -431,10 +428,10 @@ impl<'a> Llama2Runner<'a> {
                 h1 = h1.mul_inplace(&h2)?;
 
                 // final matmul to get the output of the ffn
-                x = matmul_2d_1d(&self.weights.w2[l], &h1)?;
+                x = self.weights.w2[l].matmul(&h1)?;
 
                 // residual connection
-                x = add_inplace(x, &x_orig_ffn)?;
+                x = x.add_inplace(&x_orig_ffn)?;
                 x
             }
         }
@@ -447,7 +444,7 @@ impl<'a> Llama2Runner<'a> {
         };
 
         // classifier into logits
-        let logits = matmul_2d_1d(&self.weights.wcls, &x)?; // (vocab_size,
+        let logits = self.weights.wcls.matmul(&x)?; // (vocab_size,
 
         self.state.logits = logits.iter().collect::<Vec<_>>();
         Ok(&mut self.state.logits)

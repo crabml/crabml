@@ -264,9 +264,11 @@ impl<'a> Tensor<'a> {
     }
 
     pub fn silu(self) -> Result<Self> {
-        self.backend.borrow_mut().process_op(TensorOp::SiluInplace {
-            t: self.as_op_var(),
-        })?;
+        self.backend
+            .borrow_mut()
+            .process_op(TensorOp::SiluInplace {
+                t: self.as_op_var(),
+            })?;
         Ok(self)
     }
 

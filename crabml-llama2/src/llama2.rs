@@ -1,20 +1,8 @@
-use std::cell::RefCell;
 use std::ops::AddAssign;
-use std::rc::Rc;
 use std::time::Duration;
 use std::time::Instant;
 use std::vec;
 
-use crabml::backends::cpu::arithmetic::add_inplace;
-use crabml::backends::cpu::arithmetic::batch_matmul;
-use crabml::backends::cpu::arithmetic::div_scalar_inplace;
-use crabml::backends::cpu::arithmetic::matmul_2d_1d;
-use crabml::backends::cpu::arithmetic::mul_inplace;
-use crabml::backends::cpu::arithmetic::rms_norm_inplace;
-use crabml::backends::cpu::arithmetic::rope_inplace;
-use crabml::backends::cpu::arithmetic::silu_inplace;
-use crabml::backends::cpu::arithmetic::softmax_inplace;
-use crabml::backends::cpu::backend::CpuTensorBackend;
 use crabml::backends::cpu::CpuTensor;
 use crabml::error::Error;
 use crabml::error::ErrorKind;
@@ -22,7 +10,6 @@ use crabml::error::Result;
 use crabml::gguf::GGUFFile;
 use crabml::gguf::GGUFMetadata;
 use crabml::tensor::tensor::Tensor;
-use crabml::tensor::tensor::TensorBackend;
 use crabml::tensor::tensor::TensorBackendRef;
 use crabml::tokenizer::BpeTokenizer;
 
@@ -287,7 +274,9 @@ struct Llama2State<'a> {
     value_cache: Vec<Tensor<'a>>, // (layer, seq_len, kv_dim)
 }
 
-pub struct Llama2Runner<'a, 'b> where 'a: 'b {
+pub struct Llama2Runner<'a, 'b>
+where 'a: 'b
+{
     conf: Llama2Config,
     state: Llama2State<'a>,
     weights: &'b Llama2Weights<'a>,
@@ -595,7 +584,9 @@ impl<'a, 'b> Iterator for Llama2RunnerOutputGenerator<'a, 'b> {
 
 #[cfg(test)]
 mod tests {
+    use crabml::backends::cpu::backend::CpuTensorBackend;
     use crabml::gguf::GGUFFileLoader;
+    use crabml::tensor::tensor::TensorBackend;
 
     use super::*;
 

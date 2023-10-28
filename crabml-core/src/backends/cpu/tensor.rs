@@ -23,7 +23,7 @@ impl<'a> CpuTensor<'a> {
         strider: impl Into<TensorStrider>,
     ) -> Result<Self> {
         let buf = buf.into();
-        let strider = strider.into();
+        let strider: TensorStrider = strider.into();
         if buf.len() != strider.len() {
             return Err(Error {
                 kind: ErrorKind::TensorError,

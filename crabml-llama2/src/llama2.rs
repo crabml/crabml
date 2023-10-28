@@ -468,7 +468,7 @@ impl<'a, 'b> Llama2Runner<'a, 'b> {
         // final rmsnorm
         x = {
             let x = x.rms_norm(self.conf.rms_norm_eps)?;
-            let x = x.matmul(&self.weights.rms_final_weight)?;
+            let x = x.mul(&self.weights.rms_final_weight)?;
             x
         };
 

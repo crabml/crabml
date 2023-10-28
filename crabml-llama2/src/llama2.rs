@@ -18,6 +18,7 @@ use crabml::tensor::arithmetic::rope_inplace;
 use crabml::tensor::arithmetic::silu_inplace;
 use crabml::tensor::arithmetic::softmax_inplace;
 use crabml::tensor::CpuTensor;
+use crabml::tensor::tensor::Tensor;
 use crabml::tokenizer::BpeTokenizer;
 
 use crate::sampler::Llama2Sampler;

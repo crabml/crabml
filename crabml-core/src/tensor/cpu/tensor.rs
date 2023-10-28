@@ -5,6 +5,8 @@ use crate::error::Result;
 use crate::gguf::GGMLType;
 use crate::tensor::cpu::buf::CpuTensorBuf;
 use crate::tensor::strider::TensorStrider;
+use crate::tensor::tensor::Tensor;
+use crate::tensor::tensor::TensorArithmetics;
 
 #[derive(Debug, Clone, Default)]
 pub struct CpuTensor<'a> {
@@ -53,78 +55,8 @@ impl<'a> CpuTensor<'a> {
             .map(|offset| self.buf.at_unchecked(offset))
     }
 
-    pub fn copy_from(&mut self, t: &CpuTensor<'a>, pos: &[usize], len: usize) -> Result<()> {
-        if !self.is_owned() {
-            return Err((ErrorKind::TensorError, "not owned").into());
-        }
-        if !self.is_contiguous() {
-            return Err((ErrorKind::TensorError, "not contiguous").into());
-        }
-
-        self.iter_mut()?
-            .zip(t.iter_from(pos)?.take(len))
-            .for_each(|(dst, src)| {
-                *dst = src;
-            });
-        Ok(())
-    }
-
-    pub fn extend(&mut self, t: &CpuTensor<'a>) -> Result<()> {
-        if !self.is_owned() {
-            return Err((ErrorKind::TensorError, "not owned").into());
-        }
-        if !self.is_contiguous() {
-            return Err((ErrorKind::TensorError, "not contiguous").into());
-        }
-        if !t.shape().eq(&self.shape()[1..]) {
-            return Err((
-                ErrorKind::TensorError,
-                format!(
-                    "shape mismatch on extend, want {:?} but got {:?}",
-                    &self.shape()[1..],
-                    &t.shape()
-                ),
-            )
-                .into());
-        }
-
-        self.buf.extend(t.iter());
-        let new_shape = {
-            let mut shape = self.shape().to_vec();
-            shape[0] += 1;
-            shape
-        };
-        self.strider = TensorStrider::new(new_shape);
-        Ok(())
-    }
-
     pub fn len(&self) -> usize {
         self.strider.len()
-    }
-
-    pub fn view(self, shape: &[usize]) -> Result<CpuTensor<'a>> {
-        let strider = self.strider.view(shape.to_vec())?;
-        Ok(Self {
-            buf: self.buf,
-            strider,
-        })
-    }
-
-    /// called on an owned Tensor, may used on MGQ where we have multiple query head on each key/value head
-    pub fn repeat(self, repeats: &[usize]) -> Result<CpuTensor<'a>> {
-        let strider = self.strider.repeat(repeats.to_vec())?;
-        Ok(Self {
-            buf: self.buf,
-            strider,
-        })
-    }
-
-    pub fn transpose(self, dims: &[usize]) -> Result<CpuTensor<'a>> {
-        let strider = self.strider.transpose(dims)?;
-        Ok(Self {
-            buf: self.buf,
-            strider,
-        })
     }
 
     pub fn as_ref<'b>(&'b self) -> CpuTensor<'a>
@@ -252,6 +184,144 @@ impl<'a> CpuTensor<'a> {
             return Err((ErrorKind::TensorError, "not owned").into());
         }
         Ok(self.buf.buf_mut())
+    }
+}
+
+pub struct CpuTensorPool<'a> {
+    _bufs: Vec<CpuTensorBuf<'a>>,
+}
+
+impl<'a> CpuTensorPool<'a> {
+    pub fn new() -> Self {
+        Self { _bufs: vec![] }
+    }
+
+    pub fn import_tensor(buf: &'a [u8], typ: GGMLType, shape: &[usize]) -> Result<CpuTensor<'a>> {
+        let buf = CpuTensorBuf::from_raw_bytes(buf, typ)?;
+        CpuTensor::new(buf, shape.to_vec())
+    }
+
+    pub fn alloc_tensor(shape: &[usize]) -> Result<CpuTensor<'a>> {
+        CpuTensor::zeros(shape.to_vec())
+    }
+
+    pub fn export_tensor(tensor: &CpuTensor<'a>, dst: &mut [f32]) -> Result<()> {
+        tensor.iter().zip(dst.iter_mut()).for_each(|(src, dst)| {
+            *dst = src;
+        });
+        Ok(())
+    }
+}
+
+impl<'a> Tensor<'a> for CpuTensor<'a> {
+    fn view(self, shape: &[usize]) -> Result<Self> {
+        let strider = self.strider.view(shape.to_vec())?;
+        Ok(Self {
+            buf: self.buf,
+            strider,
+        })
+    }
+
+    fn repeat(self, repeats: &[usize]) -> Result<Self> {
+        let strider = self.strider.repeat(repeats.to_vec())?;
+        Ok(Self {
+            buf: self.buf,
+            strider,
+        })
+    }
+
+    fn transpose(self, dims: &[usize]) -> Result<Self> {
+        let strider = self.strider.transpose(dims)?;
+        Ok(Self {
+            buf: self.buf,
+            strider,
+        })
+    }
+
+    fn as_ref<'b>(&'b self) -> Self where 'b: 'a {
+        Self {
+            buf: self.buf.as_ref(),
+            strider: self.strider.clone(),
+        }
+    }
+
+    fn extend(&mut self, t: &Self) -> Result<()> {
+        if !self.is_owned() {
+            return Err((ErrorKind::TensorError, "not owned").into());
+        }
+        if !self.is_contiguous() {
+            return Err((ErrorKind::TensorError, "not contiguous").into());
+        }
+        if !t.shape().eq(&self.shape()[1..]) {
+            return Err((
+                ErrorKind::TensorError,
+                format!(
+                    "shape mismatch on extend, want {:?} but got {:?}",
+                    &self.shape()[1..],
+                    &t.shape()
+                ),
+            )
+                .into());
+        }
+
+        self.buf.extend(t.iter());
+        let new_shape = {
+            let mut shape = self.shape().to_vec();
+            shape[0] += 1;
+            shape
+        };
+        self.strider = TensorStrider::new(new_shape);
+        Ok(())
+    }
+
+    fn copy_from(&mut self, t: &Self, pos: &[usize], len: usize) -> Result<()> {
+        if !self.is_owned() {
+            return Err((ErrorKind::TensorError, "not owned").into());
+        }
+        if !self.is_contiguous() {
+            return Err((ErrorKind::TensorError, "not contiguous").into());
+        }
+
+        self.iter_mut()?
+            .zip(t.iter_from(pos)?.take(len))
+            .for_each(|(dst, src)| {
+                *dst = src;
+            });
+        Ok(())
+    }
+}
+
+impl<'a> TensorArithmetics for CpuTensor<'a> {
+    fn mul_inplace(self, y: &Self) -> Result<Self> {
+        todo!()
+    }
+
+    fn add_inplace(self, y: &Self) -> Result<Self> {
+        todo!()
+    }
+
+    fn div_scalar_inplace(self, y: f32) -> Result<Self> {
+        todo!()
+    }
+
+    fn matmul(&self, y: &Self) -> Result<Self> {
+        todo!()
+    }
+
+    fn batch_matmul(&self, y: &Self) -> Result<Self> {
+        todo!()
+    }
+
+    fn silu_inplace(self) -> Result<()> {
+        todo!()
+    }
+
+    fn rms_norm_inplace(self, eps: f32) -> Result<Self> {
+        todo!()
+    }
+
+    fn rope_inplace(self, pos: usize, rope_dims: usize) -> Result<Self> {
+        todo!()
     }
 }
 

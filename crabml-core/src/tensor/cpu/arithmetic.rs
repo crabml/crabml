@@ -69,12 +69,12 @@ impl<'a> TensorArithmetics for CpuTensor<'a> {
         require_tensor_matmul_2d_shapes(w, x)?;
         require_tensor_contiguous(w)?;
         require_tensor_contiguous(x)?;
-    
+
         match maybe_matmul_vec_2d_1d(w, x) {
             Some(r) => return r,
             _ => (),
         }
-    
+
         let mut out = CpuTensor::zeros(vec![w.shape()[0]])?;
         let o_row_iter = out.iter_axis_mut(vec![0], 0)?; // (x_cols, )
         o_row_iter.enumerate().for_each(|(w_row, o)| {
@@ -85,11 +85,11 @@ impl<'a> TensorArithmetics for CpuTensor<'a> {
         return Ok(out);
     }
 
-    fn batch_matmul(&self, y: &Self) -> Result<Self> {
+    fn batch_matmul<T>(&self, x: T) -> Result<Self> {
         todo!()
     }
 
-    fn silu_inplace(mut self) -> Result<Self> {
+    fn silu_inplace(self) -> Result<Self> {
         let mut x = self;
         if x.is_contiguous() {
             if let CpuTensorBuf::F32(Cow::Owned(xb)) = x.buf_mut() {
@@ -121,8 +121,86 @@ impl<'a> TensorArithmetics for CpuTensor<'a> {
     }
 
     fn rope_inplace(self, pos: usize, rope_dims: usize) -> Result<Self> {
-        todo!()
+        let mut q = self;
+        require_tensor_contiguous(&q)?;
+        require_tensor_dims(&q, &[2])?;
+
+        let n_heads = q.shape()[0];
+        let head_size = q.shape()[1];
+        let qb = q.f32_buf_mut()?;
+
+        // apply RoPE rotation for each head
+        for h in 0..n_heads {
+            for i in 0..rope_dims / 2 {
+                let theta_scale = 10000_f32.powf(-2.0 * i as f32 / head_size as f32);
+                let theta = pos as f32 * theta_scale;
+
+                let cos_theta = theta.cos();
+                let sin_theta = theta.sin();
+                let qp = &mut qb[h * head_size + i * 2..];
+                let qp0 = qp[0];
+                let qp1 = qp[1];
+                qp[0] = qp0 * cos_theta - qp1 * sin_theta;
+                qp[1] = qp0 * sin_theta + qp1 * cos_theta;
+            }
+        }
+
+        Ok(q)
     }
+
+    fn softmax_inplace(self, axis: usize) -> Result<Self> {
+        let mut t = self;
+        require_tensor_dims(&t, &[2])?;
+
+        if axis != 1 {
+            return Err((ErrorKind::TensorError, "only axis=1 is supported").into());
+        }
+
+        for row in 0..t.shape()[0] {
+            let max = t.iter_axis(&[row, 0], 1)?.fold(f32::NAN, |a, b| a.max(b));
+            let sum = t.iter_axis_mut(vec![row, 0], 1)?.fold(0.0, |mut acc, val| {
+                *val = (*val - max).exp();
+                acc += *val;
+                acc
+            });
+            t.iter_axis_mut(vec![row, 0], 1)?.for_each(|val| {
+                *val /= sum;
+            });
+        }
+
+        Ok(t)
+    }
+}
+
+pub fn batch_matmul<'a, 'b>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'b>> where 'b: 'a {
+    require_tensor_dims(w, &[3])?;
+    require_tensor_dims(x, &[2])?;
+
+    if w.shape()[0] != x.shape()[0] || w.shape()[2] != x.shape()[1] {
+        return Err((
+            ErrorKind::TensorError,
+            format!(
+                "mismatched tensor shapes on batch matmul: {:?} @ {:?}",
+                w.shape(),
+                x.shape()
+            ),
+        )
+            .into());
+    }
+
+    // (batch_size, w_rows, w_cols) @ (batch_size, w_cols, ) -> (batch_size, w_rows, )
+    let batch_size = w.shape()[0];
+    let w_rows = w.shape()[1];
+    let mut out = CpuTensor::zeros(vec![batch_size, w_rows])?;
+    for b in 0..batch_size {
+        let o_iter = out.iter_axis_mut(vec![b, 0], 1)?; // w_cols
+        o_iter.enumerate().for_each(|(w_row, o)| {
+            let w_iter = w.iter_axis(&[b, w_row, 0], 2).unwrap(); // w_rows
+            let x_iter = x.iter_axis(&[b, 0], 1).unwrap(); // w_rows
+            *o = w_iter.zip(x_iter).map(|(w, x)| w * x).sum::<f32>();
+        })
+    }
+    return Ok(out);
 }
 
 fn rms_norm_inplace_vec_f32(x: &mut [f32], eps: f32) {
@@ -183,7 +261,6 @@ pub fn silu_inplace_vec_f32(buf: &mut [f32]) {
         v3.copy_to_slice(chunk);
     })
 }
-
 
 pub fn maybe_matmul_vec_2d_1d<'a>(
     w: &CpuTensor<'a>,
@@ -254,93 +331,6 @@ pub fn matmul_vec_q8_0_f32_2d_1d<'a>(wb: &QuantBufQ8_0<'a>, xb: &[f32], out: &mu
         });
 }
 
-pub fn batch_matmul<'a, 'b>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'b>>
-where 'b: 'a {
-    require_tensor_dims(w, &[3])?;
-    require_tensor_dims(x, &[2])?;
-
-    if w.shape()[0] != x.shape()[0] || w.shape()[2] != x.shape()[1] {
-        return Err((
-            ErrorKind::TensorError,
-            format!(
-                "mismatched tensor shapes on batch matmul: {:?} @ {:?}",
-                w.shape(),
-                x.shape()
-            ),
-        )
-            .into());
-    }
-
-    // (batch_size, w_rows, w_cols) @ (batch_size, w_cols, ) -> (batch_size, w_rows, )
-    let batch_size = w.shape()[0];
-    let w_rows = w.shape()[1];
-    let mut out = CpuTensor::zeros(vec![batch_size, w_rows])?;
-    for b in 0..batch_size {
-        let o_iter = out.iter_axis_mut(vec![b, 0], 1)?; // w_cols
-        o_iter.enumerate().for_each(|(w_row, o)| {
-            let w_iter = w.iter_axis(&[b, w_row, 0], 2).unwrap(); // w_rows
-            let x_iter = x.iter_axis(&[b, 0], 1).unwrap(); // w_rows
-            *o = w_iter.zip(x_iter).map(|(w, x)| w * x).sum::<f32>();
-        })
-    }
-    return Ok(out);
-}
-
-// t: (rows, cols)
-pub fn softmax_inplace<'a>(mut t: CpuTensor<'a>, axis: usize) -> Result<CpuTensor<'a>> {
-    require_tensor_dims(&t, &[2])?;
-
-    if axis != 1 {
-        return Err((ErrorKind::TensorError, "only axis=1 is supported").into());
-    }
-
-    for row in 0..t.shape()[0] {
-        let max = t.iter_axis(&[row, 0], 1)?.fold(f32::NAN, |a, b| a.max(b));
-        let sum = t.iter_axis_mut(vec![row, 0], 1)?.fold(0.0, |mut acc, val| {
-            *val = (*val - max).exp();
-            acc += *val;
-            acc
-        });
-        t.iter_axis_mut(vec![row, 0], 1)?.for_each(|val| {
-            *val /= sum;
-        });
-    }
-
-    Ok(t)
-}
-
-pub fn rope_inplace<'a>(
-    mut q: CpuTensor<'a>,
-    pos: usize,
-    rope_dims: usize,
-) -> Result<CpuTensor<'a>> {
-    require_tensor_contiguous(&q)?;
-    require_tensor_dims(&q, &[2])?;
-
-    let n_heads = q.shape()[0];
-    let head_size = q.shape()[1];
-    let qb = q.f32_buf_mut()?;
-
-    // apply RoPE rotation for each head
-    for h in 0..n_heads {
-        for i in 0..rope_dims / 2 {
-            let theta_scale = 10000_f32.powf(-2.0 * i as f32 / head_size as f32);
-            let theta = pos as f32 * theta_scale;
-
-            let cos_theta = theta.cos();
-            let sin_theta = theta.sin();
-            let qp = &mut qb[h * head_size + i * 2..];
-            let qp0 = qp[0];
-            let qp1 = qp[1];
-            qp[0] = qp0 * cos_theta - qp1 * sin_theta;
-            qp[1] = qp0 * sin_theta + qp1 * cos_theta;
-        }
-    }
-
-    Ok(q)
-}
-
-// q: (n_heads, head_size)
 pub fn rope_inplace_old<'a>(
     mut q: CpuTensor<'a>,
     mut k: CpuTensor<'a>,

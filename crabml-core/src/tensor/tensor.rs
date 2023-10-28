@@ -24,9 +24,11 @@ pub trait TensorArithmetics: Sized {
 
     fn matmul(&self, y: &Self) -> Result<Self>;
 
-    fn batch_matmul(&self, y: &Self) -> Result<Self>;
+    fn batch_matmul<T>(&self, y: T) -> Result<Self>;
 
     fn silu_inplace(self) -> Result<Self>;
+
+    fn softmax_inplace(self, axis: usize) -> Result<Self>;
 
     fn rms_norm_inplace(self, eps: f32) -> Result<Self>;
 

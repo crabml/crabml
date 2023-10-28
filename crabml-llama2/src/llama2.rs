@@ -8,11 +8,9 @@ use crabml::error::ErrorKind;
 use crabml::error::Result;
 use crabml::gguf::GGUFFile;
 use crabml::gguf::GGUFMetadata;
-use crabml::tensor::arithmetic::batch_matmul;
-use crabml::tensor::arithmetic::rope_inplace;
-use crabml::tensor::arithmetic::softmax_inplace;
 use crabml::tensor::tensor::Tensor;
 use crabml::tensor::tensor::TensorArithmetics;
+use crabml::tensor::cpu::arithmetic::batch_matmul;
 use crabml::tensor::CpuTensor;
 use crabml::tokenizer::BpeTokenizer;
 
@@ -348,8 +346,8 @@ impl<'a> Llama2Runner<'a> {
                 let q = q.view(&[n_heads, head_size])?;
                 let k = k.view(&[n_kv_heads, head_size])?;
 
-                let q = rope_inplace(q, pos, self.conf.rope_dim)?;
-                let k = rope_inplace(k, pos, self.conf.rope_dim)?;
+                let q = q.rope_inplace(pos, self.conf.rope_dim)?;
+                let k = k.rope_inplace(pos, self.conf.rope_dim)?;
                 (q, k)
             };
 
@@ -385,7 +383,7 @@ impl<'a> Llama2Runner<'a> {
                 // (n_heads, n_seq, head_size) @ (n_head, head_size) => (n_heads, n_seq)
                 let attn = batch_matmul(&k_cache, &q)?;
                 let attn = attn.div_scalar_inplace((head_size as f32).sqrt())?;
-                let attn = softmax_inplace(attn, 1)?;
+                let attn = attn.softmax_inplace(1)?;
 
                 // get the weighted sum of the values and attention scores
                 let v_cache = v_cache

@@ -16,27 +16,81 @@ use crate::tensor::cpu::validate::require_tensor_contiguous;
 use crate::tensor::cpu::validate::require_tensor_dims;
 use crate::tensor::cpu::validate::require_tensor_matmul_2d_shapes;
 use crate::tensor::cpu::validate::require_tensor_shape;
+use crate::tensor::tensor::TensorArithmetics;
 use crate::tensor::CpuTensor;
 
 /// ! arithmetic.rs contains the tensor arithmetics operations like matmul, accum, etc.
 
-pub fn rms_norm_inplace(mut x: CpuTensor<'_>, eps: f32) -> Result<CpuTensor<'_>> {
-    require_tensor_contiguous(&x)?;
-    require_tensor_dims(&x, &[1])?;
+impl<'a> TensorArithmetics for CpuTensor<'a> {
+    fn mul_inplace(mut self, rhs: &Self) -> Result<Self> {
+        require_tensor_shape(&self, rhs.shape())?;
 
-    match x.buf_mut() {
-        CpuTensorBuf::F32(Cow::Owned(xb)) => {
-            rms_norm_inplace_vec_f32(xb, eps);
-            return Ok(x);
+        if rhs.is_contiguous() && rhs.is_contiguous() {
+            match (self.buf_mut(), rhs.buf()) {
+                (CpuTensorBuf::F32(Cow::Owned(ab)), CpuTensorBuf::F32(bb)) => {
+                    mul_inplace_vec_f32(ab, bb);
+                    return Ok(self);
+                }
+                _ => (),
+            }
         }
-        _ => (),
+
+        for (ia, ib) in self.iter_mut()?.zip(rhs.iter()) {
+            *ia *= ib;
+        }
+        Ok(self)
     }
 
-    let len = x.shape()[0];
-    let sum = x.iter_axis(&[0], 0)?.fold(0.0, |s, n| s + n * n);
-    let rms = ((sum / len as f32) + eps).sqrt();
-    x.iter_axis_mut(vec![0], 0)?.for_each(|n| *n = *n / rms);
-    Ok(x)
+    fn add_inplace(self, y: &Self) -> Result<Self> {
+        todo!()
+    }
+
+    fn div_scalar_inplace(self, y: f32) -> Result<Self> {
+        todo!()
+    }
+
+    fn matmul(&self, y: &Self) -> Result<Self> {
+        todo!()
+    }
+
+    fn batch_matmul(&self, y: &Self) -> Result<Self> {
+        todo!()
+    }
+
+    fn silu_inplace(mut self) -> Result<Self> {
+        let mut x = self;
+        if x.is_contiguous() {
+            if let CpuTensorBuf::F32(Cow::Owned(xb)) = x.buf_mut() {
+                silu_inplace_vec_f32(xb);
+                return Ok(x);
+            }
+        }
+        x.iter_mut()?.for_each(|n| *n = *n / (1.0 + (-*n).exp()));
+        Ok(x)
+    }
+
+    fn rms_norm_inplace(mut self, eps: f32) -> Result<Self> {
+        require_tensor_contiguous(&self)?;
+        require_tensor_dims(&self, &[1])?;
+
+        match self.buf_mut() {
+            CpuTensorBuf::F32(Cow::Owned(xb)) => {
+                rms_norm_inplace_vec_f32(xb, eps);
+                return Ok(self);
+            }
+            _ => (),
+        }
+
+        let len = self.shape()[0];
+        let sum = self.iter_axis(&[0], 0)?.fold(0.0, |s, n| s + n * n);
+        let rms = ((sum / len as f32) + eps).sqrt();
+        self.iter_axis_mut(vec![0], 0)?.for_each(|n| *n = *n / rms);
+        Ok(self)
+    }
+
+    fn rope_inplace(self, pos: usize, rope_dims: usize) -> Result<Self> {
+        todo!()
+    }
 }
 
 fn rms_norm_inplace_vec_f32(x: &mut [f32], eps: f32) {
@@ -54,25 +108,6 @@ fn rms_norm_inplace_vec_f32(x: &mut [f32], eps: f32) {
         v /= f32x32::splat(rms);
         v.copy_to_slice(chunk);
     }
-}
-
-pub fn mul_inplace<'a>(mut a: CpuTensor<'a>, b: &CpuTensor<'a>) -> Result<CpuTensor<'a>> {
-    require_tensor_shape(&a, b.shape())?;
-
-    if a.is_contiguous() && b.is_contiguous() {
-        match (a.buf_mut(), b.buf()) {
-            (CpuTensorBuf::F32(Cow::Owned(ab)), CpuTensorBuf::F32(bb)) => {
-                mul_inplace_vec_f32(ab, bb);
-                return Ok(a);
-            }
-            _ => (),
-        }
-    }
-
-    for (ia, ib) in a.iter_mut()?.zip(b.iter()) {
-        *ia *= ib;
-    }
-    Ok(a)
 }
 
 fn mul_inplace_vec_f32(a: &mut [f32], b: &[f32]) {
@@ -113,20 +148,6 @@ pub fn add_inplace_vec_f32(a: &mut [f32], b: &[f32]) {
         va += vb;
         va.copy_to_slice(ac);
     });
-}
-
-pub fn silu_inplace<'a>(mut x: CpuTensor<'a>) -> Result<CpuTensor<'a>> {
-    // for i in 0..buf.len() {
-    //    buf[i] = buf[i] * (1.0 / (1.0 + (-buf[i]).exp()));
-    // }
-    if x.is_contiguous() {
-        if let CpuTensorBuf::F32(Cow::Owned(xb)) = x.buf_mut() {
-            silu_inplace_vec_f32(xb);
-            return Ok(x);
-        }
-    }
-    x.iter_mut()?.for_each(|n| *n = *n / (1.0 + (-*n).exp()));
-    Ok(x)
 }
 
 pub fn silu_inplace_vec_f32(buf: &mut [f32]) {

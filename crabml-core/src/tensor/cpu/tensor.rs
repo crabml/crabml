@@ -238,7 +238,8 @@ impl<'a> Tensor<'a> for CpuTensor<'a> {
         })
     }
 
-    fn as_ref<'b>(&'b self) -> Self where 'b: 'a {
+    fn as_ref<'b>(&'b self) -> Self
+    where 'b: 'a {
         Self {
             buf: self.buf.as_ref(),
             strider: self.strider.clone(),
@@ -288,40 +289,6 @@ impl<'a> Tensor<'a> for CpuTensor<'a> {
                 *dst = src;
             });
         Ok(())
-    }
-}
-
-impl<'a> TensorArithmetics for CpuTensor<'a> {
-    fn mul_inplace(self, y: &Self) -> Result<Self> {
-        todo!()
-    }
-
-    fn add_inplace(self, y: &Self) -> Result<Self> {
-        todo!()
-    }
-
-    fn div_scalar_inplace(self, y: f32) -> Result<Self> {
-        todo!()
-    }
-
-    fn matmul(&self, y: &Self) -> Result<Self> {
-        todo!()
-    }
-
-    fn batch_matmul(&self, y: &Self) -> Result<Self> {
-        todo!()
-    }
-
-    fn silu_inplace(self) -> Result<()> {
-        todo!()
-    }
-
-    fn rms_norm_inplace(self, eps: f32) -> Result<Self> {
-        todo!()
-    }
-
-    fn rope_inplace(self, pos: usize, rope_dims: usize) -> Result<Self> {
-        todo!()
     }
 }
 

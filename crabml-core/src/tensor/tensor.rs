@@ -7,7 +7,8 @@ pub trait Tensor<'a>: Sized + Clone + TensorArithmetics {
 
     fn transpose(self, shape: &[usize]) -> Result<Self>;
 
-    fn as_ref<'b>(&'b self) -> Self where 'b: 'a;
+    fn as_ref<'b>(&'b self) -> Self
+    where 'b: 'a;
 
     fn extend(&mut self, rhs: &Self) -> Result<()>;
 
@@ -25,7 +26,7 @@ pub trait TensorArithmetics: Sized {
 
     fn batch_matmul(&self, y: &Self) -> Result<Self>;
 
-    fn silu_inplace(self) -> Result<()>;
+    fn silu_inplace(self) -> Result<Self>;
 
     fn rms_norm_inplace(self, eps: f32) -> Result<Self>;
 

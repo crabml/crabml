@@ -12,13 +12,11 @@ use crabml::tensor::arithmetic::add_inplace;
 use crabml::tensor::arithmetic::batch_matmul;
 use crabml::tensor::arithmetic::div_scalar_inplace;
 use crabml::tensor::arithmetic::matmul_2d_1d;
-use crabml::tensor::arithmetic::mul_inplace;
-use crabml::tensor::arithmetic::rms_norm_inplace;
 use crabml::tensor::arithmetic::rope_inplace;
-use crabml::tensor::arithmetic::silu_inplace;
 use crabml::tensor::arithmetic::softmax_inplace;
-use crabml::tensor::CpuTensor;
 use crabml::tensor::tensor::Tensor;
+use crabml::tensor::tensor::TensorArithmetics;
+use crabml::tensor::CpuTensor;
 use crabml::tokenizer::BpeTokenizer;
 
 use crate::sampler::Llama2Sampler;
@@ -331,8 +329,8 @@ impl<'a> Llama2Runner<'a> {
 
             // attention rnsnorm
             x = {
-                x = rms_norm_inplace(x, self.conf.rms_norm_eps)?;
-                x = mul_inplace(x, &self.weights.rms_att_weight[l])?;
+                x = x.rms_norm_inplace(self.conf.rms_norm_eps)?;
+                x = x.mul_inplace(&self.weights.rms_att_weight[l])?;
                 x
             };
 
@@ -414,8 +412,8 @@ impl<'a> Llama2Runner<'a> {
 
                 // ffn rmsnorm
                 x = {
-                    x = rms_norm_inplace(x, 1e-5)?;
-                    x = mul_inplace(x, &self.weights.rms_ffn_weight[l])?;
+                    x = x.rms_norm_inplace(1e-5)?;
+                    x = x.mul_inplace(&self.weights.rms_ffn_weight[l])?;
                     x
                 };
 
@@ -427,10 +425,10 @@ impl<'a> Llama2Runner<'a> {
                 let h2 = matmul_2d_1d(&self.weights.w3[l], &x)?;
 
                 // F.silu; silu(x)=x*σ(x),where σ(x) is the logistic sigmoid
-                h1 = silu_inplace(h1)?;
+                h1 = h1.silu_inplace()?;
 
                 // elementwise multiply with w3(x)
-                h1 = mul_inplace(h1, &h2)?;
+                h1 = h1.mul_inplace(&h2)?;
 
                 // final matmul to get the output of the ffn
                 x = matmul_2d_1d(&self.weights.w2[l], &h1)?;
@@ -443,8 +441,8 @@ impl<'a> Llama2Runner<'a> {
 
         // final rmsnorm
         x = {
-            x = rms_norm_inplace(x, self.conf.rms_norm_eps)?;
-            x = mul_inplace(x, &self.weights.rms_final_weight)?;
+            x = x.rms_norm_inplace(self.conf.rms_norm_eps)?;
+            x = x.mul_inplace(&self.weights.rms_final_weight)?;
             x
         };
 

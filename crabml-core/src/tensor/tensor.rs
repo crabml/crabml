@@ -1,8 +1,6 @@
 use crate::error::Result;
 use crate::gguf::GGMLType;
 
-pub trait TensorBackend<T> {}
-
 pub trait Tensor: Sized + Clone + TensorArithmetics {
     type Backend;
 
@@ -11,6 +9,8 @@ pub trait Tensor: Sized + Clone + TensorArithmetics {
     fn from_bytes(bytes: &[u8], typ: GGMLType, shape: &[usize], backend: Self::Backend) -> Result<()>;
 
     fn view(self, shape: &[usize]) -> Result<Self>;
+
+    fn repeat(self, repeats: &[usize]) -> Result<Self>;
 
     fn transpose(self, shape: &[usize]) -> Result<Self>;
 

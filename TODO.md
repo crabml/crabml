@@ -1,2 +1,4 @@
-- [ ] take the tensor & device framework
+- [ ] use the Tensor trait 
+- [ ] make validate panics
+- [ ] observe the intermediate result in llama2.rs
 - [ ] wgpu tensor support

@@ -111,12 +111,12 @@ pub trait TensorBackend<'a> {
     fn name(&self) -> &'static str;
 }
 
-pub type TensorBackendRef<'a> = Rc<RefCell<dyn TensorBackend<'a>>>;
+pub type TensorBackendRef<'a> = Rc<RefCell<dyn TensorBackend<'a> + 'a>>;
 
 pub struct Tensor<'a> {
     buf_id: TensorBufID,
     strider: TensorStrider,
-    backend: Rc<RefCell<dyn TensorBackend<'a>>>,
+    backend: TensorBackendRef<'a>,
 }
 
 impl<'a> Tensor<'a> {
@@ -130,7 +130,7 @@ impl<'a> Tensor<'a> {
         })
     }
 
-    pub fn zeros(shape: &[usize], backend: Rc<RefCell<dyn TensorBackend<'a>>>) -> Result<Self> {
+    pub fn zeros(shape: &[usize], backend: TensorBackendRef<'a>) -> Result<Self> {
         let strider: TensorStrider = TensorStrider::new(shape.to_vec());
         let op_var = backend
             .borrow_mut()

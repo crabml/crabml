@@ -287,19 +287,19 @@ struct Llama2State<'a> {
     value_cache: Vec<Tensor<'a>>, // (layer, seq_len, kv_dim)
 }
 
-pub struct Llama2Runner<'a> {
+pub struct Llama2Runner<'a, 'b> where 'a: 'b {
     conf: Llama2Config,
     state: Llama2State<'a>,
-    weights: &'a Llama2Weights<'a>,
-    tokenizer: &'a BpeTokenizer,
+    weights: &'b Llama2Weights<'a>,
+    tokenizer: &'b BpeTokenizer,
     backend: TensorBackendRef<'a>,
 }
 
-impl<'a> Llama2Runner<'a> {
+impl<'a, 'b> Llama2Runner<'a, 'b> {
     pub fn new(
         conf: &Llama2Config,
-        weights: &'a Llama2Weights<'a>,
-        tokenizer: &'a BpeTokenizer,
+        weights: &'b Llama2Weights<'a>,
+        tokenizer: &'b BpeTokenizer,
         backend: TensorBackendRef<'a>,
     ) -> Result<Self> {
         let state = Llama2State {
@@ -336,12 +336,13 @@ impl<'a> Llama2Runner<'a> {
     }
 
     pub fn generate(
-        &'a mut self,
+        self,
         prompt: &str,
         steps: usize,
-        sampler: &'a mut Llama2Sampler,
-    ) -> Result<Llama2RunnerOutputGenerator<'a>> {
-        Llama2RunnerOutputGenerator::new(self, sampler, prompt, steps, self.conf.seq_len)
+        sampler: Llama2Sampler,
+    ) -> Result<Llama2RunnerOutputGenerator<'a, 'b>> {
+        let seq_len = self.conf.seq_len;
+        Llama2RunnerOutputGenerator::new(self, sampler, prompt, steps, seq_len)
     }
 
     pub fn forward(&mut self, token: usize, pos: usize) -> Result<&mut [f32]> {
@@ -490,21 +491,21 @@ impl<'a> Llama2Runner<'a> {
     }
 }
 
-pub struct Llama2RunnerOutputGenerator<'a> {
+pub struct Llama2RunnerOutputGenerator<'a, 'b> {
     pos: usize,
     steps: usize,
     seq_len: usize,
     prompt_tokens: Vec<usize>,
     token: usize,
-    sampler: &'a mut Llama2Sampler,
-    runner: &'a mut Llama2Runner<'a>,
+    sampler: Llama2Sampler,
+    runner: Llama2Runner<'a, 'b>,
     total_time: Duration,
 }
 
-impl<'a> Llama2RunnerOutputGenerator<'a> {
+impl<'a, 'b> Llama2RunnerOutputGenerator<'a, 'b> {
     fn new(
-        runner: &'a mut Llama2Runner<'a>,
-        sampler: &'a mut Llama2Sampler,
+        runner: Llama2Runner<'a, 'b>,
+        sampler: Llama2Sampler,
         prompt: &str,
         steps: usize,
         seq_len: usize,
@@ -576,7 +577,7 @@ impl<'a> Llama2RunnerOutputGenerator<'a> {
     }
 }
 
-impl<'a> Iterator for Llama2RunnerOutputGenerator<'a> {
+impl<'a, 'b> Iterator for Llama2RunnerOutputGenerator<'a, 'b> {
     type Item = Result<String>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -606,9 +607,9 @@ mod tests {
         let backend = CpuTensorBackend::new();
         let lm = Llama2Model::from(&gf, backend.clone())?;
 
-        let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0);
-        let mut runner = Llama2Runner::new(&lm.conf, &lm.weights, &lm.tokenizer, backend.clone())?;
-        let output = runner.generate("Lily is a cat", 30, &mut sampler)?;
+        let sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0);
+        let runner = Llama2Runner::new(&lm.conf, &lm.weights, &lm.tokenizer, backend.clone())?;
+        let output = runner.generate("Lily is a cat", 30, sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
         assert_eq!(
             s,
@@ -619,16 +620,16 @@ mod tests {
 
     #[test]
     fn test_generate_q8_0() -> Result<()> {
-        let backend = CpuTensorBackend::new();
         let gl = GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-q8_0.gguf")?;
         let gf = gl.open()?;
+        let backend = CpuTensorBackend::new();
         let lm = Llama2Model::from(&gf, backend.clone())?;
         assert_eq!(lm.conf().rope_dim, 48);
         assert_eq!(lm.conf().head_size(), 48);
 
-        let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0);
-        let mut runner = Llama2Runner::new(&lm.conf, &lm.weights, &lm.tokenizer, backend.clone())?;
-        let output = runner.generate("Lily is a cute cat, ", 10, &mut sampler)?;
+        let sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0);
+        let runner = Llama2Runner::new(&lm.conf, &lm.weights, &lm.tokenizer, backend.clone())?;
+        let output = runner.generate("Lily is a cute cat, ", 10, sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
         assert_eq!(s, "3 years old. She likes to play with her");
         Ok(())

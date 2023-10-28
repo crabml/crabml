@@ -45,7 +45,7 @@ pub struct CpuTensorPool<'a> {
 }
 
 impl<'a> CpuTensorPool<'a> {
-    pub fn new() -> Self {
+    pub fn new<'b: 'a>() -> CpuTensorPool<'a> {
         Self {
             bufs: Rc::new(RefCell::new(HashMap::new())),
             recycled_bufs: vec![],

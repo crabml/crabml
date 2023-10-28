@@ -173,7 +173,9 @@ impl<'a> TensorArithmetics for CpuTensor<'a> {
     }
 }
 
-pub fn batch_matmul<'a, 'b>(w: &'b CpuTensor<'a>, x: &'b CpuTensor<'a>) -> Result<CpuTensor<'a>> where 'a: 'b {
+
+pub fn batch_matmul<'a, 'b>(w: &CpuTensor<'a>, x: &CpuTensor<'b>) -> Result<CpuTensor<'b>>
+where 'b: 'a {
     require_tensor_dims(w, &[3])?;
     require_tensor_dims(x, &[2])?;
 
@@ -192,7 +194,7 @@ pub fn batch_matmul<'a, 'b>(w: &'b CpuTensor<'a>, x: &'b CpuTensor<'a>) -> Resul
     // (batch_size, w_rows, w_cols) @ (batch_size, w_cols, ) -> (batch_size, w_rows, )
     let batch_size = w.shape()[0];
     let w_rows = w.shape()[1];
-    let mut out = CpuTensor::alloc(&[batch_size, w_rows], w.pool())?;
+    let mut out = CpuTensor::alloc(&[batch_size, w_rows], x.pool())?;
     for b in 0..batch_size {
         let o_iter = out.iter_axis_mut(vec![b, 0], 1)?; // w_cols
         o_iter.enumerate().for_each(|(w_row, o)| {

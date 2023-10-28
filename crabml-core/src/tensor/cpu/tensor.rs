@@ -1,3 +1,6 @@
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use super::buf::CpuTensorBufIter;
 use crate::error::Error;
 use crate::error::ErrorKind;
@@ -191,21 +194,23 @@ pub struct CpuTensorPool<'a> {
     _bufs: Vec<CpuTensorBuf<'a>>,
 }
 
+pub type CpuTensorPoolRef<'a> = Rc<CpuTensorPool<'a>>;
+
 impl<'a> CpuTensorPool<'a> {
     pub fn new() -> Self {
         Self { _bufs: vec![] }
     }
 
-    pub fn import_tensor(buf: &'a [u8], typ: GGMLType, shape: &[usize]) -> Result<CpuTensor<'a>> {
+    pub fn import_tensor(self: Rc<Self>, buf: &'a [u8], typ: GGMLType, shape: &[usize]) -> Result<CpuTensor<'a>> {
         let buf = CpuTensorBuf::from_raw_bytes(buf, typ)?;
         CpuTensor::new(buf, shape.to_vec())
     }
 
-    pub fn alloc_tensor(shape: &[usize]) -> Result<CpuTensor<'a>> {
+    pub fn alloc_tensor(self: Rc<Self>, shape: &[usize]) -> Result<CpuTensor<'a>> {
         CpuTensor::zeros(shape.to_vec())
     }
 
-    pub fn export_tensor(tensor: &CpuTensor<'a>, dst: &mut [f32]) -> Result<()> {
+    pub fn export_tensor(self: Rc<Self>, tensor: &CpuTensor<'a>, dst: &mut [f32]) -> Result<()> {
         tensor.iter().zip(dst.iter_mut()).for_each(|(src, dst)| {
             *dst = src;
         });

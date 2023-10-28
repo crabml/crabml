@@ -256,6 +256,7 @@ struct Llama2State<'a> {
     // ProbIndex *probindex; // buffer used in top-p sampling
     key_cache: Vec<CpuTensor<'a>>,   // (layer, seq_len, kv_dim)
     value_cache: Vec<CpuTensor<'a>>, // (layer, seq_len, kv_dim)
+    x: CpuTensor<'a>, // (embed_dim, )
 }
 
 pub struct Llama2Runner<'a> {
@@ -273,6 +274,7 @@ impl<'a> Llama2Runner<'a> {
     ) -> Result<Self> {
         let state = Llama2State {
             logits: vec![0.0; conf.vocab_size],
+            x: CpuTensor::zeros(vec![conf.embedding_dim])?,
             key_cache: (0..conf.n_layers)
                 .map(|_| {
                     CpuTensor::new(

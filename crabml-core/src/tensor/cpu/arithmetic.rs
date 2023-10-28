@@ -85,7 +85,7 @@ impl<'a> TensorArithmetics for CpuTensor<'a> {
         return Ok(out);
     }
 
-    fn batch_matmul<T>(&self, x: T) -> Result<Self> {
+    fn batch_matmul(&self, x: &Self) -> Result<Self> {
         todo!()
     }
 

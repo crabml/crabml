@@ -77,11 +77,10 @@ pub struct Llama2Model<'a> {
     weights: Llama2Weights<'a>,
     tokenizer: BpeTokenizer,
     metadata: &'a GGUFMetadata<'a>,
-    backend: Rc<RefCell<dyn TensorBackend<'a>>>,
 }
 
 impl<'a> Llama2Model<'a> {
-    pub fn from(gf: &'a GGUFFile<'a>, backend: TensorBackendRef) -> Result<Self> {
+    pub fn from(gf: &'a GGUFFile<'a>, backend: TensorBackendRef<'a>) -> Result<Self> {
         let conf = Self::load_config(gf);
         let tokenizer = Self::load_tokenizer(gf);
         let weights = Self::load_weights(gf, conf.n_layers, backend.clone())?;
@@ -89,7 +88,6 @@ impl<'a> Llama2Model<'a> {
             conf,
             weights,
             tokenizer,
-            backend,
             metadata: gf.metadata(),
         })
     }
@@ -113,7 +111,7 @@ impl<'a> Llama2Model<'a> {
     fn load_weights(
         gf: &'a GGUFFile<'a>,
         n_layers: usize,
-        backend: TensorBackendRef,
+        backend: TensorBackendRef<'a>,
     ) -> Result<Llama2Weights<'a>> {
         // [64 (dim), 512 (vocab_size)]
         let token_embedding_table = Self::load_tensor(gf, "token_embd.weight", backend.clone())?;
@@ -195,7 +193,7 @@ impl<'a> Llama2Model<'a> {
     pub(crate) fn load_tensor(
         gf: &'a GGUFFile<'a>,
         name: &str,
-        backend: TensorBackendRef,
+        backend: TensorBackendRef<'a>,
     ) -> Result<Tensor<'a>> {
         let info = match gf.get_tensor_info(name) {
             None => {
@@ -354,8 +352,8 @@ impl<'a> Llama2Runner<'a> {
         let backend = self.backend.clone();
 
         // copy the token embedding into x
-        let x = Tensor::zeros(&[embed_dim], backend.clone())?;
-        x.copy_from(&self.weights.token_embedding_table, &[token, 0], embed_dim);
+        let mut x = Tensor::zeros(&[embed_dim], backend.clone())?;
+        x.copy_from(&self.weights.token_embedding_table, &[token, 0], embed_dim)?;
 
         // forward all the layers
         for l in 0..self.conf.n_layers {
@@ -441,7 +439,7 @@ impl<'a> Llama2Runner<'a> {
             };
 
             // residual connection back into x
-            let x = x.add(&x_attn_orig)?;
+            x = x.add(&x_attn_orig)?;
 
             // ffn
             x = {
@@ -459,35 +457,35 @@ impl<'a> Llama2Runner<'a> {
                 // first calculate self.w1(x) and self.w3(x)
                 // w1: (hidden_dim, embed_dim) @ x (embed_dim, ) => (hidden_dim, )
                 // w3: (hidden_dim, embed_dim) @ x (embed_dim, ) => (hidden_dim, )
-                let mut h1 = matmul_2d_1d(&self.weights.w1[l], &x)?;
-                let h2 = matmul_2d_1d(&self.weights.w3[l], &x)?;
+                let h1 = self.weights.w1[l].matmul(&x)?;
+                let h2 = &self.weights.w3[l].matmul(&x)?;
 
                 // F.silu; silu(x)=x*σ(x),where σ(x) is the logistic sigmoid
-                silu_inplace(&mut h1)?;
+                let h1 = h1.silu()?;
 
                 // elementwise multiply with w3(x)
-                mul_inplace(&mut h1, &h2)?;
+                let h1 = h1.mul(h2)?;
 
                 // final matmul to get the output of the ffn
-                x = matmul_2d_1d(&self.weights.w2[l], &h1)?;
+                let x = self.weights.w2[l].matmul(&h1)?;
 
                 // residual connection
-                add_inplace(&mut x, &x_orig_ffn)?;
+                let x = x.add(&x_orig_ffn)?;
                 x
             }
         }
 
         // final rmsnorm
         x = {
-            rms_norm_inplace(&mut x, self.conf.rms_norm_eps)?;
-            mul_inplace(&mut x, &self.weights.rms_final_weight)?;
+            let x = x.rms_norm(self.conf.rms_norm_eps)?;
+            let x = x.matmul(&self.weights.rms_final_weight)?;
             x
         };
 
         // classifier into logits
-        let logits = matmul_2d_1d(&self.weights.wcls, &x)?; // (vocab_size,
+        let logits = self.weights.wcls.matmul(&x)?; // (vocab_size,
+        logits.export(&mut self.state.logits)?;
 
-        self.state.logits = logits.iter().collect::<Vec<_>>();
         Ok(&mut self.state.logits)
     }
 }
@@ -602,10 +600,10 @@ mod tests {
 
     #[test]
     fn test_generate_f32() -> Result<()> {
-        let backend = CpuTensorBackend::new();
         let gl: GGUFFileLoader =
             GGUFFileLoader::new("../testdata/tinyllamas-stories-15M-f32.gguf")?;
         let gf = gl.open()?;
+        let backend = CpuTensorBackend::new();
         let lm = Llama2Model::from(&gf, backend.clone())?;
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0);

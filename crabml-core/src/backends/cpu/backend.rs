@@ -1,8 +1,6 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use rayon::slice::RChunks;
-
 use super::arithmetic::add_inplace;
 use super::arithmetic::batch_matmul_no_alloc;
 use super::arithmetic::div_scalar_inplace;
@@ -26,7 +24,7 @@ pub struct CpuTensorBackend<'a> {
 }
 
 impl<'a> CpuTensorBackend<'a> {
-    pub fn new<'b>() -> Rc<RefCell<dyn TensorBackend<'a> + 'a>> {
+    pub fn new<'b>() -> Rc<RefCell<dyn TensorBackend<'a> + 'b>> where 'a: 'b {
         let backend = Self {
             pool: CpuTensorPool::new(),
         };

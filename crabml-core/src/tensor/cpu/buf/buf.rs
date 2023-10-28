@@ -49,7 +49,7 @@ impl<'a> CpuTensorBuf<'a> {
         }
     }
 
-    pub fn as_ref(&self) -> CpuTensorBuf<'_> {
+    pub fn as_ref(&'a self) -> CpuTensorBuf<'a> {
         match self {
             CpuTensorBuf::F32(buf) => CpuTensorBuf::F32(Cow::Borrowed(buf.as_ref())),
             CpuTensorBuf::Q8_0(buf) => CpuTensorBuf::Q8_0(buf.clone()),

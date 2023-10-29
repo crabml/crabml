@@ -2,6 +2,7 @@ use std::io::Write;
 use std::time::Instant;
 
 use clap::Parser;
+use crabml::backends::cpu::backend::CpuTensorBackend;
 use crabml::error::Result;
 use crabml::gguf::GGUFFileLoader;
 use crabml_llama2::llama2::Llama2Model;
@@ -45,10 +46,11 @@ fn main() -> Result<()> {
 
     let gl = GGUFFileLoader::new(&args.model)?;
     let gf = gl.open()?;
-    let lm = Llama2Model::from(&gf)?;
+    let backend = CpuTensorBackend::new();
+    let lm = Llama2Model::from(&gf, backend.clone())?;
 
     let mut sampler = Llama2Sampler::new(lm.conf().vocab_size, args.temperature, args.probability);
-    let mut runner = Llama2Runner::new(&lm.conf(), lm.weights(), lm.tokenizer())?;
+    let mut runner = Llama2Runner::new(&lm.conf(), lm.weights(), lm.tokenizer(), backend.clone())?;
 
     if args.verbose {
         for tensor in gf.tensor_infos() {
@@ -62,7 +64,7 @@ fn main() -> Result<()> {
         println!("loaded model: {}ms", start_time.elapsed().as_millis());
     }
 
-    let mut output = runner.generate(&args.prompt, args.steps, &mut sampler)?;
+    let mut output = runner.generate(&args.prompt, args.steps, sampler)?;
     print!("{}", &args.prompt);
     for token in output.by_ref() {
         print!("{}", token?);

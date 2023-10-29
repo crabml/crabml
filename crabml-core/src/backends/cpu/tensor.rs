@@ -221,8 +221,8 @@ impl<'a> CpuTensor<'a> {
     }
 
     pub fn iter_from(&self, pos: &[usize]) -> Result<impl Iterator<Item = f32> + '_> {
-        if self.is_contiguous() {
-            return Ok(self.buf.iter());
+        if !self.is_contiguous() {
+            return Err((ErrorKind::TensorError, "not contiguous").into());
         }
 
         let start = self.strider.at(pos).unwrap();

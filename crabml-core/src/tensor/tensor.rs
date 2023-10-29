@@ -187,6 +187,12 @@ impl<'a> Tensor<'a> {
                 dst: self.as_op_var(),
                 src: src.as_op_var(),
             })?;
+        let new_shape = {
+            let mut shape = self.shape().to_vec();
+            shape[0] += 1;
+            shape
+        };
+        self.strider = TensorStrider::new(new_shape);
         Ok(())
     }
 

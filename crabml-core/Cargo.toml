@@ -13,7 +13,3 @@ matrixmultiply = { version = "0.3", default-features = false }
 [dev-dependencies]
 pretty_assertions = "1.2.1"
 bencher = "0.1.5"
-
-[[bench]]
-name = "matmul"
-harness = false

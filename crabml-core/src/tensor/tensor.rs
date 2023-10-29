@@ -7,7 +7,6 @@ pub trait Tensor: Sized + Clone + TensorArithmetics {
 
     fn alloc(shape: &[usize], pool: Self::Pool) -> Result<Self>;
 
-
     fn view(self, shape: &[usize]) -> Result<Self>;
 
     fn repeat(self, repeats: &[usize]) -> Result<Self>;

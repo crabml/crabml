@@ -3,4 +3,4 @@ pub mod strider;
 pub mod tensor;
 
 pub use cpu::arithmetic;
-pub use cpu::CpuTensor;
+pub use cpu::CpuRawTensor;

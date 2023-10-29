@@ -1,2 +1,5 @@
-- [ ] take the tensor & device framework
+- [ ] ref count the tensor buf
+- [ ] remove the lifetime in Tensor trait
+- [ ] make validate panics
+- [ ] observe the intermediate result in llama2.rs
 - [ ] wgpu tensor support

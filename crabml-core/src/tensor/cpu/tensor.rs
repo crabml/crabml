@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use super::buf::CpuTensorBufIter;
 use crate::error::Error;
 use crate::error::ErrorKind;
@@ -5,11 +7,13 @@ use crate::error::Result;
 use crate::gguf::GGMLType;
 use crate::tensor::cpu::buf::CpuTensorBuf;
 use crate::tensor::strider::TensorStrider;
+use crate::tensor::tensor::Tensor;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct CpuTensor<'a> {
     buf: CpuTensorBuf<'a>,
     strider: TensorStrider,
+    pool: CpuTensorPoolRef<'a>,
 }
 
 // A tensor contains a buffer of f32, a shape and a strides. We may refer to
@@ -18,33 +22,26 @@ pub struct CpuTensor<'a> {
 // change on the tensor is considered as a move operation, to reduce the need on
 // copying the owned buffer. Feel free to clone() the tensor.
 impl<'a> CpuTensor<'a> {
-    pub fn new(buf: impl Into<CpuTensorBuf<'a>>, shape: Vec<usize>) -> Result<Self> {
-        let buf = buf.into();
-        if buf.len() != shape.iter().product() {
-            return Err(Error {
-                kind: ErrorKind::TensorError,
-                message: format!("invalid shape {:?} for data of length {}", shape, buf.len()),
-                cause: None,
-            });
-        }
-
-        let strider = TensorStrider::new(shape);
-
-        Ok(Self { buf, strider })
-    }
-
-    pub fn zeros(shape: Vec<usize>) -> Result<Self> {
-        let buf = vec![0.0; shape.iter().product()];
-        Self::new(buf, shape)
-    }
-
-    pub fn from_raw_bytes(buf: &'a [u8], typ: GGMLType, shape: Vec<usize>) -> Result<Self> {
-        let buf = CpuTensorBuf::from_raw_bytes(buf, typ)?;
-        Self::new(buf, shape)
-    }
-
     pub fn typ(&self) -> GGMLType {
         self.buf.typ()
+    }
+
+    pub fn from_bytes(buf: &'a [u8], typ: GGMLType, shape: &[usize], pool: CpuTensorPoolRef<'a>) -> Result<Self> {
+        let buf = CpuTensorBuf::from_raw_bytes(buf, typ)?;
+        let strider = TensorStrider::new(shape.to_vec());
+        Ok(Self { buf, strider, pool: pool.clone() })
+    }
+
+    pub fn pool(&self) -> CpuTensorPoolRef<'a> {
+        self.pool.clone()
+    }
+
+    pub fn as_ref<'b>(&'b self) -> CpuTensor<'a> where 'b: 'a {
+        Self {
+            buf: self.buf.as_ref(),
+            strider: self.strider.clone(),
+            pool: self.pool.clone(),
+        }
     }
 
     pub fn at(&self, idx: &[usize]) -> Result<f32> {
@@ -53,70 +50,8 @@ impl<'a> CpuTensor<'a> {
             .map(|offset| self.buf.at_unchecked(offset))
     }
 
-    pub fn extend(&mut self, t: &CpuTensor<'a>) -> Result<()> {
-        if !self.is_owned() {
-            return Err((ErrorKind::TensorError, "not owned").into());
-        }
-        if !self.is_contiguous() {
-            return Err((ErrorKind::TensorError, "not contiguous").into());
-        }
-        if !t.shape().eq(&self.shape()[1..]) {
-            return Err((
-                ErrorKind::TensorError,
-                format!(
-                    "shape mismatch on extend, want {:?} but got {:?}",
-                    &self.shape()[1..],
-                    &t.shape()
-                ),
-            )
-                .into());
-        }
-
-        self.buf.extend(t.iter());
-        let new_shape = {
-            let mut shape = self.shape().to_vec();
-            shape[0] += 1;
-            shape
-        };
-        self.strider = TensorStrider::new(new_shape);
-        Ok(())
-    }
-
     pub fn len(&self) -> usize {
         self.strider.len()
-    }
-
-    pub fn view(self, shape: &[usize]) -> Result<CpuTensor<'a>> {
-        let strider = self.strider.view(shape.to_vec())?;
-        Ok(Self {
-            buf: self.buf,
-            strider,
-        })
-    }
-
-    /// called on an owned Tensor, may used on MGQ where we have multiple query head on each key/value head
-    pub fn repeat(self, repeats: &[usize]) -> Result<CpuTensor<'a>> {
-        let strider = self.strider.repeat(repeats.to_vec())?;
-        Ok(Self {
-            buf: self.buf,
-            strider,
-        })
-    }
-
-    pub fn transpose(self, dims: &[usize]) -> Result<CpuTensor<'a>> {
-        let strider = self.strider.transpose(dims)?;
-        Ok(Self {
-            buf: self.buf,
-            strider,
-        })
-    }
-
-    pub fn as_ref<'b>(&'b self) -> CpuTensor<'a>
-    where 'b: 'a {
-        Self {
-            buf: self.buf.as_ref(),
-            strider: self.strider.clone(),
-        }
     }
 
     pub fn at_unchecked(&self, idx: &[usize]) -> f32 {
@@ -193,6 +128,16 @@ impl<'a> CpuTensor<'a> {
         CpuTensorBufIter::Boxed(Box::new(iter), self.len())
     }
 
+    pub fn iter_from(&self, pos: &[usize]) -> Result<impl Iterator<Item = f32> + '_> {
+        if !self.is_contiguous() {
+            return Err((ErrorKind::TensorError, "not contiguous").into());
+        }
+
+        let start = self.strider.at(pos).unwrap();
+        let iter = (start..self.strider.len()).map(|i| self.buf.at_unchecked(i));
+        Ok(CpuTensorBufIter::Boxed(Box::new(iter), self.len()))
+    }
+
     pub fn iter_mut(&mut self) -> Result<impl Iterator<Item = &mut f32>> {
         if !self.is_owned() {
             return Err((ErrorKind::TensorError, "not owned").into());
@@ -229,13 +174,132 @@ impl<'a> CpuTensor<'a> {
     }
 }
 
+#[derive(Debug)]
+pub struct CpuTensorPool<'a> {
+    _bufs: Vec<CpuTensorBuf<'a>>,
+}
+
+pub type CpuTensorPoolRef<'a> = Rc<CpuTensorPool<'a>>;
+
+impl<'a> CpuTensorPool<'a> {
+    pub fn new() -> CpuTensorPoolRef<'a> {
+        let pool = Self { _bufs: vec![] };
+        Rc::new(pool)
+    }
+
+    pub fn export_tensor(self: Rc<Self>, tensor: &CpuTensor<'a>, dst: &mut [f32]) -> Result<()> {
+        tensor.iter().zip(dst.iter_mut()).for_each(|(src, dst)| {
+            *dst = src;
+        });
+        Ok(())
+    }
+}
+
+impl<'a> Tensor for CpuTensor<'a> {
+    type Pool = CpuTensorPoolRef<'a>;
+
+    fn new(buf: Vec<f32>, shape: &[usize], pool: Self::Pool) -> Result<Self> {
+        if buf.len() != shape.iter().product() {
+            return Err(Error {
+                kind: ErrorKind::TensorError,
+                message: format!("invalid shape {:?} for data of length {}", shape, buf.len()),
+                cause: None,
+            });
+        }
+
+        let strider = TensorStrider::new(shape.to_vec());
+        Ok(Self { buf: buf.into(), strider, pool: pool.clone() })
+    }
+
+    fn alloc(shape: &[usize], pool: Self::Pool) -> Result<Self> {
+        let buf = vec![0.0; shape.iter().product()];
+        Self::new(buf, shape, pool)
+    }
+
+    fn view(self, shape: &[usize]) -> Result<Self> {
+        let strider = self.strider.view(shape.to_vec())?;
+        Ok(Self {
+            buf: self.buf,
+            strider,
+            pool: self.pool.clone(),
+        })
+    }
+
+    fn repeat(self, repeats: &[usize]) -> Result<Self> {
+        let strider = self.strider.repeat(repeats.to_vec())?;
+        Ok(Self {
+            buf: self.buf,
+            strider,
+            pool: self.pool.clone(),
+        })
+    }
+
+    fn transpose(self, dims: &[usize]) -> Result<Self> {
+        let strider = self.strider.transpose(dims)?;
+        Ok(Self {
+            buf: self.buf,
+            strider,
+            pool: self.pool.clone(),
+        })
+    }
+
+
+    fn extend(&mut self, t: &Self) -> Result<()> {
+        if !self.is_owned() {
+            return Err((ErrorKind::TensorError, "not owned").into());
+        }
+        if !self.is_contiguous() {
+            return Err((ErrorKind::TensorError, "not contiguous").into());
+        }
+        if !t.shape().eq(&self.shape()[1..]) {
+            return Err((
+                ErrorKind::TensorError,
+                format!(
+                    "shape mismatch on extend, want {:?} but got {:?}",
+                    &self.shape()[1..],
+                    &t.shape()
+                ),
+            )
+                .into());
+        }
+
+        self.buf.extend(t.iter());
+        let new_shape = {
+            let mut shape = self.shape().to_vec();
+            shape[0] += 1;
+            shape
+        };
+        self.strider = TensorStrider::new(new_shape);
+        Ok(())
+    }
+
+    fn copy_from(&mut self, t: &Self, pos: &[usize], len: usize) -> Result<()> {
+        if !self.is_owned() {
+            return Err((ErrorKind::TensorError, "not owned").into());
+        }
+        if !self.is_contiguous() {
+            return Err((ErrorKind::TensorError, "not contiguous").into());
+        }
+
+        self.iter_mut()?
+            .zip(t.iter_from(pos)?.take(len))
+            .for_each(|(dst, src)| {
+                *dst = src;
+            });
+        Ok(())
+    }
+
+
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_tensor_view() -> Result<()> {
-        let t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![2, 3])?;
+        let pool = CpuTensorPool::new();
+        let t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], pool.clone())?;
         let t = t.view(&[3, 2])?;
 
         let tr = t.view(&[2, 3])?;
@@ -255,7 +319,8 @@ mod tests {
 
         // 1, 2, 3
         // 4, 5, 6
-        let t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![2, 3])?;
+        let pool = CpuTensorPool::new();
+        let t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], pool.clone())?;
 
         let tests = vec![
             Test {
@@ -285,7 +350,7 @@ mod tests {
         // iter_axis with repeat
         // 1, 1, 2, 2, 3, 3
         // 4, 4, 5, 5, 6, 6
-        let t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![2, 3])?;
+        let t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], pool.clone())?;
         let t = t.repeat(&[1, 2])?;
 
         let tests = vec![
@@ -356,7 +421,8 @@ mod tests {
 
         // 0, 1, 2
         // 3, 4, 5
-        let t = CpuTensor::new(vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0], vec![2, 3])?;
+        let pool = CpuTensorPool::new();
+        let t = CpuTensor::new(vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0], &[2, 3], pool)?;
 
         // 0, 3,
         // 1, 4
@@ -398,14 +464,15 @@ mod tests {
 
     #[test]
     fn test_tensor_iter_axis_mut() -> Result<()> {
-        let mut t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![2, 3])?;
+        let pool = CpuTensorPool::new();
+        let mut t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], pool.clone())?;
         let r = t
             .iter_axis_mut(vec![0, 0], 1)?
             .map(|f| *f)
             .collect::<Vec<_>>();
         assert_eq!(r, vec![1.0, 2.0, 3.0]);
 
-        let mut t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![2, 3])?;
+        let mut t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], pool)?;
         let r = t
             .iter_axis_mut(vec![0, 0], 0)?
             .map(|f| *f)
@@ -416,9 +483,27 @@ mod tests {
     }
 
     #[test]
+    fn test_copy_from() -> Result<()> {
+        // 1 2
+        // 3 4
+        let pool = CpuTensorPool::new();
+        let t1 = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0], &[2, 2], pool.clone())?;
+        let mut t2 = CpuTensor::new(vec![0.0; 2], &[2], pool.clone())?;
+
+        t2.copy_from(&t1, &[1, 0], 2)?;
+        assert_eq!(t2.iter().collect::<Vec<_>>(), vec![3.0, 4.0]);
+
+        t2.copy_from(&t1, &[0, 0], 2)?;
+        assert_eq!(t2.iter().collect::<Vec<_>>(), vec![1.0, 2.0]);
+
+        Ok(())
+    }
+
+    #[test]
     fn test_extend() -> Result<()> {
-        let mut t1 = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![1, 2, 3])?;
-        let t2 = CpuTensor::new(vec![1.0; 6], vec![2, 3])?;
+        let pool = CpuTensorPool::new();
+        let mut t1 = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[1, 2, 3], pool.clone())?;
+        let t2 = CpuTensor::new(vec![1.0; 6], &[2, 3], pool)?;
         t1.extend(&t2)?;
 
         assert_eq!(t1.shape(), &[2, 2, 3]);

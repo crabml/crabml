@@ -8,15 +8,10 @@ use crabml::error::ErrorKind;
 use crabml::error::Result;
 use crabml::gguf::GGUFFile;
 use crabml::gguf::GGUFMetadata;
-use crabml::tensor::arithmetic::add_inplace;
-use crabml::tensor::arithmetic::batch_matmul;
-use crabml::tensor::arithmetic::div_scalar_inplace;
-use crabml::tensor::arithmetic::matmul_2d_1d;
-use crabml::tensor::arithmetic::mul_inplace;
-use crabml::tensor::arithmetic::rms_norm_inplace;
-use crabml::tensor::arithmetic::rope_inplace;
-use crabml::tensor::arithmetic::silu_inplace;
-use crabml::tensor::arithmetic::softmax_inplace;
+use crabml::tensor::cpu::tensor::CpuTensorPoolRef;
+use crabml::tensor::tensor::Tensor;
+use crabml::tensor::tensor::TensorArithmetics;
+use crabml::tensor::cpu::arithmetic::batch_matmul;
 use crabml::tensor::CpuTensor;
 use crabml::tokenizer::BpeTokenizer;
 
@@ -45,7 +40,6 @@ impl Llama2Config {
     }
 }
 
-#[derive(Default)]
 pub struct Llama2Weights<'a> {
     // token embedding table
     token_embedding_table: CpuTensor<'a>, // (vocab_size, dim)
@@ -75,9 +69,9 @@ pub struct Llama2Model<'a> {
 }
 
 impl<'a> Llama2Model<'a> {
-    pub fn from(gf: &'a GGUFFile<'a>) -> Result<Self> {
+    pub fn from(gf: &'a GGUFFile<'a>, pool: CpuTensorPoolRef<'a>) -> Result<Self> {
         let conf = Self::load_config(gf);
-        let weights = Self::load_weights(gf, conf.n_layers)?;
+        let weights = Self::load_weights(gf, conf.n_layers, pool)?;
         let tokenizer = Self::load_tokenizer(gf);
         Ok(Self {
             conf,
@@ -103,9 +97,9 @@ impl<'a> Llama2Model<'a> {
         &self.tokenizer
     }
 
-    fn load_weights(gf: &'a GGUFFile<'a>, n_layers: usize) -> Result<Llama2Weights<'a>> {
+    fn load_weights(gf: &'a GGUFFile<'a>, n_layers: usize, pool: CpuTensorPoolRef<'a>) -> Result<Llama2Weights<'a>> {
         // [64 (dim), 512 (vocab_size)]
-        let token_embedding_table = Self::load_tensor(gf, "token_embd.weight")?;
+        let token_embedding_table = Self::load_tensor(gf, "token_embd.weight", pool.clone())?;
         let mut wq = vec![];
         let mut wk = vec![];
         let mut wv = vec![];
@@ -118,44 +112,44 @@ impl<'a> Llama2Model<'a> {
         for layer in 0..n_layers {
             wq.push(Self::load_tensor(
                 gf,
-                &format!("blk.{}.attn_q.weight", layer),
+                &format!("blk.{}.attn_q.weight", layer), pool.clone()
             )?);
             wk.push(Self::load_tensor(
                 gf,
-                &format!("blk.{}.attn_k.weight", layer),
+                &format!("blk.{}.attn_k.weight", layer), pool.clone(),
             )?);
             wv.push(Self::load_tensor(
                 gf,
-                &format!("blk.{}.attn_v.weight", layer),
+                &format!("blk.{}.attn_v.weight", layer), pool.clone()
             )?);
             wo.push(Self::load_tensor(
                 gf,
-                &format!("blk.{}.attn_output.weight", layer),
+                &format!("blk.{}.attn_output.weight", layer), pool.clone()
             )?);
             // (hidden_dim:172, embedding_dim:64)
             w1.push(Self::load_tensor(
                 gf,
-                &format!("blk.{}.ffn_gate.weight", layer),
+                &format!("blk.{}.ffn_gate.weight", layer), pool.clone()
             )?);
             w2.push(Self::load_tensor(
                 gf,
-                &format!("blk.{}.ffn_down.weight", layer),
+                &format!("blk.{}.ffn_down.weight", layer), pool.clone()
             )?);
             w3.push(Self::load_tensor(
                 gf,
-                &format!("blk.{}.ffn_up.weight", layer),
+                &format!("blk.{}.ffn_up.weight", layer), pool.clone()
             )?);
             rms_att_weight.push(Self::load_tensor(
                 gf,
-                &format!("blk.{}.attn_norm.weight", layer),
+                &format!("blk.{}.attn_norm.weight", layer), pool.clone()
             )?);
             rms_ffn_weight.push(Self::load_tensor(
                 gf,
-                &format!("blk.{}.ffn_norm.weight", layer),
+                &format!("blk.{}.ffn_norm.weight", layer), pool.clone()
             )?);
         }
-        let rms_final_weight = Self::load_tensor(gf, "output_norm.weight")?;
-        let wcls = Self::load_tensor(gf, "output.weight")?;
+        let rms_final_weight = Self::load_tensor(gf, "output_norm.weight", pool.clone())?;
+        let wcls = Self::load_tensor(gf, "output.weight", pool.clone())?;
         Ok(Llama2Weights {
             token_embedding_table,
             wq,
@@ -172,7 +166,7 @@ impl<'a> Llama2Model<'a> {
         })
     }
 
-    pub(crate) fn load_tensor(gf: &'a GGUFFile<'a>, name: &str) -> Result<CpuTensor<'a>> {
+    pub(crate) fn load_tensor(gf: &'a GGUFFile<'a>, name: &str, pool: CpuTensorPoolRef<'a>) -> Result<CpuTensor<'a>> {
         let info = match gf.get_tensor_info(name) {
             None => {
                 return Err(Error {
@@ -192,7 +186,7 @@ impl<'a> Llama2Model<'a> {
             .map(|v| *v)
             .collect::<Vec<_>>();
 
-        let tensor = CpuTensor::from_raw_bytes(info.data(), info.typ(), dims)?;
+        let tensor = CpuTensor::from_bytes(info.data(), info.typ(), &dims, pool.clone())?;
         Ok(tensor)
     }
 
@@ -269,6 +263,7 @@ pub struct Llama2Runner<'a> {
     state: Llama2State<'a>,
     weights: &'a Llama2Weights<'a>,
     tokenizer: &'a BpeTokenizer,
+    pool: CpuTensorPoolRef<'a>,
 }
 
 impl<'a> Llama2Runner<'a> {
@@ -276,6 +271,7 @@ impl<'a> Llama2Runner<'a> {
         conf: &Llama2Config,
         weights: &'a Llama2Weights<'a>,
         tokenizer: &'a BpeTokenizer,
+        pool: CpuTensorPoolRef<'a>,
     ) -> Result<Self> {
         let state = Llama2State {
             logits: vec![0.0; conf.vocab_size],
@@ -283,7 +279,8 @@ impl<'a> Llama2Runner<'a> {
                 .map(|_| {
                     CpuTensor::new(
                         Vec::with_capacity(128 * conf.n_kv_heads * conf.head_size()),
-                        vec![0, conf.n_kv_heads, conf.head_size()],
+                        &[0, conf.n_kv_heads, conf.head_size()],
+                        pool.clone(),
                     )
                 })
                 .collect::<Result<Vec<_>>>()?,
@@ -291,7 +288,8 @@ impl<'a> Llama2Runner<'a> {
                 .map(|_| {
                     CpuTensor::new(
                         Vec::with_capacity(128 * conf.n_kv_heads * conf.head_size()),
-                        vec![0, conf.n_kv_heads, conf.head_size()],
+                        &[0, conf.n_kv_heads, conf.head_size()],
+                        pool.clone()
                     )
                 })
                 .collect::<Result<Vec<_>>>()?,
@@ -302,6 +300,7 @@ impl<'a> Llama2Runner<'a> {
             state,
             weights,
             tokenizer,
+            pool,
         })
     }
 
@@ -321,12 +320,8 @@ impl<'a> Llama2Runner<'a> {
         let head_size = self.conf.head_size();
 
         // copy the token embedding into x
-        let content_row = self
-            .weights
-            .token_embedding_table
-            .iter_axis(&[token, 0], 1)?
-            .collect::<Vec<_>>();
-        let mut x = CpuTensor::new(content_row, vec![embed_dim])?;
+        let mut x = CpuTensor::alloc(&[embed_dim], self.pool.clone())?;
+        x.copy_from(&self.weights.token_embedding_table, &[token, 0], embed_dim)?;
 
         // forward all the layers
         for l in 0..self.conf.n_layers {
@@ -334,8 +329,8 @@ impl<'a> Llama2Runner<'a> {
 
             // attention rnsnorm
             x = {
-                x = rms_norm_inplace(x, self.conf.rms_norm_eps)?;
-                x = mul_inplace(x, &self.weights.rms_att_weight[l])?;
+                x = x.rms_norm_inplace(self.conf.rms_norm_eps)?;
+                x = x.mul_inplace(&self.weights.rms_att_weight[l])?;
                 x
             };
 
@@ -344,9 +339,9 @@ impl<'a> Llama2Runner<'a> {
                 // wq: (embed_dim, embed_dim) @ x (embed_dim, ) => (embed_dim, )
                 // wk: (kv_dim, embed_dim) @ x (embed_dim, ) => (kv_dim, )
                 // wv: (kv_dim, embed_dim) @ x (embed_dim, ) => (kv_dim, )
-                let q = matmul_2d_1d(&self.weights.wq[l], &x)?;
-                let k = matmul_2d_1d(&self.weights.wk[l], &x)?;
-                let v = matmul_2d_1d(&self.weights.wv[l], &x)?;
+                let q = self.weights.wq[l].matmul(&x)?;
+                let k = self.weights.wk[l].matmul(&x)?;
+                let v = self.weights.wv[l].matmul(&x)?;
 
                 (q, k, v)
             };
@@ -356,8 +351,8 @@ impl<'a> Llama2Runner<'a> {
                 let q = q.view(&[n_heads, head_size])?;
                 let k = k.view(&[n_kv_heads, head_size])?;
 
-                let q = rope_inplace(q, pos, self.conf.rope_dim)?;
-                let k = rope_inplace(k, pos, self.conf.rope_dim)?;
+                let q = q.rope_inplace(pos, self.conf.rope_dim)?;
+                let k = k.rope_inplace(pos, self.conf.rope_dim)?;
                 (q, k)
             };
 
@@ -392,8 +387,8 @@ impl<'a> Llama2Runner<'a> {
                     .transpose(&[1, 0, 2])?;
                 // (n_heads, n_seq, head_size) @ (n_head, head_size) => (n_heads, n_seq)
                 let attn = batch_matmul(&k_cache, &q)?;
-                let attn = div_scalar_inplace(attn, (head_size as f32).sqrt())?;
-                let attn = softmax_inplace(attn, 1)?;
+                let attn = attn.div_scalar_inplace((head_size as f32).sqrt())?;
+                let attn = attn.softmax_inplace(1)?;
 
                 // get the weighted sum of the values and attention scores
                 let v_cache = v_cache
@@ -404,11 +399,11 @@ impl<'a> Llama2Runner<'a> {
                 let x_with_attn = x_with_attn.view(&[embed_dim])?;
 
                 // final matmul to get the output of the attention
-                matmul_2d_1d(&self.weights.wo[l], &x_with_attn)?
+                self.weights.wo[l].matmul(&x_with_attn)?
             };
 
             // residual connection back into x
-            x = add_inplace(x, &x_attn_orig)?;
+            x = x.add_inplace(&x_attn_orig)?;
 
             // ffn
             x = {
@@ -417,8 +412,8 @@ impl<'a> Llama2Runner<'a> {
 
                 // ffn rmsnorm
                 x = {
-                    x = rms_norm_inplace(x, 1e-5)?;
-                    x = mul_inplace(x, &self.weights.rms_ffn_weight[l])?;
+                    x = x.rms_norm_inplace(1e-5)?;
+                    x = x.mul_inplace(&self.weights.rms_ffn_weight[l])?;
                     x
                 };
 
@@ -426,33 +421,33 @@ impl<'a> Llama2Runner<'a> {
                 // first calculate self.w1(x) and self.w3(x)
                 // w1: (hidden_dim, embed_dim) @ x (embed_dim, ) => (hidden_dim, )
                 // w3: (hidden_dim, embed_dim) @ x (embed_dim, ) => (hidden_dim, )
-                let mut h1 = matmul_2d_1d(&self.weights.w1[l], &x)?;
-                let h2 = matmul_2d_1d(&self.weights.w3[l], &x)?;
+                let mut h1 = self.weights.w1[l].matmul(&x)?;
+                let h2 = self.weights.w3[l].matmul(&x)?;
 
                 // F.silu; silu(x)=x*σ(x),where σ(x) is the logistic sigmoid
-                h1 = silu_inplace(h1)?;
+                h1 = h1.silu_inplace()?;
 
                 // elementwise multiply with w3(x)
-                h1 = mul_inplace(h1, &h2)?;
+                h1 = h1.mul_inplace(&h2)?;
 
                 // final matmul to get the output of the ffn
-                x = matmul_2d_1d(&self.weights.w2[l], &h1)?;
+                x = self.weights.w2[l].matmul(&h1)?;
 
                 // residual connection
-                x = add_inplace(x, &x_orig_ffn)?;
+                x = x.add_inplace(&x_orig_ffn)?;
                 x
             }
         }
 
         // final rmsnorm
         x = {
-            x = rms_norm_inplace(x, self.conf.rms_norm_eps)?;
-            x = mul_inplace(x, &self.weights.rms_final_weight)?;
+            x = x.rms_norm_inplace(self.conf.rms_norm_eps)?;
+            x = x.mul_inplace(&self.weights.rms_final_weight)?;
             x
         };
 
         // classifier into logits
-        let logits = matmul_2d_1d(&self.weights.wcls, &x)?; // (vocab_size,
+        let logits = self.weights.wcls.matmul(&x)?; // (vocab_size,
 
         self.state.logits = logits.iter().collect::<Vec<_>>();
         Ok(&mut self.state.logits)
@@ -563,7 +558,7 @@ impl<'a> Iterator for Llama2RunnerOutputGenerator<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crabml::gguf::GGUFFileLoader;
+    use crabml::{gguf::GGUFFileLoader, tensor::cpu::tensor::CpuTensorPool};
 
     use super::*;
 
@@ -572,10 +567,11 @@ mod tests {
         let gl: GGUFFileLoader =
             GGUFFileLoader::new("../testdata/tinyllamas-stories-15M-f32.gguf")?;
         let gf = gl.open()?;
-        let lm = Llama2Model::from(&gf)?;
+        let pool = CpuTensorPool::new();
+        let lm = Llama2Model::from(&gf, pool.clone())?;
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0);
-        let mut runner = Llama2Runner::new(&lm.conf, &lm.weights, &lm.tokenizer)?;
+        let mut runner = Llama2Runner::new(&lm.conf, &lm.weights, &lm.tokenizer, pool)?;
         let output = runner.generate("Lily is a cat", 30, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
         assert_eq!(
@@ -589,12 +585,13 @@ mod tests {
     fn test_generate_q8_0() -> Result<()> {
         let gl = GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-q8_0.gguf")?;
         let gf = gl.open()?;
-        let lm = Llama2Model::from(&gf)?;
+        let pool = CpuTensorPool::new();
+        let lm = Llama2Model::from(&gf, pool.clone())?;
         assert_eq!(lm.conf().rope_dim, 48);
         assert_eq!(lm.conf().head_size(), 48);
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0);
-        let mut runner = Llama2Runner::new(&lm.conf, &lm.weights, &lm.tokenizer)?;
+        let mut runner = Llama2Runner::new(&lm.conf, &lm.weights, &lm.tokenizer, pool)?;
         let output = runner.generate("Lily is a cute cat, ", 10, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
         assert_eq!(s, "3 years old. She likes to play with her");

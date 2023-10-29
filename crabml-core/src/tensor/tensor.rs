@@ -1,13 +1,12 @@
 use crate::{error::Result, gguf::GGMLType};
 
-pub trait Tensor<'a>: Sized + Clone + TensorArithmetics {
+pub trait Tensor: Sized + Clone + TensorArithmetics {
     type Pool;
 
     fn new(data: Vec<f32>, shape: &[usize], pool: Self::Pool) -> Result<Self>;
 
     fn alloc(shape: &[usize], pool: Self::Pool) -> Result<Self>;
 
-    fn from_bytes(buf: &'a [u8], typ: GGMLType, shape: &[usize], pool: Self::Pool) -> Result<Self>;
 
     fn view(self, shape: &[usize]) -> Result<Self>;
 

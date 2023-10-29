@@ -26,6 +26,12 @@ impl<'a> CpuTensor<'a> {
         self.buf.typ()
     }
 
+    pub fn from_bytes(buf: &'a [u8], typ: GGMLType, shape: &[usize], pool: CpuTensorPoolRef<'a>) -> Result<Self> {
+        let buf = CpuTensorBuf::from_raw_bytes(buf, typ)?;
+        let strider = TensorStrider::new(shape.to_vec());
+        Ok(Self { buf, strider, pool: pool.clone() })
+    }
+
     pub fn pool(&self) -> CpuTensorPoolRef<'a> {
         self.pool.clone()
     }
@@ -189,7 +195,7 @@ impl<'a> CpuTensorPool<'a> {
     }
 }
 
-impl<'a> Tensor<'a> for CpuTensor<'a> {
+impl<'a> Tensor for CpuTensor<'a> {
     type Pool = CpuTensorPoolRef<'a>;
 
     fn new(buf: Vec<f32>, shape: &[usize], pool: Self::Pool) -> Result<Self> {
@@ -208,12 +214,6 @@ impl<'a> Tensor<'a> for CpuTensor<'a> {
     fn alloc(shape: &[usize], pool: Self::Pool) -> Result<Self> {
         let buf = vec![0.0; shape.iter().product()];
         Self::new(buf, shape, pool)
-    }
-
-    fn from_bytes(buf: &'a [u8], typ: GGMLType, shape: &[usize], pool: Self::Pool) -> Result<Self> {
-        let buf = CpuTensorBuf::from_raw_bytes(buf, typ)?;
-        let strider = TensorStrider::new(shape.to_vec());
-        Ok(Self { buf, strider, pool: pool.clone() })
     }
 
     fn view(self, shape: &[usize]) -> Result<Self> {

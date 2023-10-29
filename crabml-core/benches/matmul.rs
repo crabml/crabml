@@ -1,8 +1,8 @@
 use bencher::benchmark_group;
 use bencher::benchmark_main;
 use bencher::Bencher;
-use crabml::tensor::arithmetic::matmul_2d_1d;
-use crabml::tensor::CpuTensor;
+use crabml::backends::cpu::arithmetic::matmul_2d_1d;
+use crabml::backends::cpu::CpuTensor;
 use rayon::prelude::*;
 
 /// test benchmark_iter_simple_matmul                 ... bench:      35,691 ns/iter (+/- 143)

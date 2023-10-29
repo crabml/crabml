@@ -8,26 +8,26 @@ use rayon::prelude::*;
 
 use super::buf::buf_q8_0::vec_dot_q8_0_f16;
 use super::buf::QuantBufQ8_0;
+use crate::backends::cpu::buf::BufVecDot;
+use crate::backends::cpu::buf::CpuTensorBuf;
+use crate::backends::cpu::validate::require_tensor_contiguous;
+use crate::backends::cpu::validate::require_tensor_dims;
+use crate::backends::cpu::validate::require_tensor_matmul_2d_shapes;
+use crate::backends::cpu::validate::require_tensor_shape;
+use crate::backends::cpu::CpuTensor;
 use crate::error::ErrorKind;
 use crate::error::Result;
-use crate::tensor::cpu::buf::BufVecDot;
-use crate::tensor::cpu::buf::CpuTensorBuf;
-use crate::tensor::cpu::validate::require_tensor_contiguous;
-use crate::tensor::cpu::validate::require_tensor_dims;
-use crate::tensor::cpu::validate::require_tensor_matmul_2d_shapes;
-use crate::tensor::cpu::validate::require_tensor_shape;
-use crate::tensor::CpuTensor;
 
 /// ! arithmetic.rs contains the tensor arithmetics operations like matmul, accum, etc.
 
-pub fn rms_norm_inplace(mut x: CpuTensor<'_>, eps: f32) -> Result<CpuTensor<'_>> {
+pub fn rms_norm_inplace(x: &mut CpuTensor<'_>, eps: f32) -> Result<()> {
     require_tensor_contiguous(&x)?;
     require_tensor_dims(&x, &[1])?;
 
     match x.buf_mut() {
         CpuTensorBuf::F32(Cow::Owned(xb)) => {
             rms_norm_inplace_vec_f32(xb, eps);
-            return Ok(x);
+            return Ok(());
         }
         _ => (),
     }
@@ -36,7 +36,7 @@ pub fn rms_norm_inplace(mut x: CpuTensor<'_>, eps: f32) -> Result<CpuTensor<'_>>
     let sum = x.iter_axis(&[0], 0)?.fold(0.0, |s, n| s + n * n);
     let rms = ((sum / len as f32) + eps).sqrt();
     x.iter_axis_mut(vec![0], 0)?.for_each(|n| *n = *n / rms);
-    Ok(x)
+    Ok(())
 }
 
 fn rms_norm_inplace_vec_f32(x: &mut [f32], eps: f32) {
@@ -56,14 +56,14 @@ fn rms_norm_inplace_vec_f32(x: &mut [f32], eps: f32) {
     }
 }
 
-pub fn mul_inplace<'a>(mut a: CpuTensor<'a>, b: &CpuTensor<'a>) -> Result<CpuTensor<'a>> {
+pub fn mul_inplace<'a>(a: &mut CpuTensor<'a>, b: &CpuTensor<'a>) -> Result<()> {
     require_tensor_shape(&a, b.shape())?;
 
     if a.is_contiguous() && b.is_contiguous() {
         match (a.buf_mut(), b.buf()) {
             (CpuTensorBuf::F32(Cow::Owned(ab)), CpuTensorBuf::F32(bb)) => {
                 mul_inplace_vec_f32(ab, bb);
-                return Ok(a);
+                return Ok(());
             }
             _ => (),
         }
@@ -72,7 +72,7 @@ pub fn mul_inplace<'a>(mut a: CpuTensor<'a>, b: &CpuTensor<'a>) -> Result<CpuTen
     for (ia, ib) in a.iter_mut()?.zip(b.iter()) {
         *ia *= ib;
     }
-    Ok(a)
+    Ok(())
 }
 
 fn mul_inplace_vec_f32(a: &mut [f32], b: &[f32]) {
@@ -86,22 +86,22 @@ fn mul_inplace_vec_f32(a: &mut [f32], b: &[f32]) {
     });
 }
 
-pub fn div_scalar_inplace<'a>(mut a: CpuTensor<'a>, b: f32) -> Result<CpuTensor<'a>> {
+pub fn div_scalar_inplace<'a>(a: &mut CpuTensor<'a>, b: f32) -> Result<()> {
     a.iter_mut()?.for_each(|ia| {
         *ia /= b;
     });
-    Ok(a)
+    Ok(())
 }
 
-pub fn add_inplace<'a>(mut a: CpuTensor<'a>, b: &CpuTensor<'a>) -> Result<CpuTensor<'a>> {
-    require_tensor_shape(&a, b.shape())?;
-    require_tensor_contiguous(&a)?;
+pub fn add_inplace<'a>(a: &mut CpuTensor<'a>, b: &CpuTensor<'a>) -> Result<()> {
+    require_tensor_shape(a, b.shape())?;
+    require_tensor_contiguous(a)?;
     require_tensor_contiguous(b)?;
 
     a.iter_mut()?.zip(b.iter()).for_each(|(ia, ib)| {
         *ia += ib;
     });
-    Ok(a)
+    Ok(())
 }
 
 pub fn add_inplace_vec_f32(a: &mut [f32], b: &[f32]) {
@@ -115,18 +115,18 @@ pub fn add_inplace_vec_f32(a: &mut [f32], b: &[f32]) {
     });
 }
 
-pub fn silu_inplace<'a>(mut x: CpuTensor<'a>) -> Result<CpuTensor<'a>> {
+pub fn silu_inplace<'a>(x: &mut CpuTensor<'a>) -> Result<()> {
     // for i in 0..buf.len() {
     //    buf[i] = buf[i] * (1.0 / (1.0 + (-buf[i]).exp()));
     // }
     if x.is_contiguous() {
         if let CpuTensorBuf::F32(Cow::Owned(xb)) = x.buf_mut() {
             silu_inplace_vec_f32(xb);
-            return Ok(x);
+            return Ok(());
         }
     }
     x.iter_mut()?.for_each(|n| *n = *n / (1.0 + (-*n).exp()));
-    Ok(x)
+    Ok(())
 }
 
 pub fn silu_inplace_vec_f32(buf: &mut [f32]) {
@@ -147,6 +147,28 @@ pub fn silu_inplace_vec_f32(buf: &mut [f32]) {
         let v3 = v0 / v2;
         v3.copy_to_slice(chunk);
     })
+}
+
+// W (w_rows,w_cols) @ x (w_cols,x_cols) -> xout (w_rows,x_cols)
+// W (w_rows,w_cols) @ x (w_cols,) -> xout (w_rows,)
+pub fn matmul_2d_1d_no_alloc<'a>(
+    out: &mut CpuTensor<'a>,
+    w: &CpuTensor<'a>,
+    x: &CpuTensor<'a>,
+) -> Result<()> {
+    require_tensor_dims(w, &[2])?;
+    require_tensor_dims(x, &[1])?;
+    require_tensor_matmul_2d_shapes(w, x)?;
+    require_tensor_contiguous(w)?;
+    require_tensor_contiguous(x)?;
+
+    let o_row_iter = out.iter_axis_mut(vec![0], 0)?; // (x_cols, )
+    o_row_iter.enumerate().for_each(|(w_row, o)| {
+        let w_row_iter = w.iter_axis(&[w_row, 0], 1).unwrap(); // (w_cols, )
+        let x_col_iter = x.iter_axis(&[0], 0).unwrap(); // (w_cols, )
+        *o = w_row_iter.zip(x_col_iter).map(|(w, x)| w * x).sum::<f32>();
+    });
+    return Ok(());
 }
 
 // W (w_rows,w_cols) @ x (w_cols,x_cols) -> xout (w_rows,x_cols)
@@ -242,6 +264,43 @@ pub fn matmul_vec_q8_0_f32_2d_1d<'a>(wb: &QuantBufQ8_0<'a>, xb: &[f32], out: &mu
         });
 }
 
+pub fn batch_matmul_no_alloc<'a, 'b>(
+    out: &mut CpuTensor<'a>,
+    w: &CpuTensor<'a>,
+    x: &CpuTensor<'a>,
+) -> Result<()>
+where
+    'b: 'a,
+{
+    require_tensor_dims(w, &[3])?;
+    require_tensor_dims(x, &[2])?;
+
+    if w.shape()[0] != x.shape()[0] || w.shape()[2] != x.shape()[1] {
+        return Err((
+            ErrorKind::TensorError,
+            format!(
+                "mismatched tensor shapes on batch matmul: {:?} @ {:?}",
+                w.shape(),
+                x.shape()
+            ),
+        )
+            .into());
+    }
+
+    // (batch_size, w_rows, w_cols) @ (batch_size, w_cols, ) -> (batch_size, w_rows, )
+    let batch_size = w.shape()[0];
+    let w_rows = w.shape()[1];
+    for b in 0..batch_size {
+        let o_iter = out.iter_axis_mut(vec![b, 0], 1)?; // w_cols
+        o_iter.enumerate().for_each(|(w_row, o)| {
+            let w_iter = w.iter_axis(&[b, w_row, 0], 2).unwrap(); // w_rows
+            let x_iter = x.iter_axis(&[b, 0], 1).unwrap(); // w_rows
+            *o = w_iter.zip(x_iter).map(|(w, x)| w * x).sum::<f32>();
+        })
+    }
+    return Ok(());
+}
+
 pub fn batch_matmul<'a, 'b>(w: &CpuTensor<'a>, x: &CpuTensor<'a>) -> Result<CpuTensor<'b>>
 where 'b: 'a {
     require_tensor_dims(w, &[3])?;
@@ -275,7 +334,7 @@ where 'b: 'a {
 }
 
 // t: (rows, cols)
-pub fn softmax_inplace<'a>(mut t: CpuTensor<'a>, axis: usize) -> Result<CpuTensor<'a>> {
+pub fn softmax_inplace<'a>(t: &mut CpuTensor<'a>, axis: usize) -> Result<()> {
     require_tensor_dims(&t, &[2])?;
 
     if axis != 1 {
@@ -294,14 +353,10 @@ pub fn softmax_inplace<'a>(mut t: CpuTensor<'a>, axis: usize) -> Result<CpuTenso
         });
     }
 
-    Ok(t)
+    Ok(())
 }
 
-pub fn rope_inplace<'a>(
-    mut q: CpuTensor<'a>,
-    pos: usize,
-    rope_dims: usize,
-) -> Result<CpuTensor<'a>> {
+pub fn rope_inplace<'a>(q: &mut CpuTensor<'a>, pos: usize, rope_dims: usize) -> Result<()> {
     require_tensor_contiguous(&q)?;
     require_tensor_dims(&q, &[2])?;
 
@@ -325,7 +380,7 @@ pub fn rope_inplace<'a>(
         }
     }
 
-    Ok(q)
+    Ok(())
 }
 
 // q: (n_heads, head_size)

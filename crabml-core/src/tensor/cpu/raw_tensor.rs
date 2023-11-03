@@ -219,6 +219,24 @@ impl<'a> ops::Extend<CpuTensor<'a>> for CpuTensor<'a> {
     }
 }
 
+impl<'a> ops::CopyFrom<CpuTensor<'a>> for CpuTensor<'a> {
+    fn copy_from(&mut self, t: &CpuTensor<'a>, pos: &[usize], len: usize) -> Result<()> {
+        if !self.is_owned() {
+            return Err((ErrorKind::TensorError, "not owned").into());
+        }
+        if !self.is_contiguous() {
+            return Err((ErrorKind::TensorError, "not contiguous").into());
+        }
+
+        self.iter_mut()?
+            .zip(t.iter_from(pos)?.take(len))
+            .for_each(|(dst, src)| {
+                *dst = src;
+            });
+        Ok(())
+    }
+}
+
 #[derive(Debug)]
 pub struct CpuTensorPool<'a> {
     _bufs: Vec<CpuTensorBuf<'a>>,
@@ -290,22 +308,6 @@ impl<'a> Tensor for CpuTensor<'a> {
             strider,
             pool: self.pool.clone(),
         })
-    }
-
-    fn copy_from(&mut self, t: &Self, pos: &[usize], len: usize) -> Result<()> {
-        if !self.is_owned() {
-            return Err((ErrorKind::TensorError, "not owned").into());
-        }
-        if !self.is_contiguous() {
-            return Err((ErrorKind::TensorError, "not contiguous").into());
-        }
-
-        self.iter_mut()?
-            .zip(t.iter_from(pos)?.take(len))
-            .for_each(|(dst, src)| {
-                *dst = src;
-            });
-        Ok(())
     }
 }
 

@@ -13,8 +13,9 @@ pub trait Tensor: Sized + Clone {
     fn repeat(self, repeats: &[usize]) -> Result<Self>;
 
     fn transpose(self, shape: &[usize]) -> Result<Self>;
+}
 
-    fn copy_from(&mut self, rhs: &Self, pos: &[usize], len: usize) -> Result<()>;
+pub trait LogicalTensor<RHS>: Tensor + Extend<RHS> {
 }
 
 pub mod ops {
@@ -22,6 +23,10 @@ pub mod ops {
 
     pub trait Extend<RHS: Tensor> {
         fn extend(&mut self, rhs: &RHS) -> Result<()>;
+    }
+
+    pub trait CopyFrom<RHS: Tensor> {
+        fn copy_from(&mut self, rhs: &RHS, pos: &[usize], len: usize) -> Result<()>;
     }
 
     pub trait AsRef<'b> {

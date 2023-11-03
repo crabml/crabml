@@ -11,7 +11,6 @@ use crabml::gguf::GGUFMetadata;
 use crabml::tensor::cpu::raw_tensor::CpuTensorPoolRef;
 use crabml::tensor::tensor::ops::*;
 use crabml::tensor::tensor::Tensor;
-use crabml::tensor::tensor::TensorArithmetics;
 use crabml::tensor::CpuTensor;
 use crabml::tokenizer::BpeTokenizer;
 

@@ -1,7 +1,7 @@
 use crate::error::Result;
 use crate::gguf::GGMLType;
 
-pub trait Tensor: Sized + Clone + TensorArithmetics {
+pub trait Tensor: Sized + Clone {
     type Pool;
 
     fn new(data: Vec<f32>, shape: &[usize], pool: Self::Pool) -> Result<Self>;
@@ -19,18 +19,20 @@ pub trait Tensor: Sized + Clone + TensorArithmetics {
     fn copy_from(&mut self, rhs: &Self, pos: &[usize], len: usize) -> Result<()>;
 }
 
-pub trait TensorArithmetics: Sized {
-    fn rms_norm_inplace(self, eps: f32) -> Result<Self>;
-
-    fn rope_inplace(self, pos: usize, rope_dims: usize) -> Result<Self>;
-}
-
 pub mod ops {
     use super::*;
 
     pub trait AsRef {
         type Output: Tensor;
         fn as_ref<'a>(&'a self) -> Self::Output;
+    }
+
+    pub trait RopeInplace: Sized {
+        fn rope_inplace(self, pos: usize, rope_dims: usize) -> Result<Self>;
+    }
+
+    pub trait RmsNormInplace: Sized {
+        fn rms_norm_inplace(self, eps: f32) -> Result<Self>;
     }
 
     pub trait SoftmaxInplace: Sized {

@@ -18,8 +18,9 @@ use crate::tensor::cpu::validate::require_tensor_matmul_2d_shapes;
 use crate::tensor::cpu::validate::require_tensor_shape;
 use crate::tensor::tensor::ops;
 use crate::tensor::tensor::Tensor;
-use crate::tensor::tensor::TensorArithmetics;
 use crate::tensor::CpuTensor;
+use crate::tensor::tensor::ops::RmsNormInplace;
+use crate::tensor::tensor::ops::RopeInplace;
 
 /// ! arithmetic.rs contains the tensor arithmetics operations like matmul, accum, etc.
 
@@ -151,26 +152,7 @@ impl<'a> ops::SoftmaxInplace for CpuTensor<'a> {
     }
 }
 
-impl<'a> TensorArithmetics for CpuTensor<'a> {
-    fn rms_norm_inplace(mut self, eps: f32) -> Result<Self> {
-        require_tensor_contiguous(&self)?;
-        require_tensor_dims(&self, &[1])?;
-
-        match self.buf_mut() {
-            CpuTensorBuf::F32(Cow::Owned(xb)) => {
-                rms_norm_inplace_vec_f32(xb, eps);
-                return Ok(self);
-            }
-            _ => (),
-        }
-
-        let len = self.shape()[0];
-        let sum = self.iter_axis(&[0], 0)?.fold(0.0, |s, n| s + n * n);
-        let rms = ((sum / len as f32) + eps).sqrt();
-        self.iter_axis_mut(vec![0], 0)?.for_each(|n| *n = *n / rms);
-        Ok(self)
-    }
-
+impl<'a> RopeInplace for CpuTensor<'a> {
     fn rope_inplace(self, pos: usize, rope_dims: usize) -> Result<Self> {
         let mut q = self;
         require_tensor_contiguous(&q)?;
@@ -197,6 +179,27 @@ impl<'a> TensorArithmetics for CpuTensor<'a> {
         }
 
         Ok(q)
+    }
+}
+
+impl<'a> RmsNormInplace for CpuTensor<'a> {
+    fn rms_norm_inplace(mut self, eps: f32) -> Result<Self> {
+        require_tensor_contiguous(&self)?;
+        require_tensor_dims(&self, &[1])?;
+
+        match self.buf_mut() {
+            CpuTensorBuf::F32(Cow::Owned(xb)) => {
+                rms_norm_inplace_vec_f32(xb, eps);
+                return Ok(self);
+            }
+            _ => (),
+        }
+
+        let len = self.shape()[0];
+        let sum = self.iter_axis(&[0], 0)?.fold(0.0, |s, n| s + n * n);
+        let rms = ((sum / len as f32) + eps).sqrt();
+        self.iter_axis_mut(vec![0], 0)?.for_each(|n| *n = *n / rms);
+        Ok(self)
     }
 }
 

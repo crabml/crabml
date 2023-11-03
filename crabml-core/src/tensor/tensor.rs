@@ -22,9 +22,9 @@ pub trait Tensor: Sized + Clone {
 pub mod ops {
     use super::*;
 
-    pub trait AsRef {
+    pub trait AsRef<'b> {
         type Output: Tensor;
-        fn as_ref<'a>(&'a self) -> Self::Output;
+        fn as_ref(&'b self) -> Self::Output;
     }
 
     pub trait RopeInplace: Sized {

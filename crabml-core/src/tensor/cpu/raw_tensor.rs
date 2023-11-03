@@ -45,7 +45,7 @@ impl<'a> CpuTensor<'a> {
         self.pool.clone()
     }
 
-    pub fn as_ref<'b>(&'b self) -> CpuTensor<'a>
+    pub(crate) fn as_ref_inner<'b>(&'b self) -> CpuTensor<'a>
     where 'b: 'a {
         Self {
             buf: self.buf.as_ref(),

@@ -81,7 +81,9 @@ impl<'a> ops::DivScalarInplace for CpuTensor<'a> {
     }
 }
 
-impl<'a, 'b> ops::Matmul<CpuTensor<'b>> for CpuTensor<'a> where 'b: 'a {
+impl<'a, 'b> ops::Matmul<CpuTensor<'b>> for CpuTensor<'a>
+where 'b: 'a
+{
     type Output = CpuTensor<'a>;
 
     // W (w_rows,w_cols) @ x (w_cols,x_cols) -> xout (w_rows,x_cols)
@@ -110,7 +112,7 @@ impl<'a, 'b> ops::Matmul<CpuTensor<'b>> for CpuTensor<'a> where 'b: 'a {
     }
 }
 
-impl<'a> TensorArithmetics for CpuTensor<'a> {
+impl<'a> ops::SiluInplace for CpuTensor<'a> {
     fn silu_inplace(self) -> Result<Self> {
         let mut x = self;
         if x.is_contiguous() {
@@ -122,7 +124,9 @@ impl<'a> TensorArithmetics for CpuTensor<'a> {
         x.iter_mut()?.for_each(|n| *n = *n / (1.0 + (-*n).exp()));
         Ok(x)
     }
+}
 
+impl<'a> TensorArithmetics for CpuTensor<'a> {
     fn rms_norm_inplace(mut self, eps: f32) -> Result<Self> {
         require_tensor_contiguous(&self)?;
         require_tensor_dims(&self, &[1])?;
@@ -395,8 +399,8 @@ pub fn rope_inplace_old<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tensor::tensor::ops::*;
     use crate::tensor::cpu::raw_tensor::CpuTensorPool;
+    use crate::tensor::tensor::ops::*;
 
     #[test]
     fn test_rms_norm() -> Result<()> {

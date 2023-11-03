@@ -16,14 +16,14 @@ use crate::tensor::cpu::validate::require_tensor_contiguous;
 use crate::tensor::cpu::validate::require_tensor_dims;
 use crate::tensor::cpu::validate::require_tensor_matmul_2d_shapes;
 use crate::tensor::cpu::validate::require_tensor_shape;
-use crate::tensor::tensor::ops::BatchMatmul;
+use crate::tensor::tensor::ops;
 use crate::tensor::tensor::Tensor;
 use crate::tensor::tensor::TensorArithmetics;
 use crate::tensor::CpuTensor;
 
 /// ! arithmetic.rs contains the tensor arithmetics operations like matmul, accum, etc.
 
-impl<'a, 'b> BatchMatmul<CpuTensor<'b>> for CpuTensor<'a>
+impl<'a, 'b> ops::BatchMatmul<CpuTensor<'b>> for CpuTensor<'a>
 where 'b: 'a
 {
     type Output = CpuTensor<'b>;
@@ -33,7 +33,9 @@ where 'b: 'a
     }
 }
 
-impl<'a> TensorArithmetics for CpuTensor<'a> {
+impl<'a> ops::MulInplace<CpuTensor<'a>> for CpuTensor<'a> {
+    type Output = CpuTensor<'a>;
+
     fn mul_inplace(mut self, rhs: &Self) -> Result<Self> {
         require_tensor_shape(&self, rhs.shape())?;
 
@@ -52,6 +54,10 @@ impl<'a> TensorArithmetics for CpuTensor<'a> {
         }
         Ok(self)
     }
+}
+
+impl<'a> ops::AddInplace<CpuTensor<'a>> for CpuTensor<'a> {
+    type Output = CpuTensor<'a>;
 
     fn add_inplace(self, b: &Self) -> Result<Self> {
         let mut a = self;
@@ -64,14 +70,18 @@ impl<'a> TensorArithmetics for CpuTensor<'a> {
         });
         Ok(a)
     }
+}
 
+impl<'a> ops::DivScalarInplace for CpuTensor<'a> {
     fn div_scalar_inplace(mut self, b: f32) -> Result<Self> {
         self.iter_mut()?.for_each(|ia| {
             *ia /= b;
         });
         Ok(self)
     }
+}
 
+impl<'a> TensorArithmetics for CpuTensor<'a> {
     // W (w_rows,w_cols) @ x (w_cols,x_cols) -> xout (w_rows,x_cols)
     // W (w_rows,w_cols) @ x (w_cols,) -> xout (w_rows,)
     fn matmul(&self, x: &Self) -> Result<Self> {

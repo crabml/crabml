@@ -20,12 +20,6 @@ pub trait Tensor: Sized + Clone + TensorArithmetics {
 }
 
 pub trait TensorArithmetics: Sized {
-    fn mul_inplace(self, y: &Self) -> Result<Self>;
-
-    fn add_inplace(self, y: &Self) -> Result<Self>;
-
-    fn div_scalar_inplace(self, y: f32) -> Result<Self>;
-
     fn matmul(&self, y: &Self) -> Result<Self>;
 
     fn silu_inplace(self) -> Result<Self>;
@@ -44,6 +38,22 @@ pub mod ops {
         type Output: Tensor;
 
         fn as_ref<'a>(&'a self) -> Self::Output;
+    }
+
+    pub trait MulInplace<RHS: Tensor> {
+        type Output: Tensor;
+
+        fn mul_inplace(self, rhs: &RHS) -> Result<Self::Output>;
+    }
+
+    pub trait AddInplace<RHS: Tensor> {
+        type Output: Tensor;
+
+        fn add_inplace(self, rhs: &RHS) -> Result<Self::Output>;
+    }
+
+    pub trait DivScalarInplace: Sized {
+        fn div_scalar_inplace(self, rhs: f32) -> Result<Self>;
     }
 
     pub trait BatchMatmul<RHS: Tensor> {

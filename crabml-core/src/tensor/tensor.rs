@@ -14,13 +14,15 @@ pub trait Tensor: Sized + Clone {
 
     fn transpose(self, shape: &[usize]) -> Result<Self>;
 
-    fn extend(&mut self, rhs: &Self) -> Result<()>;
-
     fn copy_from(&mut self, rhs: &Self, pos: &[usize], len: usize) -> Result<()>;
 }
 
 pub mod ops {
     use super::*;
+
+    pub trait Extend<RHS: Tensor> {
+        fn extend(&mut self, rhs: &RHS) -> Result<()>;
+    }
 
     pub trait AsRef<'b> {
         type Output: Tensor;

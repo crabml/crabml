@@ -9,10 +9,10 @@ use crabml::error::Result;
 use crabml::gguf::GGUFFile;
 use crabml::gguf::GGUFMetadata;
 use crabml::tensor::cpu::raw_tensor::CpuTensorPoolRef;
+use crabml::tensor::tensor::ops::*;
 use crabml::tensor::tensor::Tensor;
 use crabml::tensor::tensor::TensorArithmetics;
 use crabml::tensor::CpuTensor;
-use crabml::tensor::tensor::TensorBatchMatmul;
 use crabml::tokenizer::BpeTokenizer;
 
 use crate::sampler::Llama2Sampler;
@@ -97,7 +97,11 @@ impl<'a> Llama2Model<'a> {
         &self.tokenizer
     }
 
-    fn load_weights(gf: &'a GGUFFile<'a>, n_layers: usize, pool: CpuTensorPoolRef<'a>) -> Result<Llama2Weights<'a>> {
+    fn load_weights(
+        gf: &'a GGUFFile<'a>,
+        n_layers: usize,
+        pool: CpuTensorPoolRef<'a>,
+    ) -> Result<Llama2Weights<'a>> {
         // [64 (dim), 512 (vocab_size)]
         let token_embedding_table = Self::load_tensor(gf, "token_embd.weight", pool.clone())?;
         let mut wq = vec![];
@@ -112,40 +116,49 @@ impl<'a> Llama2Model<'a> {
         for layer in 0..n_layers {
             wq.push(Self::load_tensor(
                 gf,
-                &format!("blk.{}.attn_q.weight", layer), pool.clone()
+                &format!("blk.{}.attn_q.weight", layer),
+                pool.clone(),
             )?);
             wk.push(Self::load_tensor(
                 gf,
-                &format!("blk.{}.attn_k.weight", layer), pool.clone(),
+                &format!("blk.{}.attn_k.weight", layer),
+                pool.clone(),
             )?);
             wv.push(Self::load_tensor(
                 gf,
-                &format!("blk.{}.attn_v.weight", layer), pool.clone()
+                &format!("blk.{}.attn_v.weight", layer),
+                pool.clone(),
             )?);
             wo.push(Self::load_tensor(
                 gf,
-                &format!("blk.{}.attn_output.weight", layer), pool.clone()
+                &format!("blk.{}.attn_output.weight", layer),
+                pool.clone(),
             )?);
             // (hidden_dim:172, embedding_dim:64)
             w1.push(Self::load_tensor(
                 gf,
-                &format!("blk.{}.ffn_gate.weight", layer), pool.clone()
+                &format!("blk.{}.ffn_gate.weight", layer),
+                pool.clone(),
             )?);
             w2.push(Self::load_tensor(
                 gf,
-                &format!("blk.{}.ffn_down.weight", layer), pool.clone()
+                &format!("blk.{}.ffn_down.weight", layer),
+                pool.clone(),
             )?);
             w3.push(Self::load_tensor(
                 gf,
-                &format!("blk.{}.ffn_up.weight", layer), pool.clone()
+                &format!("blk.{}.ffn_up.weight", layer),
+                pool.clone(),
             )?);
             rms_att_weight.push(Self::load_tensor(
                 gf,
-                &format!("blk.{}.attn_norm.weight", layer), pool.clone()
+                &format!("blk.{}.attn_norm.weight", layer),
+                pool.clone(),
             )?);
             rms_ffn_weight.push(Self::load_tensor(
                 gf,
-                &format!("blk.{}.ffn_norm.weight", layer), pool.clone()
+                &format!("blk.{}.ffn_norm.weight", layer),
+                pool.clone(),
             )?);
         }
         let rms_final_weight = Self::load_tensor(gf, "output_norm.weight", pool.clone())?;
@@ -166,7 +179,11 @@ impl<'a> Llama2Model<'a> {
         })
     }
 
-    pub(crate) fn load_tensor(gf: &'a GGUFFile<'a>, name: &str, pool: CpuTensorPoolRef<'a>) -> Result<CpuTensor<'a>> {
+    pub(crate) fn load_tensor(
+        gf: &'a GGUFFile<'a>,
+        name: &str,
+        pool: CpuTensorPoolRef<'a>,
+    ) -> Result<CpuTensor<'a>> {
         let info = match gf.get_tensor_info(name) {
             None => {
                 return Err(Error {
@@ -289,7 +306,7 @@ impl<'a> Llama2Runner<'a> {
                     CpuTensor::new(
                         Vec::with_capacity(128 * conf.n_kv_heads * conf.head_size()),
                         &[0, conf.n_kv_heads, conf.head_size()],
-                        pool.clone()
+                        pool.clone(),
                     )
                 })
                 .collect::<Result<Vec<_>>>()?,
@@ -558,7 +575,8 @@ impl<'a> Iterator for Llama2RunnerOutputGenerator<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crabml::{gguf::GGUFFileLoader, tensor::cpu::raw_tensor::CpuTensorPool};
+    use crabml::gguf::GGUFFileLoader;
+    use crabml::tensor::cpu::raw_tensor::CpuTensorPool;
 
     use super::*;
 

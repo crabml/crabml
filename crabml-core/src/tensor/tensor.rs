@@ -1,4 +1,5 @@
-use crate::{error::Result, gguf::GGMLType};
+use crate::error::Result;
+use crate::gguf::GGMLType;
 
 pub trait Tensor: Sized + Clone + TensorArithmetics {
     type Pool;
@@ -36,14 +37,18 @@ pub trait TensorArithmetics: Sized {
     fn rope_inplace(self, pos: usize, rope_dims: usize) -> Result<Self>;
 }
 
-pub trait TensorAsRef {
-    type Output: Tensor;
+pub mod ops {
+    use super::*;
 
-    fn as_ref<'a>(&'a self) -> Self::Output;
-}
+    pub trait AsRef {
+        type Output: Tensor;
 
-pub trait TensorBatchMatmul<RHS: Tensor> {
-    type Output: Tensor;
+        fn as_ref<'a>(&'a self) -> Self::Output;
+    }
 
-    fn batch_matmul(&self, y: &RHS) -> Result<Self::Output>;
+    pub trait BatchMatmul<RHS: Tensor> {
+        type Output: Tensor;
+
+        fn batch_matmul(&self, y: &RHS) -> Result<Self::Output>;
+    }
 }

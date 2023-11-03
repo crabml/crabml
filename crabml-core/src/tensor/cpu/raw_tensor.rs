@@ -26,17 +26,27 @@ impl<'a> CpuTensor<'a> {
         self.buf.typ()
     }
 
-    pub fn from_bytes(buf: &'a [u8], typ: GGMLType, shape: &[usize], pool: CpuTensorPoolRef<'a>) -> Result<Self> {
+    pub fn from_bytes(
+        buf: &'a [u8],
+        typ: GGMLType,
+        shape: &[usize],
+        pool: CpuTensorPoolRef<'a>,
+    ) -> Result<Self> {
         let buf = CpuTensorBuf::from_raw_bytes(buf, typ)?;
         let strider = TensorStrider::new(shape.to_vec());
-        Ok(Self { buf, strider, pool: pool.clone() })
+        Ok(Self {
+            buf,
+            strider,
+            pool: pool.clone(),
+        })
     }
 
     pub fn pool(&self) -> CpuTensorPoolRef<'a> {
         self.pool.clone()
     }
 
-    pub fn as_ref<'b>(&'b self) -> CpuTensor<'a> where 'b: 'a {
+    pub fn as_ref<'b>(&'b self) -> CpuTensor<'a>
+    where 'b: 'a {
         Self {
             buf: self.buf.as_ref(),
             strider: self.strider.clone(),
@@ -208,7 +218,11 @@ impl<'a> Tensor for CpuTensor<'a> {
         }
 
         let strider = TensorStrider::new(shape.to_vec());
-        Ok(Self { buf: buf.into(), strider, pool: pool.clone() })
+        Ok(Self {
+            buf: buf.into(),
+            strider,
+            pool: pool.clone(),
+        })
     }
 
     fn alloc(shape: &[usize], pool: Self::Pool) -> Result<Self> {
@@ -242,7 +256,6 @@ impl<'a> Tensor for CpuTensor<'a> {
             pool: self.pool.clone(),
         })
     }
-
 
     fn extend(&mut self, t: &Self) -> Result<()> {
         if !self.is_owned() {
@@ -288,8 +301,6 @@ impl<'a> Tensor for CpuTensor<'a> {
             });
         Ok(())
     }
-
-
 }
 
 #[cfg(test)]

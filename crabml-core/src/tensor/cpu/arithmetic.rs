@@ -16,14 +16,16 @@ use crate::tensor::cpu::validate::require_tensor_contiguous;
 use crate::tensor::cpu::validate::require_tensor_dims;
 use crate::tensor::cpu::validate::require_tensor_matmul_2d_shapes;
 use crate::tensor::cpu::validate::require_tensor_shape;
+use crate::tensor::tensor::ops::BatchMatmul;
 use crate::tensor::tensor::Tensor;
 use crate::tensor::tensor::TensorArithmetics;
 use crate::tensor::CpuTensor;
-use crate::tensor::tensor::TensorBatchMatmul;
 
 /// ! arithmetic.rs contains the tensor arithmetics operations like matmul, accum, etc.
 
-impl<'a, 'b> TensorBatchMatmul<CpuTensor<'b>> for CpuTensor<'a> where 'b: 'a {
+impl<'a, 'b> BatchMatmul<CpuTensor<'b>> for CpuTensor<'a>
+where 'b: 'a
+{
     type Output = CpuTensor<'b>;
 
     fn batch_matmul(&self, y: &CpuTensor<'b>) -> Result<Self::Output> {
@@ -177,7 +179,6 @@ impl<'a> TensorArithmetics for CpuTensor<'a> {
         Ok(t)
     }
 }
-
 
 pub fn do_batch_matmul<'a, 'b>(w: &CpuTensor<'a>, x: &CpuTensor<'b>) -> Result<CpuTensor<'b>>
 where 'b: 'a {
@@ -379,9 +380,8 @@ pub fn rope_inplace_old<'a>(
 
 #[cfg(test)]
 mod tests {
-    use crate::tensor::cpu::raw_tensor::CpuTensorPool;
-
     use super::*;
+    use crate::tensor::cpu::raw_tensor::CpuTensorPool;
 
     #[test]
     fn test_rms_norm() -> Result<()> {

@@ -1,93 +1,61 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::backends::cpu::buf::CpuTensorBuf;
-use crate::backends::CpuTensor;
 use crate::error::Result;
 use crate::tensor::strider::TensorStrider;
 
-pub type TensorBufID = usize;
+type TensorID = usize;
 
-#[derive(Clone, Debug)]
-pub struct TensorOpVar {
-    pub buf_id: usize,
-    pub strider: TensorStrider,
-}
-
-impl TensorOpVar {
-    pub fn new(buf_id: usize, strider: TensorStrider) -> Result<Option<Self>> {
-        Ok(Some(Self { buf_id, strider }))
-    }
-}
-
-#[derive(Clone, Debug)]
-pub enum TensorOp {
+pub enum TensorDeviceOp {
     AllocTensor {
-        shape: Vec<usize>,
-        zeros: bool,
+        strider: TensorStrider,
     },
 
     RecycleTensor {
-        t: TensorOpVar,
+        t: TensorID,
     },
 
-    ExtendTensor {
-        dst: TensorOpVar,
-        src: TensorOpVar,
+    EditTensor {
+        t: TensorID,
+        strider: TensorStrider,
     },
 
     CopyFrom {
-        dst: TensorOpVar,
-        src: TensorOpVar,
+        dst: TensorID,
         pos: Vec<usize>,
-        len: usize,
+        src: TensorID,
     },
 
     MatMul {
-        out: TensorOpVar,
-        lhs: TensorOpVar,
-        rhs: TensorOpVar,
-    },
-
-    BatchMatMul {
-        out: TensorOpVar,
-        lhs: TensorOpVar,
-        rhs: TensorOpVar,
+        out: TensorID,
+        lhs: TensorID,
+        rhs: TensorID,
     },
 
     RopeInplace {
-        t: TensorOpVar,
+        q: TensorID,
+        k: TensorID,
         pos: usize,
-        rope_dim: usize,
+        freq_base: f32,
+        freq_scale: f32,
     },
 
     SiluInplace {
-        t: TensorOpVar,
+        t: TensorID,
     },
 
     MulInplace {
-        lhs: TensorOpVar,
-        rhs: TensorOpVar,
-    },
-
-    SoftmaxInplace {
-        t: TensorOpVar,
-        axis: usize,
-    },
-
-    DivScalarInplace {
-        lhs: TensorOpVar,
-        rhs: f32,
+        t1: TensorID,
+        t2: TensorID,
     },
 
     AddInplace {
-        lhs: TensorOpVar,
-        rhs: TensorOpVar,
+        t1: TensorID,
+        t2: TensorID,
     },
 
     RmsNormInplace {
-        t: TensorOpVar,
-        eps: f32,
+        t: TensorID,
     },
 }
 
@@ -101,75 +69,39 @@ pub enum TensorOp {
 /// the pool of the tensors, each tensor is identified by a unique TensorID. The tensor
 /// may located in the CPU or GPU memory, you can not directly acccess its data except
 /// calling `export_tensor()` to load the tensor's data into the host's memory.
-pub trait TensorBackend<'a> {
-    fn process_op(&mut self, op: TensorOp) -> Result<Option<TensorOpVar>>;
+pub trait TensorDevice {
+    type DataType;
 
-    fn import_buf(&mut self, buf: CpuTensorBuf<'a>) -> Result<TensorBufID>;
+    fn process_op(&mut self, op: TensorDeviceOp) -> Result<Option<TensorID>>;
 
-    fn export_buf(&self, buf_id: TensorBufID, data: &mut [f32]) -> Result<()>;
+    fn import_tensor(&mut self, shape: &[usize], data: &[Self::DataType]) -> TensorID;
+
+    fn export_tensor(self, t: TensorID, data: &mut [Self::DataType]) -> Result<()>;
 
     fn name(&self) -> &'static str;
 }
 
-pub type TensorBackendRef<'a> = Rc<RefCell<dyn TensorBackend<'a> + 'a>>;
-
-pub struct Tensor<'a> {
-    buf_id: TensorBufID,
+#[derive(Clone)]
+pub struct Tensor<D: TensorDevice> {
+    id: TensorID,
     strider: TensorStrider,
-    backend: TensorBackendRef<'a>,
+    device: Rc<RefCell<D>>,
 }
 
-impl<'a> Tensor<'a> {
-    pub fn from_cpu(src: CpuTensor<'a>, backend: TensorBackendRef<'a>) -> Result<Self> {
-        let strider = src.strider().clone();
-        let buf_id = backend.borrow_mut().import_buf(src.into_buf())?;
-        Ok(Self {
-            buf_id,
-            strider,
-            backend: backend.clone(),
-        })
-    }
-
-    pub fn zeros(shape: &[usize], backend: TensorBackendRef<'a>) -> Result<Self> {
-        let strider: TensorStrider = TensorStrider::new(shape.to_vec());
-        let op_var = backend
+impl<D: TensorDevice> Tensor<D> {
+    pub fn zeros(shape: Vec<usize>, device: Rc<RefCell<D>>) -> Result<Self> {
+        let strider: TensorStrider = TensorStrider::new(shape.clone());
+        let id = device
             .borrow_mut()
-            .process_op(TensorOp::AllocTensor {
-                shape: strider.shape().to_vec(),
-                zeros: true,
+            .process_op(TensorDeviceOp::AllocTensor {
+                strider: strider.clone(),
             })?
             .unwrap();
         Ok(Self {
-            buf_id: op_var.buf_id,
+            id,
             strider,
-            backend,
+            device,
         })
-    }
-
-    pub fn as_ref(&self) -> Self {
-        Self {
-            buf_id: self.buf_id,
-            strider: self.strider.clone(),
-            backend: self.backend.clone(),
-        }
-    }
-
-    pub fn export(&self, dst: &mut [f32]) -> Result<()> {
-        self.backend.borrow_mut().export_buf(self.buf_id, dst)?;
-        Ok(())
-    }
-
-    pub fn to_vec(&self) -> Result<Vec<f32>> {
-        let mut buf = vec![0.0; self.strider.len()];
-        self.export(&mut buf)?;
-        Ok(buf)
-    }
-
-    fn as_op_var(&self) -> TensorOpVar {
-        TensorOpVar {
-            buf_id: self.buf_id,
-            strider: self.strider.clone(),
-        }
     }
 
     pub fn shape(&self) -> &[usize] {
@@ -180,225 +112,55 @@ impl<'a> Tensor<'a> {
         self.strider.len()
     }
 
-    pub fn extend(&mut self, src: &Self) -> Result<()> {
-        self.backend
+    pub fn copy_from(&mut self, pos: &[usize], src: &Self) -> Result<()> {
+        self.device
             .borrow_mut()
-            .process_op(TensorOp::ExtendTensor {
-                dst: self.as_op_var(),
-                src: src.as_op_var(),
+            .process_op(TensorDeviceOp::CopyFrom {
+                dst: self.id,
+                pos: pos.to_vec(),
+                src: src.id,
             })?;
-        let new_shape = {
-            let mut shape = self.shape().to_vec();
-            shape[0] += 1;
-            shape
-        };
-        self.strider = TensorStrider::new(new_shape);
         Ok(())
     }
 
-    pub fn copy_from(&mut self, src: &Self, pos: &[usize], len: usize) -> Result<()> {
-        self.backend.borrow_mut().process_op(TensorOp::CopyFrom {
-            dst: self.as_op_var(),
-            src: src.as_op_var(),
-            pos: pos.to_vec(),
-            len,
-        })?;
-        Ok(())
-    }
+    pub fn view(self, shape: Vec<usize>) -> Result<Self> {
+        let strider = self.strider.view(shape)?;
 
-    pub fn view(self, shape: &[usize]) -> Result<Self> {
-        let strider = self.strider.view(shape.to_vec())?;
+        self.device
+            .borrow_mut()
+            .process_op(TensorDeviceOp::EditTensor {
+                t: self.id,
+                strider: strider.clone(),
+            })?;
         Ok(Self {
             strider,
-            buf_id: self.buf_id,
-            backend: self.backend.clone(),
+            id: self.id,
+            device: self.device.clone(),
         })
     }
 
-    pub fn repeat(self, repeats: &[usize]) -> Result<Self> {
-        let strider = self.strider.repeat(repeats.to_vec())?;
-        Ok(Self {
-            strider,
-            buf_id: self.buf_id,
-            backend: self.backend.clone(),
-        })
+    pub fn repeat(self, _n: usize, _axis: usize) -> Result<Self> {
+        todo!()
     }
 
-    pub fn transpose(self, perm: &[usize]) -> Result<Self> {
-        let strider = self.strider.transpose(perm)?;
-        Ok(Self {
-            strider,
-            buf_id: self.buf_id,
-            backend: self.backend.clone(),
-        })
+    pub fn mul(self, _t: &Self) -> Result<Self> {
+        todo!()
     }
 
-    pub fn mul(self, rhs: &Self) -> Result<Self> {
-        self.backend.borrow_mut().process_op(TensorOp::MulInplace {
-            lhs: self.as_op_var(),
-            rhs: rhs.as_op_var(),
-        })?;
-        Ok(self)
+    pub fn add(self, _t: &Self) -> Result<Self> {
+        todo!()
     }
 
-    pub fn div_scalar(self, rhs: f32) -> Result<Self> {
-        self.backend
-            .borrow_mut()
-            .process_op(TensorOp::DivScalarInplace {
-                lhs: self.as_op_var(),
-                rhs,
-            })?;
-        Ok(self)
-    }
-
-    pub fn add(self, rhs: &Self) -> Result<Self> {
-        self.backend.borrow_mut().process_op(TensorOp::AddInplace {
-            lhs: self.as_op_var(),
-            rhs: rhs.as_op_var(),
-        })?;
-        Ok(self)
-    }
-
-    pub fn softmax(self, axis: usize) -> Result<Self> {
-        self.backend
-            .borrow_mut()
-            .process_op(TensorOp::SoftmaxInplace {
-                t: self.as_op_var(),
-                axis,
-            })?;
-        Ok(self)
-    }
-
-    pub fn silu(self) -> Result<Self> {
-        self.backend
-            .borrow_mut()
-            .process_op(TensorOp::SiluInplace {
-                t: self.as_op_var(),
-            })?;
-        Ok(self)
-    }
-
-    pub fn rms_norm(self, eps: f32) -> Result<Self> {
-        self.backend
-            .borrow_mut()
-            .process_op(TensorOp::RmsNormInplace {
-                t: self.as_op_var(),
-                eps,
-            })?;
-        Ok(self)
-    }
-
-    pub fn rope(self, pos: usize, rope_dim: usize) -> Result<Self> {
-        self.backend
-            .borrow_mut()
-            .process_op(TensorOp::RopeInplace {
-                t: self.as_op_var(),
-                pos,
-                rope_dim,
-            })?;
-        Ok(self)
-    }
-
-    pub fn matmul(&self, rhs: &Self) -> Result<Self> {
-        // TODO: validate shape here
-
-        let out_shape = if rhs.shape().len() == 2 {
-            vec![self.shape()[0], rhs.shape()[1]]
-        } else {
-            vec![self.shape()[0]]
-        };
-
-        let out = self
-            .backend
-            .borrow_mut()
-            .process_op(TensorOp::AllocTensor {
-                shape: out_shape,
-                zeros: false,
-            })?
-            .unwrap();
-
-        self.backend.borrow_mut().process_op(TensorOp::MatMul {
-            out: out.clone(),
-            lhs: self.as_op_var(),
-            rhs: rhs.as_op_var(),
-        })?;
-
-        Ok(Self {
-            buf_id: out.buf_id,
-            strider: out.strider.clone(),
-            backend: self.backend.clone(),
-        })
-    }
-
-    pub fn batch_matmul(&self, rhs: &Self) -> Result<Self> {
-        let out_shape = if rhs.shape().len() == 2 {
-            vec![self.shape()[0], self.shape()[1]]
-        } else {
-            panic!("unimplemented");
-        };
-
-        let out = self
-            .backend
-            .borrow_mut()
-            .process_op(TensorOp::AllocTensor {
-                shape: out_shape,
-                zeros: false,
-            })?
-            .unwrap();
-
-        self.backend
-            .borrow_mut()
-            .process_op(TensorOp::BatchMatMul {
-                out: out.clone(),
-                lhs: self.as_op_var(),
-                rhs: rhs.as_op_var(),
-            })?;
-
-        Ok(Self {
-            buf_id: out.buf_id,
-            strider: out.strider.clone(),
-            backend: self.backend.clone(),
-        })
+    pub fn matmul(&self, _t: &Self) -> Result<Self> {
+        todo!()
     }
 }
 
-impl<'a> Clone for Tensor<'a> {
-    fn clone(&self) -> Self {
-        let dst = self
-            .backend
-            .borrow_mut()
-            .process_op(TensorOp::AllocTensor {
-                shape: self.shape().to_vec(),
-                zeros: false,
-            })
-            .unwrap()
-            .unwrap();
-
-        self.backend
-            .borrow_mut()
-            .process_op(TensorOp::CopyFrom {
-                dst: dst.clone(),
-                src: self.as_op_var(),
-                pos: vec![0; self.shape().len()],
-                len: self.len(),
-            })
-            .unwrap();
-
-        Self {
-            buf_id: dst.buf_id,
-            strider: self.strider.clone(),
-            backend: self.backend.clone(),
-        }
-    }
-}
-
-impl<'a> Drop for Tensor<'a> {
+impl<D: TensorDevice> Drop for Tensor<D> {
     fn drop(&mut self) {
-        self.backend
+        self.device
             .borrow_mut()
-            .process_op(TensorOp::RecycleTensor {
-                t: self.as_op_var(),
-            })
+            .process_op(TensorDeviceOp::RecycleTensor { t: self.id })
             .unwrap();
     }
 }

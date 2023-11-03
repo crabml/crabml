@@ -1,9 +1,9 @@
 use super::buf::CpuTensorBufIter;
-use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::error::Result;
 use crate::gguf::GGMLType;
+use crate::tensor::cpu::buf::CpuTensorBuf;
 use crate::tensor::strider::TensorStrider;
 
 #[derive(Debug, Clone, Default)]
@@ -18,29 +18,22 @@ pub struct CpuTensor<'a> {
 // change on the tensor is considered as a move operation, to reduce the need on
 // copying the owned buffer. Feel free to clone() the tensor.
 impl<'a> CpuTensor<'a> {
-    pub fn new(
-        buf: impl Into<CpuTensorBuf<'a>>,
-        strider: impl Into<TensorStrider>,
-    ) -> Result<Self> {
+    pub fn new(buf: impl Into<CpuTensorBuf<'a>>, shape: Vec<usize>) -> Result<Self> {
         let buf = buf.into();
-        let strider: TensorStrider = strider.into();
-        if buf.len() != strider.len() {
+        if buf.len() != shape.iter().product() {
             return Err(Error {
                 kind: ErrorKind::TensorError,
-                message: format!(
-                    "invalid shape {:?} for data of length {}",
-                    strider.shape(),
-                    buf.len()
-                ),
+                message: format!("invalid shape {:?} for data of length {}", shape, buf.len()),
                 cause: None,
             });
         }
 
+        let strider = TensorStrider::new(shape);
+
         Ok(Self { buf, strider })
     }
 
-    pub fn zeros(shape: impl Into<Vec<usize>>) -> Result<Self> {
-        let shape = shape.into();
+    pub fn zeros(shape: Vec<usize>) -> Result<Self> {
         let buf = vec![0.0; shape.iter().product()];
         Self::new(buf, shape)
     }
@@ -54,30 +47,10 @@ impl<'a> CpuTensor<'a> {
         self.buf.typ()
     }
 
-    pub fn strider(&self) -> &TensorStrider {
-        &self.strider
-    }
-
     pub fn at(&self, idx: &[usize]) -> Result<f32> {
         self.strider
             .at(idx)
             .map(|offset| self.buf.at_unchecked(offset))
-    }
-
-    pub fn copy_from(&mut self, t: &CpuTensor<'a>, pos: &[usize], len: usize) -> Result<()> {
-        if !self.is_owned() {
-            return Err((ErrorKind::TensorError, "not owned").into());
-        }
-        if !self.is_contiguous() {
-            return Err((ErrorKind::TensorError, "not contiguous").into());
-        }
-
-        self.iter_mut()?
-            .zip(t.iter_from(pos)?.take(len))
-            .for_each(|(dst, src)| {
-                *dst = src;
-            });
-        Ok(())
     }
 
     pub fn extend(&mut self, t: &CpuTensor<'a>) -> Result<()> {
@@ -220,16 +193,6 @@ impl<'a> CpuTensor<'a> {
         CpuTensorBufIter::Boxed(Box::new(iter), self.len())
     }
 
-    pub fn iter_from(&self, pos: &[usize]) -> Result<impl Iterator<Item = f32> + '_> {
-        if !self.is_contiguous() {
-            return Err((ErrorKind::TensorError, "not contiguous").into());
-        }
-
-        let start = self.strider.at(pos).unwrap();
-        let iter = (start..self.strider.len()).map(|i| self.buf.at_unchecked(i));
-        Ok(CpuTensorBufIter::Boxed(Box::new(iter), self.len()))
-    }
-
     pub fn iter_mut(&mut self) -> Result<impl Iterator<Item = &mut f32>> {
         if !self.is_owned() {
             return Err((ErrorKind::TensorError, "not owned").into());
@@ -255,10 +218,6 @@ impl<'a> CpuTensor<'a> {
 
     pub(crate) fn buf_mut(&mut self) -> &mut CpuTensorBuf<'a> {
         &mut self.buf
-    }
-
-    pub fn into_buf(self) -> CpuTensorBuf<'a> {
-        self.buf
     }
 
     // TODO: only used in rope, remoe it later

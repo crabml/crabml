@@ -7,16 +7,13 @@ pub enum ErrorKind {
     IOError,
 
     /// raised when user supplied invalid input arguments
-    InvalidArgs,
+    BadInput,
 
     /// raised when parsing GGUF or other kind of model files
     FormatError,
 
     /// raised on manuplating tensors, like dimension mismatch
     TensorError,
-
-    ///
-    TensorNotFound,
 }
 
 #[derive(Debug)]

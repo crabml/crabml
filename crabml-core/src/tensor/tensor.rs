@@ -20,8 +20,6 @@ pub trait Tensor: Sized + Clone + TensorArithmetics {
 }
 
 pub trait TensorArithmetics: Sized {
-    fn softmax_inplace(self, axis: usize) -> Result<Self>;
-
     fn rms_norm_inplace(self, eps: f32) -> Result<Self>;
 
     fn rope_inplace(self, pos: usize, rope_dims: usize) -> Result<Self>;
@@ -33,6 +31,10 @@ pub mod ops {
     pub trait AsRef {
         type Output: Tensor;
         fn as_ref<'a>(&'a self) -> Self::Output;
+    }
+
+    pub trait SoftmaxInplace: Sized {
+        fn softmax_inplace(self, axis: usize) -> Result<Self>;
     }
 
     pub trait SiluInplace: Sized {

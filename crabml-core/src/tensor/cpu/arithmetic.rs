@@ -126,6 +126,31 @@ impl<'a> ops::SiluInplace for CpuTensor<'a> {
     }
 }
 
+impl<'a> ops::SoftmaxInplace for CpuTensor<'a> {
+    fn softmax_inplace(self, axis: usize) -> Result<Self> {
+        let mut t = self;
+        require_tensor_dims(&t, &[2])?;
+
+        if axis != 1 {
+            return Err((ErrorKind::TensorError, "only axis=1 is supported").into());
+        }
+
+        for row in 0..t.shape()[0] {
+            let max = t.iter_axis(&[row, 0], 1)?.fold(f32::NAN, |a, b| a.max(b));
+            let sum = t.iter_axis_mut(vec![row, 0], 1)?.fold(0.0, |mut acc, val| {
+                *val = (*val - max).exp();
+                acc += *val;
+                acc
+            });
+            t.iter_axis_mut(vec![row, 0], 1)?.for_each(|val| {
+                *val /= sum;
+            });
+        }
+
+        Ok(t)
+    }
+}
+
 impl<'a> TensorArithmetics for CpuTensor<'a> {
     fn rms_norm_inplace(mut self, eps: f32) -> Result<Self> {
         require_tensor_contiguous(&self)?;
@@ -172,29 +197,6 @@ impl<'a> TensorArithmetics for CpuTensor<'a> {
         }
 
         Ok(q)
-    }
-
-    fn softmax_inplace(self, axis: usize) -> Result<Self> {
-        let mut t = self;
-        require_tensor_dims(&t, &[2])?;
-
-        if axis != 1 {
-            return Err((ErrorKind::TensorError, "only axis=1 is supported").into());
-        }
-
-        for row in 0..t.shape()[0] {
-            let max = t.iter_axis(&[row, 0], 1)?.fold(f32::NAN, |a, b| a.max(b));
-            let sum = t.iter_axis_mut(vec![row, 0], 1)?.fold(0.0, |mut acc, val| {
-                *val = (*val - max).exp();
-                acc += *val;
-                acc
-            });
-            t.iter_axis_mut(vec![row, 0], 1)?.for_each(|val| {
-                *val /= sum;
-            });
-        }
-
-        Ok(t)
     }
 }
 

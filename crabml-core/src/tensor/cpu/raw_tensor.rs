@@ -8,6 +8,7 @@ use crate::gguf::GGMLType;
 use crate::tensor::cpu::buf::CpuTensorBuf;
 use crate::tensor::strider::TensorStrider;
 use crate::tensor::tensor::Tensor;
+use crate::tensor::tensor::ops;
 
 #[derive(Debug, Clone)]
 pub struct CpuTensor<'a> {
@@ -43,15 +44,6 @@ impl<'a> CpuTensor<'a> {
 
     pub fn pool(&self) -> CpuTensorPoolRef<'a> {
         self.pool.clone()
-    }
-
-    pub(crate) fn as_ref_inner<'b>(&'b self) -> CpuTensor<'a>
-    where 'b: 'a {
-        Self {
-            buf: self.buf.as_ref(),
-            strider: self.strider.clone(),
-            pool: self.pool.clone(),
-        }
     }
 
     pub fn at(&self, idx: &[usize]) -> Result<f32> {
@@ -181,6 +173,18 @@ impl<'a> CpuTensor<'a> {
             return Err((ErrorKind::TensorError, "not owned").into());
         }
         Ok(self.buf.buf_mut())
+    }
+}
+
+impl<'a, 'b> ops::AsRef<'b> for CpuTensor<'a> where 'b: 'a {
+    type Output = CpuTensor<'a>;
+
+    fn as_ref(&'b self) -> CpuTensor<'a> {
+        Self {
+            buf: self.buf.as_ref(),
+            strider: self.strider.clone(),
+            pool: self.pool.clone(),
+        }
     }
 }
 

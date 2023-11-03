@@ -24,13 +24,6 @@ use crate::tensor::tensor::ops::RopeInplace;
 
 /// ! arithmetic.rs contains the tensor arithmetics operations like matmul, accum, etc.
 
-impl<'a, 'b> ops::AsRef<'b> for CpuTensor<'a> where 'b: 'a {
-    type Output = CpuTensor<'a>;
-
-    fn as_ref(&'b self) -> CpuTensor<'a> {
-        self.as_ref_inner()
-    }
-}
 
 impl<'a, 'b> ops::BatchMatmul<CpuTensor<'b>> for CpuTensor<'a>
 where 'b: 'a

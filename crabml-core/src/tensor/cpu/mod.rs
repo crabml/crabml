@@ -3,4 +3,4 @@ pub mod buf;
 pub mod raw_tensor;
 pub mod validate;
 
-pub use raw_tensor::CpuRawTensor;
+pub use raw_tensor::CpuTensor;

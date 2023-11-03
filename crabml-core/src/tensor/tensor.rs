@@ -13,8 +13,6 @@ pub trait Tensor: Sized + Clone + TensorArithmetics {
 
     fn transpose(self, shape: &[usize]) -> Result<Self>;
 
-    // fn as_ref(&'a self) -> Self;
-
     fn extend(&mut self, rhs: &Self) -> Result<()>;
 
     fn copy_from(&mut self, rhs: &Self, pos: &[usize], len: usize) -> Result<()>;
@@ -29,8 +27,6 @@ pub trait TensorArithmetics: Sized {
 
     fn matmul(&self, y: &Self) -> Result<Self>;
 
-    fn batch_matmul(&self, y: &Self) -> Result<Self>;
-
     fn silu_inplace(self) -> Result<Self>;
 
     fn softmax_inplace(self, axis: usize) -> Result<Self>;
@@ -38,4 +34,16 @@ pub trait TensorArithmetics: Sized {
     fn rms_norm_inplace(self, eps: f32) -> Result<Self>;
 
     fn rope_inplace(self, pos: usize, rope_dims: usize) -> Result<Self>;
+}
+
+pub trait TensorAsRef {
+    type Output: Tensor;
+
+    fn as_ref<'a>(&'a self) -> Self::Output;
+}
+
+pub trait TensorBatchMatmul<RHS: Tensor> {
+    type Output: Tensor;
+
+    fn batch_matmul(&self, y: &RHS) -> Result<Self::Output>;
 }

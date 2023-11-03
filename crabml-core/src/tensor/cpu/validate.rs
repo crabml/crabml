@@ -1,9 +1,9 @@
 use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::error::Result;
-use crate::tensor::cpu::CpuRawTensor;
+use crate::tensor::cpu::CpuTensor;
 
-pub fn require_tensor_shape(t: &CpuRawTensor, shape: &[usize]) -> Result<()> {
+pub fn require_tensor_shape(t: &CpuTensor, shape: &[usize]) -> Result<()> {
     if !t.shape().eq(shape) {
         return Err(Error {
             kind: ErrorKind::TensorError,
@@ -14,7 +14,7 @@ pub fn require_tensor_shape(t: &CpuRawTensor, shape: &[usize]) -> Result<()> {
     Ok(())
 }
 
-pub fn require_tensor_owned(t: &CpuRawTensor) -> Result<()> {
+pub fn require_tensor_owned(t: &CpuTensor) -> Result<()> {
     if !t.is_owned() {
         return Err(Error {
             kind: ErrorKind::TensorError,
@@ -25,7 +25,7 @@ pub fn require_tensor_owned(t: &CpuRawTensor) -> Result<()> {
     Ok(())
 }
 
-pub fn require_tensor_dims(t: &CpuRawTensor, dims: &[usize]) -> Result<()> {
+pub fn require_tensor_dims(t: &CpuTensor, dims: &[usize]) -> Result<()> {
     if !dims.contains(&t.shape().len()) {
         return Err(Error {
             kind: ErrorKind::TensorError,
@@ -44,7 +44,7 @@ pub fn require_tensor_dims(t: &CpuRawTensor, dims: &[usize]) -> Result<()> {
     Ok(())
 }
 
-pub fn require_tensor_matmul_2d_shapes(t1: &CpuRawTensor, t2: &CpuRawTensor) -> Result<()> {
+pub fn require_tensor_matmul_2d_shapes(t1: &CpuTensor, t2: &CpuTensor) -> Result<()> {
     if t1.shape()[1] != t2.shape()[0] {
         return Err(Error {
             kind: ErrorKind::TensorError,
@@ -59,7 +59,7 @@ pub fn require_tensor_matmul_2d_shapes(t1: &CpuRawTensor, t2: &CpuRawTensor) -> 
     Ok(())
 }
 
-pub fn require_tensor_contiguous(t: &CpuRawTensor) -> Result<()> {
+pub fn require_tensor_contiguous(t: &CpuTensor) -> Result<()> {
     if !t.is_contiguous() {
         return Err(Error {
             kind: ErrorKind::TensorError,

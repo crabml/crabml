@@ -11,8 +11,8 @@ use crabml::gguf::GGUFMetadata;
 use crabml::tensor::cpu::raw_tensor::CpuTensorPoolRef;
 use crabml::tensor::tensor::Tensor;
 use crabml::tensor::tensor::TensorArithmetics;
-use crabml::tensor::cpu::arithmetic::batch_matmul;
-use crabml::tensor::CpuRawTensor;
+use crabml::tensor::CpuTensor;
+use crabml::tensor::tensor::TensorBatchMatmul;
 use crabml::tokenizer::BpeTokenizer;
 
 use crate::sampler::Llama2Sampler;
@@ -42,23 +42,23 @@ impl Llama2Config {
 
 pub struct Llama2Weights<'a> {
     // token embedding table
-    token_embedding_table: CpuRawTensor<'a>, // (vocab_size, dim)
+    token_embedding_table: CpuTensor<'a>, // (vocab_size, dim)
     // weights for rmsnorms
-    rms_att_weight: Vec<CpuRawTensor<'a>>, // (layer, dim) rmsnorm weights
-    rms_ffn_weight: Vec<CpuRawTensor<'a>>, // (layer, dim)
+    rms_att_weight: Vec<CpuTensor<'a>>, // (layer, dim) rmsnorm weights
+    rms_ffn_weight: Vec<CpuTensor<'a>>, // (layer, dim)
     // weights for matmuls
-    wq: Vec<CpuRawTensor<'a>>, // (layer, embedding_dim, embedding_dim)
-    wk: Vec<CpuRawTensor<'a>>, // (layer, kv_dim, embedding_dim)
-    wv: Vec<CpuRawTensor<'a>>, // (layer, kv_dim, embedding_dim)
-    wo: Vec<CpuRawTensor<'a>>, // (layer, embedding_dim, embedding_dim)
+    wq: Vec<CpuTensor<'a>>, // (layer, embedding_dim, embedding_dim)
+    wk: Vec<CpuTensor<'a>>, // (layer, kv_dim, embedding_dim)
+    wv: Vec<CpuTensor<'a>>, // (layer, kv_dim, embedding_dim)
+    wo: Vec<CpuTensor<'a>>, // (layer, embedding_dim, embedding_dim)
     // weights for ffn
-    w1: Vec<CpuRawTensor<'a>>, // (layer, hidden_dim, embedding_dim)
-    w2: Vec<CpuRawTensor<'a>>, // (layer, embedding_dim, hidden_dim)
-    w3: Vec<CpuRawTensor<'a>>, // (layer, hidden_dim, embedding_dim)
+    w1: Vec<CpuTensor<'a>>, // (layer, hidden_dim, embedding_dim)
+    w2: Vec<CpuTensor<'a>>, // (layer, embedding_dim, hidden_dim)
+    w3: Vec<CpuTensor<'a>>, // (layer, hidden_dim, embedding_dim)
     // final rmsnorm
-    rms_final_weight: CpuRawTensor<'a>, // (dim, )
+    rms_final_weight: CpuTensor<'a>, // (dim, )
     // (optional) classifier weights for the logits, on the last layer
-    wcls: CpuRawTensor<'a>, // (vocab_size, dim)
+    wcls: CpuTensor<'a>, // (vocab_size, dim)
 }
 
 pub struct Llama2Model<'a> {
@@ -166,7 +166,7 @@ impl<'a> Llama2Model<'a> {
         })
     }
 
-    pub(crate) fn load_tensor(gf: &'a GGUFFile<'a>, name: &str, pool: CpuTensorPoolRef<'a>) -> Result<CpuRawTensor<'a>> {
+    pub(crate) fn load_tensor(gf: &'a GGUFFile<'a>, name: &str, pool: CpuTensorPoolRef<'a>) -> Result<CpuTensor<'a>> {
         let info = match gf.get_tensor_info(name) {
             None => {
                 return Err(Error {
@@ -186,7 +186,7 @@ impl<'a> Llama2Model<'a> {
             .map(|v| *v)
             .collect::<Vec<_>>();
 
-        let tensor = CpuRawTensor::from_bytes(info.data(), info.typ(), &dims, pool.clone())?;
+        let tensor = CpuTensor::from_bytes(info.data(), info.typ(), &dims, pool.clone())?;
         Ok(tensor)
     }
 
@@ -254,8 +254,8 @@ impl<'a> Llama2Model<'a> {
 struct Llama2State<'a> {
     logits: Vec<f32>, // output logits (vocab_size, )
     // ProbIndex *probindex; // buffer used in top-p sampling
-    key_cache: Vec<CpuRawTensor<'a>>,   // (layer, seq_len, kv_dim)
-    value_cache: Vec<CpuRawTensor<'a>>, // (layer, seq_len, kv_dim)
+    key_cache: Vec<CpuTensor<'a>>,   // (layer, seq_len, kv_dim)
+    value_cache: Vec<CpuTensor<'a>>, // (layer, seq_len, kv_dim)
 }
 
 pub struct Llama2Runner<'a> {
@@ -277,7 +277,7 @@ impl<'a> Llama2Runner<'a> {
             logits: vec![0.0; conf.vocab_size],
             key_cache: (0..conf.n_layers)
                 .map(|_| {
-                    CpuRawTensor::new(
+                    CpuTensor::new(
                         Vec::with_capacity(128 * conf.n_kv_heads * conf.head_size()),
                         &[0, conf.n_kv_heads, conf.head_size()],
                         pool.clone(),
@@ -286,7 +286,7 @@ impl<'a> Llama2Runner<'a> {
                 .collect::<Result<Vec<_>>>()?,
             value_cache: (0..conf.n_layers)
                 .map(|_| {
-                    CpuRawTensor::new(
+                    CpuTensor::new(
                         Vec::with_capacity(128 * conf.n_kv_heads * conf.head_size()),
                         &[0, conf.n_kv_heads, conf.head_size()],
                         pool.clone()
@@ -320,7 +320,7 @@ impl<'a> Llama2Runner<'a> {
         let head_size = self.conf.head_size();
 
         // copy the token embedding into x
-        let mut x = CpuRawTensor::alloc(&[embed_dim], self.pool.clone())?;
+        let mut x = CpuTensor::alloc(&[embed_dim], self.pool.clone())?;
         x.copy_from(&self.weights.token_embedding_table, &[token, 0], embed_dim)?;
 
         // forward all the layers
@@ -386,7 +386,7 @@ impl<'a> Llama2Runner<'a> {
                     .repeat(&[1, n_heads / n_kv_heads, 1])?
                     .transpose(&[1, 0, 2])?;
                 // (n_heads, n_seq, head_size) @ (n_head, head_size) => (n_heads, n_seq)
-                let attn = batch_matmul(&k_cache, &q)?;
+                let attn = k_cache.batch_matmul(&q)?;
                 let attn = attn.div_scalar_inplace((head_size as f32).sqrt())?;
                 let attn = attn.softmax_inplace(1)?;
 
@@ -395,7 +395,7 @@ impl<'a> Llama2Runner<'a> {
                     .repeat(&[1, n_heads / n_kv_heads, 1])?
                     .transpose(&[1, 2, 0])?;
                 // (n_heads, head_size, n_seq) @ (n_heads, n_seq) => (n_heads, head_size)
-                let x_with_attn = batch_matmul(&v_cache, &attn)?; // (n_heads, head_size)
+                let x_with_attn = v_cache.batch_matmul(&attn)?; // (n_heads, head_size)
                 let x_with_attn = x_with_attn.view(&[embed_dim])?;
 
                 // final matmul to get the output of the attention

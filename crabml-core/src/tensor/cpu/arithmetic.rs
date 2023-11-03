@@ -81,10 +81,12 @@ impl<'a> ops::DivScalarInplace for CpuTensor<'a> {
     }
 }
 
-impl<'a> TensorArithmetics for CpuTensor<'a> {
+impl<'a, 'b> ops::Matmul<CpuTensor<'b>> for CpuTensor<'a> where 'b: 'a {
+    type Output = CpuTensor<'a>;
+
     // W (w_rows,w_cols) @ x (w_cols,x_cols) -> xout (w_rows,x_cols)
     // W (w_rows,w_cols) @ x (w_cols,) -> xout (w_rows,)
-    fn matmul(&self, x: &Self) -> Result<Self> {
+    fn matmul(&self, x: &CpuTensor<'b>) -> Result<Self::Output> {
         let w = self;
         require_tensor_dims(w, &[2])?;
         require_tensor_dims(x, &[1])?;
@@ -106,7 +108,9 @@ impl<'a> TensorArithmetics for CpuTensor<'a> {
         });
         return Ok(out);
     }
+}
 
+impl<'a> TensorArithmetics for CpuTensor<'a> {
     fn silu_inplace(self) -> Result<Self> {
         let mut x = self;
         if x.is_contiguous() {
@@ -391,6 +395,7 @@ pub fn rope_inplace_old<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tensor::tensor::ops::*;
     use crate::tensor::cpu::raw_tensor::CpuTensorPool;
 
     #[test]

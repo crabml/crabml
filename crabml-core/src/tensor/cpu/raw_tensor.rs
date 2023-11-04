@@ -321,6 +321,10 @@ impl<'a> Tensor for CpuTensor<'a> {
             pool: self.pool.clone(),
         })
     }
+
+    fn strider(&self) -> &TensorStrider {
+        &self.strider
+    }
 }
 
 #[cfg(test)]

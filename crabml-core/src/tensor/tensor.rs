@@ -17,6 +17,8 @@ pub trait Tensor: Sized + Clone {
     fn transpose(self, shape: &[usize]) -> Result<Self>;
 
     fn with_strider(self, strider: TensorStrider) -> Result<Self>;
+
+    fn strider(&self) -> &TensorStrider;
 }
 
 pub mod ops {

@@ -404,7 +404,7 @@ pub fn rope_inplace_old<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tensor::cpu::raw_tensor::CpuTensorPool;
+    use crate::tensor::cpu::cpu_tensor::CpuTensorPool;
     use crate::tensor::tensor::ops::*;
 
     #[test]

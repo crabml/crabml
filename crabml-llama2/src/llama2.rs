@@ -8,7 +8,7 @@ use crabml::error::ErrorKind;
 use crabml::error::Result;
 use crabml::gguf::GGUFFile;
 use crabml::gguf::GGUFMetadata;
-use crabml::tensor::cpu::raw_tensor::CpuTensorPoolRef;
+use crabml::tensor::cpu::cpu_tensor::CpuTensorPoolRef;
 use crabml::tensor::tensor::ops::*;
 use crabml::tensor::tensor::Tensor;
 use crabml::tensor::CpuTensor;
@@ -583,7 +583,7 @@ impl<'a> Iterator for Llama2RunnerOutputGenerator<'a> {
 #[cfg(test)]
 mod tests {
     use crabml::gguf::GGUFFileLoader;
-    use crabml::tensor::cpu::raw_tensor::CpuTensorPool;
+    use crabml::tensor::cpu::cpu_tensor::CpuTensorPool;
 
     use super::*;
 

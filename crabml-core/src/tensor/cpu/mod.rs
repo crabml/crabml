@@ -1,6 +1,6 @@
 pub mod arithmetic;
 pub mod buf;
-pub mod tensor;
+pub mod cpu_tensor;
 pub mod validate;
 
-pub use tensor::CpuTensor;
+pub use cpu_tensor::CpuTensor;

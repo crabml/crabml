@@ -16,7 +16,12 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
+    - uses: actions-rs/toolchain@v1
+      with:
+        toolchain: nightly
+        components: rustfmt,clippy
+        override: true
     - name: Build
-      run: cargo build --verbose
+      run: cargo +nightly build --verbose
     - name: Run tests
-      run: cargo test --verbose
+      run: cargo +nightly test --verbose

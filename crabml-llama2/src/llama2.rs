@@ -364,8 +364,8 @@ impl<'a> Llama2Runner<'a> {
 
             // ROPE
             let (q, k) = {
-                let q = q.view(&[n_heads, head_size])?;
-                let k = k.view(&[n_kv_heads, head_size])?;
+                let q = q.reshape(&[n_heads, head_size])?;
+                let k = k.reshape(&[n_kv_heads, head_size])?;
 
                 let q = q.rope_inplace(pos, self.conf.rope_dim)?;
                 let k = k.rope_inplace(pos, self.conf.rope_dim)?;
@@ -374,7 +374,7 @@ impl<'a> Llama2Runner<'a> {
 
             // save to kv cache
             {
-                let v = v.view(&[n_kv_heads, head_size])?;
+                let v = v.reshape(&[n_kv_heads, head_size])?;
 
                 if let Some(ref mut k_cache) = self.state.key_cache[l] {
                     k_cache.extend(&k)?;
@@ -386,7 +386,7 @@ impl<'a> Llama2Runner<'a> {
 
             // multi query attention
             x = {
-                let q = q.view(&[n_heads, head_size])?;
+                let q = q.reshape(&[n_heads, head_size])?;
 
                 // - key_cache: [seq, kv_head, head_size]
                 // - key_cache = key_cache.repeat(1, n_head / n_kv_head, 1) => [seq, n_head, head_size]
@@ -419,7 +419,7 @@ impl<'a> Llama2Runner<'a> {
                     .transpose(&[1, 2, 0])?;
                 // (n_heads, head_size, n_seq) @ (n_heads, n_seq) => (n_heads, head_size)
                 let x_with_attn = v_cache.batch_matmul(&attn)?; // (n_heads, head_size)
-                let x_with_attn = x_with_attn.view(&[embed_dim])?;
+                let x_with_attn = x_with_attn.reshape(&[embed_dim])?;
                 self.state.value_cache[l].replace(v_cache.with_strider(v_cache_strider_orig)?);
 
                 // final matmul to get the output of the attention

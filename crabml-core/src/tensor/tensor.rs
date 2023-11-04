@@ -10,7 +10,7 @@ pub trait Tensor: Sized + Clone {
 
     fn alloc(shape: &[usize], pool: Self::Pool) -> Result<Self>;
 
-    fn view(self, shape: &[usize]) -> Result<Self>;
+    fn reshape(self, shape: &[usize]) -> Result<Self>;
 
     fn repeat(self, repeats: &[usize]) -> Result<Self>;
 
@@ -32,9 +32,9 @@ pub mod ops {
         fn copy_from(&mut self, rhs: &RHS, pos: &[usize], len: usize) -> Result<()>;
     }
 
-    pub trait AsRef<'b> {
-        type Output: Tensor;
-        fn as_ref(&'b self) -> Self::Output;
+    pub trait AsView<'b> {
+        type Output;
+        fn as_view(&'b self) -> Self::Output;
     }
 
     pub trait RopeInplace: Sized {

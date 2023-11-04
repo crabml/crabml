@@ -180,10 +180,10 @@ impl<'a> CpuTensor<'a> {
     }
 }
 
-impl<'a, 'b> ops::AsRef<'b> for CpuTensor<'a> where 'b: 'a {
+impl<'a, 'b> ops::AsView<'b> for CpuTensor<'a> where 'b: 'a {
     type Output = CpuTensor<'a>;
 
-    fn as_ref(&'b self) -> CpuTensor<'a> {
+    fn as_view(&'b self) -> CpuTensor<'a> {
         Self {
             buf: self.buf.as_ref(),
             strider: self.strider.clone(),
@@ -287,7 +287,7 @@ impl<'a> Tensor for CpuTensor<'a> {
         Self::new(buf, shape, pool)
     }
 
-    fn view(self, shape: &[usize]) -> Result<Self> {
+    fn reshape(self, shape: &[usize]) -> Result<Self> {
         let strider = self.strider.view(shape.to_vec())?;
         Ok(Self {
             buf: self.buf,
@@ -336,9 +336,9 @@ mod tests {
     fn test_tensor_view() -> Result<()> {
         let pool = CpuTensorPool::new();
         let t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], pool.clone())?;
-        let t = t.view(&[3, 2])?;
+        let t = t.reshape(&[3, 2])?;
 
-        let tr = t.view(&[2, 3])?;
+        let tr = t.reshape(&[2, 3])?;
         assert_eq!(tr.iter().collect::<Vec<f32>>(), vec![
             1.0, 2.0, 3.0, 4.0, 5.0, 6.0
         ]);

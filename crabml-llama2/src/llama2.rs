@@ -592,7 +592,7 @@ mod tests {
     #[test]
     fn test_generate_f32() -> Result<()> {
         let gl: GGUFFileLoader =
-            GGUFFileLoader::new("../testdata/tinyllamas-stories-15M-f32.gguf")?;
+            GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-f32.gguf")?;
         let gf = gl.open()?;
         let pool = CpuTensorPool::new();
         let lm = Llama2Model::from(&gf, pool.clone())?;

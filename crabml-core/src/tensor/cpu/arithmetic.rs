@@ -24,20 +24,16 @@ use crate::tensor::tensor::ops::RopeInplace;
 
 /// ! arithmetic.rs contains the tensor arithmetics operations like matmul, accum, etc.
 
-impl<'a, 'b> ops::BatchMatmul<CpuTensor<'b>> for CpuTensor<'a> {
-    type Output = CpuTensor<'b>;
-
-    fn batch_matmul(&self, y: &CpuTensor<'b>) -> Result<Self::Output> {
+impl<'a, 'b> ops::BatchMatmul for CpuTensor<'a> {
+    fn batch_matmul(&self, y: &CpuTensor<'a>) -> Result<Self> {
         do_batch_matmul(self, y)
     }
 }
 
-impl<'a, 'b> ops::Matmul<CpuTensor<'b>> for CpuTensor<'a> {
-    type Output = CpuTensor<'b>;
-
+impl<'a, 'b> ops::Matmul for CpuTensor<'a> {
     // W (w_rows,w_cols) @ x (w_cols,x_cols) -> xout (w_rows,x_cols)
     // W (w_rows,w_cols) @ x (w_cols,) -> xout (w_rows,)
-    fn matmul(&self, x: &CpuTensor<'b>) -> Result<Self::Output> {
+    fn matmul(&self, x: &CpuTensor<'a>) -> Result<Self> {
         let w = self;
         require_tensor_dims(w, &[2])?;
         require_tensor_dims(x, &[1])?;
@@ -61,10 +57,8 @@ impl<'a, 'b> ops::Matmul<CpuTensor<'b>> for CpuTensor<'a> {
     }
 }
 
-impl<'a> ops::MulInplace<CpuTensor<'a>> for CpuTensor<'a> {
-    type Output = CpuTensor<'a>;
-
-    fn mul_inplace(mut self, rhs: &Self) -> Result<Self> {
+impl<'a> ops::MulInplace for CpuTensor<'a> {
+    fn mul_inplace(mut self, rhs: &CpuTensor<'a>) -> Result<Self> {
         require_tensor_shape(&self, rhs.shape())?;
 
         if rhs.is_contiguous() && rhs.is_contiguous() {
@@ -84,9 +78,7 @@ impl<'a> ops::MulInplace<CpuTensor<'a>> for CpuTensor<'a> {
     }
 }
 
-impl<'a> ops::AddInplace<CpuTensor<'a>> for CpuTensor<'a> {
-    type Output = CpuTensor<'a>;
-
+impl<'a> ops::AddInplace for CpuTensor<'a> {
     fn add_inplace(self, b: &Self) -> Result<Self> {
         let mut a = self;
         require_tensor_shape(&a, b.shape())?;

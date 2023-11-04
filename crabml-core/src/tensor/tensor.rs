@@ -10,13 +10,13 @@ pub trait Tensor: Sized + Clone {
 
     fn alloc(shape: &[usize], pool: Self::Pool) -> Result<Self>;
 
+    fn with_strider(self, strider: TensorStrider) -> Result<Self>;
+
     fn reshape(self, shape: &[usize]) -> Result<Self>;
 
     fn repeat(self, repeats: &[usize]) -> Result<Self>;
 
     fn transpose(self, shape: &[usize]) -> Result<Self>;
-
-    fn with_strider(self, strider: TensorStrider) -> Result<Self>;
 
     fn strider(&self) -> &TensorStrider;
 }
@@ -24,17 +24,12 @@ pub trait Tensor: Sized + Clone {
 pub mod ops {
     use super::*;
 
-    pub trait Extend<RHS: Tensor> {
-        fn extend(&mut self, rhs: &RHS) -> Result<()>;
+    pub trait Extend {
+        fn extend(&mut self, rhs: &Self) -> Result<()>;
     }
 
-    pub trait CopyFrom<RHS: Tensor> {
-        fn copy_from(&mut self, rhs: &RHS, pos: &[usize], len: usize) -> Result<()>;
-    }
-
-    pub trait AsView<'b> {
-        type Output;
-        fn as_view(&'b self) -> Self::Output;
+    pub trait CopyFrom {
+        fn copy_from(&mut self, rhs: &Self, pos: &[usize], len: usize) -> Result<()>;
     }
 
     pub trait RopeInplace: Sized {
@@ -53,27 +48,23 @@ pub mod ops {
         fn silu_inplace(self) -> Result<Self>;
     }
 
-    pub trait MulInplace<RHS: Tensor> {
-        type Output: Tensor;
-        fn mul_inplace(self, rhs: &RHS) -> Result<Self::Output>;
+    pub trait MulInplace: Sized {
+        fn mul_inplace(self, rhs: &Self) -> Result<Self>;
     }
 
-    pub trait AddInplace<RHS: Tensor> {
-        type Output: Tensor;
-        fn add_inplace(self, rhs: &RHS) -> Result<Self::Output>;
+    pub trait AddInplace: Sized {
+        fn add_inplace(self, rhs: &Self) -> Result<Self>;
     }
 
     pub trait DivScalarInplace: Sized {
         fn div_scalar_inplace(self, rhs: f32) -> Result<Self>;
     }
 
-    pub trait Matmul<RHS: Tensor> {
-        type Output: Tensor;
-        fn matmul(&self, y: &RHS) -> Result<Self::Output>;
+    pub trait Matmul: Sized {
+        fn matmul(&self, y: &Self) -> Result<Self>;
     }
 
-    pub trait BatchMatmul<RHS: Tensor> {
-        type Output: Tensor;
-        fn batch_matmul(&self, y: &RHS) -> Result<Self::Output>;
+    pub trait BatchMatmul: Sized {
+        fn batch_matmul(&self, y: &Self) -> Result<Self>;
     }
 }

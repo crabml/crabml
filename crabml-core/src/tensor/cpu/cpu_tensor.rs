@@ -50,6 +50,14 @@ impl<'a> CpuTensor<'a> {
         self.pool.clone()
     }
 
+    fn as_view<'b>(&'b self) -> CpuTensor<'a> where 'b: 'a {
+        Self {
+            buf: self.buf.as_ref(),
+            strider: self.strider.clone(),
+            pool: self.pool.clone(),
+        }
+    }
+
     pub fn at(&self, idx: &[usize]) -> Result<f32> {
         self.strider
             .at(idx)
@@ -180,19 +188,7 @@ impl<'a> CpuTensor<'a> {
     }
 }
 
-impl<'a, 'b> ops::AsView<'b> for CpuTensor<'a> where 'b: 'a {
-    type Output = CpuTensor<'a>;
-
-    fn as_view(&'b self) -> CpuTensor<'a> {
-        Self {
-            buf: self.buf.as_ref(),
-            strider: self.strider.clone(),
-            pool: self.pool.clone(),
-        }
-    }
-}
-
-impl<'a> ops::Extend<CpuTensor<'a>> for CpuTensor<'a> {
+impl<'a> ops::Extend for CpuTensor<'a> {
     fn extend(&mut self, t: &CpuTensor<'a>) -> Result<()> {
         if !self.is_owned() {
             return Err((ErrorKind::TensorError, "not owned").into());
@@ -223,7 +219,7 @@ impl<'a> ops::Extend<CpuTensor<'a>> for CpuTensor<'a> {
     }
 }
 
-impl<'a> ops::CopyFrom<CpuTensor<'a>> for CpuTensor<'a> {
+impl<'a> ops::CopyFrom for CpuTensor<'a> {
     fn copy_from(&mut self, t: &CpuTensor<'a>, pos: &[usize], len: usize) -> Result<()> {
         if !self.is_owned() {
             return Err((ErrorKind::TensorError, "not owned").into());

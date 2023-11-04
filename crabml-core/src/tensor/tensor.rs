@@ -15,9 +15,6 @@ pub trait Tensor: Sized + Clone {
     fn transpose(self, shape: &[usize]) -> Result<Self>;
 }
 
-pub trait LogicalTensor<RHS>: Tensor + Extend<RHS> {
-}
-
 pub mod ops {
     use super::*;
 

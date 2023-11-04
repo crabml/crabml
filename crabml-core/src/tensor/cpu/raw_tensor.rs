@@ -42,6 +42,10 @@ impl<'a> CpuTensor<'a> {
         })
     }
 
+    pub fn swap_buf(&mut self, dst: CpuTensorBuf<'a>) -> CpuTensorBuf<'a> {
+        std::mem::replace(&mut self.buf, dst)
+    }
+
     pub fn pool(&self) -> CpuTensorPoolRef<'a> {
         self.pool.clone()
     }

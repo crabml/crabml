@@ -313,6 +313,14 @@ impl<'a> Tensor for CpuTensor<'a> {
             pool: self.pool.clone(),
         })
     }
+
+    fn with_strider(self, strider: TensorStrider) -> Result<Self> {
+        Ok(Self {
+            buf: self.buf,
+            strider,
+            pool: self.pool.clone(),
+        })
+    }
 }
 
 #[cfg(test)]

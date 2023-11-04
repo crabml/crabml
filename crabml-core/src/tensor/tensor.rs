@@ -1,6 +1,8 @@
 use crate::error::Result;
 use crate::gguf::GGMLType;
 
+use super::strider::TensorStrider;
+
 pub trait Tensor: Sized + Clone {
     type Pool;
 
@@ -13,6 +15,8 @@ pub trait Tensor: Sized + Clone {
     fn repeat(self, repeats: &[usize]) -> Result<Self>;
 
     fn transpose(self, shape: &[usize]) -> Result<Self>;
+
+    fn with_strider(self, strider: TensorStrider) -> Result<Self>;
 }
 
 pub mod ops {

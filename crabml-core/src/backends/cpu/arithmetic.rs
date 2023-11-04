@@ -10,15 +10,15 @@ use super::buf::buf_q8_0::vec_dot_q8_0_f16;
 use super::buf::QuantBufQ8_0;
 use crate::error::ErrorKind;
 use crate::error::Result;
-use crate::tensor::cpu::buf::BufVecDot;
-use crate::tensor::cpu::buf::CpuTensorBuf;
-use crate::tensor::cpu::validate::require_tensor_contiguous;
-use crate::tensor::cpu::validate::require_tensor_dims;
-use crate::tensor::cpu::validate::require_tensor_matmul_2d_shapes;
-use crate::tensor::cpu::validate::require_tensor_shape;
+use crate::backends::cpu::buf::BufVecDot;
+use crate::backends::cpu::buf::CpuTensorBuf;
+use crate::backends::cpu::validate::require_tensor_contiguous;
+use crate::backends::cpu::validate::require_tensor_dims;
+use crate::backends::cpu::validate::require_tensor_matmul_2d_shapes;
+use crate::backends::cpu::validate::require_tensor_shape;
 use crate::tensor::tensor::Tensor;
 use crate::tensor::tensor::TensorArithmetics;
-use crate::tensor::CpuTensor;
+use crate::backends::cpu::CpuTensor;
 
 /// ! arithmetic.rs contains the tensor arithmetics operations like matmul, accum, etc.
 
@@ -374,7 +374,7 @@ pub fn rope_inplace_old<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tensor::cpu::cpu_tensor::CpuTensorPool;
+    use crate::backends::cpu::cpu_tensor::CpuTensorPool;
     use crate::tensor::tensor::TensorArithmetics;
 
     #[test]

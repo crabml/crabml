@@ -4,7 +4,7 @@ use std::time::Instant;
 use clap::Parser;
 use crabml::error::Result;
 use crabml::gguf::GGUFFileLoader;
-use crabml::tensor::cpu::cpu_tensor::CpuTensorPool;
+use crabml::backends::cpu::cpu_tensor::CpuTensorPool;
 use crabml_llama2::llama2::Llama2Model;
 use crabml_llama2::llama2::Llama2Runner;
 use crabml_llama2::sampler::Llama2Sampler;

@@ -1,5 +1,4 @@
 use crate::error::Result;
-use crate::gguf::GGMLType;
 
 use super::strider::TensorStrider;
 
@@ -19,18 +18,14 @@ pub trait Tensor: Sized + Clone {
     fn transpose(self, shape: &[usize]) -> Result<Self>;
 
     fn strider(&self) -> &TensorStrider;
+
+    fn extend(&mut self, rhs: &Self) -> Result<()>;
+
+    fn copy_from(&mut self, rhs: &Self, pos: &[usize], len: usize) -> Result<()>;
 }
 
 pub mod ops {
     use super::*;
-
-    pub trait Extend {
-        fn extend(&mut self, rhs: &Self) -> Result<()>;
-    }
-
-    pub trait CopyFrom {
-        fn copy_from(&mut self, rhs: &Self, pos: &[usize], len: usize) -> Result<()>;
-    }
 
     pub trait RopeInplace: Sized {
         fn rope_inplace(self, pos: usize, rope_dims: usize) -> Result<Self>;

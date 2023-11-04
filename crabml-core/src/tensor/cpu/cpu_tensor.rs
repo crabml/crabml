@@ -188,55 +188,6 @@ impl<'a> CpuTensor<'a> {
     }
 }
 
-impl<'a> ops::Extend for CpuTensor<'a> {
-    fn extend(&mut self, t: &CpuTensor<'a>) -> Result<()> {
-        if !self.is_owned() {
-            return Err((ErrorKind::TensorError, "not owned").into());
-        }
-        if !self.is_contiguous() {
-            return Err((ErrorKind::TensorError, "not contiguous").into());
-        }
-        if !t.shape().eq(&self.shape()[1..]) {
-            return Err((
-                ErrorKind::TensorError,
-                format!(
-                    "shape mismatch on extend, want {:?} but got {:?}",
-                    &self.shape()[1..],
-                    &t.shape()
-                ),
-            )
-                .into());
-        }
-
-        self.buf.extend(t.iter());
-        let new_shape = {
-            let mut shape = self.shape().to_vec();
-            shape[0] += 1;
-            shape
-        };
-        self.strider = TensorStrider::new(new_shape);
-        Ok(())
-    }
-}
-
-impl<'a> ops::CopyFrom for CpuTensor<'a> {
-    fn copy_from(&mut self, t: &CpuTensor<'a>, pos: &[usize], len: usize) -> Result<()> {
-        if !self.is_owned() {
-            return Err((ErrorKind::TensorError, "not owned").into());
-        }
-        if !self.is_contiguous() {
-            return Err((ErrorKind::TensorError, "not contiguous").into());
-        }
-
-        self.iter_mut()?
-            .zip(t.iter_from(pos)?.take(len))
-            .for_each(|(dst, src)| {
-                *dst = src;
-            });
-        Ok(())
-    }
-}
-
 #[derive(Debug)]
 pub struct CpuTensorPool<'a> {
     _bufs: Vec<CpuTensorBuf<'a>>,
@@ -320,6 +271,51 @@ impl<'a> Tensor for CpuTensor<'a> {
 
     fn strider(&self) -> &TensorStrider {
         &self.strider
+    }
+
+    fn extend(&mut self, t: &CpuTensor<'a>) -> Result<()> {
+        if !self.is_owned() {
+            return Err((ErrorKind::TensorError, "not owned").into());
+        }
+        if !self.is_contiguous() {
+            return Err((ErrorKind::TensorError, "not contiguous").into());
+        }
+        if !t.shape().eq(&self.shape()[1..]) {
+            return Err((
+                ErrorKind::TensorError,
+                format!(
+                    "shape mismatch on extend, want {:?} but got {:?}",
+                    &self.shape()[1..],
+                    &t.shape()
+                ),
+            )
+                .into());
+        }
+
+        self.buf.extend(t.iter());
+        let new_shape = {
+            let mut shape = self.shape().to_vec();
+            shape[0] += 1;
+            shape
+        };
+        self.strider = TensorStrider::new(new_shape);
+        Ok(())
+    }
+
+    fn copy_from(&mut self, t: &CpuTensor<'a>, pos: &[usize], len: usize) -> Result<()> {
+        if !self.is_owned() {
+            return Err((ErrorKind::TensorError, "not owned").into());
+        }
+        if !self.is_contiguous() {
+            return Err((ErrorKind::TensorError, "not contiguous").into());
+        }
+
+        self.iter_mut()?
+            .zip(t.iter_from(pos)?.take(len))
+            .for_each(|(dst, src)| {
+                *dst = src;
+            });
+        Ok(())
     }
 }
 

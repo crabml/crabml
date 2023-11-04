@@ -16,21 +16,17 @@ use crate::tensor::cpu::validate::require_tensor_contiguous;
 use crate::tensor::cpu::validate::require_tensor_dims;
 use crate::tensor::cpu::validate::require_tensor_matmul_2d_shapes;
 use crate::tensor::cpu::validate::require_tensor_shape;
-use crate::tensor::tensor::ops;
 use crate::tensor::tensor::Tensor;
+use crate::tensor::tensor::TensorArithmetics;
 use crate::tensor::CpuTensor;
-use crate::tensor::tensor::ops::RmsNormInplace;
-use crate::tensor::tensor::ops::RopeInplace;
 
 /// ! arithmetic.rs contains the tensor arithmetics operations like matmul, accum, etc.
 
-impl<'a, 'b> ops::BatchMatmul for CpuTensor<'a> {
+impl<'a, 'b> TensorArithmetics for CpuTensor<'a> {
     fn batch_matmul(&self, y: &CpuTensor<'a>) -> Result<Self> {
         do_batch_matmul(self, y)
     }
-}
 
-impl<'a, 'b> ops::Matmul for CpuTensor<'a> {
     // W (w_rows,w_cols) @ x (w_cols,x_cols) -> xout (w_rows,x_cols)
     // W (w_rows,w_cols) @ x (w_cols,) -> xout (w_rows,)
     fn matmul(&self, x: &CpuTensor<'a>) -> Result<Self> {
@@ -55,9 +51,7 @@ impl<'a, 'b> ops::Matmul for CpuTensor<'a> {
         });
         return Ok(out);
     }
-}
 
-impl<'a> ops::MulInplace for CpuTensor<'a> {
     fn mul_inplace(mut self, rhs: &CpuTensor<'a>) -> Result<Self> {
         require_tensor_shape(&self, rhs.shape())?;
 
@@ -76,9 +70,7 @@ impl<'a> ops::MulInplace for CpuTensor<'a> {
         }
         Ok(self)
     }
-}
 
-impl<'a> ops::AddInplace for CpuTensor<'a> {
     fn add_inplace(self, b: &Self) -> Result<Self> {
         let mut a = self;
         require_tensor_shape(&a, b.shape())?;
@@ -90,18 +82,14 @@ impl<'a> ops::AddInplace for CpuTensor<'a> {
         });
         Ok(a)
     }
-}
 
-impl<'a> ops::DivScalarInplace for CpuTensor<'a> {
     fn div_scalar_inplace(mut self, b: f32) -> Result<Self> {
         self.iter_mut()?.for_each(|ia| {
             *ia /= b;
         });
         Ok(self)
     }
-}
 
-impl<'a> ops::SiluInplace for CpuTensor<'a> {
     fn silu_inplace(self) -> Result<Self> {
         let mut x = self;
         if x.is_contiguous() {
@@ -113,9 +101,7 @@ impl<'a> ops::SiluInplace for CpuTensor<'a> {
         x.iter_mut()?.for_each(|n| *n = *n / (1.0 + (-*n).exp()));
         Ok(x)
     }
-}
 
-impl<'a> ops::SoftmaxInplace for CpuTensor<'a> {
     fn softmax_inplace(self, axis: usize) -> Result<Self> {
         let mut t = self;
         require_tensor_dims(&t, &[2])?;
@@ -138,9 +124,7 @@ impl<'a> ops::SoftmaxInplace for CpuTensor<'a> {
 
         Ok(t)
     }
-}
 
-impl<'a> RopeInplace for CpuTensor<'a> {
     fn rope_inplace(self, pos: usize, rope_dims: usize) -> Result<Self> {
         let mut q = self;
         require_tensor_contiguous(&q)?;
@@ -168,9 +152,7 @@ impl<'a> RopeInplace for CpuTensor<'a> {
 
         Ok(q)
     }
-}
 
-impl<'a> RmsNormInplace for CpuTensor<'a> {
     fn rms_norm_inplace(mut self, eps: f32) -> Result<Self> {
         require_tensor_contiguous(&self)?;
         require_tensor_dims(&self, &[1])?;
@@ -393,7 +375,7 @@ pub fn rope_inplace_old<'a>(
 mod tests {
     use super::*;
     use crate::tensor::cpu::cpu_tensor::CpuTensorPool;
-    use crate::tensor::tensor::ops::*;
+    use crate::tensor::tensor::TensorArithmetics;
 
     #[test]
     fn test_rms_norm() -> Result<()> {

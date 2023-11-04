@@ -9,8 +9,8 @@ use crabml::error::Result;
 use crabml::gguf::GGUFFile;
 use crabml::gguf::GGUFMetadata;
 use crabml::tensor::cpu::cpu_tensor::CpuTensorPoolRef;
-use crabml::tensor::tensor::ops::*;
 use crabml::tensor::tensor::Tensor;
+use crabml::tensor::tensor::TensorArithmetics;
 use crabml::tensor::CpuTensor;
 use crabml::tokenizer::BpeTokenizer;
 
@@ -270,7 +270,7 @@ impl<'a> Llama2Model<'a> {
 struct Llama2State<'a> {
     logits: Vec<f32>, // output logits (vocab_size, )
     // ProbIndex *probindex; // buffer used in top-p sampling
-    key_cache: Vec<Option<CpuTensor<'a>>>,   // (layer, seq_len, kv_dim)
+    key_cache: Vec<Option<CpuTensor<'a>>>, // (layer, seq_len, kv_dim)
     value_cache: Vec<Option<CpuTensor<'a>>>, // (layer, seq_len, kv_dim)
 }
 
@@ -297,7 +297,8 @@ impl<'a> Llama2Runner<'a> {
                         Vec::with_capacity(128 * conf.n_kv_heads * conf.head_size()),
                         &[0, conf.n_kv_heads, conf.head_size()],
                         pool.clone(),
-                    ).map(|t| Some(t))
+                    )
+                    .map(|t| Some(t))
                 })
                 .collect::<Result<Vec<_>>>()?,
             value_cache: (0..conf.n_layers)
@@ -306,7 +307,8 @@ impl<'a> Llama2Runner<'a> {
                         Vec::with_capacity(128 * conf.n_kv_heads * conf.head_size()),
                         &[0, conf.n_kv_heads, conf.head_size()],
                         pool.clone(),
-                    ).map(|t| Some(t))
+                    )
+                    .map(|t| Some(t))
                 })
                 .collect::<Result<Vec<_>>>()?,
         };

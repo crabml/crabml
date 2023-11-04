@@ -8,7 +8,6 @@ use crate::gguf::GGMLType;
 use crate::tensor::cpu::buf::CpuTensorBuf;
 use crate::tensor::strider::TensorStrider;
 use crate::tensor::tensor::Tensor;
-use crate::tensor::tensor::ops;
 
 #[derive(Debug, Clone)]
 pub struct CpuTensor<'a> {
@@ -50,7 +49,8 @@ impl<'a> CpuTensor<'a> {
         self.pool.clone()
     }
 
-    fn as_view<'b>(&'b self) -> CpuTensor<'a> where 'b: 'a {
+    fn as_view<'b>(&'b self) -> CpuTensor<'a>
+    where 'b: 'a {
         Self {
             buf: self.buf.as_ref(),
             strider: self.strider.clone(),
@@ -322,7 +322,6 @@ impl<'a> Tensor for CpuTensor<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::ops::*;
 
     #[test]
     fn test_tensor_view() -> Result<()> {

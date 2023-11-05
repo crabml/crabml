@@ -8,7 +8,7 @@ use crabml::backends::cpu::CpuTensor;
 use crabml::error::Error;
 use crabml::error::ErrorKind;
 use crabml::error::Result;
-use crabml::tensor::tensor::Tensor;
+use crabml::tensor::Tensor;
 use crabml::tokenizer::BpeTokenizer;
 
 use crate::model::CpuLlama2Model;

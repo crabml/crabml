@@ -9,7 +9,7 @@ use crabml::error::ErrorKind;
 use crabml::error::Result;
 use crabml::gguf::GGUFFile;
 use crabml::gguf::GGUFMetadata;
-use crabml::tensor::tensor::Tensor;
+use crabml::tensor::Tensor;
 use crabml::tokenizer::BpeTokenizer;
 
 #[derive(Debug, Copy, Clone)]

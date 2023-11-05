@@ -2,12 +2,12 @@ use std::io::Write;
 use std::time::Instant;
 
 use clap::Parser;
+use crabml::backends::cpu::cpu_tensor::CpuTensorPool;
 use crabml::error::Result;
 use crabml::gguf::GGUFFileLoader;
-use crabml::backends::cpu::cpu_tensor::CpuTensorPool;
-use crabml_llama2::llama2::Llama2Model;
 use crabml_llama2::llama2::Llama2Runner;
 use crabml_llama2::sampler::Llama2Sampler;
+use crabml_llama2::CpuLlama2Model;
 
 #[derive(Parser, Debug)]
 struct CommandArgs {
@@ -46,11 +46,10 @@ fn main() -> Result<()> {
 
     let gl = GGUFFileLoader::new(&args.model)?;
     let gf = gl.open()?;
-    let pool = CpuTensorPool::new();
-    let lm = Llama2Model::from(&gf, pool.clone())?;
+    let lm = CpuLlama2Model::from(&gf)?;
 
     let mut sampler = Llama2Sampler::new(lm.conf().vocab_size, args.temperature, args.probability);
-    let mut runner = Llama2Runner::new(&lm.conf(), lm.weights(), lm.tokenizer(), pool.clone())?;
+    let mut runner = Llama2Runner::try_from(&lm)?;
 
     if args.verbose {
         for tensor in gf.tensor_infos() {

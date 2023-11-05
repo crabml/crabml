@@ -1,11 +1,11 @@
 use std::rc::Rc;
 
 use super::buf::CpuTensorBufIter;
+use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::error::Result;
 use crate::gguf::GGMLType;
-use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::tensor::strider::TensorStrider;
 use crate::tensor::tensor::Tensor;
 
@@ -316,6 +316,10 @@ impl<'a> Tensor for CpuTensor<'a> {
                 *dst = src;
             });
         Ok(())
+    }
+
+    fn export(&self) -> Result<Box<dyn Iterator<Item = f32> + '_>> {
+        Ok(Box::new(self.iter()))
     }
 }
 

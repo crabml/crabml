@@ -1,333 +1,81 @@
 use std::ops::AddAssign;
+use std::rc::Rc;
 use std::time::Duration;
 use std::time::Instant;
 use std::vec;
 
+use crabml::backends::cpu::CpuTensor;
 use crabml::error::Error;
 use crabml::error::ErrorKind;
 use crabml::error::Result;
-use crabml::gguf::GGUFFile;
-use crabml::gguf::GGUFMetadata;
-use crabml::backends::cpu::cpu_tensor::CpuTensorPoolRef;
-use crabml::backends::cpu::CpuTensor;
 use crabml::tensor::tensor::Tensor;
-use crabml::tensor::tensor::TensorArithmetics;
 use crabml::tokenizer::BpeTokenizer;
 
+use crate::model::CpuLlama2Model;
+use crate::model::Llama2Config;
+use crate::model::Llama2Weights;
 use crate::sampler::Llama2Sampler;
 
-#[derive(Debug, Copy, Clone)]
-pub struct Llama2Config {
-    pub embedding_dim: usize, // the dim of embedding
-    pub hidden_dim: usize,
-    pub n_layers: usize,
-    pub n_heads: usize,
-    pub n_kv_heads: usize,
-    pub vocab_size: usize,
-    pub seq_len: usize,
-    pub rms_norm_eps: f32,
-    pub rope_dim: usize,
-}
-
-impl Llama2Config {
-    pub fn kv_dim(&self) -> usize {
-        (self.embedding_dim * self.n_kv_heads) / self.n_heads
-    }
-
-    fn head_size(&self) -> usize {
-        self.embedding_dim / self.n_heads
-    }
-}
-
-pub struct Llama2Weights<'a> {
-    // token embedding table
-    token_embedding_table: CpuTensor<'a>, // (vocab_size, dim)
-    // weights for rmsnorms
-    rms_att_weight: Vec<CpuTensor<'a>>, // (layer, dim) rmsnorm weights
-    rms_ffn_weight: Vec<CpuTensor<'a>>, // (layer, dim)
-    // weights for matmuls
-    wq: Vec<CpuTensor<'a>>, // (layer, embedding_dim, embedding_dim)
-    wk: Vec<CpuTensor<'a>>, // (layer, kv_dim, embedding_dim)
-    wv: Vec<CpuTensor<'a>>, // (layer, kv_dim, embedding_dim)
-    wo: Vec<CpuTensor<'a>>, // (layer, embedding_dim, embedding_dim)
-    // weights for ffn
-    w1: Vec<CpuTensor<'a>>, // (layer, hidden_dim, embedding_dim)
-    w2: Vec<CpuTensor<'a>>, // (layer, embedding_dim, hidden_dim)
-    w3: Vec<CpuTensor<'a>>, // (layer, hidden_dim, embedding_dim)
-    // final rmsnorm
-    rms_final_weight: CpuTensor<'a>, // (dim, )
-    // (optional) classifier weights for the logits, on the last layer
-    wcls: CpuTensor<'a>, // (vocab_size, dim)
-}
-
-pub struct Llama2Model<'a> {
+pub struct Llama2Runner<T: Tensor> {
     conf: Llama2Config,
-    weights: Llama2Weights<'a>,
-    tokenizer: BpeTokenizer,
-    metadata: &'a GGUFMetadata<'a>,
+    weights: Rc<Llama2Weights<T>>,
+    tokenizer: Rc<BpeTokenizer>,
+    pool: T::Pool,
+    logits: Vec<f32>,            // output logits (vocab_size, )
+    key_cache: Vec<Option<T>>,   // (layer, seq_len, kv_dim)
+    value_cache: Vec<Option<T>>, // (layer, seq_len, kv_dim)
 }
 
-impl<'a> Llama2Model<'a> {
-    pub fn from(gf: &'a GGUFFile<'a>, pool: CpuTensorPoolRef<'a>) -> Result<Self> {
-        let conf = Self::load_config(gf);
-        let weights = Self::load_weights(gf, conf.n_layers, pool)?;
-        let tokenizer = Self::load_tokenizer(gf);
-        Ok(Self {
-            conf,
-            weights,
-            tokenizer,
-            metadata: gf.metadata(),
-        })
-    }
+impl<'a> TryFrom<&'a CpuLlama2Model<'a>> for Llama2Runner<CpuTensor<'a>> {
+    type Error = crabml::error::Error;
 
-    pub fn conf(&self) -> &Llama2Config {
-        &self.conf
-    }
+    fn try_from(model: &'a CpuLlama2Model<'a>) -> Result<Self> {
+        let conf = &model.conf;
+        let pool = model.pool.clone();
+        let weights = model.weights.clone();
+        let tokenizer = model.tokenizer.clone();
 
-    pub fn weights(&self) -> &Llama2Weights<'a> {
-        &self.weights
-    }
-
-    pub fn metadata(&self) -> &'a GGUFMetadata<'a> {
-        self.metadata
-    }
-
-    pub fn tokenizer(&self) -> &BpeTokenizer {
-        &self.tokenizer
-    }
-
-    fn load_weights(
-        gf: &'a GGUFFile<'a>,
-        n_layers: usize,
-        pool: CpuTensorPoolRef<'a>,
-    ) -> Result<Llama2Weights<'a>> {
-        // [64 (dim), 512 (vocab_size)]
-        let token_embedding_table = Self::load_tensor(gf, "token_embd.weight", pool.clone())?;
-        let mut wq = vec![];
-        let mut wk = vec![];
-        let mut wv = vec![];
-        let mut wo = vec![];
-        let mut w1 = vec![];
-        let mut w2 = vec![];
-        let mut w3 = vec![];
-        let mut rms_att_weight = vec![];
-        let mut rms_ffn_weight = vec![];
-        for layer in 0..n_layers {
-            wq.push(Self::load_tensor(
-                gf,
-                &format!("blk.{}.attn_q.weight", layer),
-                pool.clone(),
-            )?);
-            wk.push(Self::load_tensor(
-                gf,
-                &format!("blk.{}.attn_k.weight", layer),
-                pool.clone(),
-            )?);
-            wv.push(Self::load_tensor(
-                gf,
-                &format!("blk.{}.attn_v.weight", layer),
-                pool.clone(),
-            )?);
-            wo.push(Self::load_tensor(
-                gf,
-                &format!("blk.{}.attn_output.weight", layer),
-                pool.clone(),
-            )?);
-            // (hidden_dim:172, embedding_dim:64)
-            w1.push(Self::load_tensor(
-                gf,
-                &format!("blk.{}.ffn_gate.weight", layer),
-                pool.clone(),
-            )?);
-            w2.push(Self::load_tensor(
-                gf,
-                &format!("blk.{}.ffn_down.weight", layer),
-                pool.clone(),
-            )?);
-            w3.push(Self::load_tensor(
-                gf,
-                &format!("blk.{}.ffn_up.weight", layer),
-                pool.clone(),
-            )?);
-            rms_att_weight.push(Self::load_tensor(
-                gf,
-                &format!("blk.{}.attn_norm.weight", layer),
-                pool.clone(),
-            )?);
-            rms_ffn_weight.push(Self::load_tensor(
-                gf,
-                &format!("blk.{}.ffn_norm.weight", layer),
-                pool.clone(),
-            )?);
-        }
-        let rms_final_weight = Self::load_tensor(gf, "output_norm.weight", pool.clone())?;
-        let wcls = Self::load_tensor(gf, "output.weight", pool.clone())?;
-        Ok(Llama2Weights {
-            token_embedding_table,
-            wq,
-            wk,
-            wv,
-            wo,
-            w1,
-            w2,
-            w3,
-            rms_att_weight,
-            rms_ffn_weight,
-            rms_final_weight,
-            wcls,
-        })
-    }
-
-    pub(crate) fn load_tensor(
-        gf: &'a GGUFFile<'a>,
-        name: &str,
-        pool: CpuTensorPoolRef<'a>,
-    ) -> Result<CpuTensor<'a>> {
-        let info = match gf.get_tensor_info(name) {
-            None => {
-                return Err(Error {
-                    kind: ErrorKind::IOError,
-                    message: format!("failed to find tensor {}", name),
-                    cause: None,
-                });
-            }
-            Some(info) => info.clone(),
-        };
-
-        // the dimensions stored in GGUF seems in a reverse order of numpy's shape
-        let dims = info
-            .dimensions()
-            .iter()
-            .rev()
-            .map(|v| *v)
-            .collect::<Vec<_>>();
-
-        let tensor = CpuTensor::from_bytes(info.data(), info.typ(), &dims, pool.clone())?;
-        Ok(tensor)
-    }
-
-    fn load_tokenizer(gf: &GGUFFile) -> BpeTokenizer {
-        let vocab = gf
-            .metadata()
-            .get_string_array("tokenizer.ggml.tokens")
-            .unwrap()
-            .iter()
-            .map(|s| s.to_string())
-            .collect::<Vec<_>>();
-        let vocab_scores = gf
-            .metadata()
-            .get_f32_array("tokenizer.ggml.scores")
-            .unwrap()
-            .iter()
-            .cloned()
-            .collect::<Vec<_>>();
-        let eos_token = gf
-            .metadata()
-            .get_u32("tokenizer.ggml.eos_token_id")
-            .unwrap() as usize;
-        let bos_token = gf
-            .metadata()
-            .get_u32("tokenizer.ggml.bos_token_id")
-            .unwrap() as usize;
-        BpeTokenizer::new(vocab, vocab_scores, bos_token, eos_token)
-    }
-
-    fn load_config(gf: &GGUFFile) -> Llama2Config {
-        // let rope_dims = gf.metadata().get_u32("llama.rope.dimension_count").unwrap();
-        let n_heads = gf.metadata().get_u32("llama.attention.head_count").unwrap() as usize;
-        let n_layers = gf.metadata().get_u32("llama.block_count").unwrap() as usize;
-        let hidden_dim = gf.metadata().get_u32("llama.feed_forward_length").unwrap() as usize;
-        let n_kv_heads = gf
-            .metadata()
-            .get_u32("llama.attention.head_count_kv")
-            .unwrap() as usize;
-        let seq_len = gf.metadata().get_u32("llama.context_length").unwrap() as usize;
-        let vocab_size = gf
-            .metadata()
-            .get_string_array("tokenizer.ggml.tokens")
-            .unwrap()
-            .len();
-        let embedding_dim = gf.metadata().get_u32("llama.embedding_length").unwrap() as usize;
-        let rms_norm_eps = gf
-            .metadata()
-            .get_f32("llama.attention.layer_norm_rms_epsilon")
-            .unwrap();
-        let n_rot = gf.metadata().get_u32("llama.rope.dimension_count").unwrap() as usize;
-        Llama2Config {
-            n_heads,
-            n_kv_heads,
-            n_layers,
-            embedding_dim,
-            hidden_dim,
-            seq_len,
-            vocab_size,
-            rms_norm_eps,
-            rope_dim: n_rot,
-        }
-    }
-}
-
-struct Llama2State<'a> {
-    logits: Vec<f32>, // output logits (vocab_size, )
-    // ProbIndex *probindex; // buffer used in top-p sampling
-    key_cache: Vec<Option<CpuTensor<'a>>>, // (layer, seq_len, kv_dim)
-    value_cache: Vec<Option<CpuTensor<'a>>>, // (layer, seq_len, kv_dim)
-}
-
-pub struct Llama2Runner<'a> {
-    conf: Llama2Config,
-    state: Llama2State<'a>,
-    weights: &'a Llama2Weights<'a>,
-    tokenizer: &'a BpeTokenizer,
-    pool: CpuTensorPoolRef<'a>,
-}
-
-impl<'a> Llama2Runner<'a> {
-    pub fn new(
-        conf: &Llama2Config,
-        weights: &'a Llama2Weights<'a>,
-        tokenizer: &'a BpeTokenizer,
-        pool: CpuTensorPoolRef<'a>,
-    ) -> Result<Self> {
-        let state = Llama2State {
-            logits: vec![0.0; conf.vocab_size],
-            key_cache: (0..conf.n_layers)
-                .map(|_| {
-                    CpuTensor::new(
-                        Vec::with_capacity(128 * conf.n_kv_heads * conf.head_size()),
-                        &[0, conf.n_kv_heads, conf.head_size()],
-                        pool.clone(),
-                    )
-                    .map(|t| Some(t))
-                })
-                .collect::<Result<Vec<_>>>()?,
-            value_cache: (0..conf.n_layers)
-                .map(|_| {
-                    CpuTensor::new(
-                        Vec::with_capacity(128 * conf.n_kv_heads * conf.head_size()),
-                        &[0, conf.n_kv_heads, conf.head_size()],
-                        pool.clone(),
-                    )
-                    .map(|t| Some(t))
-                })
-                .collect::<Result<Vec<_>>>()?,
-        };
+        let logits = vec![0.0; conf.vocab_size];
+        let key_cache = (0..conf.n_layers)
+            .map(|_| {
+                CpuTensor::new(
+                    vec![],
+                    &[0, conf.n_kv_heads, conf.head_size()],
+                    pool.clone(),
+                )
+                .map(|t| Some(t))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let value_cache = (0..conf.n_layers)
+            .map(|_| {
+                CpuTensor::new(
+                    vec![],
+                    &[0, conf.n_kv_heads, conf.head_size()],
+                    pool.clone(),
+                )
+                .map(|t| Some(t))
+            })
+            .collect::<Result<Vec<_>>>()?;
 
         Ok(Self {
             conf: *conf,
-            state,
+            logits,
+            key_cache,
+            value_cache,
             weights,
             tokenizer,
             pool,
         })
     }
+}
 
+impl<'a, T: Tensor> Llama2Runner<T> {
     pub fn generate(
         &'a mut self,
         prompt: &str,
         steps: usize,
         sampler: &'a mut Llama2Sampler,
-    ) -> Result<Llama2RunnerOutputGenerator<'a>> {
+    ) -> Result<Llama2RunnerOutputGenerator<'a, T>> {
         Llama2RunnerOutputGenerator::new(self, sampler, prompt, steps, self.conf.seq_len)
     }
 
@@ -338,7 +86,7 @@ impl<'a> Llama2Runner<'a> {
         let head_size = self.conf.head_size();
 
         // copy the token embedding into x
-        let mut x = CpuTensor::alloc(&[embed_dim], self.pool.clone())?;
+        let mut x = T::alloc(&[embed_dim], self.pool.clone())?;
         x.copy_from(&self.weights.token_embedding_table, &[token, 0], embed_dim)?;
 
         // forward all the layers
@@ -378,10 +126,10 @@ impl<'a> Llama2Runner<'a> {
             {
                 let v = v.reshape(&[n_kv_heads, head_size])?;
 
-                if let Some(ref mut k_cache) = self.state.key_cache[l] {
+                if let Some(ref mut k_cache) = self.key_cache[l] {
                     k_cache.extend(&k)?;
                 }
-                if let Some(ref mut v_cache) = self.state.value_cache[l] {
+                if let Some(ref mut v_cache) = self.value_cache[l] {
                     v_cache.extend(&v)?;
                 }
             };
@@ -402,7 +150,7 @@ impl<'a> Llama2Runner<'a> {
                 // - out = batch_matmul(val_cache, atten_scores) => [n_head, head_size]
 
                 // get attention scores
-                let k_cache = self.state.key_cache[l].take().unwrap();
+                let k_cache = self.key_cache[l].take().unwrap();
                 let k_cache_strider_orig = k_cache.strider().clone();
                 let k_cache = k_cache
                     .repeat(&[1, n_heads / n_kv_heads, 1])?
@@ -411,9 +159,9 @@ impl<'a> Llama2Runner<'a> {
                 let attn = k_cache.batch_matmul(&q)?;
                 let attn = attn.div_scalar_inplace((head_size as f32).sqrt())?;
                 let attn = attn.softmax_inplace(1)?;
-                self.state.key_cache[l].replace(k_cache.with_strider(k_cache_strider_orig)?);
+                self.key_cache[l].replace(k_cache.with_strider(k_cache_strider_orig)?);
 
-                let v_cache = self.state.value_cache[l].take().unwrap();
+                let v_cache = self.value_cache[l].take().unwrap();
                 let v_cache_strider_orig = v_cache.strider().clone();
                 // get the weighted sum of the values and attention scores
                 let v_cache = v_cache
@@ -422,7 +170,7 @@ impl<'a> Llama2Runner<'a> {
                 // (n_heads, head_size, n_seq) @ (n_heads, n_seq) => (n_heads, head_size)
                 let x_with_attn = v_cache.batch_matmul(&attn)?; // (n_heads, head_size)
                 let x_with_attn = x_with_attn.reshape(&[embed_dim])?;
-                self.state.value_cache[l].replace(v_cache.with_strider(v_cache_strider_orig)?);
+                self.value_cache[l].replace(v_cache.with_strider(v_cache_strider_orig)?);
 
                 // final matmul to get the output of the attention
                 self.weights.wo[l].matmul(&x_with_attn)?
@@ -475,25 +223,25 @@ impl<'a> Llama2Runner<'a> {
         // classifier into logits
         let logits = self.weights.wcls.matmul(&x)?; // (vocab_size,
 
-        self.state.logits = logits.iter().collect::<Vec<_>>();
-        Ok(&mut self.state.logits)
+        self.logits = logits.export()?.collect::<Vec<_>>();
+        Ok(&mut self.logits)
     }
 }
 
-pub struct Llama2RunnerOutputGenerator<'a> {
+pub struct Llama2RunnerOutputGenerator<'a, T: Tensor> {
     pos: usize,
     steps: usize,
     seq_len: usize,
     prompt_tokens: Vec<usize>,
     token: usize,
     sampler: &'a mut Llama2Sampler,
-    runner: &'a mut Llama2Runner<'a>,
+    runner: &'a mut Llama2Runner<T>,
     total_time: Duration,
 }
 
-impl<'a> Llama2RunnerOutputGenerator<'a> {
+impl<'a, T: Tensor> Llama2RunnerOutputGenerator<'a, T> {
     fn new(
-        runner: &'a mut Llama2Runner<'a>,
+        runner: &'a mut Llama2Runner<T>,
         sampler: &'a mut Llama2Sampler,
         prompt: &str,
         steps: usize,
@@ -566,7 +314,7 @@ impl<'a> Llama2RunnerOutputGenerator<'a> {
     }
 }
 
-impl<'a> Iterator for Llama2RunnerOutputGenerator<'a> {
+impl<'a, T: Tensor> Iterator for Llama2RunnerOutputGenerator<'a, T> {
     type Item = Result<String>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -584,8 +332,8 @@ impl<'a> Iterator for Llama2RunnerOutputGenerator<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crabml::gguf::GGUFFileLoader;
     use crabml::backends::cpu::cpu_tensor::CpuTensorPool;
+    use crabml::gguf::GGUFFileLoader;
 
     use super::*;
 
@@ -594,11 +342,10 @@ mod tests {
         let gl: GGUFFileLoader =
             GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-f32.gguf")?;
         let gf = gl.open()?;
-        let pool = CpuTensorPool::new();
-        let lm = Llama2Model::from(&gf, pool.clone())?;
+        let lm = CpuLlama2Model::from(&gf)?;
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0);
-        let mut runner = Llama2Runner::new(&lm.conf, &lm.weights, &lm.tokenizer, pool)?;
+        let mut runner = Llama2Runner::try_from(&lm)?;
         let output = runner.generate("Lily is a cat", 30, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
         assert_eq!(
@@ -612,13 +359,12 @@ mod tests {
     fn test_generate_q8_0() -> Result<()> {
         let gl = GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-q8_0.gguf")?;
         let gf = gl.open()?;
-        let pool = CpuTensorPool::new();
-        let lm = Llama2Model::from(&gf, pool.clone())?;
+        let lm = CpuLlama2Model::from(&gf)?;
         assert_eq!(lm.conf().rope_dim, 48);
         assert_eq!(lm.conf().head_size(), 48);
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0);
-        let mut runner = Llama2Runner::new(&lm.conf, &lm.weights, &lm.tokenizer, pool)?;
+        let mut runner = Llama2Runner::try_from(&lm)?;
         let output = runner.generate("Lily is a cute cat, ", 10, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
         assert_eq!(s, "3 years old. She likes to play with her");

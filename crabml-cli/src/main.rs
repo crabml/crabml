@@ -46,8 +46,7 @@ fn main() -> Result<()> {
 
     let gl = GGUFFileLoader::new(&args.model)?;
     let gf = gl.open()?;
-    let pool = CpuTensorPool::new();
-    let lm = CpuLlama2Model::from(&gf, pool.clone())?;
+    let lm = CpuLlama2Model::from(&gf)?;
 
     let mut sampler = Llama2Sampler::new(lm.conf().vocab_size, args.temperature, args.probability);
     let mut runner = Llama2Runner::try_from(&lm)?;

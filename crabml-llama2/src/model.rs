@@ -1,6 +1,7 @@
 use std::rc::Rc;
 use std::vec;
 
+use crabml::backends::cpu::cpu_tensor::CpuTensorPool;
 use crabml::backends::cpu::cpu_tensor::CpuTensorPoolRef;
 use crabml::backends::cpu::CpuTensor;
 use crabml::error::Error;
@@ -64,7 +65,8 @@ pub struct CpuLlama2Model<'a> {
 }
 
 impl<'a> CpuLlama2Model<'a> {
-    pub fn from(gf: &'a GGUFFile<'a>, pool: CpuTensorPoolRef<'a>) -> Result<Self> {
+    pub fn from(gf: &'a GGUFFile<'a>) -> Result<Self> {
+        let pool = CpuTensorPool::new();
         let conf = Self::load_config(gf);
         let weights = Self::load_weights(gf, conf.n_layers, pool.clone())?;
         let tokenizer = Self::load_tokenizer(gf);

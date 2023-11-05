@@ -342,8 +342,7 @@ mod tests {
         let gl: GGUFFileLoader =
             GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-f32.gguf")?;
         let gf = gl.open()?;
-        let pool = CpuTensorPool::new();
-        let lm = CpuLlama2Model::from(&gf, pool.clone())?;
+        let lm = CpuLlama2Model::from(&gf)?;
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0);
         let mut runner = Llama2Runner::try_from(&lm)?;
@@ -360,8 +359,7 @@ mod tests {
     fn test_generate_q8_0() -> Result<()> {
         let gl = GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-q8_0.gguf")?;
         let gf = gl.open()?;
-        let pool = CpuTensorPool::new();
-        let lm = CpuLlama2Model::from(&gf, pool.clone())?;
+        let lm = CpuLlama2Model::from(&gf)?;
         assert_eq!(lm.conf().rope_dim, 48);
         assert_eq!(lm.conf().head_size(), 48);
 

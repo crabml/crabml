@@ -60,7 +60,7 @@ pub struct Llama2Weights<T: Tensor> {
     wcls: T, // (vocab_size, dim)
 }
 
-pub struct Llama2Model<'a> {
+pub struct CpuLlama2Model<'a> {
     conf: Llama2Config,
     weights: Llama2Weights<CpuTensor<'a>>,
     tokenizer: BpeTokenizer,
@@ -68,7 +68,7 @@ pub struct Llama2Model<'a> {
     metadata: &'a GGUFMetadata<'a>,
 }
 
-impl<'a> Llama2Model<'a> {
+impl<'a> CpuLlama2Model<'a> {
     pub fn from(gf: &'a GGUFFile<'a>, pool: CpuTensorPoolRef<'a>) -> Result<Self> {
         let conf = Self::load_config(gf);
         let weights = Self::load_weights(gf, conf.n_layers, pool.clone())?;
@@ -283,13 +283,15 @@ pub struct Llama2Runner<'a> {
     pool: CpuTensorPoolRef<'a>,
 }
 
-impl<'a> Llama2Runner<'a> {
-    pub fn new(
-        conf: &Llama2Config,
-        weights: &'a Llama2Weights<CpuTensor<'a>>,
-        tokenizer: &'a BpeTokenizer,
-        pool: CpuTensorPoolRef<'a>,
-    ) -> Result<Self> {
+impl<'a> TryFrom<&'a CpuLlama2Model<'a>> for Llama2Runner<'a> {
+    type Error = crabml::error::Error;
+
+    fn try_from(model: &'a CpuLlama2Model<'a>) -> Result<Self> {
+        let conf = &model.conf;
+        let pool = model.pool.clone();
+        let weights = &model.weights;
+        let tokenizer = &model.tokenizer;
+
         let state = Llama2State {
             logits: vec![0.0; conf.vocab_size],
             key_cache: (0..conf.n_layers)
@@ -322,7 +324,9 @@ impl<'a> Llama2Runner<'a> {
             pool,
         })
     }
+}
 
+impl<'a> Llama2Runner<'a> {
     pub fn generate(
         &'a mut self,
         prompt: &str,
@@ -596,10 +600,10 @@ mod tests {
             GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-f32.gguf")?;
         let gf = gl.open()?;
         let pool = CpuTensorPool::new();
-        let lm = Llama2Model::from(&gf, pool.clone())?;
+        let lm = CpuLlama2Model::from(&gf, pool.clone())?;
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0);
-        let mut runner = Llama2Runner::new(&lm.conf, &lm.weights, &lm.tokenizer, pool)?;
+        let mut runner = Llama2Runner::try_from(&lm)?;
         let output = runner.generate("Lily is a cat", 30, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
         assert_eq!(
@@ -614,12 +618,12 @@ mod tests {
         let gl = GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-q8_0.gguf")?;
         let gf = gl.open()?;
         let pool = CpuTensorPool::new();
-        let lm = Llama2Model::from(&gf, pool.clone())?;
+        let lm = CpuLlama2Model::from(&gf, pool.clone())?;
         assert_eq!(lm.conf().rope_dim, 48);
         assert_eq!(lm.conf().head_size(), 48);
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0);
-        let mut runner = Llama2Runner::new(&lm.conf, &lm.weights, &lm.tokenizer, pool)?;
+        let mut runner = Llama2Runner::try_from(&lm)?;
         let output = runner.generate("Lily is a cute cat, ", 10, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
         assert_eq!(s, "3 years old. She likes to play with her");

@@ -267,16 +267,15 @@ impl<'a> Llama2Model<'a> {
     }
 }
 
-struct Llama2State<'a> {
+struct Llama2State<T: Tensor> {
     logits: Vec<f32>, // output logits (vocab_size, )
-    // ProbIndex *probindex; // buffer used in top-p sampling
-    key_cache: Vec<Option<CpuTensor<'a>>>, // (layer, seq_len, kv_dim)
-    value_cache: Vec<Option<CpuTensor<'a>>>, // (layer, seq_len, kv_dim)
+    key_cache: Vec<Option<T>>, // (layer, seq_len, kv_dim)
+    value_cache: Vec<Option<T>>, // (layer, seq_len, kv_dim)
 }
 
 pub struct Llama2Runner<'a> {
     conf: Llama2Config,
-    state: Llama2State<'a>,
+    state: Llama2State<CpuTensor<'a>>,
     weights: &'a Llama2Weights<CpuTensor<'a>>,
     tokenizer: &'a BpeTokenizer,
     pool: CpuTensorPoolRef<'a>,

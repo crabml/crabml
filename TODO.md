@@ -1,3 +1,4 @@
+- [ ] add basic WGPU tensor support
 - [ ] make validate panics
 - [ ] observe the intermediate result in llama2.rs
 - [ ] wgpu tensor support

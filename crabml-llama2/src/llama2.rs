@@ -39,30 +39,30 @@ impl Llama2Config {
     }
 }
 
-pub struct Llama2Weights<'a> {
+pub struct Llama2Weights<T: Tensor> {
     // token embedding table
-    token_embedding_table: CpuTensor<'a>, // (vocab_size, dim)
+    token_embedding_table: T, // (vocab_size, dim)
     // weights for rmsnorms
-    rms_att_weight: Vec<CpuTensor<'a>>, // (layer, dim) rmsnorm weights
-    rms_ffn_weight: Vec<CpuTensor<'a>>, // (layer, dim)
+    rms_att_weight: Vec<T>, // (layer, dim) rmsnorm weights
+    rms_ffn_weight: Vec<T>, // (layer, dim)
     // weights for matmuls
-    wq: Vec<CpuTensor<'a>>, // (layer, embedding_dim, embedding_dim)
-    wk: Vec<CpuTensor<'a>>, // (layer, kv_dim, embedding_dim)
-    wv: Vec<CpuTensor<'a>>, // (layer, kv_dim, embedding_dim)
-    wo: Vec<CpuTensor<'a>>, // (layer, embedding_dim, embedding_dim)
+    wq: Vec<T>, // (layer, embedding_dim, embedding_dim)
+    wk: Vec<T>, // (layer, kv_dim, embedding_dim)
+    wv: Vec<T>, // (layer, kv_dim, embedding_dim)
+    wo: Vec<T>, // (layer, embedding_dim, embedding_dim)
     // weights for ffn
-    w1: Vec<CpuTensor<'a>>, // (layer, hidden_dim, embedding_dim)
-    w2: Vec<CpuTensor<'a>>, // (layer, embedding_dim, hidden_dim)
-    w3: Vec<CpuTensor<'a>>, // (layer, hidden_dim, embedding_dim)
+    w1: Vec<T>, // (layer, hidden_dim, embedding_dim)
+    w2: Vec<T>, // (layer, embedding_dim, hidden_dim)
+    w3: Vec<T>, // (layer, hidden_dim, embedding_dim)
     // final rmsnorm
-    rms_final_weight: CpuTensor<'a>, // (dim, )
+    rms_final_weight: T, // (dim, )
     // (optional) classifier weights for the logits, on the last layer
-    wcls: CpuTensor<'a>, // (vocab_size, dim)
+    wcls: T, // (vocab_size, dim)
 }
 
 pub struct Llama2Model<'a> {
     conf: Llama2Config,
-    weights: Llama2Weights<'a>,
+    weights: Llama2Weights<CpuTensor<'a>>,
     tokenizer: BpeTokenizer,
     metadata: &'a GGUFMetadata<'a>,
 }
@@ -84,7 +84,7 @@ impl<'a> Llama2Model<'a> {
         &self.conf
     }
 
-    pub fn weights(&self) -> &Llama2Weights<'a> {
+    pub fn weights(&self) -> &Llama2Weights<CpuTensor<'a>> {
         &self.weights
     }
 
@@ -100,7 +100,7 @@ impl<'a> Llama2Model<'a> {
         gf: &'a GGUFFile<'a>,
         n_layers: usize,
         pool: CpuTensorPoolRef<'a>,
-    ) -> Result<Llama2Weights<'a>> {
+    ) -> Result<Llama2Weights<CpuTensor<'a>>> {
         // [64 (dim), 512 (vocab_size)]
         let token_embedding_table = Self::load_tensor(gf, "token_embd.weight", pool.clone())?;
         let mut wq = vec![];
@@ -277,7 +277,7 @@ struct Llama2State<'a> {
 pub struct Llama2Runner<'a> {
     conf: Llama2Config,
     state: Llama2State<'a>,
-    weights: &'a Llama2Weights<'a>,
+    weights: &'a Llama2Weights<CpuTensor<'a>>,
     tokenizer: &'a BpeTokenizer,
     pool: CpuTensorPoolRef<'a>,
 }
@@ -285,7 +285,7 @@ pub struct Llama2Runner<'a> {
 impl<'a> Llama2Runner<'a> {
     pub fn new(
         conf: &Llama2Config,
-        weights: &'a Llama2Weights<'a>,
+        weights: &'a Llama2Weights<CpuTensor<'a>>,
         tokenizer: &'a BpeTokenizer,
         pool: CpuTensorPoolRef<'a>,
     ) -> Result<Self> {

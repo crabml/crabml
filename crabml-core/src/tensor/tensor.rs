@@ -2,11 +2,11 @@ use super::strider::TensorStrider;
 use crate::error::Result;
 
 pub trait Tensor: Sized + Clone + TensorArithmetics {
-    type Pool: Clone;
+    type Device: Clone;
 
-    fn new(data: Vec<f32>, shape: &[usize], pool: Self::Pool) -> Result<Self>;
+    fn new(data: Vec<f32>, shape: &[usize], device: Self::Device) -> Result<Self>;
 
-    fn alloc(shape: &[usize], pool: Self::Pool) -> Result<Self>;
+    fn alloc(shape: &[usize], device: Self::Device) -> Result<Self>;
 
     fn with_strider(self, strider: TensorStrider) -> Result<Self>;
 

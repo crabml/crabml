@@ -64,17 +64,19 @@ pub struct Llama2Model<'a> {
     conf: Llama2Config,
     weights: Llama2Weights<CpuTensor<'a>>,
     tokenizer: BpeTokenizer,
+    pool: CpuTensorPoolRef<'a>,
     metadata: &'a GGUFMetadata<'a>,
 }
 
 impl<'a> Llama2Model<'a> {
     pub fn from(gf: &'a GGUFFile<'a>, pool: CpuTensorPoolRef<'a>) -> Result<Self> {
         let conf = Self::load_config(gf);
-        let weights = Self::load_weights(gf, conf.n_layers, pool)?;
+        let weights = Self::load_weights(gf, conf.n_layers, pool.clone())?;
         let tokenizer = Self::load_tokenizer(gf);
         Ok(Self {
             conf,
             weights,
+            pool,
             tokenizer,
             metadata: gf.metadata(),
         })

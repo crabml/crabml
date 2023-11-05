@@ -1,15 +1,14 @@
 use std::vec;
 
+use crabml::backends::cpu::cpu_tensor::CpuTensorPoolRef;
+use crabml::backends::cpu::CpuTensor;
 use crabml::error::Error;
 use crabml::error::ErrorKind;
 use crabml::error::Result;
 use crabml::gguf::GGUFFile;
 use crabml::gguf::GGUFMetadata;
-use crabml::backends::cpu::cpu_tensor::CpuTensorPoolRef;
-use crabml::backends::cpu::CpuTensor;
 use crabml::tensor::tensor::Tensor;
 use crabml::tokenizer::BpeTokenizer;
-
 
 #[derive(Debug, Copy, Clone)]
 pub struct Llama2Config {

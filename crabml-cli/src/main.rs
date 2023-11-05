@@ -2,9 +2,9 @@ use std::io::Write;
 use std::time::Instant;
 
 use clap::Parser;
+use crabml::backends::cpu::cpu_tensor::CpuTensorPool;
 use crabml::error::Result;
 use crabml::gguf::GGUFFileLoader;
-use crabml::backends::cpu::cpu_tensor::CpuTensorPool;
 use crabml_llama2::llama2::CpuLlama2Model;
 use crabml_llama2::llama2::Llama2Runner;
 use crabml_llama2::sampler::Llama2Sampler;

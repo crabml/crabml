@@ -3,11 +3,11 @@ use std::time::Duration;
 use std::time::Instant;
 use std::vec;
 
+use crabml::backends::cpu::cpu_tensor::CpuTensorPoolRef;
+use crabml::backends::cpu::CpuTensor;
 use crabml::error::Error;
 use crabml::error::ErrorKind;
 use crabml::error::Result;
-use crabml::backends::cpu::cpu_tensor::CpuTensorPoolRef;
-use crabml::backends::cpu::CpuTensor;
 use crabml::tensor::tensor::Tensor;
 use crabml::tensor::tensor::TensorArithmetics;
 use crabml::tokenizer::BpeTokenizer;
@@ -17,18 +17,15 @@ use crate::model::Llama2Config;
 use crate::model::Llama2Weights;
 use crate::sampler::Llama2Sampler;
 
-struct Llama2State<T: Tensor> {
-    logits: Vec<f32>, // output logits (vocab_size, )
-    key_cache: Vec<Option<T>>, // (layer, seq_len, kv_dim)
-    value_cache: Vec<Option<T>>, // (layer, seq_len, kv_dim)
-}
-
 pub struct Llama2Runner<'a> {
     conf: Llama2Config,
-    state: Llama2State<CpuTensor<'a>>,
     weights: &'a Llama2Weights<CpuTensor<'a>>,
     tokenizer: &'a BpeTokenizer,
     pool: CpuTensorPoolRef<'a>,
+
+    logits: Vec<f32>,                        // output logits (vocab_size, )
+    key_cache: Vec<Option<CpuTensor<'a>>>,   // (layer, seq_len, kv_dim)
+    value_cache: Vec<Option<CpuTensor<'a>>>, // (layer, seq_len, kv_dim)
 }
 
 impl<'a> TryFrom<&'a CpuLlama2Model<'a>> for Llama2Runner<'a> {
@@ -40,33 +37,33 @@ impl<'a> TryFrom<&'a CpuLlama2Model<'a>> for Llama2Runner<'a> {
         let weights = &model.weights;
         let tokenizer = &model.tokenizer;
 
-        let state = Llama2State {
-            logits: vec![0.0; conf.vocab_size],
-            key_cache: (0..conf.n_layers)
-                .map(|_| {
-                    CpuTensor::new(
-                        Vec::with_capacity(128 * conf.n_kv_heads * conf.head_size()),
-                        &[0, conf.n_kv_heads, conf.head_size()],
-                        pool.clone(),
-                    )
-                    .map(|t| Some(t))
-                })
-                .collect::<Result<Vec<_>>>()?,
-            value_cache: (0..conf.n_layers)
-                .map(|_| {
-                    CpuTensor::new(
-                        Vec::with_capacity(128 * conf.n_kv_heads * conf.head_size()),
-                        &[0, conf.n_kv_heads, conf.head_size()],
-                        pool.clone(),
-                    )
-                    .map(|t| Some(t))
-                })
-                .collect::<Result<Vec<_>>>()?,
-        };
+        let logits = vec![0.0; conf.vocab_size];
+        let key_cache = (0..conf.n_layers)
+            .map(|_| {
+                CpuTensor::new(
+                    Vec::with_capacity(128 * conf.n_kv_heads * conf.head_size()),
+                    &[0, conf.n_kv_heads, conf.head_size()],
+                    pool.clone(),
+                )
+                .map(|t| Some(t))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let value_cache = (0..conf.n_layers)
+            .map(|_| {
+                CpuTensor::new(
+                    Vec::with_capacity(128 * conf.n_kv_heads * conf.head_size()),
+                    &[0, conf.n_kv_heads, conf.head_size()],
+                    pool.clone(),
+                )
+                .map(|t| Some(t))
+            })
+            .collect::<Result<Vec<_>>>()?;
 
         Ok(Self {
             conf: *conf,
-            state,
+            logits,
+            key_cache,
+            value_cache,
             weights,
             tokenizer,
             pool,
@@ -131,10 +128,10 @@ impl<'a> Llama2Runner<'a> {
             {
                 let v = v.reshape(&[n_kv_heads, head_size])?;
 
-                if let Some(ref mut k_cache) = self.state.key_cache[l] {
+                if let Some(ref mut k_cache) = self.key_cache[l] {
                     k_cache.extend(&k)?;
                 }
-                if let Some(ref mut v_cache) = self.state.value_cache[l] {
+                if let Some(ref mut v_cache) = self.value_cache[l] {
                     v_cache.extend(&v)?;
                 }
             };
@@ -155,7 +152,7 @@ impl<'a> Llama2Runner<'a> {
                 // - out = batch_matmul(val_cache, atten_scores) => [n_head, head_size]
 
                 // get attention scores
-                let k_cache = self.state.key_cache[l].take().unwrap();
+                let k_cache = self.key_cache[l].take().unwrap();
                 let k_cache_strider_orig = k_cache.strider().clone();
                 let k_cache = k_cache
                     .repeat(&[1, n_heads / n_kv_heads, 1])?
@@ -164,9 +161,9 @@ impl<'a> Llama2Runner<'a> {
                 let attn = k_cache.batch_matmul(&q)?;
                 let attn = attn.div_scalar_inplace((head_size as f32).sqrt())?;
                 let attn = attn.softmax_inplace(1)?;
-                self.state.key_cache[l].replace(k_cache.with_strider(k_cache_strider_orig)?);
+                self.key_cache[l].replace(k_cache.with_strider(k_cache_strider_orig)?);
 
-                let v_cache = self.state.value_cache[l].take().unwrap();
+                let v_cache = self.value_cache[l].take().unwrap();
                 let v_cache_strider_orig = v_cache.strider().clone();
                 // get the weighted sum of the values and attention scores
                 let v_cache = v_cache
@@ -175,7 +172,7 @@ impl<'a> Llama2Runner<'a> {
                 // (n_heads, head_size, n_seq) @ (n_heads, n_seq) => (n_heads, head_size)
                 let x_with_attn = v_cache.batch_matmul(&attn)?; // (n_heads, head_size)
                 let x_with_attn = x_with_attn.reshape(&[embed_dim])?;
-                self.state.value_cache[l].replace(v_cache.with_strider(v_cache_strider_orig)?);
+                self.value_cache[l].replace(v_cache.with_strider(v_cache_strider_orig)?);
 
                 // final matmul to get the output of the attention
                 self.weights.wo[l].matmul(&x_with_attn)?
@@ -228,8 +225,8 @@ impl<'a> Llama2Runner<'a> {
         // classifier into logits
         let logits = self.weights.wcls.matmul(&x)?; // (vocab_size,
 
-        self.state.logits = logits.iter().collect::<Vec<_>>();
-        Ok(&mut self.state.logits)
+        self.logits = logits.iter().collect::<Vec<_>>();
+        Ok(&mut self.logits)
     }
 }
 
@@ -337,8 +334,8 @@ impl<'a> Iterator for Llama2RunnerOutputGenerator<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crabml::gguf::GGUFFileLoader;
     use crabml::backends::cpu::cpu_tensor::CpuTensorPool;
+    use crabml::gguf::GGUFFileLoader;
 
     use super::*;
 

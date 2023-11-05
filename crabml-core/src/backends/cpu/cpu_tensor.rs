@@ -317,6 +317,10 @@ impl<'a> Tensor for CpuTensor<'a> {
             });
         Ok(())
     }
+
+    fn export(&self) -> Result<Box<dyn Iterator<Item = f32> + '_>> {
+        Ok(Box::new(self.iter()))
+    }
 }
 
 #[cfg(test)]

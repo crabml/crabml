@@ -3,13 +3,11 @@ use std::time::Duration;
 use std::time::Instant;
 use std::vec;
 
-use crabml::backends::cpu::cpu_tensor::CpuTensorPoolRef;
 use crabml::backends::cpu::CpuTensor;
 use crabml::error::Error;
 use crabml::error::ErrorKind;
 use crabml::error::Result;
 use crabml::tensor::tensor::Tensor;
-use crabml::tensor::tensor::TensorArithmetics;
 use crabml::tokenizer::BpeTokenizer;
 
 use crate::model::CpuLlama2Model;
@@ -17,18 +15,17 @@ use crate::model::Llama2Config;
 use crate::model::Llama2Weights;
 use crate::sampler::Llama2Sampler;
 
-pub struct Llama2Runner<'a> {
+pub struct Llama2Runner<'a, T: Tensor> {
     conf: Llama2Config,
-    weights: &'a Llama2Weights<CpuTensor<'a>>,
+    weights: &'a Llama2Weights<T>,
     tokenizer: &'a BpeTokenizer,
-    pool: CpuTensorPoolRef<'a>,
-
+    pool: T::Pool,
     logits: Vec<f32>,                        // output logits (vocab_size, )
-    key_cache: Vec<Option<CpuTensor<'a>>>,   // (layer, seq_len, kv_dim)
-    value_cache: Vec<Option<CpuTensor<'a>>>, // (layer, seq_len, kv_dim)
+    key_cache: Vec<Option<T>>,   // (layer, seq_len, kv_dim)
+    value_cache: Vec<Option<T>>, // (layer, seq_len, kv_dim)
 }
 
-impl<'a> TryFrom<&'a CpuLlama2Model<'a>> for Llama2Runner<'a> {
+impl<'a> TryFrom<&'a CpuLlama2Model<'a>> for Llama2Runner<'a, CpuTensor<'a>> {
     type Error = crabml::error::Error;
 
     fn try_from(model: &'a CpuLlama2Model<'a>) -> Result<Self> {
@@ -71,13 +68,13 @@ impl<'a> TryFrom<&'a CpuLlama2Model<'a>> for Llama2Runner<'a> {
     }
 }
 
-impl<'a> Llama2Runner<'a> {
+impl<'a, T: Tensor> Llama2Runner<'a, T> {
     pub fn generate(
         &'a mut self,
         prompt: &str,
         steps: usize,
         sampler: &'a mut Llama2Sampler,
-    ) -> Result<Llama2RunnerOutputGenerator<'a>> {
+    ) -> Result<Llama2RunnerOutputGenerator<'a, T>> {
         Llama2RunnerOutputGenerator::new(self, sampler, prompt, steps, self.conf.seq_len)
     }
 
@@ -88,7 +85,7 @@ impl<'a> Llama2Runner<'a> {
         let head_size = self.conf.head_size();
 
         // copy the token embedding into x
-        let mut x = CpuTensor::alloc(&[embed_dim], self.pool.clone())?;
+        let mut x = T::alloc(&[embed_dim], self.pool.clone())?;
         x.copy_from(&self.weights.token_embedding_table, &[token, 0], embed_dim)?;
 
         // forward all the layers
@@ -225,25 +222,25 @@ impl<'a> Llama2Runner<'a> {
         // classifier into logits
         let logits = self.weights.wcls.matmul(&x)?; // (vocab_size,
 
-        self.logits = logits.iter().collect::<Vec<_>>();
+        self.logits = logits.export()?.collect::<Vec<_>>();
         Ok(&mut self.logits)
     }
 }
 
-pub struct Llama2RunnerOutputGenerator<'a> {
+pub struct Llama2RunnerOutputGenerator<'a, T: Tensor> {
     pos: usize,
     steps: usize,
     seq_len: usize,
     prompt_tokens: Vec<usize>,
     token: usize,
     sampler: &'a mut Llama2Sampler,
-    runner: &'a mut Llama2Runner<'a>,
+    runner: &'a mut Llama2Runner<'a, T>,
     total_time: Duration,
 }
 
-impl<'a> Llama2RunnerOutputGenerator<'a> {
+impl<'a, T: Tensor> Llama2RunnerOutputGenerator<'a, T> {
     fn new(
-        runner: &'a mut Llama2Runner<'a>,
+        runner: &'a mut Llama2Runner<'a, T>,
         sampler: &'a mut Llama2Sampler,
         prompt: &str,
         steps: usize,
@@ -316,7 +313,7 @@ impl<'a> Llama2RunnerOutputGenerator<'a> {
     }
 }
 
-impl<'a> Iterator for Llama2RunnerOutputGenerator<'a> {
+impl<'a, T: Tensor> Iterator for Llama2RunnerOutputGenerator<'a, T> {
     type Item = Result<String>;
 
     fn next(&mut self) -> Option<Self::Item> {

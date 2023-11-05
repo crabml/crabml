@@ -6,8 +6,8 @@ use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::error::Result;
 use crate::gguf::GGMLType;
-use crate::tensor::strider::TensorStrider;
-use crate::tensor::tensor::Tensor;
+use crate::tensor::TensorStrider;
+use crate::tensor::Tensor;
 
 #[derive(Debug, Clone)]
 pub struct CpuTensor<'a> {

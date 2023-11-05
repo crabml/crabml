@@ -17,8 +17,8 @@ use crate::backends::cpu::validate::require_tensor_shape;
 use crate::backends::cpu::CpuTensor;
 use crate::error::ErrorKind;
 use crate::error::Result;
-use crate::tensor::tensor::Tensor;
-use crate::tensor::tensor::TensorArithmetics;
+use crate::tensor::Tensor;
+use crate::tensor::TensorArithmetics;
 
 /// ! arithmetic.rs contains the tensor arithmetics operations like matmul, accum, etc.
 
@@ -375,7 +375,7 @@ pub fn rope_inplace_old<'a>(
 mod tests {
     use super::*;
     use crate::backends::cpu::cpu_tensor::CpuTensorPool;
-    use crate::tensor::tensor::TensorArithmetics;
+    use crate::tensor::TensorArithmetics;
 
     #[test]
     fn test_rms_norm() -> Result<()> {

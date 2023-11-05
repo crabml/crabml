@@ -1,4 +1,5 @@
 use std::ops::AddAssign;
+use std::rc::Rc;
 use std::time::Duration;
 use std::time::Instant;
 use std::vec;
@@ -15,30 +16,30 @@ use crate::model::Llama2Config;
 use crate::model::Llama2Weights;
 use crate::sampler::Llama2Sampler;
 
-pub struct Llama2Runner<'a, T: Tensor> {
+pub struct Llama2Runner<T: Tensor> {
     conf: Llama2Config,
-    weights: &'a Llama2Weights<T>,
-    tokenizer: &'a BpeTokenizer,
+    weights: Rc<Llama2Weights<T>>,
+    tokenizer: Rc<BpeTokenizer>,
     pool: T::Pool,
-    logits: Vec<f32>,                        // output logits (vocab_size, )
+    logits: Vec<f32>,            // output logits (vocab_size, )
     key_cache: Vec<Option<T>>,   // (layer, seq_len, kv_dim)
     value_cache: Vec<Option<T>>, // (layer, seq_len, kv_dim)
 }
 
-impl<'a> TryFrom<&'a CpuLlama2Model<'a>> for Llama2Runner<'a, CpuTensor<'a>> {
+impl<'a> TryFrom<&'a CpuLlama2Model<'a>> for Llama2Runner<CpuTensor<'a>> {
     type Error = crabml::error::Error;
 
     fn try_from(model: &'a CpuLlama2Model<'a>) -> Result<Self> {
         let conf = &model.conf;
         let pool = model.pool.clone();
-        let weights = &model.weights;
-        let tokenizer = &model.tokenizer;
+        let weights = model.weights.clone();
+        let tokenizer = model.tokenizer.clone();
 
         let logits = vec![0.0; conf.vocab_size];
         let key_cache = (0..conf.n_layers)
             .map(|_| {
                 CpuTensor::new(
-                    Vec::with_capacity(128 * conf.n_kv_heads * conf.head_size()),
+                    vec![],
                     &[0, conf.n_kv_heads, conf.head_size()],
                     pool.clone(),
                 )
@@ -48,7 +49,7 @@ impl<'a> TryFrom<&'a CpuLlama2Model<'a>> for Llama2Runner<'a, CpuTensor<'a>> {
         let value_cache = (0..conf.n_layers)
             .map(|_| {
                 CpuTensor::new(
-                    Vec::with_capacity(128 * conf.n_kv_heads * conf.head_size()),
+                    vec![],
                     &[0, conf.n_kv_heads, conf.head_size()],
                     pool.clone(),
                 )
@@ -68,7 +69,7 @@ impl<'a> TryFrom<&'a CpuLlama2Model<'a>> for Llama2Runner<'a, CpuTensor<'a>> {
     }
 }
 
-impl<'a, T: Tensor> Llama2Runner<'a, T> {
+impl<'a, T: Tensor> Llama2Runner<T> {
     pub fn generate(
         &'a mut self,
         prompt: &str,
@@ -234,13 +235,13 @@ pub struct Llama2RunnerOutputGenerator<'a, T: Tensor> {
     prompt_tokens: Vec<usize>,
     token: usize,
     sampler: &'a mut Llama2Sampler,
-    runner: &'a mut Llama2Runner<'a, T>,
+    runner: &'a mut Llama2Runner<T>,
     total_time: Duration,
 }
 
 impl<'a, T: Tensor> Llama2RunnerOutputGenerator<'a, T> {
     fn new(
-        runner: &'a mut Llama2Runner<'a, T>,
+        runner: &'a mut Llama2Runner<T>,
         sampler: &'a mut Llama2Sampler,
         prompt: &str,
         steps: usize,

@@ -1,3 +1,4 @@
+use std::rc::Rc;
 use std::vec;
 
 use crabml::backends::cpu::cpu_tensor::CpuTensorPoolRef;
@@ -56,8 +57,8 @@ pub struct Llama2Weights<T: Tensor> {
 
 pub struct CpuLlama2Model<'a> {
     pub conf: Llama2Config,
-    pub weights: Llama2Weights<CpuTensor<'a>>,
-    pub tokenizer: BpeTokenizer,
+    pub weights: Rc<Llama2Weights<CpuTensor<'a>>>,
+    pub tokenizer: Rc<BpeTokenizer>,
     pub pool: CpuTensorPoolRef<'a>,
     pub metadata: &'a GGUFMetadata<'a>,
 }
@@ -69,9 +70,9 @@ impl<'a> CpuLlama2Model<'a> {
         let tokenizer = Self::load_tokenizer(gf);
         Ok(Self {
             conf,
-            weights,
+            weights: Rc::new(weights),
             pool,
-            tokenizer,
+            tokenizer: Rc::new(tokenizer),
             metadata: gf.metadata(),
         })
     }
@@ -80,16 +81,16 @@ impl<'a> CpuLlama2Model<'a> {
         &self.conf
     }
 
-    pub fn weights(&self) -> &Llama2Weights<CpuTensor<'a>> {
-        &self.weights
+    pub fn weights(&self) -> Rc<Llama2Weights<CpuTensor<'a>>> {
+        self.weights.clone()
     }
 
     pub fn metadata(&self) -> &'a GGUFMetadata<'a> {
         self.metadata
     }
 
-    pub fn tokenizer(&self) -> &BpeTokenizer {
-        &self.tokenizer
+    pub fn tokenizer(&self) -> Rc<BpeTokenizer> {
+        self.tokenizer.clone()
     }
 
     fn load_weights(

@@ -6,8 +6,8 @@ use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::error::Result;
 use crate::gguf::GGMLType;
-use crate::tensor::TensorStrider;
 use crate::tensor::Tensor;
+use crate::tensor::TensorStrider;
 
 #[derive(Debug, Clone)]
 pub struct CpuTensor<'a> {
@@ -533,7 +533,11 @@ mod tests {
     #[test]
     fn test_extend() -> Result<()> {
         let device = CpuTensorDevice::new();
-        let mut t1 = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[1, 2, 3], device.clone())?;
+        let mut t1 = CpuTensor::new(
+            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            &[1, 2, 3],
+            device.clone(),
+        )?;
         let t2 = CpuTensor::new(vec![1.0; 6], &[2, 3], device)?;
         t1.extend(&t2)?;
 

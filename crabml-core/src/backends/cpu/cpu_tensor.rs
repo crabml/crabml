@@ -22,8 +22,21 @@ pub struct CpuTensor<'a> {
 // change on the tensor is considered as a move operation, to reduce the need on
 // copying the owned buffer. Feel free to clone() the tensor.
 impl<'a> CpuTensor<'a> {
-    pub fn typ(&self) -> GGMLType {
-        self.buf.typ()
+    pub fn new(buf: Vec<f32>, shape: &[usize], device: CpuTensorDeviceRef<'a>) -> Result<Self> {
+        if buf.len() != shape.iter().product() {
+            return Err(Error {
+                kind: ErrorKind::TensorError,
+                message: format!("invalid shape {:?} for data of length {}", shape, buf.len()),
+                cause: None,
+            });
+        }
+
+        let strider = TensorStrider::new(shape.to_vec());
+        Ok(Self {
+            buf: buf.into(),
+            strider,
+            device: device.clone(),
+        })
     }
 
     pub fn from_bytes(
@@ -41,8 +54,8 @@ impl<'a> CpuTensor<'a> {
         })
     }
 
-    pub fn swap_buf(&mut self, dst: CpuTensorBuf<'a>) -> CpuTensorBuf<'a> {
-        std::mem::replace(&mut self.buf, dst)
+    pub fn typ(&self) -> GGMLType {
+        self.buf.typ()
     }
 
     pub fn device(&self) -> CpuTensorDeviceRef<'a> {
@@ -212,22 +225,7 @@ impl<'a> CpuTensorDevice<'a> {
 impl<'a> Tensor for CpuTensor<'a> {
     type Device = CpuTensorDeviceRef<'a>;
 
-    fn new(buf: Vec<f32>, shape: &[usize], device: Self::Device) -> Result<Self> {
-        if buf.len() != shape.iter().product() {
-            return Err(Error {
-                kind: ErrorKind::TensorError,
-                message: format!("invalid shape {:?} for data of length {}", shape, buf.len()),
-                cause: None,
-            });
-        }
 
-        let strider = TensorStrider::new(shape.to_vec());
-        Ok(Self {
-            buf: buf.into(),
-            strider,
-            device: device.clone(),
-        })
-    }
 
     fn alloc(shape: &[usize], device: Self::Device) -> Result<Self> {
         let buf = vec![0.0; shape.iter().product()];

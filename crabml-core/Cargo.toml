@@ -12,6 +12,7 @@ matrixmultiply = { version = "0.3", default-features = false }
 wgpu = "0.17.1"
 env_logger = "0.10"
 pollster = "0.2.4"
+bytemuck = "1.14.0"
 
 [dev-dependencies]
 pretty_assertions = "1.2.1"

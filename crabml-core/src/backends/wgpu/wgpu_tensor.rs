@@ -1,19 +1,20 @@
 use std::rc::Rc;
 
 use wgpu;
+use wgpu::util::DeviceExt;
 
 use crate::tensor::{TensorStrider, Tensor, TensorArithmetics};
 use crate::error::Result;
 
-struct WgpuTensorDevice {
-    device: wgpu::Device,
+pub struct WgpuTensorDevice {
+    inner: wgpu::Device,
     queue: wgpu::Queue,
 }
 
 impl WgpuTensorDevice {
     fn new() -> Self {
         let (device, queue) = pollster::block_on(Self::init_wgpu());
-        Self { device, queue }
+        Self { inner: device, queue }
     }
 
     async fn init_wgpu() -> (wgpu::Device, wgpu::Queue) {
@@ -40,13 +41,25 @@ impl WgpuTensorDevice {
     }
 }
 
-type WgpuTensorDeviceRef = Rc<WgpuTensorDevice>;
+pub type WgpuTensorDeviceRef = Rc<WgpuTensorDevice>;
 
 #[derive(Clone)]
-struct WgpuTensor {
+pub struct WgpuTensor {
     buf: Rc<wgpu::Buffer>,
     strider: TensorStrider,
     device: WgpuTensorDeviceRef,
+}
+
+impl WgpuTensor {
+    fn new(buf: Vec<f32>, strider: TensorStrider, device: WgpuTensorDeviceRef) -> Self {
+        let buf = device.inner
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("input buffer"),
+                contents: bytemuck::cast_slice(&buf),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+        Self { buf: Rc::new(buf), strider, device }
+    }
 }
 
 impl Tensor for WgpuTensor {
@@ -57,7 +70,11 @@ impl Tensor for WgpuTensor {
     }
 
     fn with_strider(self, strider: TensorStrider) -> Result<Self> {
-        todo!()
+        Ok(Self {
+            buf: self.buf,
+            strider: self.strider,
+            device: self.device,
+        })
     }
 
     fn reshape(self, shape: &[usize]) -> Result<Self> {
@@ -85,44 +102,6 @@ impl Tensor for WgpuTensor {
     }
 
     fn export(&self) -> Result<Box<dyn Iterator<Item = f32> + '_>> {
-        todo!()
-    }
-}
-
-impl TensorArithmetics for WgpuTensor {
-    fn rope_inplace(self, pos: usize, rope_dims: usize) -> Result<Self> {
-        todo!()
-    }
-
-    fn rms_norm_inplace(self, eps: f32) -> Result<Self> {
-        todo!()
-    }
-
-    fn softmax_inplace(self, axis: usize) -> Result<Self> {
-        todo!()
-    }
-
-    fn silu_inplace(self) -> Result<Self> {
-        todo!()
-    }
-
-    fn mul_inplace(self, rhs: &Self) -> Result<Self> {
-        todo!()
-    }
-
-    fn add_inplace(self, rhs: &Self) -> Result<Self> {
-        todo!()
-    }
-
-    fn div_scalar_inplace(self, rhs: f32) -> Result<Self> {
-        todo!()
-    }
-
-    fn matmul(&self, y: &Self) -> Result<Self> {
-        todo!()
-    }
-
-    fn batch_matmul(&self, y: &Self) -> Result<Self> {
         todo!()
     }
 }

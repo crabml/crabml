@@ -1,2 +1,2 @@
-mod wgpu_tensor;
 mod arithmetic;
+mod wgpu_tensor;

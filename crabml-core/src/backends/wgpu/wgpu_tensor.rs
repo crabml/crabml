@@ -1,20 +1,37 @@
+use std::borrow::BorrowMut;
 use std::rc::Rc;
 
 use wgpu;
 use wgpu::util::DeviceExt;
 
-use crate::tensor::{TensorStrider, Tensor, TensorArithmetics};
+use crate::error::ErrorKind;
 use crate::error::Result;
+use crate::tensor::Tensor;
+use crate::tensor::TensorArithmetics;
+use crate::tensor::TensorStrider;
 
 pub struct WgpuTensorDevice {
     inner: wgpu::Device,
     queue: wgpu::Queue,
+    staging_buf: wgpu::Buffer,
+    staging_buf_size: usize,
 }
 
 impl WgpuTensorDevice {
-    fn new() -> Self {
+    fn new(staging_buf_size: usize) -> Self {
         let (device, queue) = pollster::block_on(Self::init_wgpu());
-        Self { inner: device, queue }
+        let staging_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("staging buffer"),
+            size: staging_buf_size as u64,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        Self {
+            inner: device,
+            queue,
+            staging_buf,
+            staging_buf_size,
+        }
     }
 
     async fn init_wgpu() -> (wgpu::Device, wgpu::Queue) {
@@ -52,13 +69,18 @@ pub struct WgpuTensor {
 
 impl WgpuTensor {
     fn new(buf: Vec<f32>, strider: TensorStrider, device: WgpuTensorDeviceRef) -> Self {
-        let buf = device.inner
+        let buf = device
+            .inner
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("input buffer"),
                 contents: bytemuck::cast_slice(&buf),
                 usage: wgpu::BufferUsages::STORAGE,
             });
-        Self { buf: Rc::new(buf), strider, device }
+        Self {
+            buf: Rc::new(buf),
+            strider,
+            device,
+        }
     }
 }
 
@@ -102,6 +124,25 @@ impl Tensor for WgpuTensor {
     }
 
     fn export(&self) -> Result<Box<dyn Iterator<Item = f32> + '_>> {
-        todo!()
-    }
+        let buf_size = self.strider.len() * 8;
+        if buf_size > self.device.staging_buf_size {
+            return Err((ErrorKind::TensorError, "buffer size too large").into());
+        }
+
+        let mut encoder = self
+            .device
+            .inner
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+
+        encoder.copy_buffer_to_buffer(
+            &self.buf,
+            0,
+            &self.device.staging_buf,
+            0,
+            buf_size as u64,
+        );
+
+        self.device.queue.submit(Some(encoder.finish()));
+    todo!()
+}
 }

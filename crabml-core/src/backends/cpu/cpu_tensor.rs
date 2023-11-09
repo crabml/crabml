@@ -225,8 +225,6 @@ impl<'a> CpuTensorDevice<'a> {
 impl<'a> Tensor for CpuTensor<'a> {
     type Device = CpuTensorDeviceRef<'a>;
 
-
-
     fn alloc(shape: &[usize], device: Self::Device) -> Result<Self> {
         let buf = vec![0.0; shape.iter().product()];
         Self::new(buf, shape, device)

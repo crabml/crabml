@@ -38,20 +38,14 @@ impl<'a> TryFrom<&'a CpuLlama2Model<'a>> for Llama2Runner<CpuTensor<'a>> {
         let logits = vec![0.0; conf.vocab_size];
         let key_cache = (0..conf.n_layers)
             .map(|_| {
-                CpuTensor::alloc(
-                    &[0, conf.n_kv_heads, conf.head_size()],
-                    device.clone(),
-                )
-                .map(|t| Some(t))
+                CpuTensor::alloc(&[0, conf.n_kv_heads, conf.head_size()], device.clone())
+                    .map(|t| Some(t))
             })
             .collect::<Result<Vec<_>>>()?;
         let value_cache = (0..conf.n_layers)
             .map(|_| {
-                CpuTensor::alloc(
-                    &[0, conf.n_kv_heads, conf.head_size()],
-                    device.clone(),
-                )
-                .map(|t| Some(t))
+                CpuTensor::alloc(&[0, conf.n_kv_heads, conf.head_size()], device.clone())
+                    .map(|t| Some(t))
             })
             .collect::<Result<Vec<_>>>()?;
 

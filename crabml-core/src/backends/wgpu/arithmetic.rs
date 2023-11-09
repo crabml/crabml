@@ -1,8 +1,6 @@
-use crate::tensor::TensorArithmetics;
-use crate::error::Result;
-
 use crate::backends::wgpu::wgpu_tensor::WgpuTensor;
-
+use crate::error::Result;
+use crate::tensor::TensorArithmetics;
 
 impl TensorArithmetics for WgpuTensor {
     fn rope_inplace(self, pos: usize, rope_dims: usize) -> Result<Self> {

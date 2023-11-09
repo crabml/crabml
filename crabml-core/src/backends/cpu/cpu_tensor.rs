@@ -231,7 +231,7 @@ impl<'a> Tensor for CpuTensor<'a> {
     }
 
     fn reshape(self, shape: &[usize]) -> Result<Self> {
-        let strider = self.strider.view(shape.to_vec())?;
+        let strider = self.strider.reshape(shape.to_vec())?;
         Ok(Self {
             buf: self.buf,
             strider,

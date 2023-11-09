@@ -123,7 +123,7 @@ impl TensorStrider {
         }))
     }
 
-    pub fn view(&self, shape: Vec<usize>) -> Result<Self> {
+    pub fn reshape(&self, shape: Vec<usize>) -> Result<Self> {
         if !self.is_contiguous() {
             return Err((ErrorKind::TensorError, "not contiguous").into());
         }
@@ -275,10 +275,10 @@ mod tests {
         assert_eq!(s.at(&[0, 3])?, 3);
         assert_eq!(s.at(&[1, 0])?, 4);
 
-        let r = s.view(vec![4, 2]);
+        let r = s.reshape(vec![4, 2]);
         assert!(r.is_err());
 
-        let s = s.view(vec![2, 6])?;
+        let s = s.reshape(vec![2, 6])?;
         assert_eq!(s.at(&[0, 0])?, 0);
         assert_eq!(s.at(&[0, 5])?, 5);
         assert_eq!(s.at(&[1, 0])?, 6);

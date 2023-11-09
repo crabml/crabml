@@ -7,6 +7,7 @@ use wgpu::util::DeviceExt;
 use crate::error::ErrorKind;
 use crate::error::Result;
 use crate::tensor::Tensor;
+use crate::tensor::TensorArithmetics;
 use crate::tensor::TensorStrider;
 
 pub struct WgpuTensorDevice {
@@ -103,19 +104,22 @@ impl Tensor for WgpuTensor {
     }
 
     fn reshape(self, shape: &[usize]) -> Result<Self> {
-        todo!()
+        let strider = self.strider.reshape(shape.to_vec())?;
+        self.with_strider(strider)
     }
 
     fn repeat(self, repeats: &[usize]) -> Result<Self> {
-        todo!()
+        let strider = self.strider.repeat(repeats.to_vec())?;
+        self.with_strider(strider)
     }
 
-    fn transpose(self, shape: &[usize]) -> Result<Self> {
-        todo!()
+    fn transpose(self, dims: &[usize]) -> Result<Self> {
+        let strider = self.strider.transpose(dims)?;
+        self.with_strider(strider)
     }
 
     fn strider(&self) -> &TensorStrider {
-        todo!()
+        &self.strider
     }
 
     fn extend(&mut self, rhs: &Self) -> Result<()> {
@@ -163,6 +167,45 @@ impl Tensor for WgpuTensor {
         Ok(())
     }
 }
+
+impl TensorArithmetics for WgpuTensor {
+    fn rope_inplace(self, pos: usize, rope_dims: usize) -> Result<Self> {
+        todo!()
+    }
+
+    fn rms_norm_inplace(self, eps: f32) -> Result<Self> {
+        todo!()
+    }
+
+    fn softmax_inplace(self, axis: usize) -> Result<Self> {
+        todo!()
+    }
+
+    fn silu_inplace(self) -> Result<Self> {
+        todo!()
+    }
+
+    fn mul_inplace(self, rhs: &Self) -> Result<Self> {
+        todo!()
+    }
+
+    fn add_inplace(self, rhs: &Self) -> Result<Self> {
+        todo!()
+    }
+
+    fn div_scalar_inplace(self, rhs: f32) -> Result<Self> {
+        todo!()
+    }
+
+    fn matmul(&self, y: &Self) -> Result<Self> {
+        todo!()
+    }
+
+    fn batch_matmul(&self, y: &Self) -> Result<Self> {
+        todo!()
+    }
+}
+
 
 #[cfg(test)]
 mod tests {

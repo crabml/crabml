@@ -123,26 +123,40 @@ impl Tensor for WgpuTensor {
         todo!()
     }
 
-    fn export(&self) -> Result<Box<dyn Iterator<Item = f32> + '_>> {
+    fn export(&self, dst: &mut [f32]) -> Result<()> {
         let buf_size = self.strider.len() * 8;
         if buf_size > self.device.staging_buf_size {
             return Err((ErrorKind::TensorError, "buffer size too large").into());
         }
 
+        // enqueue copy from self.buf to staging buffer
         let mut encoder = self
             .device
             .inner
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-
-        encoder.copy_buffer_to_buffer(
-            &self.buf,
-            0,
-            &self.device.staging_buf,
-            0,
-            buf_size as u64,
-        );
-
+        encoder.copy_buffer_to_buffer(&self.buf, 0, &self.device.staging_buf, 0, buf_size as u64);
         self.device.queue.submit(Some(encoder.finish()));
-    todo!()
-}
+
+        // await from the staging buf
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        let staging_slice = self.device.staging_buf.slice(..);
+        staging_slice.map_async(wgpu::MapMode::Read, move |v| tx.send(v).unwrap());
+        self.device.inner.poll(wgpu::Maintain::Wait);
+
+        if let Ok(Ok(())) = rx.recv() {
+            // Gets contents of buffer
+            let data = staging_slice.get_mapped_range();
+            // Since contents are got in bytes, this converts these bytes back to u32
+            dst.copy_from_slice(bytemuck::cast_slice(&data));
+
+            // With the current interface, we have to make sure all mapped views are
+            // dropped before we unmap the buffer.
+            drop(data);
+            self.device.staging_buf.unmap();
+        } else {
+            panic!("failed to run compute on gpu!")
+        }
+
+        Ok(())
+    }
 }

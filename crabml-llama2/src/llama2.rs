@@ -214,8 +214,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
 
         // classifier into logits
         let logits = self.weights.wcls.matmul(&x)?; // (vocab_size,
-
-        self.logits = logits.export()?.collect::<Vec<_>>();
+        logits.export(&mut self.logits)?;
         Ok(&mut self.logits)
     }
 }

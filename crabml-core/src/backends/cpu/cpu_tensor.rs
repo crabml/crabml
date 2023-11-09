@@ -314,8 +314,11 @@ impl<'a> Tensor for CpuTensor<'a> {
         Ok(())
     }
 
-    fn export(&self) -> Result<Box<dyn Iterator<Item = f32> + '_>> {
-        Ok(Box::new(self.iter()))
+    fn export(&self, dst: &mut [f32]) -> Result<()> {
+        dst.iter_mut().zip(self.iter()).for_each(|(dst, src)| {
+            *dst = src;
+        });
+        Ok(())
     }
 }
 

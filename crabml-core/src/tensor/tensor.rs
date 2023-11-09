@@ -20,7 +20,7 @@ pub trait Tensor: Sized + Clone + TensorArithmetics {
 
     fn copy_from(&mut self, rhs: &Self, pos: &[usize], len: usize) -> Result<()>;
 
-    fn export(&self) -> Result<Box<dyn Iterator<Item = f32> + '_>>;
+    fn export(&self, buf: &mut [f32]) -> Result<()>;
 }
 
 pub trait TensorArithmetics: Sized {

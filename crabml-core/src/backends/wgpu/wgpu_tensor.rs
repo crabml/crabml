@@ -7,31 +7,30 @@ use wgpu::util::DeviceExt;
 use crate::error::ErrorKind;
 use crate::error::Result;
 use crate::tensor::Tensor;
-use crate::tensor::TensorArithmetics;
 use crate::tensor::TensorStrider;
 
 pub struct WgpuTensorDevice {
     inner: wgpu::Device,
     queue: wgpu::Queue,
     staging_buf: wgpu::Buffer,
-    staging_buf_size: usize,
+    staging_buf_bytes: usize,
 }
 
 impl WgpuTensorDevice {
-    fn new(staging_buf_size: usize) -> Self {
+    fn new(staging_buf_bytes: usize) -> WgpuTensorDeviceRef {
         let (device, queue) = pollster::block_on(Self::init_wgpu());
         let staging_buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("staging buffer"),
-            size: staging_buf_size as u64,
+            size: staging_buf_bytes as u64,
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        Self {
+        Rc::new(Self {
             inner: device,
             queue,
             staging_buf,
-            staging_buf_size,
-        }
+            staging_buf_bytes,
+        })
     }
 
     async fn init_wgpu() -> (wgpu::Device, wgpu::Queue) {
@@ -68,19 +67,23 @@ pub struct WgpuTensor {
 }
 
 impl WgpuTensor {
-    fn new(buf: Vec<f32>, strider: TensorStrider, device: WgpuTensorDeviceRef) -> Self {
+    fn new(src: &[f32], shape: &[usize], device: WgpuTensorDeviceRef) -> Result<Self> {
         let buf = device
             .inner
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("input buffer"),
-                contents: bytemuck::cast_slice(&buf),
-                usage: wgpu::BufferUsages::STORAGE,
+                contents: bytemuck::cast_slice(src),
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
             });
-        Self {
+        let strider = TensorStrider::new(shape.to_vec());
+        if strider.len() != src.len() {
+            return Err((ErrorKind::TensorError, "buffer size mismatch").into());
+        };
+        Ok(Self {
             buf: Rc::new(buf),
             strider,
             device,
-        }
+        })
     }
 }
 
@@ -124,9 +127,9 @@ impl Tensor for WgpuTensor {
     }
 
     fn export(&self, dst: &mut [f32]) -> Result<()> {
-        let buf_size = self.strider.len() * 8;
-        if buf_size > self.device.staging_buf_size {
-            return Err((ErrorKind::TensorError, "buffer size too large").into());
+        let buf_size = self.strider.len() * std::mem::size_of::<f32>();
+        if buf_size != self.device.staging_buf_bytes {
+            return Err((ErrorKind::TensorError, "buffer size mismatch").into());
         }
 
         // enqueue copy from self.buf to staging buffer
@@ -157,6 +160,24 @@ impl Tensor for WgpuTensor {
             panic!("failed to run compute on gpu!")
         }
 
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{WgpuTensorDevice, WgpuTensor};
+    use crate::{error::Result, tensor::Tensor};
+
+    #[test]
+    fn test_wgpu_tensor_new_and_export() -> Result<()>{
+        let device = WgpuTensorDevice::new(6*4);
+        let t1 = WgpuTensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], device)?;
+        let mut dst = vec![0.0; 6];
+
+        t1.export(&mut dst)?;
+
+        assert_eq!(dst, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
         Ok(())
     }
 }

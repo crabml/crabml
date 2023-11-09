@@ -1,4 +1,5 @@
 use std::borrow::BorrowMut;
+use std::borrow::Cow;
 use std::rc::Rc;
 
 use wgpu;
@@ -190,7 +191,45 @@ impl TensorArithmetics for WgpuTensor {
     }
 
     fn add_inplace(self, rhs: &Self) -> Result<Self> {
-        todo!()
+        let module = self.device.inner.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: None,
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shaders/add_inplace.wgsl"))),
+        });
+        let pipeline = self.device.inner.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: None,
+            layout: None,
+            module: &module,
+            entry_point: "main",
+        });
+
+        let bind_group_layout = pipeline.get_bind_group_layout(0);
+        let bind_group = self.device.inner.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout: &bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: rhs.buf.as_entire_binding(),
+                },
+            ],
+        });
+
+        let mut encoder = self
+            .device
+            .inner
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        {
+            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: None });
+            cpass.set_pipeline(&pipeline);
+            cpass.set_bind_group(0, &bind_group, &[]);
+            cpass.dispatch_workgroups(self.strider.len() as u32, 1, 1);
+        }
+        self.device.queue.submit(Some(encoder.finish()));
+        Ok(self)
     }
 
     fn div_scalar_inplace(self, rhs: f32) -> Result<Self> {
@@ -210,7 +249,7 @@ impl TensorArithmetics for WgpuTensor {
 #[cfg(test)]
 mod tests {
     use super::{WgpuTensorDevice, WgpuTensor};
-    use crate::{error::Result, tensor::Tensor};
+    use crate::{error::Result, tensor::{Tensor, TensorArithmetics}};
 
     #[test]
     fn test_wgpu_tensor_new_and_export() -> Result<()>{
@@ -221,6 +260,20 @@ mod tests {
         t1.export(&mut dst)?;
 
         assert_eq!(dst, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_wgpu_tensor_add() -> Result<()>{
+        let device = WgpuTensorDevice::new(6*4);
+        let t1 = WgpuTensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], device.clone())?;
+        let t2 = WgpuTensor::new(&[1.0, 1.0, 1.0, 1.0, 1.0, 1.0], &[2, 3], device)?;
+        let t1 = t1.add_inplace(&t2)?;
+
+        let mut dst = vec![0.0; 6];
+        t1.export(&mut dst)?;
+
+        assert_eq!(dst, vec![2.0, 3.0, 4.0, 5.0, 6.0, 7.0]);
         Ok(())
     }
 }

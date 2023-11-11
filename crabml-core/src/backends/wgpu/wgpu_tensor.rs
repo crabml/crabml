@@ -42,10 +42,7 @@ impl WgpuTensorDevice {
     }
 
     fn load_modules(&mut self) {
-        let module_sources = vec![(
-            "elementwise_binary",
-            include_str!("shaders/elementwise_binary.wgsl"),
-        )];
+        let module_sources = vec![("binary", include_str!("shaders/binary.wgsl"))];
         let mut modules = HashMap::new();
         for (module_name, module_source) in module_sources {
             let module = self
@@ -61,9 +58,9 @@ impl WgpuTensorDevice {
 
     fn pipeline_for(&self, key: &'static str) -> wgpu::ComputePipeline {
         let pipeline_args = [
-            ("add_inplace", "elementwise_binary", "add_inplace"),
-            ("mul_inplace", "elementwise_binary", "mul_inplace"),
-            ("div_inplace", "elementwise_binary", "div_inplace"),
+            ("add_inplace", "binary", "add_inplace"),
+            ("mul_inplace", "binary", "mul_inplace"),
+            ("div_inplace", "binary", "div_inplace"),
         ];
 
         let (_, module, entry_point) = pipeline_args

@@ -45,7 +45,10 @@ impl WgpuTensorDevice {
         let module_sources = vec![
             ("add_inplace", include_str!("shaders/add_inplace.wgsl")),
             ("mul_inplace", include_str!("shaders/mul_inplace.wgsl")),
-            ("div_scalar_inplace", include_str!("shaders/div_scalar_inplace.wgsl")),
+            (
+                "div_scalar_inplace",
+                include_str!("shaders/div_scalar_inplace.wgsl"),
+            ),
         ];
         let mut modules = HashMap::new();
         for (module_name, module_source) in module_sources {
@@ -152,6 +155,22 @@ impl WgpuTensor {
             cpass.dispatch_workgroups(work_group_size.0, work_group_size.1, work_group_size.2);
         }
         encoder
+    }
+
+    fn encode_strider(&self, strider: &TensorStrider) -> wgpu::Buffer {
+        let mut v = Vec::with_capacity(7);
+        v.push(strider.shape().len());
+        v.extend_from_slice(strider.shape());
+        v.extend_from_slice(strider.strides());
+        let buf = self
+            .device
+            .inner
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("strider buffer"),
+                contents: bytemuck::cast_slice(&v),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+        buf
     }
 }
 
@@ -285,7 +304,9 @@ impl TensorArithmetics for WgpuTensor {
     }
 
     fn div_scalar_inplace(self, rhs: f32) -> Result<Self> {
-        let rhs_buf = self.device.inner
+        let rhs_buf = self
+            .device
+            .inner
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("div_scalar:rhs"),
                 contents: bytemuck::cast_slice(&[rhs]),
@@ -301,7 +322,11 @@ impl TensorArithmetics for WgpuTensor {
                 resource: rhs_buf.as_entire_binding(),
             },
         ];
-        let encoder = self.encode_for("div_scalar_inplace", entries, (self.strider.len() as u32, 1, 1));
+        let encoder = self.encode_for(
+            "div_scalar_inplace",
+            entries,
+            (self.strider.len() as u32, 1, 1),
+        );
         self.device.queue.submit(Some(encoder.finish()));
         Ok(self)
     }

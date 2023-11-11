@@ -45,6 +45,7 @@ impl WgpuTensorDevice {
         let module_sources = vec![
             ("add_inplace", include_str!("shaders/add_inplace.wgsl")),
             ("mul_inplace", include_str!("shaders/mul_inplace.wgsl")),
+            ("div_scalar_inplace", include_str!("shaders/div_scalar_inplace.wgsl")),
         ];
         let mut modules = HashMap::new();
         for (module_name, module_source) in module_sources {
@@ -284,7 +285,25 @@ impl TensorArithmetics for WgpuTensor {
     }
 
     fn div_scalar_inplace(self, rhs: f32) -> Result<Self> {
-        todo!()
+        let rhs_buf = self.device.inner
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("div_scalar:rhs"),
+                contents: bytemuck::cast_slice(&[rhs]),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+        let entries = &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: self.buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: rhs_buf.as_entire_binding(),
+            },
+        ];
+        let encoder = self.encode_for("div_scalar_inplace", entries, (self.strider.len() as u32, 1, 1));
+        self.device.queue.submit(Some(encoder.finish()));
+        Ok(self)
     }
 
     fn matmul(&self, y: &Self) -> Result<Self> {
@@ -342,6 +361,19 @@ mod tests {
 
         assert_eq!(&dst[0..6], [6.0, 6.0, 6.0, 6.0, 6.0, 6.0]);
         assert!(dst.iter().all(|v| *v == 6.0));
+        Ok(())
+    }
+
+    #[test]
+    fn test_wgpu_tensor_div_scalar() -> Result<()> {
+        let device = WgpuTensorDevice::new(1024 * 4);
+        let t1 = WgpuTensor::new(&[6.0; 1024], &[512, 2], device.clone())?;
+        let t1 = t1.div_scalar_inplace(2.0)?;
+
+        let mut dst = vec![0.0; 1024];
+        t1.export(&mut dst)?;
+
+        assert_eq!(&dst[0..3], [3.0, 3.0, 3.0]);
         Ok(())
     }
 }

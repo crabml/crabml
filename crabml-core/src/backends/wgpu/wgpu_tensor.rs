@@ -85,6 +85,57 @@ impl WgpuTensorDevice {
             .unwrap();
         (device, queue)
     }
+
+    fn encode_pipeline_commnad(
+        &self,
+        module: &'static str,
+        entries: &[wgpu::BindGroupEntry],
+        work_group_size: (u32, u32, u32),
+    ) -> wgpu::CommandEncoder {
+        let module = self.modules.get(module).unwrap();
+        let pipeline = self
+            .inner
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: None,
+                layout: None,
+                module: &module,
+                entry_point: "main",
+            });
+
+        let bind_group_layout = pipeline.get_bind_group_layout(0);
+        let bind_group = self.inner.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout: &bind_group_layout,
+            entries,
+        });
+
+        let mut encoder = self
+            .inner
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        {
+            let mut cpass =
+                encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: None });
+            cpass.set_pipeline(&pipeline);
+            cpass.set_bind_group(0, &bind_group, &[]);
+            cpass.dispatch_workgroups(work_group_size.0, work_group_size.1, work_group_size.2);
+        }
+        encoder
+    }
+
+    fn encode_strider(&self, strider: &TensorStrider) -> wgpu::Buffer {
+        let mut v = Vec::with_capacity(7);
+        v.push(strider.shape().len());
+        v.extend_from_slice(strider.shape());
+        v.extend_from_slice(strider.strides());
+        let buf = self
+            .inner
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("strider buffer"),
+                contents: bytemuck::cast_slice(&v),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+        buf
+    }
 }
 
 pub type WgpuTensorDeviceRef = Rc<WgpuTensorDevice>;
@@ -114,63 +165,6 @@ impl WgpuTensor {
             strider,
             device,
         })
-    }
-
-    fn encode_for(
-        &self,
-        module: &'static str,
-        entries: &[wgpu::BindGroupEntry],
-        work_group_size: (u32, u32, u32),
-    ) -> wgpu::CommandEncoder {
-        let module = self.device.modules.get(module).unwrap();
-        let pipeline =
-            self.device
-                .inner
-                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                    label: None,
-                    layout: None,
-                    module: &module,
-                    entry_point: "main",
-                });
-
-        let bind_group_layout = pipeline.get_bind_group_layout(0);
-        let bind_group = self
-            .device
-            .inner
-            .create_bind_group(&wgpu::BindGroupDescriptor {
-                label: None,
-                layout: &bind_group_layout,
-                entries,
-            });
-
-        let mut encoder = self
-            .device
-            .inner
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        {
-            let mut cpass =
-                encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: None });
-            cpass.set_pipeline(&pipeline);
-            cpass.set_bind_group(0, &bind_group, &[]);
-            cpass.dispatch_workgroups(work_group_size.0, work_group_size.1, work_group_size.2);
-        }
-        encoder
-    }
-
-    fn encode_strider(&self, strider: &TensorStrider) -> wgpu::Buffer {
-        let mut v = Vec::with_capacity(7);
-        v.push(strider.shape().len());
-        v.extend_from_slice(strider.shape());
-        v.extend_from_slice(strider.strides());
-        let buf = self
-            .device
-            .inner
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("strider buffer"),
-                contents: bytemuck::cast_slice(&v),
-                usage: wgpu::BufferUsages::STORAGE,
-            });
-        buf
     }
 }
 
@@ -282,7 +276,11 @@ impl TensorArithmetics for WgpuTensor {
                 resource: rhs.buf.as_entire_binding(),
             },
         ];
-        let encoder = self.encode_for("mul_inplace", entries, (self.strider.len() as u32, 1, 1));
+        let encoder = self.device.encode_pipeline_commnad(
+            "mul_inplace",
+            entries,
+            (self.strider.len() as u32, 1, 1),
+        );
         self.device.queue.submit(Some(encoder.finish()));
         Ok(self)
     }
@@ -298,7 +296,11 @@ impl TensorArithmetics for WgpuTensor {
                 resource: rhs.buf.as_entire_binding(),
             },
         ];
-        let encoder = self.encode_for("add_inplace", entries, (self.strider.len() as u32, 1, 1));
+        let encoder = self.device.encode_pipeline_commnad(
+            "add_inplace",
+            entries,
+            (self.strider.len() as u32, 1, 1),
+        );
         self.device.queue.submit(Some(encoder.finish()));
         Ok(self)
     }
@@ -322,7 +324,7 @@ impl TensorArithmetics for WgpuTensor {
                 resource: rhs_buf.as_entire_binding(),
             },
         ];
-        let encoder = self.encode_for(
+        let encoder = self.device.encode_pipeline_commnad(
             "div_scalar_inplace",
             entries,
             (self.strider.len() as u32, 1, 1),

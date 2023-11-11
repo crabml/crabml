@@ -1,5 +1,7 @@
 use std::borrow::BorrowMut;
 use std::borrow::Cow;
+use std::collections::HashMap;
+use std::hash::Hash;
 use std::rc::Rc;
 
 use wgpu;
@@ -16,6 +18,7 @@ pub struct WgpuTensorDevice {
     queue: wgpu::Queue,
     staging_buf: wgpu::Buffer,
     staging_buf_bytes: usize,
+    modules: HashMap<&'static str, wgpu::ShaderModule>
 }
 
 impl WgpuTensorDevice {
@@ -27,12 +30,30 @@ impl WgpuTensorDevice {
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        Rc::new(Self {
+        let mut d = Self {
             inner: device,
             queue,
             staging_buf,
             staging_buf_bytes,
-        })
+            modules: HashMap::new(),
+        };
+        d.load_modules();
+        Rc::new(d)
+    }
+
+    fn load_modules(&mut self) {
+        let module_sources = vec![
+            ("add_inplace", include_str!("shaders/add_inplace.wgsl")),
+        ];
+        let mut modules = HashMap::new();
+        for (module_name, module_source) in module_sources {
+            let module = self.inner.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: None,
+                source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(module_source)),
+            });
+            modules.insert(module_name, module);
+        }
+        self.modules = modules
     }
 
     async fn init_wgpu() -> (wgpu::Device, wgpu::Queue) {
@@ -191,10 +212,7 @@ impl TensorArithmetics for WgpuTensor {
     }
 
     fn add_inplace(self, rhs: &Self) -> Result<Self> {
-        let module = self.device.inner.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: None,
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shaders/add_inplace.wgsl"))),
-        });
+        let module = self.device.modules.get("add_inplace").unwrap();
         let pipeline = self.device.inner.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: None,
             layout: None,

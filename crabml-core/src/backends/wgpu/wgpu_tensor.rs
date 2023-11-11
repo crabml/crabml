@@ -42,7 +42,10 @@ impl WgpuTensorDevice {
     }
 
     fn load_modules(&mut self) {
-        let module_sources = vec![("add_inplace", include_str!("shaders/add_inplace.wgsl"))];
+        let module_sources = vec![
+            ("add_inplace", include_str!("shaders/add_inplace.wgsl")),
+            ("mul_inplace", include_str!("shaders/mul_inplace.wgsl")),
+        ];
         let mut modules = HashMap::new();
         for (module_name, module_source) in module_sources {
             let module = self
@@ -249,7 +252,19 @@ impl TensorArithmetics for WgpuTensor {
     }
 
     fn mul_inplace(self, rhs: &Self) -> Result<Self> {
-        todo!()
+        let entries = &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: self.buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: rhs.buf.as_entire_binding(),
+            },
+        ];
+        let encoder = self.encode_for("mul_inplace", entries, (self.strider.len() as u32, 1, 1));
+        self.device.queue.submit(Some(encoder.finish()));
+        Ok(self)
     }
 
     fn add_inplace(self, rhs: &Self) -> Result<Self> {
@@ -312,6 +327,21 @@ mod tests {
         t1.export(&mut dst)?;
 
         assert_eq!(dst, vec![2.0, 3.0, 4.0, 5.0, 6.0, 7.0]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_wgpu_tensor_mul() -> Result<()> {
+        let device = WgpuTensorDevice::new(1024 * 4);
+        let t1 = WgpuTensor::new(&[3.0; 1024], &[512, 2], device.clone())?;
+        let t2 = WgpuTensor::new(&[2.0; 1024], &[512, 2], device)?;
+        let t1 = t1.mul_inplace(&t2)?;
+
+        let mut dst = vec![0.0; 1024];
+        t1.export(&mut dst)?;
+
+        assert_eq!(&dst[0..6], [6.0, 6.0, 6.0, 6.0, 6.0, 6.0]);
+        assert!(dst.iter().all(|v| *v == 6.0));
         Ok(())
     }
 }

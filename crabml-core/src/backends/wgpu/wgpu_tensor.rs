@@ -18,7 +18,7 @@ pub struct WgpuTensorDevice {
     queue: wgpu::Queue,
     staging_buf: wgpu::Buffer,
     staging_buf_bytes: usize,
-    modules: HashMap<&'static str, wgpu::ShaderModule>
+    modules: HashMap<&'static str, wgpu::ShaderModule>,
 }
 
 impl WgpuTensorDevice {
@@ -42,15 +42,15 @@ impl WgpuTensorDevice {
     }
 
     fn load_modules(&mut self) {
-        let module_sources = vec![
-            ("add_inplace", include_str!("shaders/add_inplace.wgsl")),
-        ];
+        let module_sources = vec![("add_inplace", include_str!("shaders/add_inplace.wgsl"))];
         let mut modules = HashMap::new();
         for (module_name, module_source) in module_sources {
-            let module = self.inner.create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: None,
-                source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(module_source)),
-            });
+            let module = self
+                .inner
+                .create_shader_module(wgpu::ShaderModuleDescriptor {
+                    label: None,
+                    source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(module_source)),
+                });
             modules.insert(module_name, module);
         }
         self.modules = modules
@@ -107,6 +107,47 @@ impl WgpuTensor {
             strider,
             device,
         })
+    }
+
+    fn encode_for(
+        &self,
+        module: &'static str,
+        entries: &[wgpu::BindGroupEntry],
+        work_group_size: (u32, u32, u32),
+    ) -> wgpu::CommandEncoder {
+        let module = self.device.modules.get(module).unwrap();
+        let pipeline =
+            self.device
+                .inner
+                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: None,
+                    layout: None,
+                    module: &module,
+                    entry_point: "main",
+                });
+
+        let bind_group_layout = pipeline.get_bind_group_layout(0);
+        let bind_group = self
+            .device
+            .inner
+            .create_bind_group(&wgpu::BindGroupDescriptor {
+                label: None,
+                layout: &bind_group_layout,
+                entries,
+            });
+
+        let mut encoder = self
+            .device
+            .inner
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        {
+            let mut cpass =
+                encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: None });
+            cpass.set_pipeline(&pipeline);
+            cpass.set_bind_group(0, &bind_group, &[]);
+            cpass.dispatch_workgroups(work_group_size.0, work_group_size.1, work_group_size.2);
+        }
+        encoder
     }
 }
 
@@ -212,40 +253,17 @@ impl TensorArithmetics for WgpuTensor {
     }
 
     fn add_inplace(self, rhs: &Self) -> Result<Self> {
-        let module = self.device.modules.get("add_inplace").unwrap();
-        let pipeline = self.device.inner.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: None,
-            layout: None,
-            module: &module,
-            entry_point: "main",
-        });
-
-        let bind_group_layout = pipeline.get_bind_group_layout(0);
-        let bind_group = self.device.inner.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: None,
-            layout: &bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: self.buf.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: rhs.buf.as_entire_binding(),
-                },
-            ],
-        });
-
-        let mut encoder = self
-            .device
-            .inner
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        {
-            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: None });
-            cpass.set_pipeline(&pipeline);
-            cpass.set_bind_group(0, &bind_group, &[]);
-            cpass.dispatch_workgroups(self.strider.len() as u32, 1, 1);
-        }
+        let entries = &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: self.buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: rhs.buf.as_entire_binding(),
+            },
+        ];
+        let encoder = self.encode_for("add_inplace", entries, (self.strider.len() as u32, 1, 1));
         self.device.queue.submit(Some(encoder.finish()));
         Ok(self)
     }
@@ -263,15 +281,17 @@ impl TensorArithmetics for WgpuTensor {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
-    use super::{WgpuTensorDevice, WgpuTensor};
-    use crate::{error::Result, tensor::{Tensor, TensorArithmetics}};
+    use super::WgpuTensor;
+    use super::WgpuTensorDevice;
+    use crate::error::Result;
+    use crate::tensor::Tensor;
+    use crate::tensor::TensorArithmetics;
 
     #[test]
-    fn test_wgpu_tensor_new_and_export() -> Result<()>{
-        let device = WgpuTensorDevice::new(6*4);
+    fn test_wgpu_tensor_new_and_export() -> Result<()> {
+        let device = WgpuTensorDevice::new(6 * 4);
         let t1 = WgpuTensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], device)?;
         let mut dst = vec![0.0; 6];
 
@@ -282,8 +302,8 @@ mod tests {
     }
 
     #[test]
-    fn test_wgpu_tensor_add() -> Result<()>{
-        let device = WgpuTensorDevice::new(6*4);
+    fn test_wgpu_tensor_add() -> Result<()> {
+        let device = WgpuTensorDevice::new(6 * 4);
         let t1 = WgpuTensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], device.clone())?;
         let t2 = WgpuTensor::new(&[1.0, 1.0, 1.0, 1.0, 1.0, 1.0], &[2, 3], device)?;
         let t1 = t1.add_inplace(&t2)?;

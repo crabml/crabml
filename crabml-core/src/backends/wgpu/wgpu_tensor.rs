@@ -285,7 +285,7 @@ impl TensorArithmetics for WgpuTensor {
         let encoder = self.device.encode_pipeline_commnad(
             "mul_inplace",
             entries,
-            (self.strider.len() as u32, 1, 1),
+            (self.strider.len() as u32 / 64, 1, 1),
         );
         self.device.queue.submit(Some(encoder.finish()));
         Ok(self)
@@ -305,7 +305,7 @@ impl TensorArithmetics for WgpuTensor {
         let encoder = self.device.encode_pipeline_commnad(
             "add_inplace",
             entries,
-            (self.strider.len() as u32, 1, 1),
+            (self.strider.len() as u32 / 64, 1, 1),
         );
         self.device.queue.submit(Some(encoder.finish()));
         Ok(self)
@@ -333,7 +333,7 @@ impl TensorArithmetics for WgpuTensor {
         let encoder = self.device.encode_pipeline_commnad(
             "div_inplace",
             entries,
-            (self.strider.len() as u32, 1, 1),
+            (self.strider.len() as u32 / 64, 1, 1),
         );
         self.device.queue.submit(Some(encoder.finish()));
         Ok(self)

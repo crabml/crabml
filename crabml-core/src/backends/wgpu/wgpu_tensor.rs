@@ -42,14 +42,10 @@ impl WgpuTensorDevice {
     }
 
     fn load_modules(&mut self) {
-        let module_sources = vec![
-            ("add_inplace", include_str!("shaders/add_inplace.wgsl")),
-            ("mul_inplace", include_str!("shaders/mul_inplace.wgsl")),
-            (
-                "div_scalar_inplace",
-                include_str!("shaders/div_scalar_inplace.wgsl"),
-            ),
-        ];
+        let module_sources = vec![(
+            "elementwise_binary",
+            include_str!("shaders/elementwise_binary.wgsl"),
+        )];
         let mut modules = HashMap::new();
         for (module_name, module_source) in module_sources {
             let module = self
@@ -61,6 +57,28 @@ impl WgpuTensorDevice {
             modules.insert(module_name, module);
         }
         self.modules = modules
+    }
+
+    fn pipeline_for(&self, key: &'static str) -> wgpu::ComputePipeline {
+        let pipeline_args = [
+            ("add_inplace", "elementwise_binary", "add_inplace"),
+            ("mul_inplace", "elementwise_binary", "mul_inplace"),
+            ("div_inplace", "elementwise_binary", "div_inplace"),
+        ];
+
+        let (_, module, entry_point) = pipeline_args
+            .into_iter()
+            .find(|(k, _, _)| *k == key)
+            .unwrap();
+
+        let module = self.modules.get(module).unwrap();
+        self.inner
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: None,
+                layout: None,
+                module: &module,
+                entry_point,
+            })
     }
 
     async fn init_wgpu() -> (wgpu::Device, wgpu::Queue) {
@@ -88,20 +106,11 @@ impl WgpuTensorDevice {
 
     fn encode_pipeline_commnad(
         &self,
-        module: &'static str,
+        key: &'static str,
         entries: &[wgpu::BindGroupEntry],
         work_group_size: (u32, u32, u32),
     ) -> wgpu::CommandEncoder {
-        let module = self.modules.get(module).unwrap();
-        let pipeline = self
-            .inner
-            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: None,
-                layout: None,
-                module: &module,
-                entry_point: "main",
-            });
-
+        let pipeline = self.pipeline_for(key);
         let bind_group_layout = pipeline.get_bind_group_layout(0);
         let bind_group = self.inner.create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
@@ -325,7 +334,7 @@ impl TensorArithmetics for WgpuTensor {
             },
         ];
         let encoder = self.device.encode_pipeline_commnad(
-            "div_scalar_inplace",
+            "div_inplace",
             entries,
             (self.strider.len() as u32, 1, 1),
         );

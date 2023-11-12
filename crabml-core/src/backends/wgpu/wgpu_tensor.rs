@@ -266,6 +266,15 @@ impl TensorArithmetics for WgpuTensor {
     }
 
     fn mul_inplace(self, rhs: &Self) -> Result<Self> {
+        assert!(self.strider().len() % 64 == 0);
+        let meta_buf = self
+            .device
+            .inner
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: None,
+                contents: bytemuck::cast_slice(&[1u32, self.strider.len() as u32]),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
         let entries = &[
             wgpu::BindGroupEntry {
                 binding: 0,
@@ -274,6 +283,10 @@ impl TensorArithmetics for WgpuTensor {
             wgpu::BindGroupEntry {
                 binding: 1,
                 resource: rhs.buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: meta_buf.as_entire_binding(),
             },
         ];
         let encoder = self.device.encode_pipeline_commnad(
@@ -317,6 +330,15 @@ impl TensorArithmetics for WgpuTensor {
     }
 
     fn div_scalar_inplace(self, rhs: f32) -> Result<Self> {
+        assert!(self.strider().len() % 64 == 0);
+        let meta_buf = self
+            .device
+            .inner
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: None,
+                contents: bytemuck::cast_slice(&[1u32, self.strider.len() as u32]),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
         let rhs_buf = self
             .device
             .inner
@@ -333,6 +355,10 @@ impl TensorArithmetics for WgpuTensor {
             wgpu::BindGroupEntry {
                 binding: 1,
                 resource: rhs_buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: meta_buf.as_entire_binding(),
             },
         ];
         let encoder = self.device.encode_pipeline_commnad(

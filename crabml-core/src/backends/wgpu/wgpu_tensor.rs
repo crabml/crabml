@@ -61,6 +61,15 @@ impl WgpuTensorDevice {
         self.modules = modules
     }
 
+    fn make_storage_buffer(&self, content: &[u8]) -> wgpu::Buffer {
+        self.inner
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: None,
+                contents: content,
+                usage: wgpu::BufferUsages::STORAGE,
+            })
+    }
+
     fn pipeline_for(&self, key: &'static str) -> wgpu::ComputePipeline {
         let module = self.modules.get(key).unwrap();
         self.inner
@@ -120,21 +129,6 @@ impl WgpuTensorDevice {
             cpass.dispatch_workgroups(work_group_size.0, work_group_size.1, work_group_size.2);
         }
         encoder
-    }
-
-    fn encode_strider(&self, strider: &TensorStrider) -> wgpu::Buffer {
-        let mut v = Vec::with_capacity(7);
-        v.push(strider.shape().len());
-        v.extend_from_slice(strider.shape());
-        v.extend_from_slice(strider.strides());
-        let buf = self
-            .inner
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("strider buffer"),
-                contents: bytemuck::cast_slice(&v),
-                usage: wgpu::BufferUsages::STORAGE,
-            });
-        buf
     }
 }
 
@@ -269,12 +263,7 @@ impl TensorArithmetics for WgpuTensor {
         assert!(self.strider().len() % 64 == 0);
         let meta_buf = self
             .device
-            .inner
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: None,
-                contents: bytemuck::cast_slice(&[1u32, self.strider.len() as u32]),
-                usage: wgpu::BufferUsages::STORAGE,
-            });
+            .make_storage_buffer(bytemuck::cast_slice(&[1u32, self.strider.len() as u32]));
         let entries = &[
             wgpu::BindGroupEntry {
                 binding: 0,
@@ -302,12 +291,7 @@ impl TensorArithmetics for WgpuTensor {
         assert!(self.strider().len() % 64 == 0);
         let meta_buf = self
             .device
-            .inner
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: None,
-                contents: bytemuck::cast_slice(&[1u32, self.strider.len() as u32]),
-                usage: wgpu::BufferUsages::STORAGE,
-            });
+            .make_storage_buffer(bytemuck::cast_slice(&[1u32, self.strider.len() as u32]));
         let entries = &[
             wgpu::BindGroupEntry {
                 binding: 0,
@@ -333,20 +317,10 @@ impl TensorArithmetics for WgpuTensor {
         assert!(self.strider().len() % 64 == 0);
         let meta_buf = self
             .device
-            .inner
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: None,
-                contents: bytemuck::cast_slice(&[1u32, self.strider.len() as u32]),
-                usage: wgpu::BufferUsages::STORAGE,
-            });
+            .make_storage_buffer(bytemuck::cast_slice(&[1u32, self.strider.len() as u32]));
         let rhs_buf = self
             .device
-            .inner
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("div_scalar:rhs"),
-                contents: bytemuck::cast_slice(&[rhs]),
-                usage: wgpu::BufferUsages::STORAGE,
-            });
+            .make_storage_buffer(bytemuck::cast_slice(&[rhs]));
         let entries = &[
             wgpu::BindGroupEntry {
                 binding: 0,

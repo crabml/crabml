@@ -17,16 +17,15 @@ var<workgroup> thread_sums: array<f32, 64>;
 
 @compute @workgroup_size(64)
 fn main(
-    @builtin(global_invocation_id) global_id: vec3<u32>,
     @builtin(workgroup_id) workgroup_id: vec3<u32>,
     @builtin(local_invocation_id) local_id: vec3<u32>,
 ) {
     let workgroup_size: u32 = 64u;
-    let thread_chunk_size = input_m.N / workgroup_size;
+    let local_chunk_size = input_m.N / workgroup_size;
 
     // calculate each thread's chunk of the squared sum
-    for (var i = 0u; i < thread_chunk_size; i += 1u) {
-        let idx = input_m.N * workgroup_id.x + i;
+    for (var i = 0u; i < local_chunk_size; i += 1u) {
+        let idx = input_m.N * workgroup_id.x + local_id.x * local_chunk_size + i;
         thread_sums[local_id.x] += input[idx] * input[idx];
     }
     workgroupBarrier();
@@ -40,8 +39,8 @@ fn main(
     workgroupBarrier();
 
     // normalize to output
-    for (var i = 0u; i < thread_chunk_size; i += 1u) {
-        let idx = input_m.N * workgroup_id.x + i;
+    for (var i = 0u; i < local_chunk_size; i += 1u) {
+        let idx = input_m.N * workgroup_id.x + local_id.x * local_chunk_size + i;
         input[idx] = input[idx] / sqrt(thread_sums[0] + input_m.eps);
     }
 }

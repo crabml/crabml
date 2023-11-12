@@ -42,7 +42,12 @@ impl WgpuTensorDevice {
     }
 
     fn load_modules(&mut self) {
-        let module_sources = vec![("binary", include_str!("shaders/binary.wgsl"))];
+        let module_sources = vec![
+            ("add_inplace", include_str!("shaders/add.wgsl")),
+            ("mul_inplace", include_str!("shaders/mul.wgsl")),
+            ("div_inplace", include_str!("shaders/div.wgsl")),
+            ("rms_norm_inplace", include_str!("shaders/rms_norm.wgsl")),
+        ];
         let mut modules = HashMap::new();
         for (module_name, module_source) in module_sources {
             let module = self
@@ -57,24 +62,13 @@ impl WgpuTensorDevice {
     }
 
     fn pipeline_for(&self, key: &'static str) -> wgpu::ComputePipeline {
-        let pipeline_args = [
-            ("add_inplace", "binary", "add_inplace"),
-            ("mul_inplace", "binary", "mul_inplace"),
-            ("div_inplace", "binary", "div_inplace"),
-        ];
-
-        let (_, module, entry_point) = pipeline_args
-            .into_iter()
-            .find(|(k, _, _)| *k == key)
-            .unwrap();
-
-        let module = self.modules.get(module).unwrap();
+        let module = self.modules.get(key).unwrap();
         self.inner
             .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
                 label: None,
                 layout: None,
                 module: &module,
-                entry_point,
+                entry_point: "main",
             })
     }
 

@@ -1,5 +1,6 @@
 - [ ] add basic WGPU tensor support
   - referenced: https://github.com/0hq/WebGPT/blob/main/condensed/condensed.js
+  - [ ] add rms_norm
 - [ ] make validate panics
 - [ ] observe the intermediate result in llama2.rs
 - [ ] wgpu tensor support

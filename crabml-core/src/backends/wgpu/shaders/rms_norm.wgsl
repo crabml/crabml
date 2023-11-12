@@ -5,13 +5,10 @@ struct Meta {
 };
 
 @group(0) @binding(0)
-var<storage, read> input: array<f32>;
+var<storage, read_write> input: array<f32>;
 
 @group(0) @binding(1)
 var<storage, read> input_m: Meta;
-
-@group(0) @binding(2)
-var<storage, read_write> output: array<f32>;
 
 // workgroup local to reduce squared sum
 var<workgroup> thread_sums: array<f32, 64>;
@@ -45,6 +42,6 @@ fn main(
     // normalize to output
     for (var i = 0u; i < thread_chunk_size; i += 1u) {
         let idx = input_m.N * workgroup_id.x + i;
-        output[idx] = input[idx] / sqrt(thread_sums[0] + input_m.eps);
+        input[idx] = input[idx] / sqrt(thread_sums[0] + input_m.eps);
     }
 }

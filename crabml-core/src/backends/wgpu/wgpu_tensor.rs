@@ -286,6 +286,15 @@ impl TensorArithmetics for WgpuTensor {
     }
 
     fn add_inplace(self, rhs: &Self) -> Result<Self> {
+        assert!(self.strider().len() % 64 == 0);
+        let meta_buf = self
+            .device
+            .inner
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: None,
+                contents: bytemuck::cast_slice(&[1u32, self.strider.len() as u32]),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
         let entries = &[
             wgpu::BindGroupEntry {
                 binding: 0,
@@ -295,12 +304,14 @@ impl TensorArithmetics for WgpuTensor {
                 binding: 1,
                 resource: rhs.buf.as_entire_binding(),
             },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: meta_buf.as_entire_binding(),
+            },
         ];
-        let encoder = self.device.encode_pipeline_commnad(
-            "add_inplace",
-            entries,
-            (self.strider.len() as u32 / 64, 1, 1),
-        );
+        let encoder = self
+            .device
+            .encode_pipeline_commnad("add_inplace", entries, (1, 1, 1));
         self.device.queue.submit(Some(encoder.finish()));
         Ok(self)
     }
@@ -364,15 +375,15 @@ mod tests {
 
     #[test]
     fn test_wgpu_tensor_add() -> Result<()> {
-        let device = WgpuTensorDevice::new(6 * 4);
-        let t1 = WgpuTensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], device.clone())?;
-        let t2 = WgpuTensor::new(&[1.0, 1.0, 1.0, 1.0, 1.0, 1.0], &[2, 3], device)?;
+        let device = WgpuTensorDevice::new(64 * 4);
+        let t1 = WgpuTensor::new(&[2.0; 64], &[16, 4], device.clone())?;
+        let t2 = WgpuTensor::new(&[3.0; 64], &[16, 4], device)?;
         let t1 = t1.add_inplace(&t2)?;
 
-        let mut dst = vec![0.0; 6];
+        let mut dst = vec![0.0; 64];
         t1.export(&mut dst)?;
 
-        assert_eq!(dst, vec![2.0, 3.0, 4.0, 5.0, 6.0, 7.0]);
+        assert_eq!(dst, vec![5.0; 64]);
         Ok(())
     }
 

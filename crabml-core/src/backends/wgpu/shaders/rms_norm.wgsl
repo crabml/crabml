@@ -1,6 +1,12 @@
-@group(0) @binding(0) var<storage, read> input: array<f32>;
-@group(0) @binding(1) var<storage, read> eps: f32;
-@group(0) @binding(2) var<storage, read_write> output: atomic<f32>;
+@group(0) @binding(0)
+var<storage, read> input: array<f32>;
+
+@group(0) @binding(1)
+var<storage, read> eps: f32;
+
+@group(0) @binding(2)
+var<storage, read_write> output: array<f32>;
+
 var<workgroup> thread_sums: array<f32, 64>;
 
 // each workgroup normalize a single vector
@@ -29,5 +35,5 @@ fn main(
     }
     workgroupBarrier();
 
-    output[global_id] = input[global_id] / sqrt(thread_sums[0] + input_eps);
+    output[global_id.x] = input[global_id.x] / sqrt(thread_sums[0] + eps);
 }

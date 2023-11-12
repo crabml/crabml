@@ -1,15 +1,15 @@
 use std::rc::Rc;
 use std::vec;
 
-use crabml::backends::cpu::cpu_tensor::CpuTensorPool;
-use crabml::backends::cpu::cpu_tensor::CpuTensorPoolRef;
+use crabml::backends::cpu::cpu_tensor::CpuTensorDevice;
+use crabml::backends::cpu::cpu_tensor::CpuTensorDeviceRef;
 use crabml::backends::cpu::CpuTensor;
 use crabml::error::Error;
 use crabml::error::ErrorKind;
 use crabml::error::Result;
 use crabml::gguf::GGUFFile;
 use crabml::gguf::GGUFMetadata;
-use crabml::tensor::tensor::Tensor;
+use crabml::tensor::Tensor;
 use crabml::tokenizer::BpeTokenizer;
 
 #[derive(Debug, Copy, Clone)]
@@ -60,20 +60,20 @@ pub struct CpuLlama2Model<'a> {
     pub conf: Llama2Config,
     pub weights: Rc<Llama2Weights<CpuTensor<'a>>>,
     pub tokenizer: Rc<BpeTokenizer>,
-    pub pool: CpuTensorPoolRef<'a>,
+    pub device: CpuTensorDeviceRef<'a>,
     pub metadata: &'a GGUFMetadata<'a>,
 }
 
 impl<'a> CpuLlama2Model<'a> {
     pub fn from(gf: &'a GGUFFile<'a>) -> Result<Self> {
-        let pool = CpuTensorPool::new();
+        let device = CpuTensorDevice::new();
         let conf = Self::load_config(gf);
-        let weights = Self::load_weights(gf, conf.n_layers, pool.clone())?;
+        let weights = Self::load_weights(gf, conf.n_layers, device.clone())?;
         let tokenizer = Self::load_tokenizer(gf);
         Ok(Self {
             conf,
             weights: Rc::new(weights),
-            pool,
+            device,
             tokenizer: Rc::new(tokenizer),
             metadata: gf.metadata(),
         })
@@ -98,10 +98,10 @@ impl<'a> CpuLlama2Model<'a> {
     fn load_weights(
         gf: &'a GGUFFile<'a>,
         n_layers: usize,
-        pool: CpuTensorPoolRef<'a>,
+        device: CpuTensorDeviceRef<'a>,
     ) -> Result<Llama2Weights<CpuTensor<'a>>> {
         // [64 (dim), 512 (vocab_size)]
-        let token_embedding_table = Self::load_tensor(gf, "token_embd.weight", pool.clone())?;
+        let token_embedding_table = Self::load_tensor(gf, "token_embd.weight", device.clone())?;
         let mut wq = vec![];
         let mut wk = vec![];
         let mut wv = vec![];
@@ -115,52 +115,52 @@ impl<'a> CpuLlama2Model<'a> {
             wq.push(Self::load_tensor(
                 gf,
                 &format!("blk.{}.attn_q.weight", layer),
-                pool.clone(),
+                device.clone(),
             )?);
             wk.push(Self::load_tensor(
                 gf,
                 &format!("blk.{}.attn_k.weight", layer),
-                pool.clone(),
+                device.clone(),
             )?);
             wv.push(Self::load_tensor(
                 gf,
                 &format!("blk.{}.attn_v.weight", layer),
-                pool.clone(),
+                device.clone(),
             )?);
             wo.push(Self::load_tensor(
                 gf,
                 &format!("blk.{}.attn_output.weight", layer),
-                pool.clone(),
+                device.clone(),
             )?);
             // (hidden_dim:172, embedding_dim:64)
             w1.push(Self::load_tensor(
                 gf,
                 &format!("blk.{}.ffn_gate.weight", layer),
-                pool.clone(),
+                device.clone(),
             )?);
             w2.push(Self::load_tensor(
                 gf,
                 &format!("blk.{}.ffn_down.weight", layer),
-                pool.clone(),
+                device.clone(),
             )?);
             w3.push(Self::load_tensor(
                 gf,
                 &format!("blk.{}.ffn_up.weight", layer),
-                pool.clone(),
+                device.clone(),
             )?);
             rms_att_weight.push(Self::load_tensor(
                 gf,
                 &format!("blk.{}.attn_norm.weight", layer),
-                pool.clone(),
+                device.clone(),
             )?);
             rms_ffn_weight.push(Self::load_tensor(
                 gf,
                 &format!("blk.{}.ffn_norm.weight", layer),
-                pool.clone(),
+                device.clone(),
             )?);
         }
-        let rms_final_weight = Self::load_tensor(gf, "output_norm.weight", pool.clone())?;
-        let wcls = Self::load_tensor(gf, "output.weight", pool.clone())?;
+        let rms_final_weight = Self::load_tensor(gf, "output_norm.weight", device.clone())?;
+        let wcls = Self::load_tensor(gf, "output.weight", device.clone())?;
         Ok(Llama2Weights {
             token_embedding_table,
             wq,
@@ -180,7 +180,7 @@ impl<'a> CpuLlama2Model<'a> {
     pub(crate) fn load_tensor(
         gf: &'a GGUFFile<'a>,
         name: &str,
-        pool: CpuTensorPoolRef<'a>,
+        device: CpuTensorDeviceRef<'a>,
     ) -> Result<CpuTensor<'a>> {
         let info = match gf.get_tensor_info(name) {
             None => {
@@ -201,7 +201,7 @@ impl<'a> CpuLlama2Model<'a> {
             .map(|v| *v)
             .collect::<Vec<_>>();
 
-        let tensor = CpuTensor::from_bytes(info.data(), info.typ(), &dims, pool.clone())?;
+        let tensor = CpuTensor::from_bytes(info.data(), info.typ(), &dims, device.clone())?;
         Ok(tensor)
     }
 

@@ -1,4 +1,4 @@
 pub mod cpu;
+pub mod wgpu;
 
-pub use cpu::arithmetic;
 pub use cpu::CpuTensor;

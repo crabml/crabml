@@ -6,14 +6,14 @@ use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::error::Result;
 use crate::gguf::GGMLType;
-use crate::tensor::strider::TensorStrider;
-use crate::tensor::tensor::Tensor;
+use crate::tensor::Tensor;
+use crate::tensor::TensorStrider;
 
 #[derive(Debug, Clone)]
 pub struct CpuTensor<'a> {
     buf: CpuTensorBuf<'a>,
     strider: TensorStrider,
-    pool: CpuTensorPoolRef<'a>,
+    device: CpuTensorDeviceRef<'a>,
 }
 
 // A tensor contains a buffer of f32, a shape and a strides. We may refer to
@@ -22,31 +22,44 @@ pub struct CpuTensor<'a> {
 // change on the tensor is considered as a move operation, to reduce the need on
 // copying the owned buffer. Feel free to clone() the tensor.
 impl<'a> CpuTensor<'a> {
-    pub fn typ(&self) -> GGMLType {
-        self.buf.typ()
+    pub fn new(buf: Vec<f32>, shape: &[usize], device: CpuTensorDeviceRef<'a>) -> Result<Self> {
+        if buf.len() != shape.iter().product() {
+            return Err(Error {
+                kind: ErrorKind::TensorError,
+                message: format!("invalid shape {:?} for data of length {}", shape, buf.len()),
+                cause: None,
+            });
+        }
+
+        let strider = TensorStrider::new(shape.to_vec());
+        Ok(Self {
+            buf: buf.into(),
+            strider,
+            device: device.clone(),
+        })
     }
 
     pub fn from_bytes(
         buf: &'a [u8],
         typ: GGMLType,
         shape: &[usize],
-        pool: CpuTensorPoolRef<'a>,
+        device: CpuTensorDeviceRef<'a>,
     ) -> Result<Self> {
         let buf = CpuTensorBuf::from_raw_bytes(buf, typ)?;
         let strider = TensorStrider::new(shape.to_vec());
         Ok(Self {
             buf,
             strider,
-            pool: pool.clone(),
+            device: device.clone(),
         })
     }
 
-    pub fn swap_buf(&mut self, dst: CpuTensorBuf<'a>) -> CpuTensorBuf<'a> {
-        std::mem::replace(&mut self.buf, dst)
+    pub fn typ(&self) -> GGMLType {
+        self.buf.typ()
     }
 
-    pub fn pool(&self) -> CpuTensorPoolRef<'a> {
-        self.pool.clone()
+    pub fn device(&self) -> CpuTensorDeviceRef<'a> {
+        self.device.clone()
     }
 
     fn as_view<'b>(&'b self) -> CpuTensor<'a>
@@ -54,7 +67,7 @@ impl<'a> CpuTensor<'a> {
         Self {
             buf: self.buf.as_ref(),
             strider: self.strider.clone(),
-            pool: self.pool.clone(),
+            device: self.device.clone(),
         }
     }
 
@@ -189,16 +202,16 @@ impl<'a> CpuTensor<'a> {
 }
 
 #[derive(Debug)]
-pub struct CpuTensorPool<'a> {
+pub struct CpuTensorDevice<'a> {
     _bufs: Vec<CpuTensorBuf<'a>>,
 }
 
-pub type CpuTensorPoolRef<'a> = Rc<CpuTensorPool<'a>>;
+pub type CpuTensorDeviceRef<'a> = Rc<CpuTensorDevice<'a>>;
 
-impl<'a> CpuTensorPool<'a> {
-    pub fn new() -> CpuTensorPoolRef<'a> {
-        let pool = Self { _bufs: vec![] };
-        Rc::new(pool)
+impl<'a> CpuTensorDevice<'a> {
+    pub fn new() -> CpuTensorDeviceRef<'a> {
+        let device = Self { _bufs: vec![] };
+        Rc::new(device)
     }
 
     pub fn export_tensor(self: Rc<Self>, tensor: &CpuTensor<'a>, dst: &mut [f32]) -> Result<()> {
@@ -210,36 +223,19 @@ impl<'a> CpuTensorPool<'a> {
 }
 
 impl<'a> Tensor for CpuTensor<'a> {
-    type Pool = CpuTensorPoolRef<'a>;
+    type Device = CpuTensorDeviceRef<'a>;
 
-    fn new(buf: Vec<f32>, shape: &[usize], pool: Self::Pool) -> Result<Self> {
-        if buf.len() != shape.iter().product() {
-            return Err(Error {
-                kind: ErrorKind::TensorError,
-                message: format!("invalid shape {:?} for data of length {}", shape, buf.len()),
-                cause: None,
-            });
-        }
-
-        let strider = TensorStrider::new(shape.to_vec());
-        Ok(Self {
-            buf: buf.into(),
-            strider,
-            pool: pool.clone(),
-        })
-    }
-
-    fn alloc(shape: &[usize], pool: Self::Pool) -> Result<Self> {
+    fn alloc(shape: &[usize], device: Self::Device) -> Result<Self> {
         let buf = vec![0.0; shape.iter().product()];
-        Self::new(buf, shape, pool)
+        Self::new(buf, shape, device)
     }
 
     fn reshape(self, shape: &[usize]) -> Result<Self> {
-        let strider = self.strider.view(shape.to_vec())?;
+        let strider = self.strider.reshape(shape.to_vec())?;
         Ok(Self {
             buf: self.buf,
             strider,
-            pool: self.pool.clone(),
+            device: self.device.clone(),
         })
     }
 
@@ -248,7 +244,7 @@ impl<'a> Tensor for CpuTensor<'a> {
         Ok(Self {
             buf: self.buf,
             strider,
-            pool: self.pool.clone(),
+            device: self.device.clone(),
         })
     }
 
@@ -257,7 +253,7 @@ impl<'a> Tensor for CpuTensor<'a> {
         Ok(Self {
             buf: self.buf,
             strider,
-            pool: self.pool.clone(),
+            device: self.device.clone(),
         })
     }
 
@@ -265,7 +261,7 @@ impl<'a> Tensor for CpuTensor<'a> {
         Ok(Self {
             buf: self.buf,
             strider,
-            pool: self.pool.clone(),
+            device: self.device.clone(),
         })
     }
 
@@ -318,8 +314,11 @@ impl<'a> Tensor for CpuTensor<'a> {
         Ok(())
     }
 
-    fn export(&self) -> Result<Box<dyn Iterator<Item = f32> + '_>> {
-        Ok(Box::new(self.iter()))
+    fn export(&self, dst: &mut [f32]) -> Result<()> {
+        dst.iter_mut().zip(self.iter()).for_each(|(dst, src)| {
+            *dst = src;
+        });
+        Ok(())
     }
 }
 
@@ -329,8 +328,8 @@ mod tests {
 
     #[test]
     fn test_tensor_view() -> Result<()> {
-        let pool = CpuTensorPool::new();
-        let t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], pool.clone())?;
+        let device = CpuTensorDevice::new();
+        let t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], device.clone())?;
         let t = t.reshape(&[3, 2])?;
 
         let tr = t.reshape(&[2, 3])?;
@@ -350,8 +349,8 @@ mod tests {
 
         // 1, 2, 3
         // 4, 5, 6
-        let pool = CpuTensorPool::new();
-        let t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], pool.clone())?;
+        let device = CpuTensorDevice::new();
+        let t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], device.clone())?;
 
         let tests = vec![
             Test {
@@ -381,7 +380,7 @@ mod tests {
         // iter_axis with repeat
         // 1, 1, 2, 2, 3, 3
         // 4, 4, 5, 5, 6, 6
-        let t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], pool.clone())?;
+        let t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], device.clone())?;
         let t = t.repeat(&[1, 2])?;
 
         let tests = vec![
@@ -452,8 +451,8 @@ mod tests {
 
         // 0, 1, 2
         // 3, 4, 5
-        let pool = CpuTensorPool::new();
-        let t = CpuTensor::new(vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0], &[2, 3], pool)?;
+        let device = CpuTensorDevice::new();
+        let t = CpuTensor::new(vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0], &[2, 3], device)?;
 
         // 0, 3,
         // 1, 4
@@ -495,15 +494,15 @@ mod tests {
 
     #[test]
     fn test_tensor_iter_axis_mut() -> Result<()> {
-        let pool = CpuTensorPool::new();
-        let mut t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], pool.clone())?;
+        let device = CpuTensorDevice::new();
+        let mut t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], device.clone())?;
         let r = t
             .iter_axis_mut(vec![0, 0], 1)?
             .map(|f| *f)
             .collect::<Vec<_>>();
         assert_eq!(r, vec![1.0, 2.0, 3.0]);
 
-        let mut t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], pool)?;
+        let mut t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], device)?;
         let r = t
             .iter_axis_mut(vec![0, 0], 0)?
             .map(|f| *f)
@@ -517,9 +516,9 @@ mod tests {
     fn test_copy_from() -> Result<()> {
         // 1 2
         // 3 4
-        let pool = CpuTensorPool::new();
-        let t1 = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0], &[2, 2], pool.clone())?;
-        let mut t2 = CpuTensor::new(vec![0.0; 2], &[2], pool.clone())?;
+        let device = CpuTensorDevice::new();
+        let t1 = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0], &[2, 2], device.clone())?;
+        let mut t2 = CpuTensor::new(vec![0.0; 2], &[2], device.clone())?;
 
         t2.copy_from(&t1, &[1, 0], 2)?;
         assert_eq!(t2.iter().collect::<Vec<_>>(), vec![3.0, 4.0]);
@@ -532,9 +531,13 @@ mod tests {
 
     #[test]
     fn test_extend() -> Result<()> {
-        let pool = CpuTensorPool::new();
-        let mut t1 = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[1, 2, 3], pool.clone())?;
-        let t2 = CpuTensor::new(vec![1.0; 6], &[2, 3], pool)?;
+        let device = CpuTensorDevice::new();
+        let mut t1 = CpuTensor::new(
+            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            &[1, 2, 3],
+            device.clone(),
+        )?;
+        let t2 = CpuTensor::new(vec![1.0; 6], &[2, 3], device)?;
         t1.extend(&t2)?;
 
         assert_eq!(t1.shape(), &[2, 2, 3]);

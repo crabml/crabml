@@ -2,11 +2,9 @@ use super::strider::TensorStrider;
 use crate::error::Result;
 
 pub trait Tensor: Sized + Clone + TensorArithmetics {
-    type Pool: Clone;
+    type Device: Clone;
 
-    fn new(data: Vec<f32>, shape: &[usize], pool: Self::Pool) -> Result<Self>;
-
-    fn alloc(shape: &[usize], pool: Self::Pool) -> Result<Self>;
+    fn alloc(shape: &[usize], device: Self::Device) -> Result<Self>;
 
     fn with_strider(self, strider: TensorStrider) -> Result<Self>;
 
@@ -22,7 +20,7 @@ pub trait Tensor: Sized + Clone + TensorArithmetics {
 
     fn copy_from(&mut self, rhs: &Self, pos: &[usize], len: usize) -> Result<()>;
 
-    fn export(&self) -> Result<Box<dyn Iterator<Item = f32> + '_>>;
+    fn export(&self, buf: &mut [f32]) -> Result<()>;
 }
 
 pub trait TensorArithmetics: Sized {

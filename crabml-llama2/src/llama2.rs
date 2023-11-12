@@ -8,7 +8,7 @@ use crabml::backends::cpu::CpuTensor;
 use crabml::error::Error;
 use crabml::error::ErrorKind;
 use crabml::error::Result;
-use crabml::tensor::tensor::Tensor;
+use crabml::tensor::Tensor;
 use crabml::tokenizer::BpeTokenizer;
 
 use crate::model::CpuLlama2Model;
@@ -20,7 +20,7 @@ pub struct Llama2Runner<T: Tensor> {
     conf: Llama2Config,
     weights: Rc<Llama2Weights<T>>,
     tokenizer: Rc<BpeTokenizer>,
-    pool: T::Pool,
+    device: T::Device,
     logits: Vec<f32>,            // output logits (vocab_size, )
     key_cache: Vec<Option<T>>,   // (layer, seq_len, kv_dim)
     value_cache: Vec<Option<T>>, // (layer, seq_len, kv_dim)
@@ -31,29 +31,21 @@ impl<'a> TryFrom<&'a CpuLlama2Model<'a>> for Llama2Runner<CpuTensor<'a>> {
 
     fn try_from(model: &'a CpuLlama2Model<'a>) -> Result<Self> {
         let conf = &model.conf;
-        let pool = model.pool.clone();
+        let device = model.device.clone();
         let weights = model.weights.clone();
         let tokenizer = model.tokenizer.clone();
 
         let logits = vec![0.0; conf.vocab_size];
         let key_cache = (0..conf.n_layers)
             .map(|_| {
-                CpuTensor::new(
-                    vec![],
-                    &[0, conf.n_kv_heads, conf.head_size()],
-                    pool.clone(),
-                )
-                .map(|t| Some(t))
+                CpuTensor::alloc(&[0, conf.n_kv_heads, conf.head_size()], device.clone())
+                    .map(|t| Some(t))
             })
             .collect::<Result<Vec<_>>>()?;
         let value_cache = (0..conf.n_layers)
             .map(|_| {
-                CpuTensor::new(
-                    vec![],
-                    &[0, conf.n_kv_heads, conf.head_size()],
-                    pool.clone(),
-                )
-                .map(|t| Some(t))
+                CpuTensor::alloc(&[0, conf.n_kv_heads, conf.head_size()], device.clone())
+                    .map(|t| Some(t))
             })
             .collect::<Result<Vec<_>>>()?;
 
@@ -64,7 +56,7 @@ impl<'a> TryFrom<&'a CpuLlama2Model<'a>> for Llama2Runner<CpuTensor<'a>> {
             value_cache,
             weights,
             tokenizer,
-            pool,
+            device,
         })
     }
 }
@@ -86,7 +78,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         let head_size = self.conf.head_size();
 
         // copy the token embedding into x
-        let mut x = T::alloc(&[embed_dim], self.pool.clone())?;
+        let mut x = T::alloc(&[embed_dim], self.device.clone())?;
         x.copy_from(&self.weights.token_embedding_table, &[token, 0], embed_dim)?;
 
         // forward all the layers
@@ -222,8 +214,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
 
         // classifier into logits
         let logits = self.weights.wcls.matmul(&x)?; // (vocab_size,
-
-        self.logits = logits.export()?.collect::<Vec<_>>();
+        logits.export(&mut self.logits)?;
         Ok(&mut self.logits)
     }
 }
@@ -332,7 +323,7 @@ impl<'a, T: Tensor> Iterator for Llama2RunnerOutputGenerator<'a, T> {
 
 #[cfg(test)]
 mod tests {
-    use crabml::backends::cpu::cpu_tensor::CpuTensorPool;
+    use crabml::backends::cpu::cpu_tensor::CpuTensorDevice;
     use crabml::gguf::GGUFFileLoader;
 
     use super::*;

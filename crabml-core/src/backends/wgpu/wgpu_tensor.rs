@@ -7,6 +7,7 @@ use std::rc::Rc;
 use wgpu;
 use wgpu::util::DeviceExt;
 
+use super::meta::RmsNormMeta;
 use crate::error::ErrorKind;
 use crate::error::Result;
 use crate::tensor::Tensor;
@@ -248,7 +249,31 @@ impl TensorArithmetics for WgpuTensor {
     }
 
     fn rms_norm_inplace(self, eps: f32) -> Result<Self> {
-        todo!()
+        let meta_buf = self
+            .device
+            .make_storage_buffer(bytemuck::bytes_of(&RmsNormMeta {
+                M: 1,
+                N: self.strider.len() as u32,
+                eps: eps,
+                _padding: 0.0,
+            }));
+        let entries = &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: self.buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: meta_buf.as_entire_binding(),
+            },
+        ];
+        let encoder = self.device.encode_pipeline_commnad(
+            "rms_norm_inplace",
+            entries,
+            (self.strider.len() as u32 / 64, 1, 1),
+        );
+        self.device.queue.submit(Some(encoder.finish()));
+        Ok(self)
     }
 
     fn softmax_inplace(self, axis: usize) -> Result<Self> {

@@ -2,6 +2,7 @@ struct Meta {
     M: u32, // number of vectors
     N: u32, // length of each vector
     eps: f32,
+    _padding: f32,
 };
 
 @group(0) @binding(0)

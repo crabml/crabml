@@ -17,3 +17,4 @@ bytemuck = { version = "1.14.0", features = ["derive"] }
 [dev-dependencies]
 pretty_assertions = "1.2.1"
 bencher = "0.1.5"
+approx = "0.5.1"

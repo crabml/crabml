@@ -267,11 +267,9 @@ impl TensorArithmetics for WgpuTensor {
                 resource: meta_buf.as_entire_binding(),
             },
         ];
-        let encoder = self.device.encode_pipeline_commnad(
-            "rms_norm_inplace",
-            entries,
-            (self.strider.len() as u32 / 64, 1, 1),
-        );
+        let encoder = self
+            .device
+            .encode_pipeline_commnad("rms_norm_inplace", entries, (1, 1, 1));
         self.device.queue.submit(Some(encoder.finish()));
         Ok(self)
     }
@@ -303,11 +301,9 @@ impl TensorArithmetics for WgpuTensor {
                 resource: meta_buf.as_entire_binding(),
             },
         ];
-        let encoder = self.device.encode_pipeline_commnad(
-            "mul_inplace",
-            entries,
-            (self.strider.len() as u32 / 64, 1, 1),
-        );
+        let encoder = self
+            .device
+            .encode_pipeline_commnad("mul_inplace", entries, (1, 1, 1));
         self.device.queue.submit(Some(encoder.finish()));
         Ok(self)
     }
@@ -380,6 +376,8 @@ impl TensorArithmetics for WgpuTensor {
 
 #[cfg(test)]
 mod tests {
+    use approx::assert_relative_eq;
+
     use super::WgpuTensor;
     use super::WgpuTensorDevice;
     use crate::error::Result;
@@ -437,6 +435,35 @@ mod tests {
         t1.export(&mut dst)?;
 
         assert_eq!(&dst[0..3], [3.0, 3.0, 3.0]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_wgpu_tensor_rms_norm() -> Result<()> {
+        // it seems that webgpu have a different rounding method on dividing f32:
+        // https://stackoverflow.com/questions/73674463/does-rust-f64-f32-round-correctly
+        pub fn simple_rmsnorm(x: &mut [f32]) {
+            let ss = x.iter().fold(0.0, |s, n| s + n * n);
+            let rms = ((ss / x.len() as f32) + 1e-5).sqrt();
+            let scale = 1.0 / rms;
+            // normalize and scale
+            for i in 0..x.len() {
+                x[i] *= scale;
+            }
+        }
+
+        let device = WgpuTensorDevice::new(128 * 4);
+        let v1 = (1..129).map(|i| i as f32).collect::<Vec<_>>();
+
+        let t1 = WgpuTensor::new(&v1.clone(), &[128], device.clone())?;
+        let t1 = t1.rms_norm_inplace(1e-5)?;
+        let mut dst1 = vec![0.0; 128];
+        t1.export(&mut dst1)?;
+
+        let mut dst2 = v1.clone();
+        simple_rmsnorm(&mut dst2);
+
+        assert_relative_eq!(&dst1[0..10], &dst2[0..10], epsilon = 1e-7);
         Ok(())
     }
 }

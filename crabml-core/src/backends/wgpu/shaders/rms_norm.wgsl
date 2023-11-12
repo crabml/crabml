@@ -42,6 +42,7 @@ fn main(
     // normalize to output
     for (var i = 0u; i < local_chunk_size; i += 1u) {
         let idx = input_m.N * workgroup_id.x + local_id.x * local_chunk_size + i;
-        input[idx] = input[idx] / sqrt(thread_sums[0] + input_m.eps);
+        let scale = 1.0 / sqrt((thread_sums[0] / f32(input_m.N)) + input_m.eps);
+        input[idx] *= scale;
     }
 }

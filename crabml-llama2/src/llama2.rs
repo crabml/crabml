@@ -89,6 +89,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             x = {
                 x = x.rms_norm_inplace(self.conf.rms_norm_eps)?;
                 x = x.mul_inplace(&self.weights.rms_att_weight[l])?;
+                x = x.with_name(format!("attn_rmsnorm:{}", l));
                 x
             };
 
@@ -324,6 +325,7 @@ impl<'a, T: Tensor> Iterator for Llama2RunnerOutputGenerator<'a, T> {
 #[cfg(test)]
 mod tests {
     use crabml::backends::cpu::cpu_tensor::CpuTensorDevice;
+    use crabml::backends::cpu::cpu_tensor::CpuTensorDeviceOptions;
     use crabml::gguf::GGUFFileLoader;
 
     use super::*;
@@ -333,12 +335,28 @@ mod tests {
         let gl: GGUFFileLoader =
             GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-f32.gguf")?;
         let gf = gl.open()?;
-        let lm = CpuLlama2Model::from(&gf)?;
+
+        let device = CpuTensorDevice::with_options(CpuTensorDeviceOptions {
+            debug_named_tensors: true,
+        });
+        let lm = CpuLlama2Model::load(&gf, device.clone())?;
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0);
         let mut runner = Llama2Runner::try_from(&lm)?;
         let output = runner.generate("Lily is a cat", 30, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
+
+        assert_eq!(
+            device.dump_debug_tensor("attn_rmsnorm:0").unwrap()[0..6],
+            vec![
+                -0.5774899,
+                -0.45631766,
+                0.25273207,
+                -0.13230246,
+                0.98616296,
+                0.46305636
+            ]
+        );
         assert_eq!(
             s,
             " who likes to play with yarn. She has many colors of yarn in her box. She likes to make shapes with yarn and show"
@@ -350,7 +368,9 @@ mod tests {
     fn test_generate_q8_0() -> Result<()> {
         let gl = GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-q8_0.gguf")?;
         let gf = gl.open()?;
-        let lm = CpuLlama2Model::from(&gf)?;
+
+        let device = CpuTensorDevice::new();
+        let lm = CpuLlama2Model::load(&gf, device)?;
         assert_eq!(lm.conf().rope_dim, 48);
         assert_eq!(lm.conf().head_size(), 48);
 

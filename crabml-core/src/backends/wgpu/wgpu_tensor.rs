@@ -140,6 +140,7 @@ pub struct WgpuTensor {
     buf: Rc<wgpu::Buffer>,
     strider: TensorStrider,
     device: WgpuTensorDeviceRef,
+    name: Option<String>,
 }
 
 impl WgpuTensor {
@@ -159,6 +160,7 @@ impl WgpuTensor {
             buf: Rc::new(buf),
             strider,
             device,
+            name: None,
         })
     }
 }
@@ -175,7 +177,13 @@ impl Tensor for WgpuTensor {
             buf: self.buf,
             strider: self.strider,
             device: self.device,
+            name: None,
         })
+    }
+
+    fn with_name(mut self, name: String) -> Self {
+        self.name = Some(name);
+        self
     }
 
     fn reshape(self, shape: &[usize]) -> Result<Self> {

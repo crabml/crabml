@@ -1,3 +1,5 @@
+use std::borrow::BorrowMut;
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use super::buf::CpuTensorBufIter;
@@ -14,6 +16,7 @@ pub struct CpuTensor<'a> {
     buf: CpuTensorBuf<'a>,
     strider: TensorStrider,
     device: CpuTensorDeviceRef<'a>,
+    name: Option<String>,
 }
 
 // A tensor contains a buffer of f32, a shape and a strides. We may refer to
@@ -36,6 +39,7 @@ impl<'a> CpuTensor<'a> {
             buf: buf.into(),
             strider,
             device: device.clone(),
+            name: None,
         })
     }
 
@@ -51,6 +55,7 @@ impl<'a> CpuTensor<'a> {
             buf,
             strider,
             device: device.clone(),
+            name: None,
         })
     }
 
@@ -68,6 +73,7 @@ impl<'a> CpuTensor<'a> {
             buf: self.buf.as_ref(),
             strider: self.strider.clone(),
             device: self.device.clone(),
+            name: None,
         }
     }
 
@@ -201,16 +207,46 @@ impl<'a> CpuTensor<'a> {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct CpuTensorDeviceOptions {
+    /// when enabled, whenever tensor called with `with_name`, the name and the
+    /// tensor will be recorded in the device. only used in test.
+    pub debug_named_tensors: bool,
+}
+
+impl Default for CpuTensorDeviceOptions {
+    fn default() -> Self {
+        Self {
+            debug_named_tensors: false,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct CpuTensorDevice<'a> {
+    opts: CpuTensorDeviceOptions,
     _bufs: Vec<CpuTensorBuf<'a>>,
+    debug_tensors: RefCell<Vec<(String, Vec<f32>)>>,
 }
 
 pub type CpuTensorDeviceRef<'a> = Rc<CpuTensorDevice<'a>>;
 
 impl<'a> CpuTensorDevice<'a> {
     pub fn new() -> CpuTensorDeviceRef<'a> {
-        let device = Self { _bufs: vec![] };
+        let device = Self {
+            opts: CpuTensorDeviceOptions::default(),
+            _bufs: vec![],
+            debug_tensors: RefCell::new(vec![]),
+        };
+        Rc::new(device)
+    }
+
+    pub fn with_options(opts: CpuTensorDeviceOptions) -> CpuTensorDeviceRef<'a> {
+        let device = Self {
+            opts,
+            _bufs: vec![],
+            debug_tensors: RefCell::new(vec![]),
+        };
         Rc::new(device)
     }
 
@@ -219,6 +255,21 @@ impl<'a> CpuTensorDevice<'a> {
             *dst = src;
         });
         Ok(())
+    }
+
+    pub fn dump_debug_tensor(&self, name: &str) -> Option<Vec<f32>> {
+        self.debug_tensors
+            .borrow()
+            .iter()
+            .find(|(n, _)| n == name)
+            .map(|(_, buf)| buf.clone())
+    }
+
+    fn add_debug_tensor(&self, tensor: &CpuTensor<'a>) {
+        let buf = tensor.buf.iter().collect::<Vec<_>>();
+        self.debug_tensors
+            .borrow_mut()
+            .push((tensor.name.clone().unwrap(), buf));
     }
 }
 
@@ -236,6 +287,7 @@ impl<'a> Tensor for CpuTensor<'a> {
             buf: self.buf,
             strider,
             device: self.device.clone(),
+            name: None,
         })
     }
 
@@ -245,6 +297,7 @@ impl<'a> Tensor for CpuTensor<'a> {
             buf: self.buf,
             strider,
             device: self.device.clone(),
+            name: None,
         })
     }
 
@@ -254,6 +307,7 @@ impl<'a> Tensor for CpuTensor<'a> {
             buf: self.buf,
             strider,
             device: self.device.clone(),
+            name: None,
         })
     }
 
@@ -262,7 +316,18 @@ impl<'a> Tensor for CpuTensor<'a> {
             buf: self.buf,
             strider,
             device: self.device.clone(),
+            name: None,
         })
+    }
+
+    fn with_name(mut self, name: String) -> Self {
+        self.name = Some(name);
+
+        // only used in test
+        if self.device.opts.debug_named_tensors {
+            self.device.add_debug_tensor(&self);
+        }
+        self
     }
 
     fn strider(&self) -> &TensorStrider {

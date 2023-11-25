@@ -65,8 +65,7 @@ pub struct CpuLlama2Model<'a> {
 }
 
 impl<'a> CpuLlama2Model<'a> {
-    pub fn from(gf: &'a GGUFFile<'a>) -> Result<Self> {
-        let device = CpuTensorDevice::new();
+    pub fn load(gf: &'a GGUFFile<'a>, device: CpuTensorDeviceRef<'a>) -> Result<Self> {
         let conf = Self::load_config(gf);
         let weights = Self::load_weights(gf, conf.n_layers, device.clone())?;
         let tokenizer = Self::load_tokenizer(gf);

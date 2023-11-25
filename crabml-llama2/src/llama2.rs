@@ -89,6 +89,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             x = {
                 x = x.rms_norm_inplace(self.conf.rms_norm_eps)?;
                 x = x.mul_inplace(&self.weights.rms_att_weight[l])?;
+                x = x.with_name(format!("attn_rmsnorm:{}", l));
                 x
             };
 
@@ -333,7 +334,9 @@ mod tests {
         let gl: GGUFFileLoader =
             GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-f32.gguf")?;
         let gf = gl.open()?;
-        let lm = CpuLlama2Model::from(&gf)?;
+
+        let device = CpuTensorDevice::new();
+        let lm = CpuLlama2Model::load(&gf, device)?;
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0);
         let mut runner = Llama2Runner::try_from(&lm)?;
@@ -350,7 +353,9 @@ mod tests {
     fn test_generate_q8_0() -> Result<()> {
         let gl = GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-q8_0.gguf")?;
         let gf = gl.open()?;
-        let lm = CpuLlama2Model::from(&gf)?;
+
+        let device = CpuTensorDevice::new();
+        let lm = CpuLlama2Model::load(&gf, device)?;
         assert_eq!(lm.conf().rope_dim, 48);
         assert_eq!(lm.conf().head_size(), 48);
 

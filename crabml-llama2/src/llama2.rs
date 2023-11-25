@@ -325,6 +325,7 @@ impl<'a, T: Tensor> Iterator for Llama2RunnerOutputGenerator<'a, T> {
 #[cfg(test)]
 mod tests {
     use crabml::backends::cpu::cpu_tensor::CpuTensorDevice;
+    use crabml::backends::cpu::cpu_tensor::CpuTensorDeviceOptions;
     use crabml::gguf::GGUFFileLoader;
 
     use super::*;
@@ -335,13 +336,27 @@ mod tests {
             GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-f32.gguf")?;
         let gf = gl.open()?;
 
-        let device = CpuTensorDevice::new();
-        let lm = CpuLlama2Model::load(&gf, device)?;
+        let device = CpuTensorDevice::with_options(CpuTensorDeviceOptions {
+            debug_named_tensors: true,
+        });
+        let lm = CpuLlama2Model::load(&gf, device.clone())?;
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0);
         let mut runner = Llama2Runner::try_from(&lm)?;
         let output = runner.generate("Lily is a cat", 30, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
+
+        assert_eq!(
+            device.dump_debug_tensor("attn_rmsnorm:0").unwrap()[0..6],
+            vec![
+                -0.5774899,
+                -0.45631766,
+                0.25273207,
+                -0.13230246,
+                0.98616296,
+                0.46305636
+            ]
+        );
         assert_eq!(
             s,
             " who likes to play with yarn. She has many colors of yarn in her box. She likes to make shapes with yarn and show"

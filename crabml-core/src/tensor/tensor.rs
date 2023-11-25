@@ -8,6 +8,8 @@ pub trait Tensor: Sized + Clone + TensorArithmetics {
 
     fn with_strider(self, strider: TensorStrider) -> Result<Self>;
 
+    fn with_name(self, name: String) -> Self;
+
     fn reshape(self, shape: &[usize]) -> Result<Self>;
 
     fn repeat(self, repeats: &[usize]) -> Result<Self>;

@@ -1,6 +1,8 @@
 - [ ] add basic WGPU tensor support
   - referenced: https://github.com/0hq/WebGPT/blob/main/condensed/condensed.js
-  - [ ] add rms_norm
+  - referenced: https://github.com/burn-rs/burn/blob/main/burn-wgpu/src/template/matmul/naive.wgsl
+  - [x] add rms_norm
+  - [ ] add tensor names
 - [ ] make validate panics
 - [ ] observe the intermediate result in llama2.rs
 - [ ] wgpu tensor support

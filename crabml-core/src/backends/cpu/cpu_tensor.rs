@@ -14,6 +14,7 @@ pub struct CpuTensor<'a> {
     buf: CpuTensorBuf<'a>,
     strider: TensorStrider,
     device: CpuTensorDeviceRef<'a>,
+    name: Option<String>,
 }
 
 // A tensor contains a buffer of f32, a shape and a strides. We may refer to
@@ -36,6 +37,7 @@ impl<'a> CpuTensor<'a> {
             buf: buf.into(),
             strider,
             device: device.clone(),
+            name: None,
         })
     }
 
@@ -51,6 +53,7 @@ impl<'a> CpuTensor<'a> {
             buf,
             strider,
             device: device.clone(),
+            name: None,
         })
     }
 
@@ -68,6 +71,7 @@ impl<'a> CpuTensor<'a> {
             buf: self.buf.as_ref(),
             strider: self.strider.clone(),
             device: self.device.clone(),
+            name: None,
         }
     }
 
@@ -236,6 +240,7 @@ impl<'a> Tensor for CpuTensor<'a> {
             buf: self.buf,
             strider,
             device: self.device.clone(),
+            name: None,
         })
     }
 
@@ -245,6 +250,7 @@ impl<'a> Tensor for CpuTensor<'a> {
             buf: self.buf,
             strider,
             device: self.device.clone(),
+            name: None,
         })
     }
 
@@ -254,6 +260,7 @@ impl<'a> Tensor for CpuTensor<'a> {
             buf: self.buf,
             strider,
             device: self.device.clone(),
+            name: None,
         })
     }
 
@@ -262,7 +269,13 @@ impl<'a> Tensor for CpuTensor<'a> {
             buf: self.buf,
             strider,
             device: self.device.clone(),
+            name: None,
         })
+    }
+
+    fn with_name(mut self, name: String) -> Self {
+        self.name = Some(name);
+        self
     }
 
     fn strider(&self) -> &TensorStrider {

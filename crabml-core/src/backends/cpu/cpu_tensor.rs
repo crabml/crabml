@@ -226,7 +226,7 @@ impl Default for CpuTensorDeviceOptions {
 pub struct CpuTensorDevice<'a> {
     opts: CpuTensorDeviceOptions,
     _bufs: Vec<CpuTensorBuf<'a>>,
-    debug_tensors: Vec<(String, Vec<f32>)>,
+    debug_tensors: RefCell<Vec<(String, Vec<f32>)>>,
 }
 
 pub type CpuTensorDeviceRef<'a> = Rc<CpuTensorDevice<'a>>;
@@ -236,7 +236,7 @@ impl<'a> CpuTensorDevice<'a> {
         let device = Self {
             opts: CpuTensorDeviceOptions::default(),
             _bufs: vec![],
-            debug_tensors: vec![],
+            debug_tensors: RefCell::new(vec![]),
         };
         Rc::new(device)
     }
@@ -245,7 +245,7 @@ impl<'a> CpuTensorDevice<'a> {
         let device = Self {
             opts,
             _bufs: vec![],
-            debug_tensors: vec![],
+            debug_tensors: RefCell::new(vec![]),
         };
         Rc::new(device)
     }
@@ -257,13 +257,19 @@ impl<'a> CpuTensorDevice<'a> {
         Ok(())
     }
 
-    pub fn debug_named_tensors(&self) -> &[(String, Vec<f32>)] {
-        &self.debug_tensors
+    pub fn dump_debug_tensor(&self, name: &str) -> Option<Vec<f32>> {
+        self.debug_tensors
+            .borrow()
+            .iter()
+            .find(|(n, _)| n == name)
+            .map(|(_, buf)| buf.clone())
     }
 
-    fn add_debug_tensor(&mut self, tensor: &CpuTensor<'a>) {
+    fn add_debug_tensor(&self, tensor: &CpuTensor<'a>) {
         let buf = tensor.buf.iter().collect::<Vec<_>>();
-        self.debug_tensors.push((tensor.name.clone().unwrap(), buf));
+        self.debug_tensors
+            .borrow_mut()
+            .push((tensor.name.clone().unwrap(), buf));
     }
 }
 
@@ -316,8 +322,11 @@ impl<'a> Tensor for CpuTensor<'a> {
 
     fn with_name(mut self, name: String) -> Self {
         self.name = Some(name);
-        let device = self.device.clone();
-        // device.add_debug_tensor(&self);
+
+        // only used in test
+        if self.device.opts.debug_named_tensors {
+            self.device.add_debug_tensor(&self);
+        }
         self
     }
 

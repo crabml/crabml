@@ -268,3 +268,19 @@ pub struct WgpuLlama2Model {
     pub tokenizer: Rc<BpeTokenizer>,
     pub device: WgpuTensorDeviceRef,
 }
+
+impl WgpuLlama2Model {
+    pub fn new(
+        conf: Llama2Config,
+        weights: Rc<Llama2Weights<WgpuTensor>>,
+        tokenizer: Rc<BpeTokenizer>,
+        device: WgpuTensorDeviceRef,
+    ) -> Self {
+        Self {
+            conf,
+            weights,
+            tokenizer,
+            device,
+        }
+    }
+}

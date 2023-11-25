@@ -5,6 +5,7 @@ use std::time::Instant;
 use std::vec;
 
 use crabml::backends::cpu::CpuTensor;
+use crabml::backends::wgpu::WgpuTensor;
 use crabml::error::Error;
 use crabml::error::ErrorKind;
 use crabml::error::Result;
@@ -14,6 +15,7 @@ use crabml::tokenizer::BpeTokenizer;
 use crate::model::CpuLlama2Model;
 use crate::model::Llama2Config;
 use crate::model::Llama2Weights;
+use crate::model::WgpuLlama2Model;
 use crate::sampler::Llama2Sampler;
 
 pub struct Llama2Runner<T: Tensor> {
@@ -49,6 +51,39 @@ impl<'a> TryFrom<&'a CpuLlama2Model<'a>> for Llama2Runner<CpuTensor<'a>> {
             })
             .collect::<Result<Vec<_>>>()?;
 
+        Ok(Self {
+            conf: *conf,
+            logits,
+            key_cache,
+            value_cache,
+            weights,
+            tokenizer,
+            device,
+        })
+    }
+}
+
+impl TryFrom<WgpuLlama2Model> for Llama2Runner<WgpuTensor> {
+    type Error = crabml::error::Error;
+
+    fn try_from(model: WgpuLlama2Model) -> Result<Self> {
+        let conf = &model.conf;
+        let device = model.device.clone();
+        let weights = model.weights.clone();
+        let tokenizer = model.tokenizer.clone();
+        let logits = vec![0.0; conf.vocab_size];
+        let key_cache = (0..conf.n_layers)
+            .map(|_| {
+                WgpuTensor::alloc(&[0, conf.n_kv_heads, conf.head_size()], device.clone())
+                    .map(|t| Some(t))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let value_cache = (0..conf.n_layers)
+            .map(|_| {
+                WgpuTensor::alloc(&[0, conf.n_kv_heads, conf.head_size()], device.clone())
+                    .map(|t| Some(t))
+            })
+            .collect::<Result<Vec<_>>>()?;
         Ok(Self {
             conf: *conf,
             logits,

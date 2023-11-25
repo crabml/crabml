@@ -1,3 +1,5 @@
+use std::borrow::BorrowMut;
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use super::buf::CpuTensorBufIter;
@@ -209,13 +211,13 @@ impl<'a> CpuTensor<'a> {
 pub struct CpuTensorDeviceOptions {
     /// when enabled, whenever tensor called with `with_name`, the name and the
     /// tensor will be recorded in the device. only used in test.
-    pub record_named_tensors: bool,
+    pub debug_named_tensors: bool,
 }
 
 impl Default for CpuTensorDeviceOptions {
     fn default() -> Self {
         Self {
-            record_named_tensors: false,
+            debug_named_tensors: false,
         }
     }
 }
@@ -224,7 +226,7 @@ impl Default for CpuTensorDeviceOptions {
 pub struct CpuTensorDevice<'a> {
     opts: CpuTensorDeviceOptions,
     _bufs: Vec<CpuTensorBuf<'a>>,
-    named_tensors: Vec<(String, Vec<f32>)>,
+    debug_tensors: Vec<(String, Vec<f32>)>,
 }
 
 pub type CpuTensorDeviceRef<'a> = Rc<CpuTensorDevice<'a>>;
@@ -234,7 +236,7 @@ impl<'a> CpuTensorDevice<'a> {
         let device = Self {
             opts: CpuTensorDeviceOptions::default(),
             _bufs: vec![],
-            named_tensors: vec![],
+            debug_tensors: vec![],
         };
         Rc::new(device)
     }
@@ -243,7 +245,7 @@ impl<'a> CpuTensorDevice<'a> {
         let device = Self {
             opts,
             _bufs: vec![],
-            named_tensors: vec![],
+            debug_tensors: vec![],
         };
         Rc::new(device)
     }
@@ -255,9 +257,13 @@ impl<'a> CpuTensorDevice<'a> {
         Ok(())
     }
 
-    fn record_named_tensor(&mut self, tensor: &CpuTensor<'a>) {
+    pub fn debug_named_tensors(&self) -> &[(String, Vec<f32>)] {
+        &self.debug_tensors
+    }
+
+    fn add_debug_tensor(&mut self, tensor: &CpuTensor<'a>) {
         let buf = tensor.buf.iter().collect::<Vec<_>>();
-        self.named_tensors.push((tensor.name.clone().unwrap(), buf));
+        self.debug_tensors.push((tensor.name.clone().unwrap(), buf));
     }
 }
 
@@ -310,6 +316,8 @@ impl<'a> Tensor for CpuTensor<'a> {
 
     fn with_name(mut self, name: String) -> Self {
         self.name = Some(name);
+        let device = self.device.clone();
+        // device.add_debug_tensor(&self);
         self
     }
 

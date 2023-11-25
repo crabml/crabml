@@ -205,16 +205,46 @@ impl<'a> CpuTensor<'a> {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct CpuTensorDeviceOptions {
+    /// when enabled, whenever tensor called with `with_name`, the name and the
+    /// tensor will be recorded in the device. only used in test.
+    pub record_named_tensors: bool,
+}
+
+impl Default for CpuTensorDeviceOptions {
+    fn default() -> Self {
+        Self {
+            record_named_tensors: false,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct CpuTensorDevice<'a> {
+    opts: CpuTensorDeviceOptions,
     _bufs: Vec<CpuTensorBuf<'a>>,
+    named_tensors: Vec<(String, Vec<f32>)>,
 }
 
 pub type CpuTensorDeviceRef<'a> = Rc<CpuTensorDevice<'a>>;
 
 impl<'a> CpuTensorDevice<'a> {
     pub fn new() -> CpuTensorDeviceRef<'a> {
-        let device = Self { _bufs: vec![] };
+        let device = Self {
+            opts: CpuTensorDeviceOptions::default(),
+            _bufs: vec![],
+            named_tensors: vec![],
+        };
+        Rc::new(device)
+    }
+
+    pub fn with_options(opts: CpuTensorDeviceOptions) -> CpuTensorDeviceRef<'a> {
+        let device = Self {
+            opts,
+            _bufs: vec![],
+            named_tensors: vec![],
+        };
         Rc::new(device)
     }
 
@@ -223,6 +253,11 @@ impl<'a> CpuTensorDevice<'a> {
             *dst = src;
         });
         Ok(())
+    }
+
+    fn record_named_tensor(&mut self, tensor: &CpuTensor<'a>) {
+        let buf = tensor.buf.iter().collect::<Vec<_>>();
+        self.named_tensors.push((tensor.name.clone().unwrap(), buf));
     }
 }
 

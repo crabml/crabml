@@ -4,6 +4,8 @@ use std::vec;
 use crabml::backends::cpu::cpu_tensor::CpuTensorDevice;
 use crabml::backends::cpu::cpu_tensor::CpuTensorDeviceRef;
 use crabml::backends::cpu::CpuTensor;
+use crabml::backends::wgpu::WgpuTensor;
+use crabml::backends::wgpu::WgpuTensorDeviceRef;
 use crabml::error::Error;
 use crabml::error::ErrorKind;
 use crabml::error::Result;
@@ -61,7 +63,6 @@ pub struct CpuLlama2Model<'a> {
     pub weights: Rc<Llama2Weights<CpuTensor<'a>>>,
     pub tokenizer: Rc<BpeTokenizer>,
     pub device: CpuTensorDeviceRef<'a>,
-    pub metadata: &'a GGUFMetadata<'a>,
 }
 
 impl<'a> CpuLlama2Model<'a> {
@@ -74,7 +75,6 @@ impl<'a> CpuLlama2Model<'a> {
             weights: Rc::new(weights),
             device,
             tokenizer: Rc::new(tokenizer),
-            metadata: gf.metadata(),
         })
     }
 
@@ -84,10 +84,6 @@ impl<'a> CpuLlama2Model<'a> {
 
     pub fn weights(&self) -> Rc<Llama2Weights<CpuTensor<'a>>> {
         self.weights.clone()
-    }
-
-    pub fn metadata(&self) -> &'a GGUFMetadata<'a> {
-        self.metadata
     }
 
     pub fn tokenizer(&self) -> Rc<BpeTokenizer> {
@@ -263,4 +259,12 @@ impl<'a> CpuLlama2Model<'a> {
             rope_dim: n_rot,
         }
     }
+}
+
+#[derive(Clone)]
+pub struct WgpuLlama2Model {
+    pub conf: Llama2Config,
+    pub weights: Rc<Llama2Weights<WgpuTensor>>,
+    pub tokenizer: Rc<BpeTokenizer>,
+    pub device: WgpuTensorDeviceRef,
 }

@@ -1,6 +1,7 @@
 use std::rc::Rc;
 use std::vec;
 
+use crabml::backends::cpu::buf::CpuTensorBuf;
 use crabml::backends::cpu::cpu_tensor::CpuTensorDevice;
 use crabml::backends::cpu::cpu_tensor::CpuTensorDeviceRef;
 use crabml::backends::cpu::CpuTensor;
@@ -11,6 +12,7 @@ use crabml::error::ErrorKind;
 use crabml::error::Result;
 use crabml::gguf::GGUFFile;
 use crabml::gguf::GGUFMetadata;
+use crabml::tensor;
 use crabml::tensor::Tensor;
 use crabml::tokenizer::BpeTokenizer;
 
@@ -272,15 +274,103 @@ pub struct WgpuLlama2Model {
 impl WgpuLlama2Model {
     pub fn new(
         conf: Llama2Config,
-        weights: Rc<Llama2Weights<WgpuTensor>>,
+        weights: Rc<Llama2Weights<CpuTensor>>,
         tokenizer: Rc<BpeTokenizer>,
         device: WgpuTensorDeviceRef,
-    ) -> Self {
-        Self {
+    ) -> Result<Self> {
+        let weights = Self::convert_cpu_weights(&weights, device.clone())?;
+        Ok(Self {
             conf,
-            weights,
+            weights: Rc::new(weights),
             tokenizer,
             device,
-        }
+        })
+    }
+
+    fn convert_cpu_weights(
+        weights: &Llama2Weights<CpuTensor>,
+        device: WgpuTensorDeviceRef,
+    ) -> Result<Llama2Weights<WgpuTensor>> {
+        let token_embedding_table =
+            Self::convert_cpu_tensor(&weights.token_embedding_table, device.clone())?;
+        let wq = weights
+            .wq
+            .iter()
+            .map(|t| Self::convert_cpu_tensor(&t, device.clone()))
+            .collect::<Result<Vec<_>>>()?;
+        let wk = weights
+            .wk
+            .iter()
+            .map(|t| Self::convert_cpu_tensor(&t, device.clone()))
+            .collect::<Result<Vec<_>>>()?;
+        let wv = weights
+            .wv
+            .iter()
+            .map(|t| Self::convert_cpu_tensor(&t, device.clone()))
+            .collect::<Result<Vec<_>>>()?;
+        let wo = weights
+            .wo
+            .iter()
+            .map(|t| Self::convert_cpu_tensor(&t, device.clone()))
+            .collect::<Result<Vec<_>>>()?;
+        let w1 = weights
+            .w1
+            .iter()
+            .map(|t| Self::convert_cpu_tensor(&t, device.clone()))
+            .collect::<Result<Vec<_>>>()?;
+        let w2 = weights
+            .w2
+            .iter()
+            .map(|t| Self::convert_cpu_tensor(&t, device.clone()))
+            .collect::<Result<Vec<_>>>()?;
+        let w3 = weights
+            .w3
+            .iter()
+            .map(|t| Self::convert_cpu_tensor(&t, device.clone()))
+            .collect::<Result<Vec<_>>>()?;
+        let rms_att_weight = weights
+            .rms_att_weight
+            .iter()
+            .map(|t| Self::convert_cpu_tensor(&t, device.clone()))
+            .collect::<Result<Vec<_>>>()?;
+        let rms_ffn_weight = weights
+            .rms_ffn_weight
+            .iter()
+            .map(|t| Self::convert_cpu_tensor(&t, device.clone()))
+            .collect::<Result<Vec<_>>>()?;
+        let rms_final_weight = Self::convert_cpu_tensor(&weights.rms_final_weight, device.clone())?;
+        let wcls = Self::convert_cpu_tensor(&weights.wcls, device.clone())?;
+        let weights = Llama2Weights {
+            token_embedding_table,
+            wq,
+            wk,
+            wv,
+            wo,
+            w1,
+            w2,
+            w3,
+            rms_att_weight,
+            rms_ffn_weight,
+            rms_final_weight,
+            wcls,
+        };
+        Ok(weights)
+    }
+
+    fn convert_cpu_tensor(tensor: &CpuTensor, device: WgpuTensorDeviceRef) -> Result<WgpuTensor> {
+        let buf = tensor.buf();
+        let buf = match buf {
+            CpuTensorBuf::F32(buf) => buf,
+            _ => {
+                return Err(Error {
+                    kind: ErrorKind::TensorError,
+                    message: format!("unsupported tensor type on gpu {:?}", buf),
+                    cause: None,
+                });
+            }
+        };
+
+        let wgpu_tensor = WgpuTensor::new(buf, tensor.shape(), device.clone())?;
+        Ok(wgpu_tensor)
     }
 }

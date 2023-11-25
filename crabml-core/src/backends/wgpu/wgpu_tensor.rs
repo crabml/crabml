@@ -144,7 +144,7 @@ pub struct WgpuTensor {
 }
 
 impl WgpuTensor {
-    fn new(src: &[f32], shape: &[usize], device: WgpuTensorDeviceRef) -> Result<Self> {
+    pub fn new(src: &[f32], shape: &[usize], device: WgpuTensorDeviceRef) -> Result<Self> {
         let buf = device
             .inner
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {

@@ -190,7 +190,7 @@ impl<'a> CpuTensor<'a> {
     }
 
     // only used on specialized performance critical cases
-    pub(crate) fn buf(&self) -> &CpuTensorBuf<'a> {
+    pub fn buf(&self) -> &CpuTensorBuf<'a> {
         &self.buf
     }
 

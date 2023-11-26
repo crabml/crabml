@@ -12,3 +12,4 @@ crabml = { path = "../crabml-core" }
 
 [dev-dependencies]
 pretty_assertions = "1.2.1"
+approx = "0.5.1"

@@ -124,7 +124,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             x = {
                 x = x.rms_norm_inplace(self.conf.rms_norm_eps)?;
                 x = x.mul_inplace(&self.weights.rms_att_weight[l])?;
-                x = x.with_name(format!("attn_rmsnorm:{}", l));
+                x = x.with_name(format!("attn_rmsnorm:{}:{}", l, pos));
                 x
             };
 
@@ -359,6 +359,7 @@ impl<'a, T: Tensor> Iterator for Llama2RunnerOutputGenerator<'a, T> {
 
 #[cfg(test)]
 mod tests {
+    use approx::assert_relative_eq;
     use crabml::backends::cpu::cpu_tensor::CpuTensorDevice;
     use crabml::backends::cpu::cpu_tensor::CpuTensorDeviceOptions;
     use crabml::backends::wgpu::WgpuTensorDevice;
@@ -430,9 +431,10 @@ mod tests {
         });
         let model_cpu = CpuLlama2Model::load(&gf, device_cpu.clone())?;
 
-        let device_wgpu = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new(
-            model_cpu.conf.embedding_dim * 4,
-        ));
+        let device_wgpu = WgpuTensorDevice::new(
+            WgpuTensorDeviceOptions::new(model_cpu.conf.embedding_dim * 4)
+                .with_debug_named_tensor(true),
+        );
         let model_wgpu = WgpuLlama2Model::from_cpu(&model_cpu, device_wgpu.clone())?;
 
         let mut sampler = Llama2Sampler::new(model_cpu.conf.vocab_size, 0.0, 0.0);
@@ -448,21 +450,10 @@ mod tests {
             .generate("Lily is a cat", 30, &mut sampler)?
             .collect::<Result<Vec<String>>>();
 
-        assert_eq!(
-            device_cpu.dump_debug_tensor("attn_rmsnorm:0").unwrap()[0..6],
-            vec![
-                -0.5774899,
-                -0.45631766,
-                0.25273207,
-                -0.13230246,
-                0.98616296,
-                0.46305636
-            ]
-        );
-        assert!(
-            device_wgpu.dump_debug_tensor("attn_rmsnorm:0").is_some(),
-            "result: {:?}",
-            output_wgpu
+        assert_relative_eq!(
+            device_cpu.dump_debug_tensor("attn_rmsnorm:0:0").unwrap()[0..10],
+            device_wgpu.dump_debug_tensor("attn_rmsnorm:0:0").unwrap()[0..10],
+            epsilon = 1e-7
         );
         assert_eq!(
             output_cpu,

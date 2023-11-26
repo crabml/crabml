@@ -273,8 +273,9 @@ impl Tensor for WgpuTensor {
             return Err((ErrorKind::TensorError, "not contiguous").into());
         }
 
-        let offset = rhs.strider.at(pos).unwrap();
-        let bytes_len = len * std::mem::size_of::<f32>();
+        let f32_size = std::mem::size_of::<f32>();
+        let offset = rhs.strider.at(pos).unwrap() * f32_size;
+        let bytes_len = len * f32_size;
 
         // enqueue copy from rhs to self's buffer
         let mut encoder = self
@@ -327,7 +328,7 @@ impl Tensor for WgpuTensor {
 
 impl TensorArithmetics for WgpuTensor {
     fn rope_inplace(self, pos: usize, rope_dims: usize) -> Result<Self> {
-        todo!()
+        return Err((ErrorKind::NotImplemented, "not implemented").into());
     }
 
     fn rms_norm_inplace(self, eps: f32) -> Result<Self> {
@@ -357,11 +358,11 @@ impl TensorArithmetics for WgpuTensor {
     }
 
     fn softmax_inplace(self, axis: usize) -> Result<Self> {
-        todo!()
+        return Err((ErrorKind::NotImplemented, "not implemented").into());
     }
 
     fn silu_inplace(self) -> Result<Self> {
-        todo!()
+        return Err((ErrorKind::NotImplemented, "not implemented").into());
     }
 
     fn mul_inplace(self, rhs: &Self) -> Result<Self> {
@@ -448,11 +449,11 @@ impl TensorArithmetics for WgpuTensor {
     }
 
     fn matmul(&self, y: &Self) -> Result<Self> {
-        todo!()
+        return Err((ErrorKind::NotImplemented, "not implemented").into());
     }
 
     fn batch_matmul(&self, y: &Self) -> Result<Self> {
-        todo!()
+        return Err((ErrorKind::NotImplemented, "not implemented").into());
     }
 }
 
@@ -555,19 +556,19 @@ mod tests {
         let device_opts = WgpuTensorDeviceOptions::new(1024 * 4).with_debug_named_tensor(true);
         let device = WgpuTensorDevice::new(device_opts);
 
-        let mut t1 = WgpuTensor::alloc(&[512, 2], device.clone())?;
+        let mut t1 = WgpuTensor::alloc(&[256, 4], device.clone())?;
         let t2 = WgpuTensor::new(
             &(0..1024).map(|d| d as f32).collect::<Vec<f32>>(),
-            &[512, 2],
+            &[256, 4],
             device.clone(),
         )?;
 
-        t1.copy_from(&t2, &[0, 0], 4)?;
+        assert_eq!(t2.strider.at(&[1, 0])?, 4);
+        t1.copy_from(&t2, &[1, 0], 4)?;
 
         let mut dst = vec![0.0; 1024];
         t1.export(&mut dst)?;
-        assert_eq!(&dst[0..4], [0.0, 1.0, 2.0, 3.0]);
-        assert_eq!(&dst[4..8], [0.0, 0.0, 0.0, 0.0]);
+        assert_eq!(&dst[0..4], [4.0, 5.0, 6.0, 7.0]);
         Ok(())
     }
 

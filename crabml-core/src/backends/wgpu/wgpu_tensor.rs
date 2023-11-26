@@ -43,11 +43,11 @@ pub struct WgpuTensorDevice {
     modules: HashMap<&'static str, wgpu::ShaderModule>,
 
     /// used for test only
-    debug_tensors: RefCell<HashMap<String, Vec<f32>>>,
+    pub debug_tensors: RefCell<HashMap<String, Vec<f32>>>,
 }
 
 impl WgpuTensorDevice {
-    fn new(opts: WgpuTensorDeviceOptions) -> WgpuTensorDeviceRef {
+    pub fn new(opts: WgpuTensorDeviceOptions) -> WgpuTensorDeviceRef {
         let (device, queue) = pollster::block_on(Self::init_wgpu());
         let staging_buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("staging buffer"),
@@ -260,11 +260,11 @@ impl Tensor for WgpuTensor {
     }
 
     fn extend(&mut self, rhs: &Self) -> Result<()> {
-        todo!()
+        return Err((ErrorKind::NotImplemented, "not implemented").into());
     }
 
     fn copy_from(&mut self, rhs: &Self, pos: &[usize], len: usize) -> Result<()> {
-        todo!()
+        return Err((ErrorKind::NotImplemented, "not implemented").into());
     }
 
     fn export(&self, dst: &mut [f32]) -> Result<()> {

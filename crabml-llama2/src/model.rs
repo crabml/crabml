@@ -272,17 +272,12 @@ pub struct WgpuLlama2Model {
 }
 
 impl WgpuLlama2Model {
-    pub fn new(
-        conf: Llama2Config,
-        weights: Rc<Llama2Weights<CpuTensor>>,
-        tokenizer: Rc<BpeTokenizer>,
-        device: WgpuTensorDeviceRef,
-    ) -> Result<Self> {
-        let weights = Self::convert_cpu_weights(&weights, device.clone())?;
+    pub fn from_cpu(cpu_model: &CpuLlama2Model, device: WgpuTensorDeviceRef) -> Result<Self> {
+        let weights = Self::convert_cpu_weights(&cpu_model.weights, device.clone())?;
         Ok(Self {
-            conf,
+            conf: cpu_model.conf.clone(),
             weights: Rc::new(weights),
-            tokenizer,
+            tokenizer: cpu_model.tokenizer.clone(),
             device,
         })
     }

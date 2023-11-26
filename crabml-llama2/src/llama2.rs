@@ -63,10 +63,10 @@ impl<'a> TryFrom<&'a CpuLlama2Model<'a>> for Llama2Runner<CpuTensor<'a>> {
     }
 }
 
-impl TryFrom<WgpuLlama2Model> for Llama2Runner<WgpuTensor> {
+impl TryFrom<&WgpuLlama2Model> for Llama2Runner<WgpuTensor> {
     type Error = crabml::error::Error;
 
-    fn try_from(model: WgpuLlama2Model) -> Result<Self> {
+    fn try_from(model: &WgpuLlama2Model) -> Result<Self> {
         let conf = &model.conf;
         let device = model.device.clone();
         let weights = model.weights.clone();
@@ -361,6 +361,8 @@ impl<'a, T: Tensor> Iterator for Llama2RunnerOutputGenerator<'a, T> {
 mod tests {
     use crabml::backends::cpu::cpu_tensor::CpuTensorDevice;
     use crabml::backends::cpu::cpu_tensor::CpuTensorDeviceOptions;
+    use crabml::backends::wgpu::WgpuTensorDevice;
+    use crabml::backends::wgpu::WgpuTensorDeviceOptions;
     use crabml::gguf::GGUFFileLoader;
 
     use super::*;
@@ -428,11 +430,23 @@ mod tests {
         });
         let model_cpu = CpuLlama2Model::load(&gf, device_cpu.clone())?;
 
+        let device_wgpu = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new(
+            model_cpu.conf.embedding_dim * 4,
+        ));
+        let model_wgpu = WgpuLlama2Model::from_cpu(&model_cpu, device_wgpu.clone())?;
+
         let mut sampler = Llama2Sampler::new(model_cpu.conf.vocab_size, 0.0, 0.0);
         let mut runner_cpu = Llama2Runner::try_from(&model_cpu)?;
+        let mut runner_wgpu = Llama2Runner::try_from(&model_wgpu)?;
 
-        let output = runner_cpu.generate("Lily is a cat", 30, &mut sampler)?;
-        let s = output.collect::<Result<Vec<String>>>()?.join("");
+        let output_cpu = runner_cpu
+            .generate("Lily is a cat", 30, &mut sampler)?
+            .collect::<Result<Vec<String>>>()?
+            .join("");
+
+        let _ = runner_wgpu
+            .generate("Lily is a cat", 30, &mut sampler)?
+            .collect::<Result<Vec<String>>>();
 
         assert_eq!(
             device_cpu.dump_debug_tensor("attn_rmsnorm:0").unwrap()[0..6],
@@ -445,8 +459,9 @@ mod tests {
                 0.46305636
             ]
         );
+        assert!(device_wgpu.dump_debug_tensor("attn_rmsnorm:0").is_some());
         assert_eq!(
-            s,
+            output_cpu,
             " who likes to play with yarn. She has many colors of yarn in her box. She likes to make shapes with yarn and show"
         );
         Ok(())

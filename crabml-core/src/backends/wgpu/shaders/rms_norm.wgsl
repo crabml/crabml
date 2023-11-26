@@ -16,12 +16,12 @@ var<workgroup> thread_sums: array<f32, 64>;
 
 // each workgroup normalize a single vector
 
-@compute @workgroup_size(64)
+@compute @workgroup_size(32)
 fn main(
     @builtin(workgroup_id) workgroup_id: vec3<u32>,
     @builtin(local_invocation_id) local_id: vec3<u32>,
 ) {
-    let workgroup_size: u32 = 64u;
+    let workgroup_size: u32 = 32u;
     let local_chunk_size = input_m.N / workgroup_size;
 
     // calculate each thread's chunk of the squared sum

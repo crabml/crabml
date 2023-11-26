@@ -273,7 +273,7 @@ impl Tensor for WgpuTensor {
             return Err((ErrorKind::TensorError, "not contiguous").into());
         }
 
-        let offset = self.strider.at(pos)?;
+        let offset = rhs.strider.at(pos).unwrap();
         let bytes_len = len * std::mem::size_of::<f32>();
 
         // enqueue copy from rhs to self's buffer
@@ -365,7 +365,7 @@ impl TensorArithmetics for WgpuTensor {
     }
 
     fn mul_inplace(self, rhs: &Self) -> Result<Self> {
-        assert!(self.strider().len() % 64 == 0);
+        assert!(self.strider().len() % 32 == 0);
         let meta_buf = self
             .device
             .make_storage_buffer(bytemuck::cast_slice(&[1u32, self.strider.len() as u32]));
@@ -391,7 +391,7 @@ impl TensorArithmetics for WgpuTensor {
     }
 
     fn add_inplace(self, rhs: &Self) -> Result<Self> {
-        assert!(self.strider().len() % 64 == 0);
+        assert!(self.strider().len() % 32 == 0);
         let meta_buf = self
             .device
             .make_storage_buffer(bytemuck::cast_slice(&[1u32, self.strider.len() as u32]));
@@ -417,7 +417,7 @@ impl TensorArithmetics for WgpuTensor {
     }
 
     fn div_scalar_inplace(self, rhs: f32) -> Result<Self> {
-        assert!(self.strider().len() % 64 == 0);
+        assert!(self.strider().len() % 32 == 0);
         let meta_buf = self
             .device
             .make_storage_buffer(bytemuck::cast_slice(&[1u32, self.strider.len() as u32]));
@@ -441,7 +441,7 @@ impl TensorArithmetics for WgpuTensor {
         let encoder = self.device.encode_pipeline_commnad(
             "div_inplace",
             entries,
-            (self.strider.len() as u32 / 64, 1, 1),
+            (self.strider.len() as u32 / 32, 1, 1),
         );
         self.device.queue.submit(Some(encoder.finish()));
         Ok(self)

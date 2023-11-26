@@ -444,7 +444,7 @@ mod tests {
             .collect::<Result<Vec<String>>>()?
             .join("");
 
-        let _ = runner_wgpu
+        let output_wgpu = runner_wgpu
             .generate("Lily is a cat", 30, &mut sampler)?
             .collect::<Result<Vec<String>>>();
 
@@ -459,7 +459,11 @@ mod tests {
                 0.46305636
             ]
         );
-        assert!(device_wgpu.dump_debug_tensor("attn_rmsnorm:0").is_some());
+        assert!(
+            device_wgpu.dump_debug_tensor("attn_rmsnorm:0").is_some(),
+            "result: {:?}",
+            output_wgpu
+        );
         assert_eq!(
             output_cpu,
             " who likes to play with yarn. She has many colors of yarn in her box. She likes to make shapes with yarn and show"

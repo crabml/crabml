@@ -502,6 +502,35 @@ mod tests {
     }
 
     #[test]
+    fn test_wgpu_tensor_alloc() -> Result<()> {
+        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new(1024 * 4));
+        let t1 = WgpuTensor::alloc(&[512, 2], device.clone())?;
+        let t2 = WgpuTensor::new(&[1.0; 1024], &[512, 2], device.clone())?;
+        let t1 = t1.add_inplace(&t2)?;
+
+        let mut dst = vec![0.0; 1024];
+        t1.export(&mut dst)?;
+
+        assert_eq!(&dst[0..3], [1.0, 1.0, 1.0]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_wgpu_tensor_with_name() -> Result<()> {
+        let device_opts = WgpuTensorDeviceOptions::new(1024 * 4).with_debug_named_tensor(true);
+        let device = WgpuTensorDevice::new(device_opts);
+
+        let t1 = WgpuTensor::alloc(&[512, 2], device.clone())?;
+        let t2 = WgpuTensor::new(&[1.0; 1024], &[512, 2], device.clone())?;
+        let t1 = t1.add_inplace(&t2)?;
+        let _ = t1.with_name("t1".to_string());
+
+        let dst = device.dump_debug_tensor("t1").unwrap();
+        assert_eq!(dst, vec![1.0; 1024]);
+        Ok(())
+    }
+
+    #[test]
     fn test_wgpu_tensor_rms_norm() -> Result<()> {
         // it seems that webgpu have a different rounding method on dividing f32:
         // https://stackoverflow.com/questions/73674463/does-rust-f64-f32-round-correctly

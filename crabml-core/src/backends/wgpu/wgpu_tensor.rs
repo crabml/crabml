@@ -198,6 +198,10 @@ impl WgpuTensor {
             name: None,
         })
     }
+
+    pub fn is_contiguous(&self) -> bool {
+        self.strider.is_contiguous()
+    }
 }
 
 impl Tensor for WgpuTensor {
@@ -264,7 +268,23 @@ impl Tensor for WgpuTensor {
     }
 
     fn copy_from(&mut self, rhs: &Self, pos: &[usize], len: usize) -> Result<()> {
-        return Err((ErrorKind::NotImplemented, "not implemented").into());
+        // TODO: check is_owned
+        if !self.is_contiguous() {
+            return Err((ErrorKind::TensorError, "not contiguous").into());
+        }
+
+        let offset = self.strider.at(pos)?;
+        let bytes_len = len * std::mem::size_of::<f32>();
+
+        // enqueue copy from rhs to self's buffer
+        let mut encoder = self
+            .device
+            .inner
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        encoder.copy_buffer_to_buffer(&rhs.buf, offset as u64, &self.buf, 0, bytes_len as u64);
+        self.device.queue.submit(Some(encoder.finish()));
+
+        Ok(())
     }
 
     fn export(&self, dst: &mut [f32]) -> Result<()> {

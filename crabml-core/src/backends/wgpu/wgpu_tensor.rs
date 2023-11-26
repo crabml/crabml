@@ -183,7 +183,7 @@ impl WgpuTensor {
         let buf = device
             .inner
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("input buffer"),
+                label: Some("tensor weights buffer"),
                 contents: bytemuck::cast_slice(src),
                 usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
             });
@@ -204,7 +204,22 @@ impl Tensor for WgpuTensor {
     type Device = WgpuTensorDeviceRef;
 
     fn alloc(shape: &[usize], device: Self::Device) -> Result<Self> {
-        todo!()
+        let buf_bytes = shape.iter().product::<usize>() * std::mem::size_of::<f32>();
+        let buf = device.inner.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("tensor storage buffer"),
+            size: buf_bytes as u64,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let strider = TensorStrider::new(shape.to_vec());
+        Ok(Self {
+            buf: Rc::new(buf),
+            strider,
+            device,
+            name: None,
+        })
     }
 
     fn with_strider(self, strider: TensorStrider) -> Result<Self> {

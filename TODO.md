@@ -3,6 +3,7 @@
   - referenced: https://github.com/burn-rs/burn/blob/main/burn-wgpu/src/template/matmul/naive.wgsl
   - [x] add rms_norm
   - [x] add tensor names
+  - [ ] wgpu tensor add alloc
   - [ ] compare the result of wgpu and cpu on rms_norm
 - [ ] make validate panics
 - [ ] observe the intermediate result in llama2.rs

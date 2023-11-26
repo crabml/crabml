@@ -551,6 +551,27 @@ mod tests {
     }
 
     #[test]
+    fn test_wgpu_copy_from() -> Result<()> {
+        let device_opts = WgpuTensorDeviceOptions::new(1024 * 4).with_debug_named_tensor(true);
+        let device = WgpuTensorDevice::new(device_opts);
+
+        let mut t1 = WgpuTensor::alloc(&[512, 2], device.clone())?;
+        let t2 = WgpuTensor::new(
+            &(0..1024).map(|d| d as f32).collect::<Vec<f32>>(),
+            &[512, 2],
+            device.clone(),
+        )?;
+
+        t1.copy_from(&t2, &[0, 0], 4)?;
+
+        let mut dst = vec![0.0; 1024];
+        t1.export(&mut dst)?;
+        assert_eq!(&dst[0..4], [0.0, 1.0, 2.0, 3.0]);
+        assert_eq!(&dst[4..8], [0.0, 0.0, 0.0, 0.0]);
+        Ok(())
+    }
+
+    #[test]
     fn test_wgpu_tensor_rms_norm() -> Result<()> {
         // it seems that webgpu have a different rounding method on dividing f32:
         // https://stackoverflow.com/questions/73674463/does-rust-f64-f32-round-correctly

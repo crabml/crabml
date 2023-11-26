@@ -1,5 +1,6 @@
 use std::borrow::BorrowMut;
 use std::borrow::Cow;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::rc::Rc;
@@ -14,29 +15,53 @@ use crate::tensor::Tensor;
 use crate::tensor::TensorArithmetics;
 use crate::tensor::TensorStrider;
 
+pub struct WgpuTensorDeviceOptions {
+    pub staging_buf_bytes: usize,
+
+    pub debug_named_tensor: bool,
+}
+
+impl WgpuTensorDeviceOptions {
+    pub fn new(staging_buf_bytes: usize) -> Self {
+        Self {
+            staging_buf_bytes,
+            debug_named_tensor: false,
+        }
+    }
+
+    pub fn with_debug_named_tensor(mut self, v: bool) -> Self {
+        self.debug_named_tensor = v;
+        self
+    }
+}
+
 pub struct WgpuTensorDevice {
+    opts: WgpuTensorDeviceOptions,
     inner: wgpu::Device,
     queue: wgpu::Queue,
     staging_buf: wgpu::Buffer,
-    staging_buf_bytes: usize,
     modules: HashMap<&'static str, wgpu::ShaderModule>,
+
+    /// used for test only
+    pub debug_tensors: RefCell<HashMap<String, Vec<f32>>>,
 }
 
 impl WgpuTensorDevice {
-    fn new(staging_buf_bytes: usize) -> WgpuTensorDeviceRef {
+    pub fn new(opts: WgpuTensorDeviceOptions) -> WgpuTensorDeviceRef {
         let (device, queue) = pollster::block_on(Self::init_wgpu());
         let staging_buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("staging buffer"),
-            size: staging_buf_bytes as u64,
+            size: opts.staging_buf_bytes as u64,
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
         let mut d = Self {
             inner: device,
+            opts,
             queue,
             staging_buf,
-            staging_buf_bytes,
             modules: HashMap::new(),
+            debug_tensors: RefCell::new(HashMap::new()),
         };
         d.load_modules();
         Rc::new(d)
@@ -131,6 +156,16 @@ impl WgpuTensorDevice {
         }
         encoder
     }
+
+    fn record_debug_tensor(&self, name: String, tensor: &WgpuTensor) {
+        let mut dst = vec![0.0; tensor.strider().len()];
+        tensor.export(&mut dst).unwrap();
+        self.debug_tensors.borrow_mut().insert(name, dst);
+    }
+
+    pub fn dump_debug_tensor(&self, name: &str) -> Option<Vec<f32>> {
+        self.debug_tensors.borrow().get(name).cloned()
+    }
 }
 
 pub type WgpuTensorDeviceRef = Rc<WgpuTensorDevice>;
@@ -144,11 +179,11 @@ pub struct WgpuTensor {
 }
 
 impl WgpuTensor {
-    fn new(src: &[f32], shape: &[usize], device: WgpuTensorDeviceRef) -> Result<Self> {
+    pub fn new(src: &[f32], shape: &[usize], device: WgpuTensorDeviceRef) -> Result<Self> {
         let buf = device
             .inner
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("input buffer"),
+                label: Some("tensor weights buffer"),
                 contents: bytemuck::cast_slice(src),
                 usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
             });
@@ -163,25 +198,48 @@ impl WgpuTensor {
             name: None,
         })
     }
+
+    pub fn is_contiguous(&self) -> bool {
+        self.strider.is_contiguous()
+    }
 }
 
 impl Tensor for WgpuTensor {
     type Device = WgpuTensorDeviceRef;
 
     fn alloc(shape: &[usize], device: Self::Device) -> Result<Self> {
-        todo!()
+        let buf_bytes = shape.iter().product::<usize>() * std::mem::size_of::<f32>();
+        let buf = device.inner.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("tensor storage buffer"),
+            size: buf_bytes as u64,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let strider = TensorStrider::new(shape.to_vec());
+        Ok(Self {
+            buf: Rc::new(buf),
+            strider,
+            device,
+            name: None,
+        })
     }
 
     fn with_strider(self, strider: TensorStrider) -> Result<Self> {
         Ok(Self {
             buf: self.buf,
-            strider: self.strider,
+            strider: strider,
             device: self.device,
             name: None,
         })
     }
 
     fn with_name(mut self, name: String) -> Self {
+        if self.device.opts.debug_named_tensor {
+            self.device.record_debug_tensor(name.clone(), &self);
+        }
+
         self.name = Some(name);
         self
     }
@@ -206,16 +264,33 @@ impl Tensor for WgpuTensor {
     }
 
     fn extend(&mut self, rhs: &Self) -> Result<()> {
-        todo!()
+        return Err((ErrorKind::NotImplemented, "not implemented").into());
     }
 
     fn copy_from(&mut self, rhs: &Self, pos: &[usize], len: usize) -> Result<()> {
-        todo!()
+        // TODO: check is_owned
+        if !self.is_contiguous() {
+            return Err((ErrorKind::TensorError, "not contiguous").into());
+        }
+
+        let f32_size = std::mem::size_of::<f32>();
+        let offset = rhs.strider.at(pos).unwrap() * f32_size;
+        let bytes_len = len * f32_size;
+
+        // enqueue copy from rhs to self's buffer
+        let mut encoder = self
+            .device
+            .inner
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        encoder.copy_buffer_to_buffer(&rhs.buf, offset as u64, &self.buf, 0, bytes_len as u64);
+        self.device.queue.submit(Some(encoder.finish()));
+
+        Ok(())
     }
 
     fn export(&self, dst: &mut [f32]) -> Result<()> {
         let buf_size = self.strider.len() * std::mem::size_of::<f32>();
-        if buf_size != self.device.staging_buf_bytes {
+        if buf_size != self.device.opts.staging_buf_bytes {
             return Err((ErrorKind::TensorError, "buffer size mismatch").into());
         }
 
@@ -253,7 +328,7 @@ impl Tensor for WgpuTensor {
 
 impl TensorArithmetics for WgpuTensor {
     fn rope_inplace(self, pos: usize, rope_dims: usize) -> Result<Self> {
-        todo!()
+        return Err((ErrorKind::NotImplemented, "not implemented").into());
     }
 
     fn rms_norm_inplace(self, eps: f32) -> Result<Self> {
@@ -283,15 +358,15 @@ impl TensorArithmetics for WgpuTensor {
     }
 
     fn softmax_inplace(self, axis: usize) -> Result<Self> {
-        todo!()
+        return Err((ErrorKind::NotImplemented, "not implemented").into());
     }
 
     fn silu_inplace(self) -> Result<Self> {
-        todo!()
+        return Err((ErrorKind::NotImplemented, "not implemented").into());
     }
 
     fn mul_inplace(self, rhs: &Self) -> Result<Self> {
-        assert!(self.strider().len() % 64 == 0);
+        assert!(self.strider().len() % 32 == 0);
         let meta_buf = self
             .device
             .make_storage_buffer(bytemuck::cast_slice(&[1u32, self.strider.len() as u32]));
@@ -317,7 +392,7 @@ impl TensorArithmetics for WgpuTensor {
     }
 
     fn add_inplace(self, rhs: &Self) -> Result<Self> {
-        assert!(self.strider().len() % 64 == 0);
+        assert!(self.strider().len() % 32 == 0);
         let meta_buf = self
             .device
             .make_storage_buffer(bytemuck::cast_slice(&[1u32, self.strider.len() as u32]));
@@ -343,7 +418,7 @@ impl TensorArithmetics for WgpuTensor {
     }
 
     fn div_scalar_inplace(self, rhs: f32) -> Result<Self> {
-        assert!(self.strider().len() % 64 == 0);
+        assert!(self.strider().len() % 32 == 0);
         let meta_buf = self
             .device
             .make_storage_buffer(bytemuck::cast_slice(&[1u32, self.strider.len() as u32]));
@@ -367,18 +442,18 @@ impl TensorArithmetics for WgpuTensor {
         let encoder = self.device.encode_pipeline_commnad(
             "div_inplace",
             entries,
-            (self.strider.len() as u32 / 64, 1, 1),
+            (self.strider.len() as u32 / 32, 1, 1),
         );
         self.device.queue.submit(Some(encoder.finish()));
         Ok(self)
     }
 
     fn matmul(&self, y: &Self) -> Result<Self> {
-        todo!()
+        return Err((ErrorKind::NotImplemented, "not implemented").into());
     }
 
     fn batch_matmul(&self, y: &Self) -> Result<Self> {
-        todo!()
+        return Err((ErrorKind::NotImplemented, "not implemented").into());
     }
 }
 
@@ -388,13 +463,14 @@ mod tests {
 
     use super::WgpuTensor;
     use super::WgpuTensorDevice;
+    use crate::backends::wgpu::wgpu_tensor::WgpuTensorDeviceOptions;
     use crate::error::Result;
     use crate::tensor::Tensor;
     use crate::tensor::TensorArithmetics;
 
     #[test]
     fn test_wgpu_tensor_new_and_export() -> Result<()> {
-        let device = WgpuTensorDevice::new(6 * 4);
+        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new(6 * 4));
         let t1 = WgpuTensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], device)?;
         let mut dst = vec![0.0; 6];
 
@@ -406,7 +482,7 @@ mod tests {
 
     #[test]
     fn test_wgpu_tensor_add() -> Result<()> {
-        let device = WgpuTensorDevice::new(64 * 4);
+        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new(64 * 4));
         let t1 = WgpuTensor::new(&[2.0; 64], &[16, 4], device.clone())?;
         let t2 = WgpuTensor::new(&[3.0; 64], &[16, 4], device)?;
         let t1 = t1.add_inplace(&t2)?;
@@ -420,7 +496,7 @@ mod tests {
 
     #[test]
     fn test_wgpu_tensor_mul() -> Result<()> {
-        let device = WgpuTensorDevice::new(1024 * 4);
+        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new(1024 * 4));
         let t1 = WgpuTensor::new(&[3.0; 1024], &[512, 2], device.clone())?;
         let t2 = WgpuTensor::new(&[2.0; 1024], &[512, 2], device)?;
         let t1 = t1.mul_inplace(&t2)?;
@@ -435,7 +511,7 @@ mod tests {
 
     #[test]
     fn test_wgpu_tensor_div_scalar() -> Result<()> {
-        let device = WgpuTensorDevice::new(1024 * 4);
+        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new(1024 * 4));
         let t1 = WgpuTensor::new(&[6.0; 1024], &[512, 2], device.clone())?;
         let t1 = t1.div_scalar_inplace(2.0)?;
 
@@ -443,6 +519,56 @@ mod tests {
         t1.export(&mut dst)?;
 
         assert_eq!(&dst[0..3], [3.0, 3.0, 3.0]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_wgpu_tensor_alloc() -> Result<()> {
+        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new(1024 * 4));
+        let t1 = WgpuTensor::alloc(&[512, 2], device.clone())?;
+        let t2 = WgpuTensor::new(&[1.0; 1024], &[512, 2], device.clone())?;
+        let t1 = t1.add_inplace(&t2)?;
+
+        let mut dst = vec![0.0; 1024];
+        t1.export(&mut dst)?;
+
+        assert_eq!(&dst[0..3], [1.0, 1.0, 1.0]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_wgpu_tensor_with_name() -> Result<()> {
+        let device_opts = WgpuTensorDeviceOptions::new(1024 * 4).with_debug_named_tensor(true);
+        let device = WgpuTensorDevice::new(device_opts);
+
+        let t1 = WgpuTensor::alloc(&[512, 2], device.clone())?;
+        let t2 = WgpuTensor::new(&[1.0; 1024], &[512, 2], device.clone())?;
+        let t1 = t1.add_inplace(&t2)?;
+        let _ = t1.with_name("t1".to_string());
+
+        let dst = device.dump_debug_tensor("t1").unwrap();
+        assert_eq!(dst, vec![1.0; 1024]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_wgpu_copy_from() -> Result<()> {
+        let device_opts = WgpuTensorDeviceOptions::new(1024 * 4).with_debug_named_tensor(true);
+        let device = WgpuTensorDevice::new(device_opts);
+
+        let mut t1 = WgpuTensor::alloc(&[256, 4], device.clone())?;
+        let t2 = WgpuTensor::new(
+            &(0..1024).map(|d| d as f32).collect::<Vec<f32>>(),
+            &[256, 4],
+            device.clone(),
+        )?;
+
+        assert_eq!(t2.strider.at(&[1, 0])?, 4);
+        t1.copy_from(&t2, &[1, 0], 4)?;
+
+        let mut dst = vec![0.0; 1024];
+        t1.export(&mut dst)?;
+        assert_eq!(&dst[0..4], [4.0, 5.0, 6.0, 7.0]);
         Ok(())
     }
 
@@ -460,7 +586,7 @@ mod tests {
             }
         }
 
-        let device = WgpuTensorDevice::new(128 * 4);
+        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new(128 * 4));
         let v1 = (1..129).map(|i| i as f32).collect::<Vec<_>>();
 
         let t1 = WgpuTensor::new(&v1.clone(), &[128], device.clone())?;

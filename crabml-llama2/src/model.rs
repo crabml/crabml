@@ -1,14 +1,18 @@
 use std::rc::Rc;
 use std::vec;
 
+use crabml::backends::cpu::buf::CpuTensorBuf;
 use crabml::backends::cpu::cpu_tensor::CpuTensorDevice;
 use crabml::backends::cpu::cpu_tensor::CpuTensorDeviceRef;
 use crabml::backends::cpu::CpuTensor;
+use crabml::backends::wgpu::WgpuTensor;
+use crabml::backends::wgpu::WgpuTensorDeviceRef;
 use crabml::error::Error;
 use crabml::error::ErrorKind;
 use crabml::error::Result;
 use crabml::gguf::GGUFFile;
 use crabml::gguf::GGUFMetadata;
+use crabml::tensor;
 use crabml::tensor::Tensor;
 use crabml::tokenizer::BpeTokenizer;
 
@@ -61,7 +65,6 @@ pub struct CpuLlama2Model<'a> {
     pub weights: Rc<Llama2Weights<CpuTensor<'a>>>,
     pub tokenizer: Rc<BpeTokenizer>,
     pub device: CpuTensorDeviceRef<'a>,
-    pub metadata: &'a GGUFMetadata<'a>,
 }
 
 impl<'a> CpuLlama2Model<'a> {
@@ -74,7 +77,6 @@ impl<'a> CpuLlama2Model<'a> {
             weights: Rc::new(weights),
             device,
             tokenizer: Rc::new(tokenizer),
-            metadata: gf.metadata(),
         })
     }
 
@@ -84,10 +86,6 @@ impl<'a> CpuLlama2Model<'a> {
 
     pub fn weights(&self) -> Rc<Llama2Weights<CpuTensor<'a>>> {
         self.weights.clone()
-    }
-
-    pub fn metadata(&self) -> &'a GGUFMetadata<'a> {
-        self.metadata
     }
 
     pub fn tokenizer(&self) -> Rc<BpeTokenizer> {
@@ -262,5 +260,112 @@ impl<'a> CpuLlama2Model<'a> {
             rms_norm_eps,
             rope_dim: n_rot,
         }
+    }
+}
+
+#[derive(Clone)]
+pub struct WgpuLlama2Model {
+    pub conf: Llama2Config,
+    pub weights: Rc<Llama2Weights<WgpuTensor>>,
+    pub tokenizer: Rc<BpeTokenizer>,
+    pub device: WgpuTensorDeviceRef,
+}
+
+impl WgpuLlama2Model {
+    pub fn from_cpu(cpu_model: &CpuLlama2Model, device: WgpuTensorDeviceRef) -> Result<Self> {
+        let weights = Self::convert_cpu_weights(&cpu_model.weights, device.clone())?;
+        Ok(Self {
+            conf: cpu_model.conf.clone(),
+            weights: Rc::new(weights),
+            tokenizer: cpu_model.tokenizer.clone(),
+            device,
+        })
+    }
+
+    fn convert_cpu_weights(
+        weights: &Llama2Weights<CpuTensor>,
+        device: WgpuTensorDeviceRef,
+    ) -> Result<Llama2Weights<WgpuTensor>> {
+        let token_embedding_table =
+            Self::convert_cpu_tensor(&weights.token_embedding_table, device.clone())?;
+        let wq = weights
+            .wq
+            .iter()
+            .map(|t| Self::convert_cpu_tensor(&t, device.clone()))
+            .collect::<Result<Vec<_>>>()?;
+        let wk = weights
+            .wk
+            .iter()
+            .map(|t| Self::convert_cpu_tensor(&t, device.clone()))
+            .collect::<Result<Vec<_>>>()?;
+        let wv = weights
+            .wv
+            .iter()
+            .map(|t| Self::convert_cpu_tensor(&t, device.clone()))
+            .collect::<Result<Vec<_>>>()?;
+        let wo = weights
+            .wo
+            .iter()
+            .map(|t| Self::convert_cpu_tensor(&t, device.clone()))
+            .collect::<Result<Vec<_>>>()?;
+        let w1 = weights
+            .w1
+            .iter()
+            .map(|t| Self::convert_cpu_tensor(&t, device.clone()))
+            .collect::<Result<Vec<_>>>()?;
+        let w2 = weights
+            .w2
+            .iter()
+            .map(|t| Self::convert_cpu_tensor(&t, device.clone()))
+            .collect::<Result<Vec<_>>>()?;
+        let w3 = weights
+            .w3
+            .iter()
+            .map(|t| Self::convert_cpu_tensor(&t, device.clone()))
+            .collect::<Result<Vec<_>>>()?;
+        let rms_att_weight = weights
+            .rms_att_weight
+            .iter()
+            .map(|t| Self::convert_cpu_tensor(&t, device.clone()))
+            .collect::<Result<Vec<_>>>()?;
+        let rms_ffn_weight = weights
+            .rms_ffn_weight
+            .iter()
+            .map(|t| Self::convert_cpu_tensor(&t, device.clone()))
+            .collect::<Result<Vec<_>>>()?;
+        let rms_final_weight = Self::convert_cpu_tensor(&weights.rms_final_weight, device.clone())?;
+        let wcls = Self::convert_cpu_tensor(&weights.wcls, device.clone())?;
+        let weights = Llama2Weights {
+            token_embedding_table,
+            wq,
+            wk,
+            wv,
+            wo,
+            w1,
+            w2,
+            w3,
+            rms_att_weight,
+            rms_ffn_weight,
+            rms_final_weight,
+            wcls,
+        };
+        Ok(weights)
+    }
+
+    fn convert_cpu_tensor(tensor: &CpuTensor, device: WgpuTensorDeviceRef) -> Result<WgpuTensor> {
+        let buf = tensor.buf();
+        let buf = match buf {
+            CpuTensorBuf::F32(buf) => buf,
+            _ => {
+                return Err(Error {
+                    kind: ErrorKind::TensorError,
+                    message: format!("unsupported tensor type on gpu {:?}", buf),
+                    cause: None,
+                });
+            }
+        };
+
+        let wgpu_tensor = WgpuTensor::new(buf, tensor.shape(), device.clone())?;
+        Ok(wgpu_tensor)
     }
 }

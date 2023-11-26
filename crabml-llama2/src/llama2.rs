@@ -5,6 +5,7 @@ use std::time::Instant;
 use std::vec;
 
 use crabml::backends::cpu::CpuTensor;
+use crabml::backends::wgpu::WgpuTensor;
 use crabml::error::Error;
 use crabml::error::ErrorKind;
 use crabml::error::Result;
@@ -14,6 +15,7 @@ use crabml::tokenizer::BpeTokenizer;
 use crate::model::CpuLlama2Model;
 use crate::model::Llama2Config;
 use crate::model::Llama2Weights;
+use crate::model::WgpuLlama2Model;
 use crate::sampler::Llama2Sampler;
 
 pub struct Llama2Runner<T: Tensor> {
@@ -61,6 +63,39 @@ impl<'a> TryFrom<&'a CpuLlama2Model<'a>> for Llama2Runner<CpuTensor<'a>> {
     }
 }
 
+impl TryFrom<&WgpuLlama2Model> for Llama2Runner<WgpuTensor> {
+    type Error = crabml::error::Error;
+
+    fn try_from(model: &WgpuLlama2Model) -> Result<Self> {
+        let conf = &model.conf;
+        let device = model.device.clone();
+        let weights = model.weights.clone();
+        let tokenizer = model.tokenizer.clone();
+        let logits = vec![0.0; conf.vocab_size];
+        let key_cache = (0..conf.n_layers)
+            .map(|_| {
+                WgpuTensor::alloc(&[0, conf.n_kv_heads, conf.head_size()], device.clone())
+                    .map(|t| Some(t))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let value_cache = (0..conf.n_layers)
+            .map(|_| {
+                WgpuTensor::alloc(&[0, conf.n_kv_heads, conf.head_size()], device.clone())
+                    .map(|t| Some(t))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        Ok(Self {
+            conf: *conf,
+            logits,
+            key_cache,
+            value_cache,
+            weights,
+            tokenizer,
+            device,
+        })
+    }
+}
+
 impl<'a, T: Tensor> Llama2Runner<T> {
     pub fn generate(
         &'a mut self,
@@ -89,7 +124,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             x = {
                 x = x.rms_norm_inplace(self.conf.rms_norm_eps)?;
                 x = x.mul_inplace(&self.weights.rms_att_weight[l])?;
-                x = x.with_name(format!("attn_rmsnorm:{}", l));
+                x = x.with_name(format!("attn_rmsnorm:{}:{}", l, pos));
                 x
             };
 
@@ -324,8 +359,11 @@ impl<'a, T: Tensor> Iterator for Llama2RunnerOutputGenerator<'a, T> {
 
 #[cfg(test)]
 mod tests {
+    use approx::assert_relative_eq;
     use crabml::backends::cpu::cpu_tensor::CpuTensorDevice;
     use crabml::backends::cpu::cpu_tensor::CpuTensorDeviceOptions;
+    use crabml::backends::wgpu::WgpuTensorDevice;
+    use crabml::backends::wgpu::WgpuTensorDeviceOptions;
     use crabml::gguf::GGUFFileLoader;
 
     use super::*;
@@ -379,6 +417,48 @@ mod tests {
         let output = runner.generate("Lily is a cute cat, ", 10, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
         assert_eq!(s, "3 years old. She likes to play with her");
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_f32_gpu() -> Result<()> {
+        let gl: GGUFFileLoader =
+            GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-f32.gguf")?;
+        let gf = gl.open()?;
+
+        let device_cpu = CpuTensorDevice::with_options(CpuTensorDeviceOptions {
+            debug_named_tensors: true,
+        });
+        let model_cpu = CpuLlama2Model::load(&gf, device_cpu.clone())?;
+
+        let device_wgpu = WgpuTensorDevice::new(
+            WgpuTensorDeviceOptions::new(model_cpu.conf.embedding_dim * 4)
+                .with_debug_named_tensor(true),
+        );
+        let model_wgpu = WgpuLlama2Model::from_cpu(&model_cpu, device_wgpu.clone())?;
+
+        let mut sampler = Llama2Sampler::new(model_cpu.conf.vocab_size, 0.0, 0.0);
+        let mut runner_cpu = Llama2Runner::try_from(&model_cpu)?;
+        let mut runner_wgpu = Llama2Runner::try_from(&model_wgpu)?;
+
+        let output_cpu = runner_cpu
+            .generate("Lily is a cat", 30, &mut sampler)?
+            .collect::<Result<Vec<String>>>()?
+            .join("");
+
+        let output_wgpu = runner_wgpu
+            .generate("Lily is a cat", 30, &mut sampler)?
+            .collect::<Result<Vec<String>>>();
+
+        assert_relative_eq!(
+            device_cpu.dump_debug_tensor("attn_rmsnorm:0:0").unwrap()[0..10],
+            device_wgpu.dump_debug_tensor("attn_rmsnorm:0:0").unwrap()[0..10],
+            epsilon = 1e-7
+        );
+        assert_eq!(
+            output_cpu,
+            " who likes to play with yarn. She has many colors of yarn in her box. She likes to make shapes with yarn and show"
+        );
         Ok(())
     }
 }

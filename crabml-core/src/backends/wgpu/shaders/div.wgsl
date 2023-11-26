@@ -15,12 +15,12 @@ var<storage, read> input_meta: Meta;
 // each workgroup will process a single vector
 
 @compute
-@workgroup_size(64)
+@workgroup_size(32)
 fn main(
     @builtin(workgroup_id) workgroup_id: vec3<u32>,
     @builtin(local_invocation_id) local_id: vec3<u32>,
 ) {
-    let workgroup_size = 64u;
+    let workgroup_size = 32u;
     let local_chunk_size = input_meta.N / workgroup_size;
 
     for (var i = 0u; i < local_chunk_size; i = i + 1u) {

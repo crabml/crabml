@@ -1,5 +1,6 @@
 use std::borrow::BorrowMut;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use super::buf::CpuTensorBufIter;
@@ -190,7 +191,7 @@ impl<'a> CpuTensor<'a> {
     }
 
     // only used on specialized performance critical cases
-    pub(crate) fn buf(&self) -> &CpuTensorBuf<'a> {
+    pub fn buf(&self) -> &CpuTensorBuf<'a> {
         &self.buf
     }
 
@@ -226,7 +227,7 @@ impl Default for CpuTensorDeviceOptions {
 pub struct CpuTensorDevice<'a> {
     opts: CpuTensorDeviceOptions,
     _bufs: Vec<CpuTensorBuf<'a>>,
-    debug_tensors: RefCell<Vec<(String, Vec<f32>)>>,
+    debug_tensors: RefCell<HashMap<String, Vec<f32>>>,
 }
 
 pub type CpuTensorDeviceRef<'a> = Rc<CpuTensorDevice<'a>>;
@@ -236,7 +237,7 @@ impl<'a> CpuTensorDevice<'a> {
         let device = Self {
             opts: CpuTensorDeviceOptions::default(),
             _bufs: vec![],
-            debug_tensors: RefCell::new(vec![]),
+            debug_tensors: RefCell::new(HashMap::new()),
         };
         Rc::new(device)
     }
@@ -245,7 +246,7 @@ impl<'a> CpuTensorDevice<'a> {
         let device = Self {
             opts,
             _bufs: vec![],
-            debug_tensors: RefCell::new(vec![]),
+            debug_tensors: RefCell::new(HashMap::new()),
         };
         Rc::new(device)
     }
@@ -258,18 +259,14 @@ impl<'a> CpuTensorDevice<'a> {
     }
 
     pub fn dump_debug_tensor(&self, name: &str) -> Option<Vec<f32>> {
-        self.debug_tensors
-            .borrow()
-            .iter()
-            .find(|(n, _)| n == name)
-            .map(|(_, buf)| buf.clone())
+        self.debug_tensors.borrow().get(name).cloned()
     }
 
     fn add_debug_tensor(&self, tensor: &CpuTensor<'a>) {
         let buf = tensor.buf.iter().collect::<Vec<_>>();
         self.debug_tensors
             .borrow_mut()
-            .push((tensor.name.clone().unwrap(), buf));
+            .insert(tensor.name.clone().unwrap(), buf);
     }
 }
 

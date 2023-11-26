@@ -225,7 +225,7 @@ impl Tensor for WgpuTensor {
     fn with_strider(self, strider: TensorStrider) -> Result<Self> {
         Ok(Self {
             buf: self.buf,
-            strider: self.strider,
+            strider: strider,
             device: self.device,
             name: None,
         })

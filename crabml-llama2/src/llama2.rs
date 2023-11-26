@@ -416,4 +416,39 @@ mod tests {
         assert_eq!(s, "3 years old. She likes to play with her");
         Ok(())
     }
+
+    #[test]
+    fn test_generate_f32_gpu() -> Result<()> {
+        let gl: GGUFFileLoader =
+            GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-f32.gguf")?;
+        let gf = gl.open()?;
+
+        let device_cpu = CpuTensorDevice::with_options(CpuTensorDeviceOptions {
+            debug_named_tensors: true,
+        });
+        let model_cpu = CpuLlama2Model::load(&gf, device_cpu.clone())?;
+
+        let mut sampler = Llama2Sampler::new(model_cpu.conf.vocab_size, 0.0, 0.0);
+        let mut runner_cpu = Llama2Runner::try_from(&model_cpu)?;
+
+        let output = runner_cpu.generate("Lily is a cat", 30, &mut sampler)?;
+        let s = output.collect::<Result<Vec<String>>>()?.join("");
+
+        assert_eq!(
+            device_cpu.dump_debug_tensor("attn_rmsnorm:0").unwrap()[0..6],
+            vec![
+                -0.5774899,
+                -0.45631766,
+                0.25273207,
+                -0.13230246,
+                0.98616296,
+                0.46305636
+            ]
+        );
+        assert_eq!(
+            s,
+            " who likes to play with yarn. She has many colors of yarn in her box. She likes to make shapes with yarn and show"
+        );
+        Ok(())
+    }
 }

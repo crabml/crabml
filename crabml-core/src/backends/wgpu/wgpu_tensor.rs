@@ -1,5 +1,6 @@
 use std::borrow::BorrowMut;
 use std::borrow::Cow;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::rc::Rc;
@@ -14,29 +15,53 @@ use crate::tensor::Tensor;
 use crate::tensor::TensorArithmetics;
 use crate::tensor::TensorStrider;
 
+pub struct WgpuTensorDeviceOptions {
+    pub staging_buf_bytes: usize,
+
+    pub debug_named_tensor: bool,
+}
+
+impl WgpuTensorDeviceOptions {
+    pub fn new(staging_buf_bytes: usize) -> Self {
+        Self {
+            staging_buf_bytes,
+            debug_named_tensor: false,
+        }
+    }
+
+    pub fn with_debug_named_tensor(mut self, v: bool) -> Self {
+        self.debug_named_tensor = v;
+        self
+    }
+}
+
 pub struct WgpuTensorDevice {
+    opts: WgpuTensorDeviceOptions,
     inner: wgpu::Device,
     queue: wgpu::Queue,
     staging_buf: wgpu::Buffer,
-    staging_buf_bytes: usize,
     modules: HashMap<&'static str, wgpu::ShaderModule>,
+
+    /// used for test only
+    debug_tensors: RefCell<HashMap<String, Vec<f32>>>,
 }
 
 impl WgpuTensorDevice {
-    fn new(staging_buf_bytes: usize) -> WgpuTensorDeviceRef {
+    fn new(opts: WgpuTensorDeviceOptions) -> WgpuTensorDeviceRef {
         let (device, queue) = pollster::block_on(Self::init_wgpu());
         let staging_buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("staging buffer"),
-            size: staging_buf_bytes as u64,
+            size: opts.staging_buf_bytes as u64,
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
         let mut d = Self {
             inner: device,
+            opts,
             queue,
             staging_buf,
-            staging_buf_bytes,
             modules: HashMap::new(),
+            debug_tensors: RefCell::new(HashMap::new()),
         };
         d.load_modules();
         Rc::new(d)
@@ -131,6 +156,16 @@ impl WgpuTensorDevice {
         }
         encoder
     }
+
+    fn record_debug_tensor(&self, name: String, tensor: &WgpuTensor) {
+        let mut dst = vec![0.0; tensor.strider().len()];
+        tensor.export(&mut dst).unwrap();
+        self.debug_tensors.borrow_mut().insert(name, dst);
+    }
+
+    pub fn dump_debug_tensor(&self, name: &str) -> Option<Vec<f32>> {
+        self.debug_tensors.borrow().get(name).cloned()
+    }
 }
 
 pub type WgpuTensorDeviceRef = Rc<WgpuTensorDevice>;
@@ -182,6 +217,10 @@ impl Tensor for WgpuTensor {
     }
 
     fn with_name(mut self, name: String) -> Self {
+        if self.device.opts.debug_named_tensor {
+            self.device.record_debug_tensor(name.clone(), &self);
+        }
+
         self.name = Some(name);
         self
     }
@@ -215,7 +254,7 @@ impl Tensor for WgpuTensor {
 
     fn export(&self, dst: &mut [f32]) -> Result<()> {
         let buf_size = self.strider.len() * std::mem::size_of::<f32>();
-        if buf_size != self.device.staging_buf_bytes {
+        if buf_size != self.device.opts.staging_buf_bytes {
             return Err((ErrorKind::TensorError, "buffer size mismatch").into());
         }
 
@@ -388,13 +427,14 @@ mod tests {
 
     use super::WgpuTensor;
     use super::WgpuTensorDevice;
+    use crate::backends::wgpu::wgpu_tensor::WgpuTensorDeviceOptions;
     use crate::error::Result;
     use crate::tensor::Tensor;
     use crate::tensor::TensorArithmetics;
 
     #[test]
     fn test_wgpu_tensor_new_and_export() -> Result<()> {
-        let device = WgpuTensorDevice::new(6 * 4);
+        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new(6 * 4));
         let t1 = WgpuTensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], device)?;
         let mut dst = vec![0.0; 6];
 
@@ -406,7 +446,7 @@ mod tests {
 
     #[test]
     fn test_wgpu_tensor_add() -> Result<()> {
-        let device = WgpuTensorDevice::new(64 * 4);
+        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new(64 * 4));
         let t1 = WgpuTensor::new(&[2.0; 64], &[16, 4], device.clone())?;
         let t2 = WgpuTensor::new(&[3.0; 64], &[16, 4], device)?;
         let t1 = t1.add_inplace(&t2)?;
@@ -420,7 +460,7 @@ mod tests {
 
     #[test]
     fn test_wgpu_tensor_mul() -> Result<()> {
-        let device = WgpuTensorDevice::new(1024 * 4);
+        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new(1024 * 4));
         let t1 = WgpuTensor::new(&[3.0; 1024], &[512, 2], device.clone())?;
         let t2 = WgpuTensor::new(&[2.0; 1024], &[512, 2], device)?;
         let t1 = t1.mul_inplace(&t2)?;
@@ -435,7 +475,7 @@ mod tests {
 
     #[test]
     fn test_wgpu_tensor_div_scalar() -> Result<()> {
-        let device = WgpuTensorDevice::new(1024 * 4);
+        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new(1024 * 4));
         let t1 = WgpuTensor::new(&[6.0; 1024], &[512, 2], device.clone())?;
         let t1 = t1.div_scalar_inplace(2.0)?;
 
@@ -460,7 +500,7 @@ mod tests {
             }
         }
 
-        let device = WgpuTensorDevice::new(128 * 4);
+        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new(128 * 4));
         let v1 = (1..129).map(|i| i as f32).collect::<Vec<_>>();
 
         let t1 = WgpuTensor::new(&v1.clone(), &[128], device.clone())?;

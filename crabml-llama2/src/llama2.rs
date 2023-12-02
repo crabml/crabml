@@ -137,7 +137,11 @@ impl<'a, T: Tensor> Llama2Runner<T> {
                 let k = self.weights.wk[l].matmul(&x)?;
                 let v = self.weights.wv[l].matmul(&x)?;
 
-                (q, k, v)
+                (
+                    q.with_name(format!("q:{}:{}", l, pos)),
+                    k.with_name(format!("k:{}:{}", l, pos)),
+                    v.with_name(format!("v:{}:{}", l, pos)),
+                )
             };
 
             // ROPE
@@ -444,6 +448,13 @@ mod tests {
             device_wgpu.dump_debug_tensor("attn_rmsnorm:0:0").unwrap()[0..10],
             epsilon = 1e-7
         );
+
+        assert_relative_eq!(
+            device_cpu.dump_debug_tensor("q:0:0").unwrap()[0..10],
+            device_wgpu.dump_debug_tensor("q:0:0").unwrap()[0..10],
+            epsilon = 1e-6
+        );
+
         assert_eq!(
             output_cpu,
             " who likes to play with yarn. She has many colors of yarn in her box. She likes to make shapes with yarn and show"

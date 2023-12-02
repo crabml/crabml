@@ -324,6 +324,14 @@ impl Tensor for WgpuTensor {
 
         Ok(())
     }
+
+    fn dup(&self) -> Result<Self> {
+        let mut new_tensor = Self::alloc(self.strider.shape(), self.device.clone())?;
+        new_tensor
+            .copy_from(&self, &vec![0; self.strider.len()], self.strider.len())
+            .unwrap();
+        Ok(new_tensor)
+    }
 }
 
 impl TensorArithmetics for WgpuTensor {

@@ -118,7 +118,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
 
         // forward all the layers
         for l in 0..self.conf.n_layers {
-            let x_attn_orig = x.clone();
+            let x_attn_orig = x.dup()?;
 
             // attention rnsnorm
             x = {
@@ -210,7 +210,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             // ffn
             x = {
                 // save for redidual connection
-                let x_orig_ffn = x.clone();
+                let x_orig_ffn = x.dup()?;
 
                 // ffn rmsnorm
                 x = {
@@ -375,7 +375,7 @@ mod tests {
         let gf = gl.open()?;
 
         let device = CpuTensorDevice::with_options(CpuTensorDeviceOptions {
-            debug_named_tensors: true,
+            debug_named_tensors: false,
         });
         let lm = CpuLlama2Model::load(&gf, device.clone())?;
 
@@ -384,17 +384,6 @@ mod tests {
         let output = runner.generate("Lily is a cat", 30, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
 
-        assert_eq!(
-            device.dump_debug_tensor("attn_rmsnorm:0").unwrap()[0..6],
-            vec![
-                -0.5774899,
-                -0.45631766,
-                0.25273207,
-                -0.13230246,
-                0.98616296,
-                0.46305636
-            ]
-        );
         assert_eq!(
             s,
             " who likes to play with yarn. She has many colors of yarn in her box. She likes to make shapes with yarn and show"

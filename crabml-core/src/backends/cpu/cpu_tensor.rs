@@ -376,6 +376,11 @@ impl<'a> Tensor for CpuTensor<'a> {
         Ok(())
     }
 
+    fn dup(&self) -> Result<Self> {
+        let buf = self.buf.iter().collect::<Vec<_>>();
+        Self::new(buf, self.shape(), self.device.clone())
+    }
+
     fn export(&self, dst: &mut [f32]) -> Result<()> {
         dst.iter_mut().zip(self.iter()).for_each(|(dst, src)| {
             *dst = src;

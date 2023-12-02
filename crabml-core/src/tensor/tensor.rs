@@ -23,6 +23,9 @@ pub trait Tensor: Sized + Clone + TensorArithmetics {
     fn copy_from(&mut self, rhs: &Self, pos: &[usize], len: usize) -> Result<()>;
 
     fn export(&self, buf: &mut [f32]) -> Result<()>;
+
+    /// duplicate the tensor and the underlying storage
+    fn dup(&self) -> Result<Self>;
 }
 
 pub trait TensorArithmetics: Sized {

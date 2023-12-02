@@ -4,9 +4,12 @@
   - [x] add rms_norm
   - [x] add tensor names
   - [x] wgpu tensor add alloc
-  - [ ] add copy_from for wgpu
-  - [ ] add clone() to wgpu tensor
-  - [ ] compare the result of wgpu and cpu on rms_norm
+  - [x] add copy_from for wgpu
+  - [x] add clone() to wgpu tensor
+  - [x] compare the result of wgpu and cpu on rms_norm
+  - [ ] add matmul
+  - [ ] add rope
+  - [ ] add softmax
 - [ ] make validate panics
 - [ ] observe the intermediate result in llama2.rs
 - [ ] wgpu tensor support

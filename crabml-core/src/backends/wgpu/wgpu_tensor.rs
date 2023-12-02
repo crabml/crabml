@@ -8,6 +8,7 @@ use std::rc::Rc;
 use wgpu;
 use wgpu::util::DeviceExt;
 
+use super::meta::MatmulMeta;
 use super::meta::RmsNormMeta;
 use crate::error::ErrorKind;
 use crate::error::Result;
@@ -73,6 +74,7 @@ impl WgpuTensorDevice {
             ("mul_inplace", include_str!("shaders/mul.wgsl")),
             ("div_inplace", include_str!("shaders/div.wgsl")),
             ("rms_norm_inplace", include_str!("shaders/rms_norm.wgsl")),
+            ("matmul_naive", include_str!("shaders/matmul_naive.wgsl")),
         ];
         let mut modules = HashMap::new();
         for (module_name, module_source) in module_sources {
@@ -201,6 +203,10 @@ impl WgpuTensor {
 
     pub fn is_contiguous(&self) -> bool {
         self.strider.is_contiguous()
+    }
+
+    pub fn shape(&self) -> &[usize] {
+        self.strider.shape()
     }
 }
 
@@ -457,7 +463,45 @@ impl TensorArithmetics for WgpuTensor {
     }
 
     fn matmul(&self, y: &Self) -> Result<Self> {
-        return Err((ErrorKind::NotImplemented, "not implemented").into());
+        assert!(self.shape().len() == 2);
+        assert!(self.shape()[1] == y.shape()[0]);
+        assert!(y.shape().len() == 1);
+        assert!(self.is_contiguous());
+        assert!(y.is_contiguous());
+
+        let output = Self::alloc(&[self.strider.shape()[0]], self.device.clone())?;
+        let meta = MatmulMeta {
+            M: self.strider.shape()[0] as u32,
+            N: self.strider.shape()[1] as u32,
+            K: 1,
+            _padding: 0,
+        };
+
+        let meta_buf = self.device.make_storage_buffer(bytemuck::bytes_of(&meta));
+        let entries = &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: self.buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: y.buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: meta_buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: output.buf.as_entire_binding(),
+            },
+        ];
+        let encoder =
+            self.device
+                .encode_pipeline_commnad("matmul_naive", entries, (meta.M / 32, 1, 1));
+        self.device.queue.submit(Some(encoder.finish()));
+
+        Ok(output)
     }
 
     fn batch_matmul(&self, y: &Self) -> Result<Self> {
@@ -606,6 +650,25 @@ mod tests {
         simple_rmsnorm(&mut dst2);
 
         assert_relative_eq!(&dst1[0..10], &dst2[0..10], epsilon = 1e-7);
+        Ok(())
+    }
+
+    #[test]
+    fn test_wgpu_matmul() -> Result<()> {
+        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new(128 * 4));
+        let v1 = (0..256).map(|i| i as f32).collect::<Vec<_>>();
+
+        // 0.0, 1.0
+        // 2.0, 3.0
+        //...
+        let t1 = WgpuTensor::new(&v1, &[128, 2], device.clone())?;
+        let t2 = WgpuTensor::new(&[2.0; 2], &[2], device.clone())?;
+        let t3 = t1.matmul(&t2)?;
+        let mut dst1 = vec![0.0; 128];
+        t3.export(&mut dst1)?;
+        assert_eq!(dst1[0..8], vec![
+            2.0, 10.0, 18.0, 26.0, 34.0, 42.0, 50.0, 58.0
+        ]);
         Ok(())
     }
 }

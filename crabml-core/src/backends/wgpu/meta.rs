@@ -18,3 +18,14 @@ pub struct MatmulMeta {
     pub K: u32,
     pub _padding: u32,
 }
+
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+#[repr(C, align(16))]
+pub struct RopeMeta {
+    pub M: u32,
+    pub N: u32,
+    pub pos: u32,
+    pub n_heads: u32,
+    pub rope_dims: u32,
+    pub _padding: [u32; 3],
+}

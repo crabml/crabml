@@ -10,6 +10,7 @@ use wgpu::util::DeviceExt;
 
 use super::meta::MatmulMeta;
 use super::meta::RmsNormMeta;
+use crate::backends::wgpu::meta::RopeMeta;
 use crate::error::ErrorKind;
 use crate::error::Result;
 use crate::tensor::Tensor;
@@ -342,7 +343,36 @@ impl Tensor for WgpuTensor {
 
 impl TensorArithmetics for WgpuTensor {
     fn rope_inplace(self, pos: usize, rope_dims: usize) -> Result<Self> {
-        return Err((ErrorKind::NotImplemented, "not implemented").into());
+        assert!(self.shape().len() == 2);
+        assert!(self.is_contiguous());
+
+        let n_heads = self.shape()[0];
+        let meta = RopeMeta {
+            M: 1,
+            N: self.strider.len() as u32,
+            pos: pos as u32,
+            n_heads: n_heads as u32,
+            rope_dims: rope_dims as u32,
+            _padding: [0, 0, 0],
+        };
+
+        let meta_buf = self.device.make_storage_buffer(bytemuck::bytes_of(&meta));
+        let entries = &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: self.buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: meta_buf.as_entire_binding(),
+            },
+        ];
+        let encoder = self
+            .device
+            .encode_pipeline_commnad("rope", entries, (1, 1, 1));
+        self.device.queue.submit(Some(encoder.finish()));
+
+        Ok(self)
     }
 
     fn rms_norm_inplace(self, eps: f32) -> Result<Self> {

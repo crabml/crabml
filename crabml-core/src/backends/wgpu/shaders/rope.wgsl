@@ -3,6 +3,8 @@ struct Meta {
     N: u32, // length of vector
     pos: u32,
     n_heads: u32,
+    rope_dims: u32,
+    _padding: vec3<u32>,
 };
 
 @group(0) @binding(0)
@@ -16,11 +18,16 @@ fn main(
     @builtin(workgroup_id) workgroup_id: vec3<u32>,
     @builtin(local_invocation_id) local_id: vec3<u32>,
 ) {
-    let rope_dims = input_m.N;
     let head_size = input_m.N / input_m.n_heads;
     let idx_m = workgroup_id.x * 32u + local_id.x;
+
+    // process each vector in one thread. if there's only one vector, only idx_m == 0 makes sense
+    if idx_m > input_m.M {
+        return;
+    }
+
     for (var h = 0u; h < input_m.n_heads; h++) {
-        for (var i = 0u; i < rope_dims / 2u; i++) {
+        for (var i = 0u; i < input_m.rope_dims / 2u; i++) {
             let theta_scale = pow(10000.0, -2.0 * f32(i) / f32(head_size));
             let theta = f32(input_m.pos) * theta_scale;
 

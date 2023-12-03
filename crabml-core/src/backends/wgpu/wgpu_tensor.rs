@@ -61,7 +61,7 @@ impl Tensor for WgpuTensor {
         let capacity = capacity.unwrap_or(n_elms);
         assert!(capacity >= n_elms);
 
-        let buf_bytes = n_elms * std::mem::size_of::<f32>();
+        let buf_bytes = capacity * std::mem::size_of::<f32>();
         let buf = device.inner.create_buffer(&wgpu::BufferDescriptor {
             label: Some("tensor storage buffer"),
             size: buf_bytes as u64,
@@ -623,6 +623,36 @@ mod tests {
             epsilon = 1e-5
         );
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_wgpu_extend() -> Result<()> {
+        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
+        let mut t1 = WgpuTensor::alloc(&[0, 16], Some(1024), device.clone())?;
+
+        let v2 = (0..16).map(|i| i as f32).collect::<Vec<_>>();
+        let t2 = WgpuTensor::new(&v2, &[16], device.clone())?;
+
+        let v3 = (100..116).map(|i| i as f32).collect::<Vec<_>>();
+        let t3 = WgpuTensor::new(&v3, &[16], device.clone())?;
+
+        t1.extend(&t2)?;
+        t1.extend(&t3)?;
+
+        let mut dst1 = vec![0.0; 32];
+        t1.export(&mut dst1)?;
+
+        assert_eq!(t1.shape(), &[2, 16]);
+        assert_relative_eq!(
+            &dst1[..],
+            &[
+                0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0,
+                15.0, 100.0, 101.0, 102.0, 103.0, 104.0, 105.0, 106.0, 107.0, 108.0, 109.0, 110.0,
+                111.0, 112.0, 113.0, 114.0, 115.0
+            ][..],
+            epsilon = 1e-5
+        );
         Ok(())
     }
 }

@@ -27,5 +27,5 @@ pub struct RopeMeta {
     pub pos: u32,
     pub n_heads: u32,
     pub rope_dims: u32,
-    pub _padding: [u32; 3],
+    pub _padding: [u32; 7],
 }

@@ -76,6 +76,7 @@ impl WgpuTensorDevice {
             ("div_inplace", include_str!("shaders/div.wgsl")),
             ("rms_norm_inplace", include_str!("shaders/rms_norm.wgsl")),
             ("matmul_naive", include_str!("shaders/matmul_naive.wgsl")),
+            ("rope_inplace", include_str!("shaders/rope.wgsl")),
         ];
         let mut modules = HashMap::new();
         for (module_name, module_source) in module_sources {
@@ -93,7 +94,7 @@ impl WgpuTensorDevice {
     fn make_storage_buffer(&self, content: &[u8]) -> wgpu::Buffer {
         self.inner
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: None,
+                label: Some("storage"),
                 contents: content,
                 usage: wgpu::BufferUsages::STORAGE,
             })
@@ -353,7 +354,7 @@ impl TensorArithmetics for WgpuTensor {
             pos: pos as u32,
             n_heads: n_heads as u32,
             rope_dims: rope_dims as u32,
-            _padding: [0, 0, 0],
+            _padding: [0; 7],
         };
 
         let meta_buf = self.device.make_storage_buffer(bytemuck::bytes_of(&meta));
@@ -369,7 +370,7 @@ impl TensorArithmetics for WgpuTensor {
         ];
         let encoder = self
             .device
-            .encode_pipeline_commnad("rope", entries, (1, 1, 1));
+            .encode_pipeline_commnad("rope_inplace", entries, (1, 1, 1));
         self.device.queue.submit(Some(encoder.finish()));
 
         Ok(self)
@@ -699,6 +700,29 @@ mod tests {
         assert_eq!(dst1[0..8], vec![
             2.0, 10.0, 18.0, 26.0, 34.0, 42.0, 50.0, 58.0
         ]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_wgpu_rope() -> Result<()> {
+        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new(32 * 4));
+        let v1 = (0..32).map(|i| i as f32).collect::<Vec<_>>();
+        let t1 = WgpuTensor::new(&v1, &[2, 16], device.clone())?;
+        let t1 = t1.rope_inplace(1, 2)?;
+
+        let mut dst1 = vec![0.0; 32];
+        t1.export(&mut dst1)?;
+
+        assert_relative_eq!(
+            &dst1[..],
+            &[
+                -0.841471, 0.54030234, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+                13.0, 14.0, 15.0, -5.6601696, 22.648676, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0,
+                25.0, 26.0, 27.0, 28.0, 29.0, 30.0, 31.0
+            ][..],
+            epsilon = 1e-5
+        );
+
         Ok(())
     }
 }

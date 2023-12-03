@@ -373,6 +373,8 @@ pub fn rope_inplace_old<'a>(
 
 #[cfg(test)]
 mod tests {
+    use approx::assert_relative_eq;
+
     use super::*;
     use crate::backends::cpu::cpu_tensor::CpuTensorDevice;
     use crate::tensor::TensorArithmetics;
@@ -405,12 +407,20 @@ mod tests {
     #[test]
     fn test_rope() -> Result<()> {
         let device = CpuTensorDevice::new();
-        let t1 = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], device.clone())?;
+        let v1 = (0..32).map(|v| v as f32).collect::<Vec<_>>();
+        let t1 = CpuTensor::new(v1, &[2, 16], device.clone())?;
 
         let r1 = t1.rope_inplace(1, 2)?;
-        assert_eq!(r1.iter().collect::<Vec<_>>(), &[
-            -1.1426396, 1.9220757, 3.0, -2.0461457, 6.0673957, 6.0
-        ]);
+        let out = r1.iter().collect::<Vec<_>>();
+        assert_relative_eq!(
+            &out[..],
+            &[
+                -0.841471, 0.54030234, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+                13.0, 14.0, 15.0, -5.6601696, 22.648676, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0,
+                25.0, 26.0, 27.0, 28.0, 29.0, 30.0, 31.0
+            ][..],
+            epsilon = 1e-5
+        );
 
         Ok(())
     }

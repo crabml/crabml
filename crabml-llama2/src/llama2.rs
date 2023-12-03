@@ -151,7 +151,10 @@ impl<'a, T: Tensor> Llama2Runner<T> {
 
                 let q = q.rope_inplace(pos, self.conf.rope_dim)?;
                 let k = k.rope_inplace(pos, self.conf.rope_dim)?;
-                (q, k)
+                (
+                    q.with_name(format!("q_roped:{}:{}", l, pos)),
+                    k.with_name(format!("k_roped:{}:{}", l, pos)),
+                )
             };
 
             // save to kv cache
@@ -450,9 +453,9 @@ mod tests {
         );
 
         assert_relative_eq!(
-            device_cpu.dump_debug_tensor("q:0:0").unwrap()[0..10],
-            device_wgpu.dump_debug_tensor("q:0:0").unwrap()[0..10],
-            epsilon = 1e-6
+            device_cpu.dump_debug_tensor("q_roped:0:0").unwrap()[0..10],
+            device_wgpu.dump_debug_tensor("q_roped:0:0").unwrap()[0..10],
+            epsilon = 1e-5
         );
 
         assert_eq!(

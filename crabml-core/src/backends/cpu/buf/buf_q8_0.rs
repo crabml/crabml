@@ -1,8 +1,7 @@
 use std::simd::f32x8;
-use std::simd::SimdFloat;
+use std::simd::prelude::SimdFloat;
 
 use half::f16;
-use half::slice::HalfFloatSliceExt;
 
 use super::buf::BufVecDot;
 

@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::simd::f32x32;
 use std::simd::f32x8;
-use std::simd::SimdFloat;
+use std::simd::prelude::SimdFloat;
 
 use half::f16;
 use rayon::prelude::*;

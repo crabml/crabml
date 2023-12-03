@@ -16,6 +16,7 @@ use crate::tensor::TensorStrider;
 #[derive(Clone)]
 pub struct WgpuTensor {
     buf: Rc<wgpu::Buffer>,
+    capacity: usize, // max element count
     strider: TensorStrider,
     device: WgpuTensorDeviceRef,
     name: Option<String>,
@@ -36,6 +37,7 @@ impl WgpuTensor {
         };
         Ok(Self {
             buf: Rc::new(buf),
+            capacity: src.len(),
             strider,
             device,
             name: None,
@@ -54,8 +56,12 @@ impl WgpuTensor {
 impl Tensor for WgpuTensor {
     type Device = WgpuTensorDeviceRef;
 
-    fn alloc(shape: &[usize], device: Self::Device) -> Result<Self> {
-        let buf_bytes = shape.iter().product::<usize>() * std::mem::size_of::<f32>();
+    fn alloc(shape: &[usize], capacity: Option<usize>, device: Self::Device) -> Result<Self> {
+        let n_elms = shape.iter().product::<usize>();
+        let capacity = capacity.unwrap_or(n_elms);
+        assert!(capacity >= n_elms);
+
+        let buf_bytes = n_elms * std::mem::size_of::<f32>();
         let buf = device.inner.create_buffer(&wgpu::BufferDescriptor {
             label: Some("tensor storage buffer"),
             size: buf_bytes as u64,
@@ -67,6 +73,7 @@ impl Tensor for WgpuTensor {
         let strider = TensorStrider::new(shape.to_vec());
         Ok(Self {
             buf: Rc::new(buf),
+            capacity,
             strider,
             device,
             name: None,
@@ -76,6 +83,7 @@ impl Tensor for WgpuTensor {
     fn with_strider(self, strider: TensorStrider) -> Result<Self> {
         Ok(Self {
             buf: self.buf,
+            capacity: self.capacity,
             strider: strider,
             device: self.device,
             name: None,
@@ -180,7 +188,7 @@ impl Tensor for WgpuTensor {
     }
 
     fn dup(&self) -> Result<Self> {
-        let mut new_tensor = Self::alloc(self.strider.shape(), self.device.clone())?;
+        let mut new_tensor = Self::alloc(self.strider.shape(), None, self.device.clone())?;
         new_tensor
             .copy_from(&self, &vec![0; self.shape().len()], self.strider.len())
             .unwrap();
@@ -346,7 +354,7 @@ impl TensorArithmetics for WgpuTensor {
         assert!(self.is_contiguous());
         assert!(y.is_contiguous());
 
-        let output = Self::alloc(&[self.strider.shape()[0]], self.device.clone())?;
+        let output = Self::alloc(&[self.strider.shape()[0]], None, self.device.clone())?;
         let meta = MatmulMeta {
             M: self.strider.shape()[0] as u32,
             N: self.strider.shape()[1] as u32,
@@ -454,7 +462,7 @@ mod tests {
     #[test]
     fn test_wgpu_tensor_alloc() -> Result<()> {
         let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
-        let t1 = WgpuTensor::alloc(&[512, 2], device.clone())?;
+        let t1 = WgpuTensor::alloc(&[512, 2], None, device.clone())?;
         let t2 = WgpuTensor::new(&[1.0; 1024], &[512, 2], device.clone())?;
         let t1 = t1.add_inplace(&t2)?;
 
@@ -470,7 +478,7 @@ mod tests {
         let device_opts = WgpuTensorDeviceOptions::new().with_debug_named_tensor(true);
         let device = WgpuTensorDevice::new(device_opts);
 
-        let t1 = WgpuTensor::alloc(&[512, 2], device.clone())?;
+        let t1 = WgpuTensor::alloc(&[512, 2], None, device.clone())?;
         let t2 = WgpuTensor::new(&[1.0; 1024], &[512, 2], device.clone())?;
         let t1 = t1.add_inplace(&t2)?;
         let _ = t1.with_name("t1".to_string());
@@ -485,7 +493,7 @@ mod tests {
         let device_opts = WgpuTensorDeviceOptions::new().with_debug_named_tensor(true);
         let device = WgpuTensorDevice::new(device_opts);
 
-        let mut t1 = WgpuTensor::alloc(&[256, 4], device.clone())?;
+        let mut t1 = WgpuTensor::alloc(&[256, 4], None, device.clone())?;
         let t2 = WgpuTensor::new(
             &(0..1024).map(|d| d as f32).collect::<Vec<f32>>(),
             &[256, 4],

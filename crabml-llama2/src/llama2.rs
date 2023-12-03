@@ -40,14 +40,22 @@ impl<'a> TryFrom<&'a CpuLlama2Model<'a>> for Llama2Runner<CpuTensor<'a>> {
         let logits = vec![0.0; conf.vocab_size];
         let key_cache = (0..conf.n_layers)
             .map(|_| {
-                CpuTensor::alloc(&[0, conf.n_kv_heads, conf.head_size()], device.clone())
-                    .map(|t| Some(t))
+                CpuTensor::alloc(
+                    &[0, conf.n_kv_heads, conf.head_size()],
+                    None,
+                    device.clone(),
+                )
+                .map(|t| Some(t))
             })
             .collect::<Result<Vec<_>>>()?;
         let value_cache = (0..conf.n_layers)
             .map(|_| {
-                CpuTensor::alloc(&[0, conf.n_kv_heads, conf.head_size()], device.clone())
-                    .map(|t| Some(t))
+                CpuTensor::alloc(
+                    &[0, conf.n_kv_heads, conf.head_size()],
+                    None,
+                    device.clone(),
+                )
+                .map(|t| Some(t))
             })
             .collect::<Result<Vec<_>>>()?;
 
@@ -74,14 +82,22 @@ impl TryFrom<&WgpuLlama2Model> for Llama2Runner<WgpuTensor> {
         let logits = vec![0.0; conf.vocab_size];
         let key_cache = (0..conf.n_layers)
             .map(|_| {
-                WgpuTensor::alloc(&[0, conf.n_kv_heads, conf.head_size()], device.clone())
-                    .map(|t| Some(t))
+                WgpuTensor::alloc(
+                    &[0, conf.n_kv_heads, conf.head_size()],
+                    None,
+                    device.clone(),
+                )
+                .map(|t| Some(t))
             })
             .collect::<Result<Vec<_>>>()?;
         let value_cache = (0..conf.n_layers)
             .map(|_| {
-                WgpuTensor::alloc(&[0, conf.n_kv_heads, conf.head_size()], device.clone())
-                    .map(|t| Some(t))
+                WgpuTensor::alloc(
+                    &[0, conf.n_kv_heads, conf.head_size()],
+                    None,
+                    device.clone(),
+                )
+                .map(|t| Some(t))
             })
             .collect::<Result<Vec<_>>>()?;
         Ok(Self {
@@ -113,7 +129,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         let head_size = self.conf.head_size();
 
         // copy the token embedding into x
-        let mut x = T::alloc(&[embed_dim], self.device.clone())?;
+        let mut x = T::alloc(&[embed_dim], None, self.device.clone())?;
         x.copy_from(&self.weights.token_embedding_table, &[token, 0], embed_dim)?;
 
         // forward all the layers

@@ -42,7 +42,7 @@ impl<'a, 'b> TensorArithmetics for CpuTensor<'a> {
             _ => (),
         }
 
-        let mut out = CpuTensor::alloc(&[w.shape()[0]], x.device())?;
+        let mut out = CpuTensor::alloc(&[w.shape()[0]], None, x.device())?;
         let o_row_iter = out.iter_axis_mut(vec![0], 0)?; // (x_cols, )
         o_row_iter.enumerate().for_each(|(w_row, o)| {
             let w_row_iter = w.iter_axis(&[w_row, 0], 1).unwrap(); // (w_cols, )
@@ -193,7 +193,7 @@ where 'b: 'a {
     // (batch_size, w_rows, w_cols) @ (batch_size, w_cols, ) -> (batch_size, w_rows, )
     let batch_size = w.shape()[0];
     let w_rows = w.shape()[1];
-    let mut out = CpuTensor::alloc(&[batch_size, w_rows], x.device())?;
+    let mut out = CpuTensor::alloc(&[batch_size, w_rows], None, x.device())?;
     for b in 0..batch_size {
         let o_iter = out.iter_axis_mut(vec![b, 0], 1)?; // w_cols
         o_iter.enumerate().for_each(|(w_row, o)| {

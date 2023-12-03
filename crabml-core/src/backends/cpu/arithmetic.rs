@@ -403,6 +403,19 @@ mod tests {
     }
 
     #[test]
+    fn test_rope() -> Result<()> {
+        let device = CpuTensorDevice::new();
+        let t1 = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], device.clone())?;
+
+        let r1 = t1.rope_inplace(1, 2)?;
+        assert_eq!(r1.iter().collect::<Vec<_>>(), &[
+            -1.1426396, 1.9220757, 3.0, -2.0461457, 6.0673957, 6.0
+        ]);
+
+        Ok(())
+    }
+
+    #[test]
     fn test_matmul() -> Result<()> {
         // 1, 2, 3
         // 4, 5, 6

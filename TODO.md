@@ -7,8 +7,10 @@
   - [x] add copy_from for wgpu
   - [x] add clone() to wgpu tensor
   - [x] compare the result of wgpu and cpu on rms_norm
-  - [ ] add matmul
+  - [x] add matmul
   - [ ] add rope
+  - [ ] add extend
+  - [ ] add batch_matmul
   - [ ] add softmax
 - [ ] make validate panics
 - [ ] observe the intermediate result in llama2.rs

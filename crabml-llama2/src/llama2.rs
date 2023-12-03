@@ -428,7 +428,8 @@ mod tests {
         let model_cpu = CpuLlama2Model::load(&gf, device_cpu.clone())?;
 
         let device_wgpu = WgpuTensorDevice::new(
-            WgpuTensorDeviceOptions::new(model_cpu.conf.embedding_dim * 4)
+            WgpuTensorDeviceOptions::new()
+                .with_staging_buf_bytes(model_cpu.conf.embedding_dim * 4)
                 .with_debug_named_tensor(true),
         );
         let model_wgpu = WgpuLlama2Model::from_cpu(&model_cpu, device_wgpu.clone())?;

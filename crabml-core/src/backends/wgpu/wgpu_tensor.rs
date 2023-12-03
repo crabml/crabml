@@ -24,11 +24,16 @@ pub struct WgpuTensorDeviceOptions {
 }
 
 impl WgpuTensorDeviceOptions {
-    pub fn new(staging_buf_bytes: usize) -> Self {
+    pub fn new() -> Self {
         Self {
-            staging_buf_bytes,
+            staging_buf_bytes: 1024 * 4,
             debug_named_tensor: false,
         }
+    }
+
+    pub fn with_staging_buf_bytes(mut self, v: usize) -> Self {
+        self.staging_buf_bytes = v;
+        self
     }
 
     pub fn with_debug_named_tensor(mut self, v: bool) -> Self {
@@ -298,8 +303,15 @@ impl Tensor for WgpuTensor {
 
     fn export(&self, dst: &mut [f32]) -> Result<()> {
         let buf_size = self.strider.len() * std::mem::size_of::<f32>();
-        if buf_size != self.device.opts.staging_buf_bytes {
-            return Err((ErrorKind::TensorError, "buffer size mismatch").into());
+        if buf_size > self.device.opts.staging_buf_bytes {
+            return Err((
+                ErrorKind::TensorError,
+                format!(
+                    "buffer size exceeded staging buffer limit: {}",
+                    self.device.opts.staging_buf_bytes
+                ),
+            )
+                .into());
         }
 
         // enqueue copy from self.buf to staging buffer
@@ -320,7 +332,7 @@ impl Tensor for WgpuTensor {
             // Gets contents of buffer
             let data = staging_slice.get_mapped_range();
             // Since contents are got in bytes, this converts these bytes back to u32
-            dst.copy_from_slice(bytemuck::cast_slice(&data));
+            dst.copy_from_slice(&bytemuck::cast_slice(&data)[0..self.strider.len()]);
 
             // With the current interface, we have to make sure all mapped views are
             // dropped before we unmap the buffer.
@@ -553,7 +565,7 @@ mod tests {
 
     #[test]
     fn test_wgpu_tensor_new_and_export() -> Result<()> {
-        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new(6 * 4));
+        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
         let t1 = WgpuTensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], device)?;
         let mut dst = vec![0.0; 6];
 
@@ -565,7 +577,7 @@ mod tests {
 
     #[test]
     fn test_wgpu_tensor_add() -> Result<()> {
-        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new(64 * 4));
+        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
         let t1 = WgpuTensor::new(&[2.0; 64], &[16, 4], device.clone())?;
         let t2 = WgpuTensor::new(&[3.0; 64], &[16, 4], device)?;
         let t1 = t1.add_inplace(&t2)?;
@@ -579,7 +591,7 @@ mod tests {
 
     #[test]
     fn test_wgpu_tensor_mul() -> Result<()> {
-        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new(1024 * 4));
+        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
         let t1 = WgpuTensor::new(&[3.0; 1024], &[512, 2], device.clone())?;
         let t2 = WgpuTensor::new(&[2.0; 1024], &[512, 2], device)?;
         let t1 = t1.mul_inplace(&t2)?;
@@ -594,7 +606,7 @@ mod tests {
 
     #[test]
     fn test_wgpu_tensor_div_scalar() -> Result<()> {
-        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new(1024 * 4));
+        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
         let t1 = WgpuTensor::new(&[6.0; 1024], &[512, 2], device.clone())?;
         let t1 = t1.div_scalar_inplace(2.0)?;
 
@@ -607,7 +619,7 @@ mod tests {
 
     #[test]
     fn test_wgpu_tensor_alloc() -> Result<()> {
-        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new(1024 * 4));
+        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
         let t1 = WgpuTensor::alloc(&[512, 2], device.clone())?;
         let t2 = WgpuTensor::new(&[1.0; 1024], &[512, 2], device.clone())?;
         let t1 = t1.add_inplace(&t2)?;
@@ -621,7 +633,7 @@ mod tests {
 
     #[test]
     fn test_wgpu_tensor_with_name() -> Result<()> {
-        let device_opts = WgpuTensorDeviceOptions::new(1024 * 4).with_debug_named_tensor(true);
+        let device_opts = WgpuTensorDeviceOptions::new().with_debug_named_tensor(true);
         let device = WgpuTensorDevice::new(device_opts);
 
         let t1 = WgpuTensor::alloc(&[512, 2], device.clone())?;
@@ -636,7 +648,7 @@ mod tests {
 
     #[test]
     fn test_wgpu_copy_from() -> Result<()> {
-        let device_opts = WgpuTensorDeviceOptions::new(1024 * 4).with_debug_named_tensor(true);
+        let device_opts = WgpuTensorDeviceOptions::new().with_debug_named_tensor(true);
         let device = WgpuTensorDevice::new(device_opts);
 
         let mut t1 = WgpuTensor::alloc(&[256, 4], device.clone())?;
@@ -669,7 +681,7 @@ mod tests {
             }
         }
 
-        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new(128 * 4));
+        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
         let v1 = (1..129).map(|i| i as f32).collect::<Vec<_>>();
 
         let t1 = WgpuTensor::new(&v1.clone(), &[128], device.clone())?;
@@ -686,7 +698,7 @@ mod tests {
 
     #[test]
     fn test_wgpu_matmul() -> Result<()> {
-        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new(128 * 4));
+        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
         let v1 = (0..256).map(|i| i as f32).collect::<Vec<_>>();
 
         // 0.0, 1.0
@@ -705,7 +717,7 @@ mod tests {
 
     #[test]
     fn test_wgpu_rope() -> Result<()> {
-        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new(32 * 4));
+        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
         let v1 = (0..32).map(|i| i as f32).collect::<Vec<_>>();
         let t1 = WgpuTensor::new(&v1, &[2, 16], device.clone())?;
         let t1 = t1.rope_inplace(1, 2)?;

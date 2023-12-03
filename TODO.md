@@ -8,7 +8,7 @@
   - [x] add clone() to wgpu tensor
   - [x] compare the result of wgpu and cpu on rms_norm
   - [x] add matmul
-  - [ ] add rope
+  - [x] add rope
   - [ ] add extend
   - [ ] add batch_matmul
   - [ ] add softmax

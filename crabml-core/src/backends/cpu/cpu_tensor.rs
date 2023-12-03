@@ -273,7 +273,7 @@ impl<'a> CpuTensorDevice<'a> {
 impl<'a> Tensor for CpuTensor<'a> {
     type Device = CpuTensorDeviceRef<'a>;
 
-    fn alloc(shape: &[usize], device: Self::Device) -> Result<Self> {
+    fn alloc(shape: &[usize], _capacity: Option<usize>, device: Self::Device) -> Result<Self> {
         let buf = vec![0.0; shape.iter().product()];
         Self::new(buf, shape, device)
     }
@@ -374,6 +374,11 @@ impl<'a> Tensor for CpuTensor<'a> {
                 *dst = src;
             });
         Ok(())
+    }
+
+    fn dup(&self) -> Result<Self> {
+        let buf = self.buf.iter().collect::<Vec<_>>();
+        Self::new(buf, self.shape(), self.device.clone())
     }
 
     fn export(&self, dst: &mut [f32]) -> Result<()> {

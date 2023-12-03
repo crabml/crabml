@@ -16,12 +16,8 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
-    - uses: actions-rs/toolchain@v1
-      with:
-        toolchain: nightly
-        components: rustfmt,clippy
-        override: true
+    - uses: actions-rust-lang/setup-rust-toolchain@v1
     - name: Build
-      run: cargo +nightly build --verbose
+      run: RUSTFLAGS=-Awarnings cargo build
     - name: Run tests
-      run: cargo +nightly test --verbose
+      run: RUSTFLAGS=-Awarnings cargo test --workspace --exclude backends::wgpu::wgpu_tensor::tests

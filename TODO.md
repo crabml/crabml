@@ -1,12 +1,16 @@
 - [ ] add basic WGPU tensor support
   - referenced: https://github.com/0hq/WebGPT/blob/main/condensed/condensed.js
   - referenced: https://github.com/burn-rs/burn/blob/main/burn-wgpu/src/template/matmul/naive.wgsl
+  - referenced: https://github.com/huggingface/candle/blob/main/candle-core/src/cpu_backend.rs
   - [x] add rms_norm
   - [x] add tensor names
   - [x] wgpu tensor add alloc
-  - [ ] add copy_from for wgpu
-  - [ ] add clone() to wgpu tensor
-  - [ ] compare the result of wgpu and cpu on rms_norm
-- [ ] make validate panics
-- [ ] observe the intermediate result in llama2.rs
-- [ ] wgpu tensor support
+  - [x] add copy_from for wgpu
+  - [x] add clone() to wgpu tensor
+  - [x] compare the result of wgpu and cpu on rms_norm
+  - [x] add matmul
+  - [x] add rope
+  - [x] add extend
+  - [ ] add batch_matmul
+  - [ ] add softmax
+  - [ ] add silu

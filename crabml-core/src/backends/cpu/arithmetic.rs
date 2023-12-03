@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::simd::f32x32;
 use std::simd::f32x8;
-use std::simd::SimdFloat;
+use std::simd::prelude::SimdFloat;
 
 use half::f16;
 use rayon::prelude::*;
@@ -42,7 +42,7 @@ impl<'a, 'b> TensorArithmetics for CpuTensor<'a> {
             _ => (),
         }
 
-        let mut out = CpuTensor::alloc(&[w.shape()[0]], x.device())?;
+        let mut out = CpuTensor::alloc(&[w.shape()[0]], None, x.device())?;
         let o_row_iter = out.iter_axis_mut(vec![0], 0)?; // (x_cols, )
         o_row_iter.enumerate().for_each(|(w_row, o)| {
             let w_row_iter = w.iter_axis(&[w_row, 0], 1).unwrap(); // (w_cols, )
@@ -193,7 +193,7 @@ where 'b: 'a {
     // (batch_size, w_rows, w_cols) @ (batch_size, w_cols, ) -> (batch_size, w_rows, )
     let batch_size = w.shape()[0];
     let w_rows = w.shape()[1];
-    let mut out = CpuTensor::alloc(&[batch_size, w_rows], x.device())?;
+    let mut out = CpuTensor::alloc(&[batch_size, w_rows], None, x.device())?;
     for b in 0..batch_size {
         let o_iter = out.iter_axis_mut(vec![b, 0], 1)?; // w_cols
         o_iter.enumerate().for_each(|(w_row, o)| {
@@ -373,6 +373,8 @@ pub fn rope_inplace_old<'a>(
 
 #[cfg(test)]
 mod tests {
+    use approx::assert_relative_eq;
+
     use super::*;
     use crate::backends::cpu::cpu_tensor::CpuTensorDevice;
     use crate::tensor::TensorArithmetics;
@@ -398,6 +400,27 @@ mod tests {
         assert_eq!(v, vec![
             0.999995, 0.999995, 0.999995, 0.999995, 0.999995, 0.999995
         ]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_rope() -> Result<()> {
+        let device = CpuTensorDevice::new();
+        let v1 = (0..32).map(|v| v as f32).collect::<Vec<_>>();
+        let t1 = CpuTensor::new(v1, &[2, 16], device.clone())?;
+
+        let r1 = t1.rope_inplace(1, 2)?;
+        let out = r1.iter().collect::<Vec<_>>();
+        assert_relative_eq!(
+            &out[..],
+            &[
+                -0.841471, 0.54030234, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+                13.0, 14.0, 15.0, -5.6601696, 22.648676, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0,
+                25.0, 26.0, 27.0, 28.0, 29.0, 30.0, 31.0
+            ][..],
+            epsilon = 1e-5
+        );
 
         Ok(())
     }

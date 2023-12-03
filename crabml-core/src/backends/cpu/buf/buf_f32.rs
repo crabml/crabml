@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use std::simd::f32x32;
-use std::simd::SimdFloat;
+use std::simd::prelude::SimdFloat;
 
 use super::buf::BufVecDot;
 

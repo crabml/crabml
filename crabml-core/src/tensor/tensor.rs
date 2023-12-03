@@ -4,7 +4,7 @@ use crate::error::Result;
 pub trait Tensor: Sized + Clone + TensorArithmetics {
     type Device: Clone;
 
-    fn alloc(shape: &[usize], device: Self::Device) -> Result<Self>;
+    fn alloc(shape: &[usize], capacity: Option<usize>, device: Self::Device) -> Result<Self>;
 
     fn with_strider(self, strider: TensorStrider) -> Result<Self>;
 
@@ -23,6 +23,9 @@ pub trait Tensor: Sized + Clone + TensorArithmetics {
     fn copy_from(&mut self, rhs: &Self, pos: &[usize], len: usize) -> Result<()>;
 
     fn export(&self, buf: &mut [f32]) -> Result<()>;
+
+    /// duplicate the tensor and the underlying storage
+    fn dup(&self) -> Result<Self>;
 }
 
 pub trait TensorArithmetics: Sized {

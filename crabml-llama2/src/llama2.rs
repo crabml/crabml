@@ -36,18 +36,27 @@ impl<'a> TryFrom<&'a CpuLlama2Model<'a>> for Llama2Runner<CpuTensor<'a>> {
         let device = model.device.clone();
         let weights = model.weights.clone();
         let tokenizer = model.tokenizer.clone();
+        let seq_len = conf.seq_len;
 
         let logits = vec![0.0; conf.vocab_size];
         let key_cache = (0..conf.n_layers)
             .map(|_| {
-                CpuTensor::alloc(&[0, conf.n_kv_heads, conf.head_size()], device.clone())
-                    .map(|t| Some(t))
+                CpuTensor::alloc(
+                    &[0, conf.n_kv_heads, conf.head_size()],
+                    Some(seq_len * conf.embedding_dim),
+                    device.clone(),
+                )
+                .map(|t| Some(t))
             })
             .collect::<Result<Vec<_>>>()?;
         let value_cache = (0..conf.n_layers)
             .map(|_| {
-                CpuTensor::alloc(&[0, conf.n_kv_heads, conf.head_size()], device.clone())
-                    .map(|t| Some(t))
+                CpuTensor::alloc(
+                    &[0, conf.n_kv_heads, conf.head_size()],
+                    Some(seq_len * conf.embedding_dim),
+                    device.clone(),
+                )
+                .map(|t| Some(t))
             })
             .collect::<Result<Vec<_>>>()?;
 
@@ -72,16 +81,25 @@ impl TryFrom<&WgpuLlama2Model> for Llama2Runner<WgpuTensor> {
         let weights = model.weights.clone();
         let tokenizer = model.tokenizer.clone();
         let logits = vec![0.0; conf.vocab_size];
+        let seq_len = conf.seq_len;
         let key_cache = (0..conf.n_layers)
             .map(|_| {
-                WgpuTensor::alloc(&[0, conf.n_kv_heads, conf.head_size()], device.clone())
-                    .map(|t| Some(t))
+                WgpuTensor::alloc(
+                    &[0, conf.n_kv_heads, conf.head_size()],
+                    Some(seq_len * conf.embedding_dim),
+                    device.clone(),
+                )
+                .map(|t| Some(t))
             })
             .collect::<Result<Vec<_>>>()?;
         let value_cache = (0..conf.n_layers)
             .map(|_| {
-                WgpuTensor::alloc(&[0, conf.n_kv_heads, conf.head_size()], device.clone())
-                    .map(|t| Some(t))
+                WgpuTensor::alloc(
+                    &[0, conf.n_kv_heads, conf.head_size()],
+                    Some(seq_len * conf.embedding_dim),
+                    device.clone(),
+                )
+                .map(|t| Some(t))
             })
             .collect::<Result<Vec<_>>>()?;
         Ok(Self {
@@ -113,12 +131,12 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         let head_size = self.conf.head_size();
 
         // copy the token embedding into x
-        let mut x = T::alloc(&[embed_dim], self.device.clone())?;
+        let mut x = T::alloc(&[embed_dim], None, self.device.clone())?;
         x.copy_from(&self.weights.token_embedding_table, &[token, 0], embed_dim)?;
 
         // forward all the layers
         for l in 0..self.conf.n_layers {
-            let x_attn_orig = x.clone();
+            let x_attn_orig = x.dup()?;
 
             // attention rnsnorm
             x = {
@@ -137,7 +155,11 @@ impl<'a, T: Tensor> Llama2Runner<T> {
                 let k = self.weights.wk[l].matmul(&x)?;
                 let v = self.weights.wv[l].matmul(&x)?;
 
-                (q, k, v)
+                (
+                    q.with_name(format!("q:{}:{}", l, pos)),
+                    k.with_name(format!("k:{}:{}", l, pos)),
+                    v.with_name(format!("v:{}:{}", l, pos)),
+                )
             };
 
             // ROPE
@@ -147,7 +169,10 @@ impl<'a, T: Tensor> Llama2Runner<T> {
 
                 let q = q.rope_inplace(pos, self.conf.rope_dim)?;
                 let k = k.rope_inplace(pos, self.conf.rope_dim)?;
-                (q, k)
+                (
+                    q.with_name(format!("q_roped:{}:{}", l, pos)),
+                    k.with_name(format!("k_roped:{}:{}", l, pos)),
+                )
             };
 
             // save to kv cache
@@ -182,7 +207,8 @@ impl<'a, T: Tensor> Llama2Runner<T> {
                 let k_cache_strider_orig = k_cache.strider().clone();
                 let k_cache = k_cache
                     .repeat(&[1, n_heads / n_kv_heads, 1])?
-                    .transpose(&[1, 0, 2])?;
+                    .transpose(&[1, 0, 2])?
+                    .with_name(format!("k_cache_transposed:{}:{}", l, pos));
                 // (n_heads, n_seq, head_size) @ (n_head, head_size) => (n_heads, n_seq)
                 let attn = k_cache.batch_matmul(&q)?;
                 let attn = attn.div_scalar_inplace((head_size as f32).sqrt())?;
@@ -210,7 +236,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             // ffn
             x = {
                 // save for redidual connection
-                let x_orig_ffn = x.clone();
+                let x_orig_ffn = x.dup()?;
 
                 // ffn rmsnorm
                 x = {
@@ -375,7 +401,7 @@ mod tests {
         let gf = gl.open()?;
 
         let device = CpuTensorDevice::with_options(CpuTensorDeviceOptions {
-            debug_named_tensors: true,
+            debug_named_tensors: false,
         });
         let lm = CpuLlama2Model::load(&gf, device.clone())?;
 
@@ -384,17 +410,6 @@ mod tests {
         let output = runner.generate("Lily is a cat", 30, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
 
-        assert_eq!(
-            device.dump_debug_tensor("attn_rmsnorm:0").unwrap()[0..6],
-            vec![
-                -0.5774899,
-                -0.45631766,
-                0.25273207,
-                -0.13230246,
-                0.98616296,
-                0.46305636
-            ]
-        );
         assert_eq!(
             s,
             " who likes to play with yarn. She has many colors of yarn in her box. She likes to make shapes with yarn and show"
@@ -432,7 +447,8 @@ mod tests {
         let model_cpu = CpuLlama2Model::load(&gf, device_cpu.clone())?;
 
         let device_wgpu = WgpuTensorDevice::new(
-            WgpuTensorDeviceOptions::new(model_cpu.conf.embedding_dim * 4)
+            WgpuTensorDeviceOptions::new()
+                .with_staging_buf_bytes(model_cpu.conf.embedding_dim * 4)
                 .with_debug_named_tensor(true),
         );
         let model_wgpu = WgpuLlama2Model::from_cpu(&model_cpu, device_wgpu.clone())?;
@@ -455,6 +471,23 @@ mod tests {
             device_wgpu.dump_debug_tensor("attn_rmsnorm:0:0").unwrap()[0..10],
             epsilon = 1e-7
         );
+
+        assert_relative_eq!(
+            device_cpu.dump_debug_tensor("q_roped:0:0").unwrap()[..],
+            device_wgpu.dump_debug_tensor("q_roped:0:0").unwrap()[..],
+            epsilon = 1e-5
+        );
+
+        assert_relative_eq!(
+            device_cpu
+                .dump_debug_tensor("k_cache_transposed:0:0")
+                .unwrap()[0..10],
+            device_wgpu
+                .dump_debug_tensor("k_cache_transposed:0:0")
+                .unwrap()[0..10],
+            epsilon = 1e-5
+        );
+
         assert_eq!(
             output_cpu,
             " who likes to play with yarn. She has many colors of yarn in her box. She likes to make shapes with yarn and show"

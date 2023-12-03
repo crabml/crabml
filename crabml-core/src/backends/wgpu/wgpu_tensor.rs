@@ -118,8 +118,54 @@ impl Tensor for WgpuTensor {
         &self.strider
     }
 
+    // extend the tensor with the rhs tensor's data.
     fn extend(&mut self, rhs: &Self) -> Result<()> {
-        return Err((ErrorKind::NotImplemented, "not implemented").into());
+        let new_len = self.strider.len() + rhs.strider.len();
+        if new_len > self.capacity {
+            return Err((
+                ErrorKind::TensorError,
+                format!("exceeded capacity at {}", self.capacity),
+            )
+                .into());
+        }
+        if !rhs.shape().eq(&self.shape()[1..]) {
+            return Err((
+                ErrorKind::TensorError,
+                format!(
+                    "shape mismatch on extend, want {:?} but got {:?}",
+                    &self.shape()[1..],
+                    &rhs.shape()
+                ),
+            )
+                .into());
+        }
+
+        let f32_size = std::mem::size_of::<f32>();
+        let copy_offset = self.strider.len() * f32_size;
+        let copy_bytes_len = rhs.strider().len() * f32_size;
+
+        // enqueue copy from rhs to self's buffer
+        let mut encoder = self
+            .device
+            .inner
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        encoder.copy_buffer_to_buffer(
+            &rhs.buf,
+            0 as u64,
+            &self.buf,
+            copy_offset as u64,
+            copy_bytes_len as u64,
+        );
+        self.device.queue.submit(Some(encoder.finish()));
+
+        // update strider
+        let new_shape = {
+            let mut shape = self.shape().to_vec();
+            shape[0] += 1;
+            shape
+        };
+        self.strider = TensorStrider::new(new_shape);
+        Ok(())
     }
 
     fn copy_from(&mut self, rhs: &Self, pos: &[usize], len: usize) -> Result<()> {

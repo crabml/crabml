@@ -36,13 +36,14 @@ impl<'a> TryFrom<&'a CpuLlama2Model<'a>> for Llama2Runner<CpuTensor<'a>> {
         let device = model.device.clone();
         let weights = model.weights.clone();
         let tokenizer = model.tokenizer.clone();
+        let seq_len = conf.seq_len;
 
         let logits = vec![0.0; conf.vocab_size];
         let key_cache = (0..conf.n_layers)
             .map(|_| {
                 CpuTensor::alloc(
                     &[0, conf.n_kv_heads, conf.head_size()],
-                    None,
+                    Some(seq_len * conf.embedding_dim),
                     device.clone(),
                 )
                 .map(|t| Some(t))
@@ -52,7 +53,7 @@ impl<'a> TryFrom<&'a CpuLlama2Model<'a>> for Llama2Runner<CpuTensor<'a>> {
             .map(|_| {
                 CpuTensor::alloc(
                     &[0, conf.n_kv_heads, conf.head_size()],
-                    None,
+                    Some(seq_len * conf.embedding_dim),
                     device.clone(),
                 )
                 .map(|t| Some(t))
@@ -80,11 +81,12 @@ impl TryFrom<&WgpuLlama2Model> for Llama2Runner<WgpuTensor> {
         let weights = model.weights.clone();
         let tokenizer = model.tokenizer.clone();
         let logits = vec![0.0; conf.vocab_size];
+        let seq_len = conf.seq_len;
         let key_cache = (0..conf.n_layers)
             .map(|_| {
                 WgpuTensor::alloc(
                     &[0, conf.n_kv_heads, conf.head_size()],
-                    None,
+                    Some(seq_len * conf.embedding_dim),
                     device.clone(),
                 )
                 .map(|t| Some(t))
@@ -94,7 +96,7 @@ impl TryFrom<&WgpuLlama2Model> for Llama2Runner<WgpuTensor> {
             .map(|_| {
                 WgpuTensor::alloc(
                     &[0, conf.n_kv_heads, conf.head_size()],
-                    None,
+                    Some(seq_len * conf.embedding_dim),
                     device.clone(),
                 )
                 .map(|t| Some(t))
@@ -205,7 +207,8 @@ impl<'a, T: Tensor> Llama2Runner<T> {
                 let k_cache_strider_orig = k_cache.strider().clone();
                 let k_cache = k_cache
                     .repeat(&[1, n_heads / n_kv_heads, 1])?
-                    .transpose(&[1, 0, 2])?;
+                    .transpose(&[1, 0, 2])?
+                    .with_name(format!("k_cache_transposed:{}:{}", l, pos));
                 // (n_heads, n_seq, head_size) @ (n_head, head_size) => (n_heads, n_seq)
                 let attn = k_cache.batch_matmul(&q)?;
                 let attn = attn.div_scalar_inplace((head_size as f32).sqrt())?;
@@ -470,8 +473,18 @@ mod tests {
         );
 
         assert_relative_eq!(
-            device_cpu.dump_debug_tensor("q_roped:0:0").unwrap()[0..10],
-            device_wgpu.dump_debug_tensor("q_roped:0:0").unwrap()[0..10],
+            device_cpu.dump_debug_tensor("q_roped:0:0").unwrap()[..],
+            device_wgpu.dump_debug_tensor("q_roped:0:0").unwrap()[..],
+            epsilon = 1e-5
+        );
+
+        assert_relative_eq!(
+            device_cpu
+                .dump_debug_tensor("k_cache_transposed:0:0")
+                .unwrap()[0..10],
+            device_wgpu
+                .dump_debug_tensor("k_cache_transposed:0:0")
+                .unwrap()[0..10],
             epsilon = 1e-5
         );
 

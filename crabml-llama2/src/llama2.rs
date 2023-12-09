@@ -210,11 +210,11 @@ impl<'a, T: Tensor> Llama2Runner<T> {
                     .transpose(&[1, 0, 2])?
                     .with_name(format!("k_cache_transposed:{}:{}", l, pos));
                 // (n_heads, n_seq, head_size) @ (n_head, head_size) => (n_heads, n_seq)
-                let attn = k_cache
-                    .batch_matmul(&q)?
-                    .with_name(format!("k_cache_bmatmul_q:{}:{}", l, pos));
+                let attn = k_cache.batch_matmul(&q)?;
                 let attn = attn.div_scalar_inplace((head_size as f32).sqrt())?;
-                let attn = attn.softmax_inplace(1)?;
+                let attn = attn
+                    .softmax_inplace(1)?
+                    .with_name(format!("k_cache_attn:{}:{}", l, pos));
                 self.key_cache[l].replace(k_cache.with_strider(k_cache_strider_orig)?);
 
                 let v_cache = self.value_cache[l].take().unwrap();
@@ -491,12 +491,8 @@ mod tests {
         );
 
         assert_relative_eq!(
-            device_cpu
-                .dump_debug_tensor("k_cache_bmatmul_q:0:0")
-                .unwrap()[..],
-            device_wgpu
-                .dump_debug_tensor("k_cache_bmatmul_q:0:0")
-                .unwrap()[..],
+            device_cpu.dump_debug_tensor("k_cache_attn:0:0").unwrap()[..],
+            device_wgpu.dump_debug_tensor("k_cache_attn:0:0").unwrap()[..],
             epsilon = 1e-4
         );
 

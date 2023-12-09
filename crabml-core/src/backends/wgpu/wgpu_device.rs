@@ -75,6 +75,7 @@ impl WgpuTensorDevice {
             ("matmul_naive", include_str!("shaders/matmul_naive.wgsl")),
             ("rope_inplace", include_str!("shaders/rope.wgsl")),
             ("softmax_inplace", include_str!("shaders/softmax.wgsl")),
+            ("silu_inplace", include_str!("shaders/silu.wgsl")),
             ("batch_matmul", include_str!("shaders/batch_matmul.wgsl")),
         ];
         let mut modules = HashMap::new();

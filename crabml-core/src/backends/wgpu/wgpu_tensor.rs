@@ -369,7 +369,7 @@ impl TensorArithmetics for WgpuTensor {
     }
 
     fn div_scalar_inplace(self, rhs: f32) -> Result<Self> {
-        assert!(self.strider().len() % 32 == 0);
+        // assert!(self.strider().len() % 32 == 0);
         let meta_buf = self.device.make_storage_buffer(
             "meta",
             bytemuck::cast_slice(&[1u32, self.strider.len() as u32]),
@@ -391,11 +391,9 @@ impl TensorArithmetics for WgpuTensor {
                 resource: meta_buf.as_entire_binding(),
             },
         ];
-        let encoder = self.device.encode_pipeline_commnad(
-            "div_inplace",
-            entries,
-            (self.strider.len() as u32 / 32, 1, 1),
-        );
+        let encoder = self
+            .device
+            .encode_pipeline_commnad("div_inplace", entries, (1, 1, 1));
         self.device.queue.submit(Some(encoder.finish()));
         Ok(self)
     }

@@ -488,7 +488,7 @@ impl TensorArithmetics for WgpuTensor {
         ];
         let encoder =
             self.device
-                .encode_pipeline_commnad("batch_matmul", entries, (meta.M / 32, 1, 1));
+                .encode_pipeline_commnad("batch_matmul", entries, (meta.M / 32 + 1, 1, 1));
         self.device.queue.submit(Some(encoder.finish()));
 
         Ok(output)
@@ -654,6 +654,25 @@ mod tests {
         t3.export(&mut dst1)?;
         assert_eq!(dst1[0..8], vec![
             2.0, 10.0, 18.0, 26.0, 34.0, 42.0, 50.0, 58.0
+        ]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_wgpu_batch_matmul() -> Result<()> {
+        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
+        let v1 = (0..48).map(|i| i as f32).collect::<Vec<_>>();
+
+        let t1 = WgpuTensor::new(&v1, &[3, 8, 2], device.clone())?;
+        let t2 = WgpuTensor::new(&[2.0; 6], &[3, 2], device.clone())?;
+        let t3 = t1.batch_matmul(&t2)?;
+        let mut dst1 = vec![0.0; 24];
+        t3.export(&mut dst1)?;
+        assert_eq!(dst1[0..8], vec![
+            2.0, 6.0, 10.0, 14.0, 18.0, 22.0, 26.0, 30.0,
+        ]);
+        assert_eq!(dst1[8..16], vec![
+            10.0, 14.0, 18.0, 22.0, 26.0, 30.0, 34.0, 38.0,
         ]);
         Ok(())
     }

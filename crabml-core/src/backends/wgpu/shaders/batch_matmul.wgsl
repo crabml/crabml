@@ -25,6 +25,9 @@ fn main(
     @builtin(local_invocation_id) local_id: vec3<u32>,
 ) {
     let m = workgroup_id.x * 32u + local_id.x;
+    if (m >= input_m.M) {
+        return;
+    }
     for (var n = 0u; n < input_m.N; n = n + 1u) {
         var sum = 0.0f;
         for (var k = 0u; k < input_m.K; k = k + 1u) {

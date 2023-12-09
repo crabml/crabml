@@ -837,4 +837,9 @@ mod tests {
         );
         Ok(())
     }
+
+    #[test]
+    fn test_wgpu_softmax() -> Result<()> {
+        Ok(())
+    }
 }

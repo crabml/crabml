@@ -444,4 +444,16 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn test_softmax() -> Result<()> {
+        let device = CpuTensorDevice::new();
+        let t1 = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], device.clone())?;
+        let t1 = t1.softmax_inplace(1)?;
+
+        assert_eq!(t1.iter().collect::<Vec<_>>(), &[
+            0.09003057, 0.24472848, 0.66524094, 0.09003057, 0.24472848, 0.66524094
+        ]);
+        Ok(())
+    }
 }

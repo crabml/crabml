@@ -3,8 +3,11 @@ struct Meta {
     M: u32,
     N: u32,
     K: u32,
+    _padding_0: u32,
     strides_0: vec3<u32>,
+    _padding_1: u32,
     repeats_0: vec3<u32>,
+    _padding_2: u32,
 };
 
 @group(0) @binding(0)
@@ -37,4 +40,9 @@ fn main(
         }
         output[m * input_m.N + n] += sum;
     }
+
+    // passed wrong value in strides
+    output[0] = f32(input_m.repeats_0.x);
+    output[1] = f32(input_m.repeats_0.y);
+    output[2] = f32(input_m.repeats_0.z);
 }

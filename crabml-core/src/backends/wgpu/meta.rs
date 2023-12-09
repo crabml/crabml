@@ -20,15 +20,17 @@ pub struct MatmulMeta {
 }
 
 // (M, N, K) x (N, K) = (M, N)
-#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Default)]
 #[repr(C, align(16))]
 pub struct BatchMatmulMeta {
     pub M: u32,
     pub N: u32,
     pub K: u32,
+    pub _padding_0: u32,
     pub strides_0: [u32; 3],
+    pub _padding_1: u32,
     pub repeats_0: [u32; 3],
-    pub _padding: [u32; 15],
+    pub _padding_2: u32,
 }
 
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]

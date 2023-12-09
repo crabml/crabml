@@ -472,7 +472,7 @@ impl TensorArithmetics for WgpuTensor {
                 self.strider.repeats()[1] as u32,
                 self.strider.repeats()[2] as u32,
             ],
-            _padding: [0; 15],
+            ..Default::default()
         };
         let meta_bytes = bytemuck::bytes_of(&meta);
 
@@ -683,6 +683,7 @@ mod tests {
         let t3 = t1.batch_matmul(&t2)?;
         let mut dst1 = vec![0.0; 3]; // 1 x 3
         t3.export(&mut dst1)?;
+        assert_eq!(t1.strider().strides(), &[6, 2, 1]);
         assert_eq!(dst1, vec![2.0, 10.0, 18.0]);
         Ok(())
     }

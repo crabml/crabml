@@ -1,0 +1,37 @@
+// (m, n, k) * (m, k) = (m, n)
+struct Meta {
+    M: u32,
+    N: u32,
+    K: u32,
+    strides_0: vec3<u32>,
+    repeats_0: vec3<u32>,
+};
+
+@group(0) @binding(0)
+var<storage, read> input_0: array<f32>;
+
+@group(0) @binding(1)
+var<storage, read> input_1: array<f32>;
+
+@group(0) @binding(2)
+var<storage, read> input_m: Meta;
+
+@group(0) @binding(3)
+var<storage, read_write> output: array<f32>;
+
+@compute @workgroup_size(32)
+fn main(
+    @builtin(workgroup_id) workgroup_id: vec3<u32>,
+    @builtin(local_invocation_id) local_id: vec3<u32>,
+) {
+    let m = workgroup_id.x * 32u + local_id.x;
+    for (var n = 0u; n < input_m.N; n = n + 1u) {
+        var sum = 0.0f;
+        for (var k = 0u; k < input_m.K; k = k + 1u) {
+            let a = input_0[input_m.strides_0.x * m + input_m.strides_0.y * k + input_m.strides_0.z * n];
+            let b = input_1[input_m.K * m + k];
+            sum += a * b;
+        }
+        output[m * input_m.N + n] = sum;
+    }
+}

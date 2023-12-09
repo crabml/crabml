@@ -207,8 +207,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
                 let k_cache_strider_orig = k_cache.strider().clone();
                 let k_cache = k_cache
                     .repeat(&[1, n_heads / n_kv_heads, 1])?
-                    .transpose(&[1, 0, 2])?
-                    .with_name(format!("k_cache_transposed:{}:{}", l, pos));
+                    .transpose(&[1, 0, 2])?;
                 // (n_heads, n_seq, head_size) @ (n_head, head_size) => (n_heads, n_seq)
                 let attn = k_cache.batch_matmul(&q)?;
                 let attn = attn.div_scalar_inplace((head_size as f32).sqrt())?;
@@ -265,7 +264,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
 
                 // residual connection
                 x = x.add_inplace(&x_orig_ffn)?;
-                x
+                x.with_name(format!("ffn_out:{}:{}", l, pos))
             }
         }
 
@@ -273,7 +272,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         x = {
             x = x.rms_norm_inplace(self.conf.rms_norm_eps)?;
             x = x.mul_inplace(&self.weights.rms_final_weight)?;
-            x
+            x.with_name(format!("final_rmsnorm:{}", pos))
         };
 
         // classifier into logits
@@ -481,18 +480,20 @@ mod tests {
         );
 
         assert_relative_eq!(
-            device_cpu
-                .dump_debug_tensor("k_cache_transposed:0:0")
-                .unwrap()[..],
-            device_wgpu
-                .dump_debug_tensor("k_cache_transposed:0:0")
-                .unwrap()[..],
+            device_cpu.dump_debug_tensor("k_cache_attn:0:0").unwrap()[..],
+            device_wgpu.dump_debug_tensor("k_cache_attn:0:0").unwrap()[..],
             epsilon = 1e-4
         );
 
         assert_relative_eq!(
-            device_cpu.dump_debug_tensor("k_cache_attn:0:0").unwrap()[..],
-            device_wgpu.dump_debug_tensor("k_cache_attn:0:0").unwrap()[..],
+            device_cpu.dump_debug_tensor("ffn_out:0:0").unwrap()[..],
+            device_wgpu.dump_debug_tensor("ffn_out:0:0").unwrap()[..],
+            epsilon = 1e-4
+        );
+
+        assert_relative_eq!(
+            device_cpu.dump_debug_tensor("final_rmsnorm:0").unwrap()[..],
+            device_wgpu.dump_debug_tensor("final_rmsnorm:0").unwrap()[..],
             epsilon = 1e-4
         );
 

@@ -315,7 +315,6 @@ impl TensorArithmetics for WgpuTensor {
     }
 
     fn mul_inplace(self, rhs: &Self) -> Result<Self> {
-        assert!(self.strider().len() % 32 == 0);
         let meta_buf = self.device.make_storage_buffer(
             "meta",
             bytemuck::cast_slice(&[1u32, self.strider.len() as u32]),
@@ -545,14 +544,21 @@ mod tests {
     fn test_wgpu_tensor_mul() -> Result<()> {
         let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
         let t1 = WgpuTensor::new(&[3.0; 1024], &[512, 2], device.clone())?;
-        let t2 = WgpuTensor::new(&[2.0; 1024], &[512, 2], device)?;
+        let t2 = WgpuTensor::new(&[2.0; 1024], &[512, 2], device.clone())?;
         let t1 = t1.mul_inplace(&t2)?;
-
         let mut dst = vec![0.0; 1024];
         t1.export(&mut dst)?;
-
         assert_eq!(&dst[0..6], [6.0, 6.0, 6.0, 6.0, 6.0, 6.0]);
         assert!(dst.iter().all(|v| *v == 6.0));
+
+        let t1 = WgpuTensor::new(&[3.0; 6], &[3, 2], device.clone())?;
+        let t2 = WgpuTensor::new(&[2.0; 6], &[3, 2], device)?;
+        let t1 = t1.mul_inplace(&t2)?;
+
+        let mut dst = vec![0.0; 6];
+        t1.export(&mut dst)?;
+        assert_eq!(dst, vec![6.0, 6.0, 6.0, 6.0, 6.0, 6.0]);
+
         Ok(())
     }
 

@@ -10,7 +10,7 @@ var<storage, read_write> input_0: array<f32>;
 var<storage, read> input_1: array<f32>;
 
 @group(0) @binding(2)
-var<storage, read> input_meta: Meta;
+var<storage, read> input_m: Meta;
 
 // each workgroup will process a single vector
 
@@ -20,11 +20,13 @@ fn main(
     @builtin(workgroup_id) workgroup_id: vec3<u32>,
     @builtin(local_invocation_id) local_id: vec3<u32>,
 ) {
-    let workgroup_size = 32u;
-    let local_chunk_size = input_meta.N / workgroup_size;
+    let mi = 32u * workgroup_id.x + local_id.x;
+    if mi >= input_m.M {
+        return;
+    }
 
-    for (var i = 0u; i < local_chunk_size; i = i + 1u) {
-        let idx = workgroup_id.x * input_meta.N + local_id.x * local_chunk_size + i;
+    for (var ni = 0u; ni < input_m.N; ni = ni + 1u) {
+        let idx = mi * input_m.N + ni;
         input_0[idx] += input_1[idx % arrayLength(&input_1)];
     }
 }

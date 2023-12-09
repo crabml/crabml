@@ -6,6 +6,7 @@ use wgpu::util::DeviceExt;
 use super::meta::MatmulMeta;
 use super::meta::RmsNormMeta;
 use super::WgpuTensorDeviceRef;
+use crate::backends::wgpu::meta::BatchMatmulMeta;
 use crate::backends::wgpu::meta::RopeMeta;
 use crate::error::ErrorKind;
 use crate::error::Result;
@@ -195,8 +196,8 @@ impl Tensor for WgpuTensor {
             return Err((
                 ErrorKind::TensorError,
                 format!(
-                    "buffer size exceeded staging buffer limit: {}",
-                    self.device.opts.staging_buf_bytes
+                    "buffer size exceeded staging buffer limit: {}, got: {}",
+                    self.device.opts.staging_buf_bytes, buf_size,
                 ),
             )
                 .into());
@@ -257,7 +258,9 @@ impl TensorArithmetics for WgpuTensor {
             _padding: [0; 7],
         };
 
-        let meta_buf = self.device.make_storage_buffer(bytemuck::bytes_of(&meta));
+        let meta_buf = self
+            .device
+            .make_storage_buffer("meta", bytemuck::bytes_of(&meta));
         let entries = &[
             wgpu::BindGroupEntry {
                 binding: 0,
@@ -277,14 +280,15 @@ impl TensorArithmetics for WgpuTensor {
     }
 
     fn rms_norm_inplace(self, eps: f32) -> Result<Self> {
-        let meta_buf = self
-            .device
-            .make_storage_buffer(bytemuck::bytes_of(&RmsNormMeta {
+        let meta_buf = self.device.make_storage_buffer(
+            "meta",
+            bytemuck::bytes_of(&RmsNormMeta {
                 M: 1,
                 N: self.strider.len() as u32,
                 eps: eps,
                 _padding: 0.0,
-            }));
+            }),
+        );
         let entries = &[
             wgpu::BindGroupEntry {
                 binding: 0,
@@ -303,18 +307,63 @@ impl TensorArithmetics for WgpuTensor {
     }
 
     fn softmax_inplace(self, axis: usize) -> Result<Self> {
-        return Err((ErrorKind::NotImplemented, "not implemented").into());
+        assert!(axis == 1);
+        assert!(self.is_contiguous());
+        assert!(self.shape().len() == 2);
+
+        let m = self.shape()[0] as u32;
+        let n = self.shape()[1] as u32;
+        let meta_buf = self
+            .device
+            .make_storage_buffer("meta", bytemuck::cast_slice(&[m, n]));
+        let entries = &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: self.buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: meta_buf.as_entire_binding(),
+            },
+        ];
+        let encoder =
+            self.device
+                .encode_pipeline_commnad("softmax_inplace", entries, (m / 32 + 1, 1, 1));
+        self.device.queue.submit(Some(encoder.finish()));
+        Ok(self)
     }
 
     fn silu_inplace(self) -> Result<Self> {
-        return Err((ErrorKind::NotImplemented, "not implemented").into());
+        assert!(self.is_contiguous());
+        assert!(self.shape().len() == 1);
+
+        let m = 1;
+        let n = self.shape()[0] as u32;
+        let meta_buf = self
+            .device
+            .make_storage_buffer("meta", bytemuck::cast_slice(&[m, n]));
+        let entries = &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: self.buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: meta_buf.as_entire_binding(),
+            },
+        ];
+        let encoder = self
+            .device
+            .encode_pipeline_commnad("silu_inplace", entries, (1, 1, 1));
+        self.device.queue.submit(Some(encoder.finish()));
+        Ok(self)
     }
 
     fn mul_inplace(self, rhs: &Self) -> Result<Self> {
-        assert!(self.strider().len() % 32 == 0);
-        let meta_buf = self
-            .device
-            .make_storage_buffer(bytemuck::cast_slice(&[1u32, self.strider.len() as u32]));
+        let meta_buf = self.device.make_storage_buffer(
+            "meta",
+            bytemuck::cast_slice(&[1u32, self.strider.len() as u32]),
+        );
         let entries = &[
             wgpu::BindGroupEntry {
                 binding: 0,
@@ -338,9 +387,10 @@ impl TensorArithmetics for WgpuTensor {
 
     fn add_inplace(self, rhs: &Self) -> Result<Self> {
         assert!(self.strider().len() % 32 == 0);
-        let meta_buf = self
-            .device
-            .make_storage_buffer(bytemuck::cast_slice(&[1u32, self.strider.len() as u32]));
+        let meta_buf = self.device.make_storage_buffer(
+            "meta",
+            bytemuck::cast_slice(&[1u32, self.strider.len() as u32]),
+        );
         let entries = &[
             wgpu::BindGroupEntry {
                 binding: 0,
@@ -363,13 +413,14 @@ impl TensorArithmetics for WgpuTensor {
     }
 
     fn div_scalar_inplace(self, rhs: f32) -> Result<Self> {
-        assert!(self.strider().len() % 32 == 0);
-        let meta_buf = self
-            .device
-            .make_storage_buffer(bytemuck::cast_slice(&[1u32, self.strider.len() as u32]));
+        // assert!(self.strider().len() % 32 == 0);
+        let meta_buf = self.device.make_storage_buffer(
+            "meta",
+            bytemuck::cast_slice(&[1u32, self.strider.len() as u32]),
+        );
         let rhs_buf = self
             .device
-            .make_storage_buffer(bytemuck::cast_slice(&[rhs]));
+            .make_storage_buffer("rhs", bytemuck::cast_slice(&[rhs]));
         let entries = &[
             wgpu::BindGroupEntry {
                 binding: 0,
@@ -384,11 +435,9 @@ impl TensorArithmetics for WgpuTensor {
                 resource: meta_buf.as_entire_binding(),
             },
         ];
-        let encoder = self.device.encode_pipeline_commnad(
-            "div_inplace",
-            entries,
-            (self.strider.len() as u32 / 32, 1, 1),
-        );
+        let encoder = self
+            .device
+            .encode_pipeline_commnad("div_inplace", entries, (1, 1, 1));
         self.device.queue.submit(Some(encoder.finish()));
         Ok(self)
     }
@@ -408,7 +457,9 @@ impl TensorArithmetics for WgpuTensor {
             _padding: 0,
         };
 
-        let meta_buf = self.device.make_storage_buffer(bytemuck::bytes_of(&meta));
+        let meta_buf = self
+            .device
+            .make_storage_buffer("meta", bytemuck::bytes_of(&meta));
         let entries = &[
             wgpu::BindGroupEntry {
                 binding: 0,
@@ -436,13 +487,69 @@ impl TensorArithmetics for WgpuTensor {
     }
 
     fn batch_matmul(&self, y: &Self) -> Result<Self> {
-        return Err((ErrorKind::NotImplemented, "not implemented").into());
+        assert!(self.shape().len() == 3);
+        assert!(y.shape().len() == 2);
+        assert!(self.shape()[0] == y.shape()[0]);
+        assert!(self.shape()[2] == y.shape()[1]);
+        assert!(y.is_contiguous());
+
+        // (m, n, k) @ (m, k) => (m, n)
+        let output = Self::alloc(
+            &[self.shape()[0], self.shape()[1]],
+            None,
+            self.device.clone(),
+        )?;
+
+        let meta = BatchMatmulMeta {
+            M: self.strider.shape()[0] as u32,
+            N: self.strider.shape()[1] as u32,
+            K: self.strider.shape()[2] as u32,
+            strides_0: [
+                self.strider.strides()[0] as u32,
+                self.strider.strides()[1] as u32,
+                self.strider.strides()[2] as u32,
+            ],
+            repeats_0: [
+                self.strider.repeats()[0] as u32,
+                self.strider.repeats()[1] as u32,
+                self.strider.repeats()[2] as u32,
+            ],
+            ..Default::default()
+        };
+        let meta_bytes = bytemuck::bytes_of(&meta);
+
+        let meta_buf = self.device.make_storage_buffer("meta", meta_bytes);
+        let entries = &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: self.buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: y.buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: meta_buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: output.buf.as_entire_binding(),
+            },
+        ];
+        let encoder =
+            self.device
+                .encode_pipeline_commnad("batch_matmul", entries, (meta.M / 32 + 1, 1, 1));
+        self.device.queue.submit(Some(encoder.finish()));
+
+        Ok(output)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use approx::assert_relative_eq;
+    use half::vec;
 
     use super::WgpuTensor;
     use crate::backends::wgpu::WgpuTensorDevice;
@@ -450,6 +557,7 @@ mod tests {
     use crate::error::Result;
     use crate::tensor::Tensor;
     use crate::tensor::TensorArithmetics;
+    use crate::tensor::TensorStrider;
 
     #[test]
     fn test_wgpu_tensor_new_and_export() -> Result<()> {
@@ -481,14 +589,21 @@ mod tests {
     fn test_wgpu_tensor_mul() -> Result<()> {
         let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
         let t1 = WgpuTensor::new(&[3.0; 1024], &[512, 2], device.clone())?;
-        let t2 = WgpuTensor::new(&[2.0; 1024], &[512, 2], device)?;
+        let t2 = WgpuTensor::new(&[2.0; 1024], &[512, 2], device.clone())?;
         let t1 = t1.mul_inplace(&t2)?;
-
         let mut dst = vec![0.0; 1024];
         t1.export(&mut dst)?;
-
         assert_eq!(&dst[0..6], [6.0, 6.0, 6.0, 6.0, 6.0, 6.0]);
         assert!(dst.iter().all(|v| *v == 6.0));
+
+        let t1 = WgpuTensor::new(&[3.0; 6], &[3, 2], device.clone())?;
+        let t2 = WgpuTensor::new(&[2.0; 6], &[3, 2], device)?;
+        let t1 = t1.mul_inplace(&t2)?;
+
+        let mut dst = vec![0.0; 6];
+        t1.export(&mut dst)?;
+        assert_eq!(dst, vec![6.0, 6.0, 6.0, 6.0, 6.0, 6.0]);
+
         Ok(())
     }
 
@@ -585,6 +700,52 @@ mod tests {
     }
 
     #[test]
+    fn test_wgpu_batch_matmul_plain_code() -> Result<()> {
+        fn batch_matmul_plain_code(
+            m: usize,
+            n: usize,
+            k: usize,
+            st: TensorStrider,
+            a: &[f32],
+            b: &[f32],
+            c: &mut [f32],
+        ) {
+            for mi in 0..m {
+                for ni in 0..n {
+                    let mut sum = 0.0;
+                    for ki in 0..k {
+                        let ai = mi / st.repeats()[0] * st.strides()[0]
+                            + ni * st.strides()[1] / st.repeats()[1]
+                            + ki * st.strides()[2] / st.repeats()[2];
+                        println!(
+                            "mi: {} ni: {} ai: {} st.at(): {:?}",
+                            mi,
+                            ni,
+                            ai,
+                            st.at(&[mi, ni, ki]).unwrap()
+                        );
+                        let av = a[ai];
+                        let bv = b[k * mi + ki];
+                        sum += av * bv;
+                    }
+                    c[mi * n + ni] = sum;
+                }
+            }
+        }
+
+        // m: 2, n: 3, k: 2
+        let (m, n, k) = (2, 3, 2);
+        let a = vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0]; // m, n, k
+        let b = vec![2.0, 2.0, 2.0, 2.0]; // m, k
+        let mut c = vec![0.0; 6]; // m x n
+        let st = TensorStrider::new(vec![1, 3, 2]).repeat(vec![2, 1, 1])?;
+        batch_matmul_plain_code(m, n, k, st, &a, &b, &mut c);
+
+        assert_eq!(c, vec![2.0, 10.0, 18.0, 2.0, 10.0, 18.0]);
+        Ok(())
+    }
+
+    #[test]
     fn test_wgpu_matmul() -> Result<()> {
         let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
         let v1 = (0..256).map(|i| i as f32).collect::<Vec<_>>();
@@ -600,6 +761,49 @@ mod tests {
         assert_eq!(dst1[0..8], vec![
             2.0, 10.0, 18.0, 26.0, 34.0, 42.0, 50.0, 58.0
         ]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_wgpu_batch_matmul() -> Result<()> {
+        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
+
+        let v1 = (0..6).map(|i| i as f32).collect::<Vec<_>>();
+        // 0.0, 1.0,
+        // 2.0, 3.0,
+        // 4.0, 5.0
+        // @
+        // 2.0, 2.0
+        // => 2.0, 10.0, 18.0
+
+        let t1 = WgpuTensor::new(&v1, &[1, 3, 2], device.clone())?;
+        let t2 = WgpuTensor::new(&[2.0; 2], &[1, 2], device.clone())?;
+        let t3 = t1.batch_matmul(&t2)?;
+        let mut dst1 = vec![0.0; 3]; // 1 x 3
+        t3.export(&mut dst1)?;
+        // assert_eq!(t1.strider().strides(), &[6, 2, 1]);
+        // assert_eq!(dst1, vec![2.0, 10.0, 18.0]);
+
+        let v1 = vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0];
+        let t1 = WgpuTensor::new(&v1, &[2, 3, 2], device.clone())?;
+        let t2 = WgpuTensor::new(&[2.0; 4], &[2, 2], device.clone())?;
+        let t3 = t1.batch_matmul(&t2)?;
+        let mut dst1 = vec![0.0; 6]; // 2 x 3
+        t3.export(&mut dst1)?;
+        assert_eq!(t1.strider().shape(), &[2, 3, 2]);
+        assert_eq!(t1.strider().strides(), &[6, 2, 1]);
+        // assert_eq!(dst1, vec![2.0, 10.0, 18.0, 2.0, 10.0, 18.0]);
+
+        let v1 = vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0];
+        let t1 = WgpuTensor::new(&v1, &[1, 3, 2], device.clone())?.repeat(&[2, 1, 1])?;
+        let t2 = WgpuTensor::new(&[2.0; 4], &[2, 2], device.clone())?;
+        let t3 = t1.batch_matmul(&t2)?;
+        let mut dst1 = vec![0.0; 6]; // 2 x 3
+        t3.export(&mut dst1)?;
+        assert_eq!(t1.strider().shape(), &[2, 3, 2]);
+        assert_eq!(t1.strider().strides(), &[6, 2, 1]);
+        assert_eq!(dst1, vec![2.0, 10.0, 18.0, 2.0, 10.0, 18.0]);
+
         Ok(())
     }
 
@@ -653,6 +857,48 @@ mod tests {
             ][..],
             epsilon = 1e-5
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_wgpu_softmax() -> Result<()> {
+        let v1 = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
+        let t1 = WgpuTensor::new(&v1, &[2, 3], device.clone())?;
+        let t1 = t1.softmax_inplace(1)?;
+
+        let mut dst1 = vec![0.0; 6];
+        t1.export(&mut dst1)?;
+
+        assert_relative_eq!(
+            &dst1[..],
+            &[
+                0.09003057, 0.24472848, 0.66524094, 0.09003057, 0.24472848, 0.66524094
+            ][..],
+            epsilon = 1e-5
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_wgpu_silu() -> Result<()> {
+        let v1 = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
+        let t1 = WgpuTensor::new(&v1, &[6], device.clone())?;
+        let t1 = t1.silu_inplace()?;
+
+        let mut dst1 = vec![0.0; 6];
+        t1.export(&mut dst1)?;
+
+        assert_relative_eq!(
+            &dst1[..],
+            &[
+                0.7310586, 1.761594, 2.8577225, 3.928055, 4.9665356, 5.9851646
+            ][..],
+            epsilon = 1e-5
+        );
+
         Ok(())
     }
 }

@@ -207,12 +207,13 @@ impl<'a, T: Tensor> Llama2Runner<T> {
                 let k_cache_strider_orig = k_cache.strider().clone();
                 let k_cache = k_cache
                     .repeat(&[1, n_heads / n_kv_heads, 1])?
-                    .transpose(&[1, 0, 2])?
-                    .with_name(format!("k_cache_transposed:{}:{}", l, pos));
+                    .transpose(&[1, 0, 2])?;
                 // (n_heads, n_seq, head_size) @ (n_head, head_size) => (n_heads, n_seq)
                 let attn = k_cache.batch_matmul(&q)?;
                 let attn = attn.div_scalar_inplace((head_size as f32).sqrt())?;
-                let attn = attn.softmax_inplace(1)?;
+                let attn = attn
+                    .softmax_inplace(1)?
+                    .with_name(format!("k_cache_attn:{}:{}", l, pos));
                 self.key_cache[l].replace(k_cache.with_strider(k_cache_strider_orig)?);
 
                 let v_cache = self.value_cache[l].take().unwrap();
@@ -263,7 +264,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
 
                 // residual connection
                 x = x.add_inplace(&x_orig_ffn)?;
-                x
+                x.with_name(format!("ffn_out:{}:{}", l, pos))
             }
         }
 
@@ -271,7 +272,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         x = {
             x = x.rms_norm_inplace(self.conf.rms_norm_eps)?;
             x = x.mul_inplace(&self.weights.rms_final_weight)?;
-            x
+            x.with_name(format!("final_rmsnorm:{}", pos))
         };
 
         // classifier into logits
@@ -448,7 +449,7 @@ mod tests {
 
         let device_wgpu = WgpuTensorDevice::new(
             WgpuTensorDeviceOptions::new()
-                .with_staging_buf_bytes(model_cpu.conf.embedding_dim * 4)
+                .with_staging_buf_bytes(model_cpu.conf.vocab_size * 4)
                 .with_debug_named_tensor(true),
         );
         let model_wgpu = WgpuLlama2Model::from_cpu(&model_cpu, device_wgpu.clone())?;
@@ -464,7 +465,8 @@ mod tests {
 
         let output_wgpu = runner_wgpu
             .generate("Lily is a cat", 30, &mut sampler)?
-            .collect::<Result<Vec<String>>>();
+            .collect::<Result<Vec<String>>>()?
+            .join("");
 
         assert_relative_eq!(
             device_cpu.dump_debug_tensor("attn_rmsnorm:0:0").unwrap()[0..10],
@@ -479,19 +481,33 @@ mod tests {
         );
 
         assert_relative_eq!(
-            device_cpu
-                .dump_debug_tensor("k_cache_transposed:0:0")
-                .unwrap()[0..10],
-            device_wgpu
-                .dump_debug_tensor("k_cache_transposed:0:0")
-                .unwrap()[0..10],
-            epsilon = 1e-5
+            device_cpu.dump_debug_tensor("k_cache_attn:0:0").unwrap()[..],
+            device_wgpu.dump_debug_tensor("k_cache_attn:0:0").unwrap()[..],
+            epsilon = 1e-4
+        );
+
+        assert_relative_eq!(
+            device_cpu.dump_debug_tensor("ffn_out:0:0").unwrap()[..],
+            device_wgpu.dump_debug_tensor("ffn_out:0:0").unwrap()[..],
+            epsilon = 1e-4
+        );
+
+        assert_relative_eq!(
+            device_cpu.dump_debug_tensor("final_rmsnorm:0").unwrap()[..],
+            device_wgpu.dump_debug_tensor("final_rmsnorm:0").unwrap()[..],
+            epsilon = 1e-4
         );
 
         assert_eq!(
             output_cpu,
             " who likes to play with yarn. She has many colors of yarn in her box. She likes to make shapes with yarn and show"
         );
+
+        assert_eq!(
+            output_wgpu,
+            " who likes to play with yarn. She has many colors of yarn in her box. She likes to make shapes with yarn and show"
+        );
+
         Ok(())
     }
 }

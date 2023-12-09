@@ -113,11 +113,7 @@ impl<'a> CpuTensor<'a> {
         // iterate the original buf, and repeat each element `repeats[axis]` times.
         // if this axis is repeated, the original buf of this axis is `repeats[axis]` times smaller than
         // the shape. e.g. shape = [2, 6], repeats = [1, 2], then the actual buf is [2, 3]
-        let axis_repeats = self
-            .strider
-            .repeats()
-            .map(|repeats| repeats[axis])
-            .unwrap_or(1);
+        let axis_repeats = self.strider.repeats()[axis];
         let remains = (self.strider.shape()[axis] - pos[axis]) / axis_repeats - 1;
         let end = start + remains * stride + 1;
         if axis_repeats == 1 {

@@ -74,6 +74,9 @@ impl WgpuTensorDevice {
             ("rms_norm_inplace", include_str!("shaders/rms_norm.wgsl")),
             ("matmul_naive", include_str!("shaders/matmul_naive.wgsl")),
             ("rope_inplace", include_str!("shaders/rope.wgsl")),
+            ("softmax_inplace", include_str!("shaders/softmax.wgsl")),
+            ("silu_inplace", include_str!("shaders/silu.wgsl")),
+            ("batch_matmul", include_str!("shaders/batch_matmul.wgsl")),
         ];
         let mut modules = HashMap::new();
         for (module_name, module_source) in module_sources {
@@ -88,10 +91,10 @@ impl WgpuTensorDevice {
         self.modules = modules
     }
 
-    pub(crate) fn make_storage_buffer(&self, content: &[u8]) -> wgpu::Buffer {
+    pub(crate) fn make_storage_buffer(&self, name: &'static str, content: &[u8]) -> wgpu::Buffer {
         self.inner
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("storage"),
+                label: Some(name),
                 contents: content,
                 usage: wgpu::BufferUsages::STORAGE,
             })

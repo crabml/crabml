@@ -3,9 +3,12 @@ use std::time::Instant;
 
 use clap::Parser;
 use crabml::backends::cpu::cpu_tensor::CpuTensorDevice;
+use crabml::backends::wgpu::WgpuTensorDevice;
+use crabml::backends::wgpu::WgpuTensorDeviceOptions;
 use crabml::error::Result;
 use crabml::gguf::GGUFFileLoader;
 use crabml_llama2::llama2::Llama2Runner;
+use crabml_llama2::model::WgpuLlama2Model;
 use crabml_llama2::sampler::Llama2Sampler;
 use crabml_llama2::CpuLlama2Model;
 
@@ -47,11 +50,17 @@ fn main() -> Result<()> {
     let gl = GGUFFileLoader::new(&args.model)?;
     let gf = gl.open()?;
 
-    let device = CpuTensorDevice::new();
-    let lm = CpuLlama2Model::load(&gf, device)?;
+    let device_cpu = CpuTensorDevice::new();
+    let model_cpu = CpuLlama2Model::load(&gf, device_cpu)?;
+    let conf = model_cpu.conf();
 
-    let mut sampler = Llama2Sampler::new(lm.conf().vocab_size, args.temperature, args.probability);
-    let mut runner = Llama2Runner::try_from(&lm)?;
+    let device_wgpu = WgpuTensorDevice::new(
+        WgpuTensorDeviceOptions::new().with_staging_buf_bytes(conf.vocab_size * 4),
+    );
+    let model_wgpu = WgpuLlama2Model::from_cpu(&model_cpu, device_wgpu)?;
+
+    let mut sampler = Llama2Sampler::new(conf.vocab_size, args.temperature, args.probability);
+    let mut runner = Llama2Runner::try_from(&model_wgpu)?;
 
     if args.verbose {
         for tensor in gf.tensor_infos() {

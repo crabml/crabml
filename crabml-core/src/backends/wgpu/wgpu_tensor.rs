@@ -840,6 +840,22 @@ mod tests {
 
     #[test]
     fn test_wgpu_softmax() -> Result<()> {
+        let v1 = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
+        let t1 = WgpuTensor::new(&v1, &[2, 3], device.clone())?;
+        let t1 = t1.softmax_inplace(1)?;
+
+        let mut dst1 = vec![0.0; 6];
+        t1.export(&mut dst1)?;
+
+        assert_relative_eq!(
+            &dst1[..],
+            &[
+                0.09003057, 0.24472848, 0.66524094, 0.09003057, 0.24472848, 0.66524094
+            ][..],
+            epsilon = 1e-5
+        );
+
         Ok(())
     }
 }

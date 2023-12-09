@@ -30,7 +30,8 @@ fn main(
     var sum = 0.0f;
     for (var ni = 0u; ni < input_m.N; ni = ni + 1u) {
         let idx = mi * input_m.N + ni;
-        sum += exp(input[idx] - max);
+        input[idx] = exp(input[idx] - max);
+        sum += input[idx];
     }
 
     for (var ni = 0u; ni < input_m.N; ni = ni + 1u) {

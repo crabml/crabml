@@ -196,8 +196,8 @@ impl Tensor for WgpuTensor {
             return Err((
                 ErrorKind::TensorError,
                 format!(
-                    "buffer size exceeded staging buffer limit: {}",
-                    self.device.opts.staging_buf_bytes
+                    "buffer size exceeded staging buffer limit: {}, got: {}",
+                    self.device.opts.staging_buf_bytes, buf_size,
                 ),
             )
                 .into());

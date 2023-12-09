@@ -449,7 +449,7 @@ mod tests {
 
         let device_wgpu = WgpuTensorDevice::new(
             WgpuTensorDeviceOptions::new()
-                .with_staging_buf_bytes(model_cpu.conf.embedding_dim * 4)
+                .with_staging_buf_bytes(model_cpu.conf.vocab_size * 4)
                 .with_debug_named_tensor(true),
         );
         let model_wgpu = WgpuLlama2Model::from_cpu(&model_cpu, device_wgpu.clone())?;
@@ -465,7 +465,8 @@ mod tests {
 
         let output_wgpu = runner_wgpu
             .generate("Lily is a cat", 30, &mut sampler)?
-            .collect::<Result<Vec<String>>>();
+            .collect::<Result<Vec<String>>>()?
+            .join("");
 
         assert_relative_eq!(
             device_cpu.dump_debug_tensor("attn_rmsnorm:0:0").unwrap()[0..10],
@@ -501,6 +502,12 @@ mod tests {
             output_cpu,
             " who likes to play with yarn. She has many colors of yarn in her box. She likes to make shapes with yarn and show"
         );
+
+        assert_eq!(
+            output_wgpu,
+            " who likes to play with yarn. She has many colors of yarn in her box. She likes to make shapes with yarn and show"
+        );
+
         Ok(())
     }
 }

@@ -676,14 +676,25 @@ mod tests {
         // 2.0, 3.0,
         // 4.0, 5.0
         // @
-        // 2.0, 10.0, 18.0
+        // 2.0, 2.0
+        // => 2.0, 10.0, 18.0
 
         let t1 = WgpuTensor::new(&v1, &[1, 3, 2], device.clone())?;
         let t2 = WgpuTensor::new(&[2.0; 2], &[1, 2], device.clone())?;
         let t3 = t1.batch_matmul(&t2)?;
         let mut dst1 = vec![0.0; 3]; // 1 x 3
         t3.export(&mut dst1)?;
+        // assert_eq!(t1.strider().strides(), &[6, 2, 1]);
+        // assert_eq!(dst1, vec![2.0, 10.0, 18.0]);
+
+        let t1 = WgpuTensor::new(&v1, &[1, 3, 2], device.clone())?.repeat(&[2, 1, 1])?;
+        let t2 = WgpuTensor::new(&[2.0; 4], &[2, 2], device.clone())?;
+        let t3 = t1.batch_matmul(&t2)?;
+        let mut dst1 = vec![0.0; 6]; // 2 x 3
+        t3.export(&mut dst1)?;
+        assert_eq!(t1.strider().shape(), &[2, 3, 2]);
         assert_eq!(t1.strider().strides(), &[6, 2, 1]);
+        assert_eq!(t1.strider().repeats(), &[2, 1, 1]);
         assert_eq!(dst1, vec![2.0, 10.0, 18.0]);
         Ok(())
     }

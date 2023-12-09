@@ -27,21 +27,21 @@ fn main(
     @builtin(workgroup_id) workgroup_id: vec3<u32>,
     @builtin(local_invocation_id) local_id: vec3<u32>,
 ) {
-    let m = workgroup_id.x * 32u + local_id.x;
-    if (m >= input_m.M) {
+    let mi = workgroup_id.x * 32u + local_id.x;
+    if (mi >= input_m.M) {
         return;
     }
-    for (var n = 0u; n < input_m.N; n = n + 1u) {
+    for (var ni = 0u; ni < input_m.N; ni = ni + 1u) {
         var sum = 0.0f;
-        for (var k = 0u; k < input_m.K; k = k + 1u) {
+        for (var ki = 0u; ki < input_m.K; ki = ki + 1u) {
             let a = input_0[
-                input_m.strides_0.x / input_m.repeats_0.x * m +
-                input_m.strides_0.y / input_m.repeats_0.y * n +
-                input_m.strides_0.z / input_m.repeats_0.z * k
+                mi / input_m.repeats_0.x * input_m.strides_0.x +
+                ni / input_m.repeats_0.y * input_m.strides_0.y +
+                ki / input_m.repeats_0.z * input_m.strides_0.z
             ];
-            let b = input_1[input_m.K * m + k];
+            let b = input_1[input_m.K * mi + ki];
             sum += a * b;
         }
-        output[m * input_m.N + n] = sum;
+        output[mi * input_m.N + ni] = sum;
     } 
 }

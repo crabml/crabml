@@ -880,4 +880,25 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn test_wgpu_silu() -> Result<()> {
+        let v1 = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
+        let t1 = WgpuTensor::new(&v1, &[6], device.clone())?;
+        let t1 = t1.silu_inplace()?;
+
+        let mut dst1 = vec![0.0; 6];
+        t1.export(&mut dst1)?;
+
+        assert_relative_eq!(
+            &dst1[..],
+            &[
+                0.7310586, 1.761594, 2.8577225, 3.928055, 4.9665356, 5.9851646
+            ][..],
+            epsilon = 1e-5
+        );
+
+        Ok(())
+    }
 }

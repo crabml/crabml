@@ -92,12 +92,6 @@ impl<'a, 'b> TensorArithmetics for CpuTensor<'a> {
 
     fn silu_inplace(self) -> Result<Self> {
         let mut x = self;
-        if x.is_contiguous() {
-            if let CpuTensorBuf::F32(Cow::Owned(xb)) = x.buf_mut() {
-                silu_inplace_vec_f32(xb);
-                return Ok(x);
-            }
-        }
         x.iter_mut()?.for_each(|n| *n = *n / (1.0 + (-*n).exp()));
         Ok(x)
     }
@@ -453,6 +447,18 @@ mod tests {
 
         assert_eq!(t1.iter().collect::<Vec<_>>(), &[
             0.09003057, 0.24472848, 0.66524094, 0.09003057, 0.24472848, 0.66524094
+        ]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_silu() -> Result<()> {
+        let device = CpuTensorDevice::new();
+        let t1 = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[6], device.clone())?;
+        let t1 = t1.silu_inplace()?;
+
+        assert_eq!(t1.iter().collect::<Vec<_>>(), &[
+            0.7310586, 1.761594, 2.8577225, 3.928055, 4.9665356, 5.9851646
         ]);
         Ok(())
     }

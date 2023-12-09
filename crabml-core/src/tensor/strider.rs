@@ -26,8 +26,8 @@ impl TensorStrider {
         &self.strides
     }
 
-    pub fn repeats(&self) -> Option<&Vec<usize>> {
-        self.repeats.as_ref()
+    pub fn repeats(&self) -> Vec<usize> {
+        self.repeats.clone().unwrap_or(vec![1; self.shape.len()])
     }
 
     pub fn at(&self, idx: &[usize]) -> Result<usize> {

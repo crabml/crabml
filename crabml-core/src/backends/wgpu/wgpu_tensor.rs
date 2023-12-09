@@ -6,6 +6,7 @@ use wgpu::util::DeviceExt;
 use super::meta::MatmulMeta;
 use super::meta::RmsNormMeta;
 use super::WgpuTensorDeviceRef;
+use crate::backends::wgpu::meta::BatchMatmulMeta;
 use crate::backends::wgpu::meta::RopeMeta;
 use crate::error::ErrorKind;
 use crate::error::Result;
@@ -436,7 +437,60 @@ impl TensorArithmetics for WgpuTensor {
     }
 
     fn batch_matmul(&self, y: &Self) -> Result<Self> {
-        return Err((ErrorKind::NotImplemented, "not implemented").into());
+        assert!(self.shape().len() == 3);
+        assert!(y.shape().len() == 2);
+        assert!(self.shape()[0] == y.shape()[0]);
+        assert!(self.shape()[2] == y.shape()[1]);
+        assert!(y.is_contiguous());
+
+        // (m, n, k) @ (m, k) => (m, n)
+        let output = Self::alloc(
+            &[self.shape()[0], self.shape()[1]],
+            None,
+            self.device.clone(),
+        )?;
+        let meta = BatchMatmulMeta {
+            M: self.strider.shape()[0] as u32,
+            N: self.strider.shape()[1] as u32,
+            K: self.strider.shape()[2] as u32,
+            strides_0: [
+                self.strider.strides()[0] as u32,
+                self.strider.strides()[1] as u32,
+                self.strider.strides()[2] as u32,
+            ],
+            repeats_0: [
+                self.strider.repeats()[0] as u32,
+                self.strider.repeats()[1] as u32,
+                self.strider.repeats()[2] as u32,
+            ],
+            _padding: [0; 3],
+        };
+
+        let meta_buf = self.device.make_storage_buffer(bytemuck::bytes_of(&meta));
+        let entries = &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: self.buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: y.buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: meta_buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: output.buf.as_entire_binding(),
+            },
+        ];
+        let encoder =
+            self.device
+                .encode_pipeline_commnad("matmul_naive", entries, (meta.M / 32, 1, 1));
+        self.device.queue.submit(Some(encoder.finish()));
+
+        Ok(output)
     }
 }
 

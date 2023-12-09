@@ -483,10 +483,10 @@ mod tests {
         assert_relative_eq!(
             device_cpu
                 .dump_debug_tensor("k_cache_transposed:0:0")
-                .unwrap()[0..10],
+                .unwrap()[..],
             device_wgpu
                 .dump_debug_tensor("k_cache_transposed:0:0")
-                .unwrap()[0..10],
+                .unwrap()[..],
             epsilon = 1e-4
         );
 

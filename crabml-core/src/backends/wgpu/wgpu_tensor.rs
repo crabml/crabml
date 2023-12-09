@@ -307,7 +307,30 @@ impl TensorArithmetics for WgpuTensor {
     }
 
     fn softmax_inplace(self, axis: usize) -> Result<Self> {
-        return Err((ErrorKind::NotImplemented, "not implemented").into());
+        assert!(axis == 1);
+        assert!(self.is_contiguous());
+        assert!(self.shape().len() == 2);
+
+        let m = self.shape()[0] as u32;
+        let n = self.shape()[1] as u32;
+        let meta_buf = self
+            .device
+            .make_storage_buffer("meta", bytemuck::cast_slice(&[m, n]));
+        let entries = &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: self.buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: meta_buf.as_entire_binding(),
+            },
+        ];
+        let encoder =
+            self.device
+                .encode_pipeline_commnad("softmax_inplace", entries, (m / 32 + 1, 1, 1));
+        self.device.queue.submit(Some(encoder.finish()));
+        Ok(self)
     }
 
     fn silu_inplace(self) -> Result<Self> {

@@ -28,7 +28,7 @@ pub struct BatchMatmulMeta {
     pub K: u32,
     pub strides_0: [u32; 3],
     pub repeats_0: [u32; 3],
-    pub _padding: [u32; 3],
+    pub _padding: [u32; 15],
 }
 
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]

@@ -89,10 +89,10 @@ impl WgpuTensorDevice {
         self.modules = modules
     }
 
-    pub(crate) fn make_storage_buffer(&self, content: &[u8]) -> wgpu::Buffer {
+    pub(crate) fn make_storage_buffer(&self, name: &'static str, content: &[u8]) -> wgpu::Buffer {
         self.inner
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("storage"),
+                label: Some(name),
                 contents: content,
                 usage: wgpu::BufferUsages::STORAGE,
             })

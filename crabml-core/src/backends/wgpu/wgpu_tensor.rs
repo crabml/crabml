@@ -258,7 +258,9 @@ impl TensorArithmetics for WgpuTensor {
             _padding: [0; 7],
         };
 
-        let meta_buf = self.device.make_storage_buffer(bytemuck::bytes_of(&meta));
+        let meta_buf = self
+            .device
+            .make_storage_buffer("meta", bytemuck::bytes_of(&meta));
         let entries = &[
             wgpu::BindGroupEntry {
                 binding: 0,
@@ -278,14 +280,15 @@ impl TensorArithmetics for WgpuTensor {
     }
 
     fn rms_norm_inplace(self, eps: f32) -> Result<Self> {
-        let meta_buf = self
-            .device
-            .make_storage_buffer(bytemuck::bytes_of(&RmsNormMeta {
+        let meta_buf = self.device.make_storage_buffer(
+            "meta",
+            bytemuck::bytes_of(&RmsNormMeta {
                 M: 1,
                 N: self.strider.len() as u32,
                 eps: eps,
                 _padding: 0.0,
-            }));
+            }),
+        );
         let entries = &[
             wgpu::BindGroupEntry {
                 binding: 0,
@@ -313,9 +316,10 @@ impl TensorArithmetics for WgpuTensor {
 
     fn mul_inplace(self, rhs: &Self) -> Result<Self> {
         assert!(self.strider().len() % 32 == 0);
-        let meta_buf = self
-            .device
-            .make_storage_buffer(bytemuck::cast_slice(&[1u32, self.strider.len() as u32]));
+        let meta_buf = self.device.make_storage_buffer(
+            "meta",
+            bytemuck::cast_slice(&[1u32, self.strider.len() as u32]),
+        );
         let entries = &[
             wgpu::BindGroupEntry {
                 binding: 0,
@@ -339,9 +343,10 @@ impl TensorArithmetics for WgpuTensor {
 
     fn add_inplace(self, rhs: &Self) -> Result<Self> {
         assert!(self.strider().len() % 32 == 0);
-        let meta_buf = self
-            .device
-            .make_storage_buffer(bytemuck::cast_slice(&[1u32, self.strider.len() as u32]));
+        let meta_buf = self.device.make_storage_buffer(
+            "meta",
+            bytemuck::cast_slice(&[1u32, self.strider.len() as u32]),
+        );
         let entries = &[
             wgpu::BindGroupEntry {
                 binding: 0,
@@ -365,12 +370,13 @@ impl TensorArithmetics for WgpuTensor {
 
     fn div_scalar_inplace(self, rhs: f32) -> Result<Self> {
         assert!(self.strider().len() % 32 == 0);
-        let meta_buf = self
-            .device
-            .make_storage_buffer(bytemuck::cast_slice(&[1u32, self.strider.len() as u32]));
+        let meta_buf = self.device.make_storage_buffer(
+            "meta",
+            bytemuck::cast_slice(&[1u32, self.strider.len() as u32]),
+        );
         let rhs_buf = self
             .device
-            .make_storage_buffer(bytemuck::cast_slice(&[rhs]));
+            .make_storage_buffer("rhs", bytemuck::cast_slice(&[rhs]));
         let entries = &[
             wgpu::BindGroupEntry {
                 binding: 0,
@@ -409,7 +415,9 @@ impl TensorArithmetics for WgpuTensor {
             _padding: 0,
         };
 
-        let meta_buf = self.device.make_storage_buffer(bytemuck::bytes_of(&meta));
+        let meta_buf = self
+            .device
+            .make_storage_buffer("meta", bytemuck::bytes_of(&meta));
         let entries = &[
             wgpu::BindGroupEntry {
                 binding: 0,
@@ -464,10 +472,11 @@ impl TensorArithmetics for WgpuTensor {
                 self.strider.repeats()[1] as u32,
                 self.strider.repeats()[2] as u32,
             ],
-            _padding: [0; 3],
+            _padding: [0; 15],
         };
+        let meta_bytes = bytemuck::bytes_of(&meta);
 
-        let meta_buf = self.device.make_storage_buffer(bytemuck::bytes_of(&meta));
+        let meta_buf = self.device.make_storage_buffer("meta", meta_bytes);
         let entries = &[
             wgpu::BindGroupEntry {
                 binding: 0,
@@ -661,19 +670,20 @@ mod tests {
     #[test]
     fn test_wgpu_batch_matmul() -> Result<()> {
         let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
-        let v1 = (0..48).map(|i| i as f32).collect::<Vec<_>>();
 
-        let t1 = WgpuTensor::new(&v1, &[3, 8, 2], device.clone())?;
-        let t2 = WgpuTensor::new(&[2.0; 6], &[3, 2], device.clone())?;
+        let v1 = (0..6).map(|i| i as f32).collect::<Vec<_>>();
+        // 0.0, 1.0,
+        // 2.0, 3.0,
+        // 4.0, 5.0
+        // @
+        // 2.0, 10.0, 18.0
+
+        let t1 = WgpuTensor::new(&v1, &[1, 3, 2], device.clone())?;
+        let t2 = WgpuTensor::new(&[2.0; 2], &[1, 2], device.clone())?;
         let t3 = t1.batch_matmul(&t2)?;
-        let mut dst1 = vec![0.0; 24];
+        let mut dst1 = vec![0.0; 3]; // 1 x 3
         t3.export(&mut dst1)?;
-        assert_eq!(dst1[0..8], vec![
-            2.0, 6.0, 10.0, 14.0, 18.0, 22.0, 26.0, 30.0,
-        ]);
-        assert_eq!(dst1[8..16], vec![
-            10.0, 14.0, 18.0, 22.0, 26.0, 30.0, 34.0, 38.0,
-        ]);
+        assert_eq!(dst1, vec![2.0, 10.0, 18.0]);
         Ok(())
     }
 

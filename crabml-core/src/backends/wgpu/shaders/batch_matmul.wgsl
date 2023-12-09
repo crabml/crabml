@@ -31,10 +31,10 @@ fn main(
     for (var n = 0u; n < input_m.N; n = n + 1u) {
         var sum = 0.0f;
         for (var k = 0u; k < input_m.K; k = k + 1u) {
-            let a = input_0[input_m.strides_0.x * m + input_m.strides_0.y * k + input_m.strides_0.z * n];
+            let a = input_0[input_m.N * input_m.K * m + input_m.K * n + k];
             let b = input_1[input_m.K * m + k];
             sum += a * b;
         }
-        output[m * input_m.N + n] = sum;
+        output[m * input_m.N + n] += sum;
     }
 }

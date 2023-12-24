@@ -14,8 +14,8 @@ pub struct RmsNormMeta {
 #[repr(C, align(16))]
 pub struct MatmulMeta {
     pub M: u32,
-    pub N: u32,
     pub K: u32,
+    pub N: u32,
     pub _padding: u32,
 }
 

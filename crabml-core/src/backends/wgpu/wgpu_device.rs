@@ -72,7 +72,10 @@ impl WgpuTensorDevice {
             ("mul_inplace", include_str!("shaders/mul.wgsl")),
             ("div_inplace", include_str!("shaders/div.wgsl")),
             ("rms_norm_inplace", include_str!("shaders/rms_norm.wgsl")),
-            ("matmul_naive", include_str!("shaders/matmul_naive.wgsl")),
+            (
+                "matmul_vec_f32",
+                include_str!("shaders/matmul_vec_f32.wgsl"),
+            ),
             ("rope_inplace", include_str!("shaders/rope.wgsl")),
             ("softmax_inplace", include_str!("shaders/softmax.wgsl")),
             ("silu_inplace", include_str!("shaders/silu.wgsl")),

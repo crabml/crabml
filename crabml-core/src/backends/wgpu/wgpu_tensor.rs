@@ -752,16 +752,15 @@ mod tests {
         let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
         let v1 = (0..256).map(|i| i as f32).collect::<Vec<_>>();
 
-        // 0.0, 1.0
-        // 2.0, 3.0
-        //...
-        let t1 = WgpuTensor::new(&v1, &[128, 2], device.clone())?;
-        let t2 = WgpuTensor::new(&[2.0; 2], &[2], device.clone())?;
+        let t1 = WgpuTensor::new(&v1, &[32, 8], device.clone())?;
+        let t2 = WgpuTensor::new(&[2.0; 8], &[8], device.clone())?;
         let t3 = t1.matmul(&t2)?;
-        let mut dst1 = vec![0.0; 128];
+        let mut dst1 = vec![0.0; 32];
         t3.export(&mut dst1)?;
-        assert_eq!(dst1[0..8], vec![
-            2.0, 10.0, 18.0, 26.0, 34.0, 42.0, 50.0, 58.0
+        assert_eq!(dst1[0..32], vec![
+            56.0, 184.0, 312.0, 440.0, 568.0, 696.0, 824.0, 952.0, 1080.0, 1208.0, 1336.0, 1464.0,
+            1592.0, 1720.0, 1848.0, 1976.0, 2104.0, 2232.0, 2360.0, 2488.0, 2616.0, 2744.0, 2872.0,
+            3000.0, 3128.0, 3256.0, 3384.0, 3512.0, 3640.0, 3768.0, 3896.0, 4024.0
         ]);
         Ok(())
     }

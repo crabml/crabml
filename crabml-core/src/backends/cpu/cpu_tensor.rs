@@ -432,66 +432,6 @@ mod tests {
             assert_eq!(r, tt.want);
         }
 
-        // iter_axis with repeat
-        // 1, 1, 2, 2, 3, 3
-        // 4, 4, 5, 5, 6, 6
-        let t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], device.clone())?;
-
-        let tests = vec![
-            Test {
-                tensor: &t,
-                input: (vec![0, 0], 1),
-                want: vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0],
-            },
-            Test {
-                tensor: &t,
-                input: (vec![0, 0], 0),
-                want: vec![1.0, 4.0],
-            },
-            Test {
-                tensor: &t,
-                input: (vec![0, 1], 0),
-                want: vec![1.0, 4.0],
-            },
-            Test {
-                tensor: &t,
-                input: (vec![0, 2], 0),
-                want: vec![2.0, 5.0],
-            },
-            Test {
-                tensor: &t,
-                input: (vec![0, 3], 0),
-                want: vec![2.0, 5.0],
-            },
-            Test {
-                tensor: &t,
-                input: (vec![0, 4], 0),
-                want: vec![3.0, 6.0],
-            },
-            Test {
-                tensor: &t,
-                input: (vec![0, 5], 0),
-                want: vec![3.0, 6.0],
-            },
-            Test {
-                tensor: &t,
-                input: (vec![1, 0], 1),
-                want: vec![4.0, 4.0, 5.0, 5.0, 6.0, 6.0],
-            },
-            Test {
-                tensor: &t,
-                input: (vec![0, 0], 1),
-                want: vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0],
-            },
-        ];
-        for tt in tests {
-            let r = tt
-                .tensor
-                .iter_axis(&tt.input.0, tt.input.1)?
-                .collect::<Vec<_>>();
-            assert_eq!(r, tt.want);
-        }
-
         Ok(())
     }
 

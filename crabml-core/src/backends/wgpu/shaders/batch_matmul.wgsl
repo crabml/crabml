@@ -5,9 +5,6 @@ struct Meta {
     K: u32,
     _padding_0: u32,
     strides_0: vec3<u32>,
-    _padding_1: u32,
-    repeats_0: vec3<u32>,
-    _padding_2: u32,
 };
 
 @group(0) @binding(0)
@@ -35,9 +32,9 @@ fn main(
         var sum = 0.0f;
         for (var ki = 0u; ki < input_m.K; ki = ki + 1u) {
             let a = input_0[
-                mi / input_m.repeats_0.x * input_m.strides_0.x +
-                ni / input_m.repeats_0.y * input_m.strides_0.y +
-                ki / input_m.repeats_0.z * input_m.strides_0.z
+                mi * input_m.strides_0.x +
+                ni * input_m.strides_0.y +
+                ki * input_m.strides_0.z
             ];
             let b = input_1[input_m.K * mi + ki];
             sum += a * b;

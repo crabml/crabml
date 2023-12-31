@@ -517,7 +517,6 @@ impl TensorArithmetics for WgpuTensor {
                 self.strider.strides()[1] as u32,
                 self.strider.strides()[2] as u32,
             ],
-            repeats_0: [1, 1, 1],
             ..Default::default()
         };
         let meta_bytes = bytemuck::bytes_of(&meta);
@@ -700,50 +699,6 @@ mod tests {
         simple_rmsnorm(&mut dst2);
 
         assert_relative_eq!(&dst1[0..10], &dst2[0..10], epsilon = 1e-7);
-        Ok(())
-    }
-
-    #[test]
-    fn test_wgpu_batch_matmul_plain_code() -> Result<()> {
-        fn batch_matmul_plain_code(
-            m: usize,
-            n: usize,
-            k: usize,
-            st: TensorStrider,
-            a: &[f32],
-            b: &[f32],
-            c: &mut [f32],
-        ) {
-            for mi in 0..m {
-                for ni in 0..n {
-                    let mut sum = 0.0;
-                    for ki in 0..k {
-                        let ai = mi * st.strides()[0] + ni * st.strides()[1] + ki * st.strides()[2];
-                        println!(
-                            "mi: {} ni: {} ai: {} st.at(): {:?}",
-                            mi,
-                            ni,
-                            ai,
-                            st.at(&[mi, ni, ki]).unwrap()
-                        );
-                        let av = a[ai];
-                        let bv = b[k * mi + ki];
-                        sum += av * bv;
-                    }
-                    c[mi * n + ni] = sum;
-                }
-            }
-        }
-
-        // m: 2, n: 3, k: 2
-        let (m, n, k) = (2, 3, 2);
-        let a = vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0]; // 2 x 3
-        let b = vec![2.0, 2.0, 2.0, 2.0]; // m, k
-        let mut c = vec![0.0; 6]; // m x n
-        let st = TensorStrider::new(vec![2, 3, 2]);
-        batch_matmul_plain_code(m, n, k, st, &a, &b, &mut c);
-
-        assert_eq!(c, vec![2.0, 10.0, 18.0, 2.0, 10.0, 18.0]);
         Ok(())
     }
 

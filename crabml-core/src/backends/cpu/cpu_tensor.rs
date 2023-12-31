@@ -356,6 +356,20 @@ impl<'a> Tensor for CpuTensor<'a> {
         Ok(())
     }
 
+    fn repeat_n(self, n: usize) -> Result<Self> {
+        assert!(self.is_owned());
+        assert!(self.is_contiguous());
+
+        let len = self.len();
+        let mut v = self.iter().collect::<Vec<_>>();
+        v = v.into_iter().cycle().take(len * n).collect::<Vec<_>>();
+
+        let mut new_shape = self.shape().to_vec();
+        new_shape[0] *= n;
+
+        CpuTensor::new(v, &new_shape, self.device.clone())
+    }
+
     fn copy_from(&mut self, t: &CpuTensor<'a>, pos: &[usize], len: usize) -> Result<()> {
         if !self.is_owned() {
             return Err((ErrorKind::TensorError, "not owned").into());
@@ -607,6 +621,25 @@ mod tests {
         assert_eq!(t1.iter().collect::<Vec<_>>(), &[
             1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0
         ]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_repeat() -> Result<()> {
+        let device = CpuTensorDevice::new();
+        let t1 = CpuTensor::new(
+            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            &[1, 2, 3],
+            device.clone(),
+        )?;
+
+        let t1 = t1.repeat_n(2)?;
+        assert_eq!(t1.shape(), &[2, 2, 3]);
+
+        assert_eq!(t1.iter().collect::<Vec<_>>(), &[
+            1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0
+        ]);
+
         Ok(())
     }
 }

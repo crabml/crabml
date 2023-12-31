@@ -14,6 +14,8 @@ pub trait Tensor: Sized + Clone + TensorArithmetics {
 
     fn repeat(self, repeats: &[usize]) -> Result<Self>;
 
+    fn repeat_n(self, n: usize) -> Result<Self>;
+
     fn transpose(self, shape: &[usize]) -> Result<Self>;
 
     fn strider(&self) -> &TensorStrider;

@@ -110,6 +110,10 @@ impl Tensor for WgpuTensor {
         self.with_strider(strider)
     }
 
+    fn repeat_n(self, n: usize) -> Result<Self> {
+        todo!()
+    }
+
     fn transpose(self, dims: &[usize]) -> Result<Self> {
         let strider = self.strider.transpose(dims)?;
         self.with_strider(strider)

@@ -12,8 +12,6 @@ pub trait Tensor: Sized + Clone + TensorArithmetics {
 
     fn reshape(self, shape: &[usize]) -> Result<Self>;
 
-    fn repeat(self, repeats: &[usize]) -> Result<Self>;
-
     fn repeat_n(self, n: usize) -> Result<Self>;
 
     fn transpose(self, shape: &[usize]) -> Result<Self>;

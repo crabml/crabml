@@ -5,17 +5,12 @@ use crate::error::Result;
 pub struct TensorStrider {
     shape: Vec<usize>,
     strides: Vec<usize>,
-    repeats: Option<Vec<usize>>,
 }
 
 impl TensorStrider {
     pub fn new(shape: Vec<usize>) -> Self {
         let strides = Self::compute_strides(&shape);
-        Self {
-            shape,
-            strides,
-            repeats: None,
-        }
+        Self { shape, strides }
     }
 
     pub fn shape(&self) -> &[usize] {
@@ -24,10 +19,6 @@ impl TensorStrider {
 
     pub fn strides(&self) -> &[usize] {
         &self.strides
-    }
-
-    pub fn repeats(&self) -> Vec<usize> {
-        self.repeats.clone().unwrap_or(vec![1; self.shape.len()])
     }
 
     pub fn at(&self, idx: &[usize]) -> Result<usize> {
@@ -58,17 +49,6 @@ impl TensorStrider {
     }
 
     pub fn at_unchecked(&self, idx: &[usize]) -> usize {
-        // if repeats is set, divide the index by the repeat factor.
-        // for example a tensor of shape [4, 3] with repeats [2, 1] will
-        // be viewed as a tensor of shape [2, 3] with no repeats.
-        if let Some(repeats) = &self.repeats {
-            let mut offset = 0;
-            for (dim, (stride, repeat)) in idx.iter().zip(self.strides.iter().zip(repeats)) {
-                offset += dim / repeat * stride;
-            }
-            return offset;
-        }
-
         let mut offset = 0;
         for (dim, stride) in idx.iter().zip(self.strides.iter()) {
             offset += dim * stride;
@@ -158,49 +138,10 @@ impl TensorStrider {
 
         let new_shape = dims.iter().map(|d| self.shape[*d]).collect::<Vec<_>>();
         let new_strides = dims.iter().map(|d| self.strides[*d]).collect::<Vec<_>>();
-        let new_repeats = if let Some(repeats) = &self.repeats {
-            Some(dims.iter().map(|d| repeats[*d]).collect::<Vec<_>>())
-        } else {
-            None
-        };
 
         let strider = TensorStrider {
             shape: new_shape,
             strides: new_strides,
-            repeats: new_repeats,
-        };
-        Ok(strider)
-    }
-
-    /// repeat the tensor along each axis. only used in the multi grouped query
-    /// where each key/value head have multiple query heads.
-    pub fn repeat(&self, repeats: Vec<usize>) -> Result<Self> {
-        if self.repeats.is_some() {
-            return Err((ErrorKind::TensorError, "already repeated").into());
-        }
-
-        if repeats.len() != self.shape.len() {
-            return Err((
-                ErrorKind::TensorError,
-                format!(
-                    "invalid repeats {:?} for a tensor of shape {:?}",
-                    repeats, self.shape
-                ),
-            )
-                .into());
-        }
-
-        let new_shape = self
-            .shape
-            .iter()
-            .zip(repeats.iter())
-            .map(|(dim, repeat)| dim * repeat)
-            .collect::<Vec<_>>();
-
-        let strider = TensorStrider {
-            shape: new_shape,
-            strides: self.strides.clone(),
-            repeats: Some(repeats.clone()),
         };
         Ok(strider)
     }
@@ -214,13 +155,6 @@ impl TensorStrider {
     pub fn is_contiguous_on_axis(&self, axis: usize) -> bool {
         if self.strides.len() == 0 {
             return true;
-        }
-
-        if let Some(repeats) = &self.repeats {
-            let all_one = repeats[axis..].iter().all(|r| *r == 1);
-            if !all_one {
-                return false;
-            }
         }
 
         if self.strides.last() != Some(&1) {
@@ -305,19 +239,6 @@ mod tests {
     }
 
     #[test]
-    fn test_repeat() -> Result<()> {
-        let s_orig = TensorStrider::new(vec![2, 3]);
-        let s = s_orig.repeat(vec![2, 1])?;
-        assert_eq!(s.shape(), &[4, 3]);
-        assert_eq!(s.strides(), &[3, 1]);
-        assert_eq!(s.at_unchecked(&[0, 0]), 0);
-        assert_eq!(s.at_unchecked(&[1, 0]), 0);
-        assert_eq!(s.at_unchecked(&[2, 0]), 3);
-        assert_eq!(s.at_unchecked(&[3, 0]), 3);
-        Ok(())
-    }
-
-    #[test]
     fn test_transpose() -> Result<()> {
         // 0, 1, 2
         // 3, 4, 5
@@ -332,26 +253,6 @@ mod tests {
         assert_eq!(s.iter().collect::<Vec<_>>(), vec![0, 3, 1, 4, 2, 5]);
         assert_eq!(s.at(&[1, 1])?, 4);
         assert_eq!(s.at(&[2, 1])?, 5);
-        // 0, 0, 3, 3
-        // 1, 1, 4, 4
-        // 2, 2, 5, 5
-        let s = s.repeat(vec![1, 2])?;
-        assert_eq!(s.shape(), &[3, 4]);
-        assert_eq!(s.iter().collect::<Vec<_>>(), vec![
-            0, 0, 3, 3, 1, 1, 4, 4, 2, 2, 5, 5
-        ]);
-
-        // test transpose after repeat
-
-        let s = s_orig.repeat(vec![2, 1])?;
-        // 0, 1, 2
-        // 0, 1, 2
-        // 3, 4, 5
-        // 3, 4, 5
-        assert_eq!(s.shape(), &[4, 3]);
-        assert_eq!(s.iter().collect::<Vec<_>>(), vec![
-            0, 1, 2, 0, 1, 2, 3, 4, 5, 3, 4, 5
-        ]);
 
         // 0, 0, 3, 3
         // 1, 1, 4, 4
@@ -370,13 +271,6 @@ mod tests {
         assert!(s.is_contiguous());
         assert!(s.is_contiguous_on_axis(1));
         assert!(s.is_contiguous_on_axis(0));
-
-        let s = TensorStrider::new(vec![1, 2, 3]);
-        let s = s.repeat(vec![2, 1, 1])?;
-        assert!(!s.is_contiguous());
-        assert!(s.is_contiguous_on_axis(2));
-        assert!(s.is_contiguous_on_axis(1));
-        assert!(!s.is_contiguous_on_axis(0));
         Ok(())
     }
 

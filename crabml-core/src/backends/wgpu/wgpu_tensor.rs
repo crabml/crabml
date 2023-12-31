@@ -105,11 +105,6 @@ impl Tensor for WgpuTensor {
         self.with_strider(strider)
     }
 
-    fn repeat(self, repeats: &[usize]) -> Result<Self> {
-        let strider = self.strider.repeat(repeats.to_vec())?;
-        self.with_strider(strider)
-    }
-
     fn transpose(self, dims: &[usize]) -> Result<Self> {
         let strider = self.strider.transpose(dims)?;
         self.with_strider(strider)
@@ -522,11 +517,7 @@ impl TensorArithmetics for WgpuTensor {
                 self.strider.strides()[1] as u32,
                 self.strider.strides()[2] as u32,
             ],
-            repeats_0: [
-                self.strider.repeats()[0] as u32,
-                self.strider.repeats()[1] as u32,
-                self.strider.repeats()[2] as u32,
-            ],
+            repeats_0: [1, 1, 1],
             ..Default::default()
         };
         let meta_bytes = bytemuck::bytes_of(&meta);
@@ -727,9 +718,7 @@ mod tests {
                 for ni in 0..n {
                     let mut sum = 0.0;
                     for ki in 0..k {
-                        let ai = mi / st.repeats()[0] * st.strides()[0]
-                            + ni * st.strides()[1] / st.repeats()[1]
-                            + ki * st.strides()[2] / st.repeats()[2];
+                        let ai = mi * st.strides()[0] + ni * st.strides()[1] + ki * st.strides()[2];
                         println!(
                             "mi: {} ni: {} ai: {} st.at(): {:?}",
                             mi,
@@ -748,10 +737,10 @@ mod tests {
 
         // m: 2, n: 3, k: 2
         let (m, n, k) = (2, 3, 2);
-        let a = vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0]; // m, n, k
+        let a = vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0]; // 2 x 3
         let b = vec![2.0, 2.0, 2.0, 2.0]; // m, k
         let mut c = vec![0.0; 6]; // m x n
-        let st = TensorStrider::new(vec![1, 3, 2]).repeat(vec![2, 1, 1])?;
+        let st = TensorStrider::new(vec![2, 3, 2]);
         batch_matmul_plain_code(m, n, k, st, &a, &b, &mut c);
 
         assert_eq!(c, vec![2.0, 10.0, 18.0, 2.0, 10.0, 18.0]);
@@ -806,16 +795,6 @@ mod tests {
         assert_eq!(t1.strider().shape(), &[2, 3, 2]);
         assert_eq!(t1.strider().strides(), &[6, 2, 1]);
         // assert_eq!(dst1, vec![2.0, 10.0, 18.0, 2.0, 10.0, 18.0]);
-
-        let v1 = vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0];
-        let t1 = WgpuTensor::new(&v1, &[1, 3, 2], device.clone())?.repeat(&[2, 1, 1])?;
-        let t2 = WgpuTensor::new(&[2.0; 4], &[2, 2], device.clone())?;
-        let t3 = t1.batch_matmul(&t2)?;
-        let mut dst1 = vec![0.0; 6]; // 2 x 3
-        t3.export(&mut dst1)?;
-        assert_eq!(t1.strider().shape(), &[2, 3, 2]);
-        assert_eq!(t1.strider().strides(), &[6, 2, 1]);
-        assert_eq!(dst1, vec![2.0, 10.0, 18.0, 2.0, 10.0, 18.0]);
 
         Ok(())
     }

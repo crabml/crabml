@@ -110,22 +110,10 @@ impl<'a> CpuTensor<'a> {
         let stride = self.strider.strides()[axis];
         let start = self.strider.at(pos)?;
 
-        // iterate the original buf, and repeat each element `repeats[axis]` times.
-        // if this axis is repeated, the original buf of this axis is `repeats[axis]` times smaller than
-        // the shape. e.g. shape = [2, 6], repeats = [1, 2], then the actual buf is [2, 3]
-        let axis_repeats = self.strider.repeats()[axis];
-        let remains = (self.strider.shape()[axis] - pos[axis]) / axis_repeats - 1;
+        let remains = (self.strider.shape()[axis] - pos[axis]) - 1;
         let end = start + remains * stride + 1;
-        if axis_repeats == 1 {
-            let iter = self.buf.iter_range(start, end, stride);
-            return Ok(iter);
-        }
         let iter = self.buf.iter_range(start, end, stride);
-        let iter = iter.flat_map(move |n| std::iter::repeat(n).take(axis_repeats));
-        return Ok(CpuTensorBufIter::Boxed(
-            Box::new(iter),
-            2 + remains * axis_repeats,
-        ));
+        return Ok(iter);
     }
 
     pub fn iter_axis_mut(
@@ -284,16 +272,6 @@ impl<'a> Tensor for CpuTensor<'a> {
         })
     }
 
-    fn repeat(self, repeats: &[usize]) -> Result<Self> {
-        let strider = self.strider.repeat(repeats.to_vec())?;
-        Ok(Self {
-            buf: self.buf,
-            strider,
-            device: self.device.clone(),
-            name: None,
-        })
-    }
-
     fn transpose(self, dims: &[usize]) -> Result<Self> {
         let strider = self.strider.transpose(dims)?;
         Ok(Self {
@@ -354,6 +332,20 @@ impl<'a> Tensor for CpuTensor<'a> {
         };
         self.strider = TensorStrider::new(new_shape);
         Ok(())
+    }
+
+    fn repeat_n(self, n: usize) -> Result<Self> {
+        assert!(self.is_owned());
+        assert!(self.is_contiguous());
+
+        let len = self.len();
+        let mut v = self.iter().collect::<Vec<_>>();
+        v = v.into_iter().cycle().take(len * n).collect::<Vec<_>>();
+
+        let mut new_shape = self.shape().to_vec();
+        new_shape[0] *= n;
+
+        CpuTensor::new(v, &new_shape, self.device.clone())
     }
 
     fn copy_from(&mut self, t: &CpuTensor<'a>, pos: &[usize], len: usize) -> Result<()> {
@@ -440,118 +432,6 @@ mod tests {
             assert_eq!(r, tt.want);
         }
 
-        // iter_axis with repeat
-        // 1, 1, 2, 2, 3, 3
-        // 4, 4, 5, 5, 6, 6
-        let t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], device.clone())?;
-        let t = t.repeat(&[1, 2])?;
-
-        let tests = vec![
-            Test {
-                tensor: &t,
-                input: (vec![0, 0], 1),
-                want: vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0],
-            },
-            Test {
-                tensor: &t,
-                input: (vec![0, 0], 0),
-                want: vec![1.0, 4.0],
-            },
-            Test {
-                tensor: &t,
-                input: (vec![0, 1], 0),
-                want: vec![1.0, 4.0],
-            },
-            Test {
-                tensor: &t,
-                input: (vec![0, 2], 0),
-                want: vec![2.0, 5.0],
-            },
-            Test {
-                tensor: &t,
-                input: (vec![0, 3], 0),
-                want: vec![2.0, 5.0],
-            },
-            Test {
-                tensor: &t,
-                input: (vec![0, 4], 0),
-                want: vec![3.0, 6.0],
-            },
-            Test {
-                tensor: &t,
-                input: (vec![0, 5], 0),
-                want: vec![3.0, 6.0],
-            },
-            Test {
-                tensor: &t,
-                input: (vec![1, 0], 1),
-                want: vec![4.0, 4.0, 5.0, 5.0, 6.0, 6.0],
-            },
-            Test {
-                tensor: &t,
-                input: (vec![0, 0], 1),
-                want: vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0],
-            },
-        ];
-        for tt in tests {
-            let r = tt
-                .tensor
-                .iter_axis(&tt.input.0, tt.input.1)?
-                .collect::<Vec<_>>();
-            assert_eq!(r, tt.want);
-        }
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_tensor_iter_axis_on_repeat_and_transpose() -> Result<()> {
-        struct Test<'a> {
-            tensor: &'a CpuTensor<'a>,
-            input: (Vec<usize>, usize),
-            want: Vec<f32>,
-        }
-
-        // 0, 1, 2
-        // 3, 4, 5
-        let device = CpuTensorDevice::new();
-        let t = CpuTensor::new(vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0], &[2, 3], device)?;
-
-        // 0, 3,
-        // 1, 4
-        // 2, 5
-        let t = t.transpose(&[1, 0])?;
-
-        // 0, 0, 3, 3
-        // 1, 1, 4, 4
-        // 2, 2, 5, 5
-        let t = t.repeat(&[1, 2])?;
-
-        let tests = vec![
-            Test {
-                tensor: &t,
-                input: (vec![0, 0], 1),
-                want: vec![0.0, 0.0, 3.0, 3.0],
-            },
-            Test {
-                tensor: &t,
-                input: (vec![0, 0], 0),
-                want: vec![0.0, 1.0, 2.0],
-            },
-            Test {
-                tensor: &t,
-                input: (vec![0, 1], 0),
-                want: vec![0.0, 1.0, 2.0],
-            },
-        ];
-        for tt in tests {
-            let r = tt
-                .tensor
-                .iter_axis(&tt.input.0, tt.input.1)?
-                .collect::<Vec<_>>();
-            assert_eq!(r, tt.want);
-        }
-
         Ok(())
     }
 
@@ -607,6 +487,25 @@ mod tests {
         assert_eq!(t1.iter().collect::<Vec<_>>(), &[
             1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0
         ]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_repeat() -> Result<()> {
+        let device = CpuTensorDevice::new();
+        let t1 = CpuTensor::new(
+            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            &[1, 2, 3],
+            device.clone(),
+        )?;
+
+        let t1 = t1.repeat_n(2)?;
+        assert_eq!(t1.shape(), &[2, 2, 3]);
+
+        assert_eq!(t1.iter().collect::<Vec<_>>(), &[
+            1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0
+        ]);
+
         Ok(())
     }
 }

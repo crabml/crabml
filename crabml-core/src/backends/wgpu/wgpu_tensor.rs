@@ -110,10 +110,6 @@ impl Tensor for WgpuTensor {
         self.with_strider(strider)
     }
 
-    fn repeat_n(self, n: usize) -> Result<Self> {
-        todo!()
-    }
-
     fn transpose(self, dims: &[usize]) -> Result<Self> {
         let strider = self.strider.transpose(dims)?;
         self.with_strider(strider)
@@ -171,6 +167,19 @@ impl Tensor for WgpuTensor {
         };
         self.strider = TensorStrider::new(new_shape);
         Ok(())
+    }
+
+    fn repeat_n(self, n: usize) -> Result<Self> {
+        let mut tmp_shape = self.shape().to_vec();
+        tmp_shape.insert(0, 0);
+        let capacity = self.strider.len() * n;
+        let mut new_tensor = Self::alloc(&tmp_shape, Some(capacity), self.device.clone())?;
+        for _ in 0..n {
+            new_tensor.extend(&self)?;
+        }
+        let mut new_shape = self.shape().to_vec();
+        new_shape[0] *= n;
+        Ok(new_tensor.reshape(&new_shape)?)
     }
 
     fn copy_from(&mut self, rhs: &Self, pos: &[usize], len: usize) -> Result<()> {

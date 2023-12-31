@@ -1,16 +1,9 @@
-- [ ] add basic WGPU tensor support
+- [x] add basic WGPU tensor support
   - referenced: https://github.com/0hq/WebGPT/blob/main/condensed/condensed.js
   - referenced: https://github.com/burn-rs/burn/blob/main/burn-wgpu/src/template/matmul/naive.wgsl
   - referenced: https://github.com/huggingface/candle/blob/main/candle-core/src/cpu_backend.rs
-  - [x] add rms_norm
-  - [x] add tensor names
-  - [x] wgpu tensor add alloc
-  - [x] add copy_from for wgpu
-  - [x] add clone() to wgpu tensor
-  - [x] compare the result of wgpu and cpu on rms_norm
-  - [x] add matmul
-  - [x] add rope
-  - [x] add extend
-  - [ ] add batch_matmul
-  - [ ] add softmax
-  - [ ] add silu
+- [ ] a better gemmv
+- [ ] revise the dot product attention primitive
+  - reference mlx: https://github.com/simonw/llm-mlx-llama/blob/main/llm_mlx_llama.py#L81
+  - learn the kv cache layout
+- use uniform to store the meta buffers

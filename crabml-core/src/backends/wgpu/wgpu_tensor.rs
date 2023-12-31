@@ -452,8 +452,8 @@ impl TensorArithmetics for WgpuTensor {
         let output = Self::alloc(&[self.strider.shape()[0]], None, self.device.clone())?;
         let meta = MatmulMeta {
             M: self.strider.shape()[0] as u32,
-            N: self.strider.shape()[1] as u32,
-            K: 1,
+            K: self.strider.shape()[1] as u32,
+            N: 1,
             _padding: 0,
         };
 
@@ -480,7 +480,7 @@ impl TensorArithmetics for WgpuTensor {
         ];
         let encoder =
             self.device
-                .encode_pipeline_commnad("matmul_naive", entries, (meta.M / 32, 1, 1));
+                .encode_pipeline_commnad("matmul_vec_f32", entries, (meta.M / 32, 1, 1));
         self.device.queue.submit(Some(encoder.finish()));
 
         Ok(output)

@@ -68,9 +68,10 @@ impl<'a, 'b> TensorArithmetics for CpuTensor<'a> {
     }
 
     fn div_scalar_inplace(mut self, b: f32) -> Result<Self> {
-        self.iter_mut()?.for_each(|ia| {
-            *ia /= b;
-        });
+        let rhs = CpuTensor::new(vec![b], &[1], self.device())?;
+        let strider1 = self.strider().clone();
+        let strider2 = rhs.strider();
+        primitives::div_inplace(self.buf_mut(), rhs.buf(), &strider1, strider2)?;
         Ok(self)
     }
 

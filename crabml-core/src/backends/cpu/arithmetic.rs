@@ -110,21 +110,9 @@ impl<'a, 'b> TensorArithmetics for CpuTensor<'a> {
     }
 
     fn rms_norm_inplace(mut self, eps: f32) -> Result<Self> {
-        require_tensor_contiguous(&self)?;
-        require_tensor_dims(&self, &[1])?;
-
-        match self.buf_mut() {
-            CpuTensorBuf::F32(Cow::Owned(xb)) => {
-                rms_norm_inplace_vec_f32(xb, eps);
-                return Ok(self);
-            }
-            _ => (),
-        }
-
-        let len = self.shape()[0];
-        let sum = self.iter_axis(&[0], 0)?.fold(0.0, |s, n| s + n * n);
-        let rms = ((sum / len as f32) + eps).sqrt();
-        self.iter_axis_mut(vec![0], 0)?.for_each(|n| *n = *n / rms);
+        let strider1 = self.strider().clone();
+        let buf1 = self.buf_mut();
+        primitives::rms_norm_inplace(buf1, &strider1, eps)?;
         Ok(self)
     }
 }
@@ -159,34 +147,6 @@ where 'b: 'a {
         })
     }
     return Ok(out);
-}
-
-fn rms_norm_inplace_vec_f32(x: &mut [f32], eps: f32) {
-    let len = x.len();
-    assert!(len % 32 == 0);
-    let mut sum = 0.0;
-    for chunk in x.as_chunks::<32>().0 {
-        let mut v = f32x32::from_slice(chunk);
-        v *= v;
-        sum += v.reduce_sum();
-    }
-    let rms = ((sum / len as f32) + eps).sqrt();
-    for chunk in x.as_chunks_mut::<32>().0 {
-        let mut v = f32x32::from_slice(chunk);
-        v /= f32x32::splat(rms);
-        v.copy_to_slice(chunk);
-    }
-}
-
-pub fn add_inplace_vec_f32(a: &mut [f32], b: &[f32]) {
-    let acs = a.as_chunks_mut::<32>().0;
-    let bcs = b.as_chunks::<32>().0;
-    acs.iter_mut().zip(bcs.iter()).for_each(|(ac, bc)| {
-        let mut va = f32x32::from_slice(ac);
-        let vb = f32x32::from_slice(bc);
-        va += vb;
-        va.copy_to_slice(ac);
-    });
 }
 
 pub fn maybe_matmul_vec_2d_1d<'a, 'b: 'a>(

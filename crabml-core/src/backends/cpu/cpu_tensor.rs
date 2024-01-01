@@ -182,14 +182,6 @@ impl<'a> CpuTensor<'a> {
     pub(crate) fn buf_mut(&mut self) -> &mut CpuTensorBuf<'a> {
         &mut self.buf
     }
-
-    // TODO: only used in rope, remoe it later
-    pub(crate) fn f32_buf_mut(&mut self) -> Result<&mut [f32]> {
-        if !self.is_owned() {
-            return Err((ErrorKind::TensorError, "not owned").into());
-        }
-        Ok(self.buf.buf_mut())
-    }
 }
 
 #[derive(Debug, Clone)]

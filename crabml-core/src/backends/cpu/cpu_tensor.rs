@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use super::CpuTensorDeviceRef;
 use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::backends::cpu::buf::CpuTensorBufIter;
 use crate::backends::cpu::primitives;
@@ -18,7 +19,7 @@ pub struct CpuTensor<'a> {
     buf: CpuTensorBuf<'a>,
     strider: TensorStrider,
     device: CpuTensorDeviceRef<'a>,
-    name: Option<String>,
+    pub(crate) name: Option<String>,
 }
 
 // A tensor contains a buffer of f32, a shape and a strides. We may refer to
@@ -69,19 +70,8 @@ impl<'a> CpuTensor<'a> {
         self.device.clone()
     }
 
-    pub fn at(&self, idx: &[usize]) -> Result<f32> {
-        self.strider
-            .at(idx)
-            .map(|offset| self.buf.at_unchecked(offset))
-    }
-
     pub fn len(&self) -> usize {
         self.strider.len()
-    }
-
-    pub fn at_unchecked(&self, idx: &[usize]) -> f32 {
-        let offset = self.strider.at_unchecked(idx);
-        self.buf.at_unchecked(offset)
     }
 
     pub fn is_owned(&self) -> bool {
@@ -96,6 +86,7 @@ impl<'a> CpuTensor<'a> {
         CpuTensorBufIter::Boxed(Box::new(iter), self.len())
     }
 
+    // TODO: remove it
     pub fn iter_from(&self, pos: &[usize]) -> Result<impl Iterator<Item = f32> + '_> {
         if !self.is_contiguous() {
             return Err((ErrorKind::TensorError, "not contiguous").into());
@@ -194,68 +185,6 @@ impl<'a, 'b> TensorArithmetics for CpuTensor<'a> {
         let buf1 = self.buf_mut();
         primitives::rms_norm_inplace(buf1, &strider1, eps)?;
         Ok(self)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct CpuTensorDeviceOptions {
-    /// when enabled, whenever tensor called with `with_name`, the name and the
-    /// tensor will be recorded in the device. only used in test.
-    pub debug_named_tensors: bool,
-}
-
-impl Default for CpuTensorDeviceOptions {
-    fn default() -> Self {
-        Self {
-            debug_named_tensors: false,
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct CpuTensorDevice<'a> {
-    opts: CpuTensorDeviceOptions,
-    _bufs: Vec<CpuTensorBuf<'a>>,
-    debug_tensors: RefCell<HashMap<String, Vec<f32>>>,
-}
-
-pub type CpuTensorDeviceRef<'a> = Rc<CpuTensorDevice<'a>>;
-
-impl<'a> CpuTensorDevice<'a> {
-    pub fn new() -> CpuTensorDeviceRef<'a> {
-        let device = Self {
-            opts: CpuTensorDeviceOptions::default(),
-            _bufs: vec![],
-            debug_tensors: RefCell::new(HashMap::new()),
-        };
-        Rc::new(device)
-    }
-
-    pub fn with_options(opts: CpuTensorDeviceOptions) -> CpuTensorDeviceRef<'a> {
-        let device = Self {
-            opts,
-            _bufs: vec![],
-            debug_tensors: RefCell::new(HashMap::new()),
-        };
-        Rc::new(device)
-    }
-
-    pub fn export_tensor(self: Rc<Self>, tensor: &CpuTensor<'a>, dst: &mut [f32]) -> Result<()> {
-        tensor.iter().zip(dst.iter_mut()).for_each(|(src, dst)| {
-            *dst = src;
-        });
-        Ok(())
-    }
-
-    pub fn dump_debug_tensor(&self, name: &str) -> Option<Vec<f32>> {
-        self.debug_tensors.borrow().get(name).cloned()
-    }
-
-    fn add_debug_tensor(&self, tensor: &CpuTensor<'a>) {
-        let buf = tensor.buf.iter().collect::<Vec<_>>();
-        self.debug_tensors
-            .borrow_mut()
-            .insert(tensor.name.clone().unwrap(), buf);
     }
 }
 
@@ -388,7 +317,7 @@ mod tests {
     use approx::assert_relative_eq;
 
     use super::*;
-    use crate::backends::cpu::cpu_tensor::CpuTensorDevice;
+    use crate::backends::cpu::CpuTensorDevice;
     use crate::tensor::TensorArithmetics;
 
     #[test]

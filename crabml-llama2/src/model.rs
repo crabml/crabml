@@ -1,18 +1,15 @@
 use std::rc::Rc;
 use std::vec;
 
-use crabml::backends::cpu::buf::CpuTensorBuf;
-use crabml::backends::cpu::cpu_tensor::CpuTensorDevice;
-use crabml::backends::cpu::cpu_tensor::CpuTensorDeviceRef;
 use crabml::backends::cpu::CpuTensor;
+use crabml::backends::cpu::CpuTensorBuf;
+use crabml::backends::cpu::CpuTensorDeviceRef;
 use crabml::backends::wgpu::WgpuTensor;
 use crabml::backends::wgpu::WgpuTensorDeviceRef;
 use crabml::error::Error;
 use crabml::error::ErrorKind;
 use crabml::error::Result;
 use crabml::gguf::GGUFFile;
-use crabml::gguf::GGUFMetadata;
-use crabml::tensor;
 use crabml::tensor::Tensor;
 use crabml::tokenizer::BpeTokenizer;
 

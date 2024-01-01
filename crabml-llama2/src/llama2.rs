@@ -384,8 +384,8 @@ impl<'a, T: Tensor> Iterator for Llama2RunnerOutputGenerator<'a, T> {
 #[cfg(test)]
 mod tests {
     use approx::assert_relative_eq;
-    use crabml::backends::cpu::cpu_tensor::CpuTensorDevice;
-    use crabml::backends::cpu::cpu_tensor::CpuTensorDeviceOptions;
+    use crabml::backends::cpu::CpuTensorDevice;
+    use crabml::backends::cpu::CpuTensorDeviceOptions;
     use crabml::backends::wgpu::WgpuTensorDevice;
     use crabml::backends::wgpu::WgpuTensorDeviceOptions;
     use crabml::gguf::GGUFFileLoader;

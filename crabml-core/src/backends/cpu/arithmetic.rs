@@ -14,7 +14,6 @@ use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::backends::cpu::validate::require_tensor_contiguous;
 use crate::backends::cpu::validate::require_tensor_dims;
 use crate::backends::cpu::validate::require_tensor_matmul_2d_shapes;
-use crate::backends::cpu::validate::require_tensor_shape;
 use crate::backends::cpu::CpuTensor;
 use crate::error::ErrorKind;
 use crate::error::Result;
@@ -75,10 +74,9 @@ impl<'a, 'b> TensorArithmetics for CpuTensor<'a> {
         Ok(self)
     }
 
-    fn silu_inplace(self) -> Result<Self> {
-        let mut x = self;
-        x.iter_mut()?.for_each(|n| *n = *n / (1.0 + (-*n).exp()));
-        Ok(x)
+    fn silu_inplace(mut self) -> Result<Self> {
+        primitives::silu_inplace(self.buf_mut())?;
+        Ok(self)
     }
 
     fn softmax_inplace(self, axis: usize) -> Result<Self> {
@@ -189,26 +187,6 @@ pub fn add_inplace_vec_f32(a: &mut [f32], b: &[f32]) {
         va += vb;
         va.copy_to_slice(ac);
     });
-}
-
-pub fn silu_inplace_vec_f32(buf: &mut [f32]) {
-    let chunks = buf.as_chunks_mut::<8>().0;
-    chunks.iter_mut().for_each(|chunk| {
-        let v0 = f32x8::from_slice(chunk);
-        let v1 = f32x8::from_array([
-            (-chunk[0]).exp(),
-            (-chunk[1]).exp(),
-            (-chunk[2]).exp(),
-            (-chunk[3]).exp(),
-            (-chunk[4]).exp(),
-            (-chunk[5]).exp(),
-            (-chunk[6]).exp(),
-            (-chunk[7]).exp(),
-        ]);
-        let v2 = v1 + f32x8::splat(1.0);
-        let v3 = v0 / v2;
-        v3.copy_to_slice(chunk);
-    })
 }
 
 pub fn maybe_matmul_vec_2d_1d<'a, 'b: 'a>(

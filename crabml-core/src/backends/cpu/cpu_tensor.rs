@@ -174,7 +174,6 @@ impl<'a> CpuTensor<'a> {
         self.strider.shape()
     }
 
-    // only used on specialized performance critical cases
     pub fn buf(&self) -> &CpuTensorBuf<'a> {
         &self.buf
     }

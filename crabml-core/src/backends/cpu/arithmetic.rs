@@ -60,16 +60,11 @@ impl<'a, 'b> TensorArithmetics for CpuTensor<'a> {
         Ok(self)
     }
 
-    fn add_inplace(self, b: &Self) -> Result<Self> {
-        let mut a = self;
-        require_tensor_shape(&a, b.shape())?;
-        require_tensor_contiguous(&a)?;
-        require_tensor_contiguous(b)?;
-
-        a.iter_mut()?.zip(b.iter()).for_each(|(ia, ib)| {
-            *ia += ib;
-        });
-        Ok(a)
+    fn add_inplace(mut self, b: &Self) -> Result<Self> {
+        let strider1 = self.strider().clone();
+        let strider2 = b.strider();
+        primitives::add_inplace(self.buf_mut(), b.buf(), &strider1, strider2)?;
+        Ok(self)
     }
 
     fn div_scalar_inplace(mut self, b: f32) -> Result<Self> {

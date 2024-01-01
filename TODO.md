@@ -2,15 +2,9 @@
   - referenced: https://github.com/0hq/WebGPT/blob/main/condensed/condensed.js
   - referenced: https://github.com/burn-rs/burn/blob/main/burn-wgpu/src/template/matmul/naive.wgsl
   - referenced: https://github.com/huggingface/candle/blob/main/candle-core/src/cpu_backend.rs
-- [ ] factor out TensorArithmetic
-  - [x] rope
-  - [x] softmax
-  - [x] rms_norm
-  - [x] batch_matmul
-  - [ ] matmul
-  - [x] silu
-- [ ] a better gemmv
-- [ ] revise the dot product attention primitive
+- [x] factor out TensorArithmetic
+- [x] revise the dot product attention primitive
   - reference mlx: https://github.com/simonw/llm-mlx-llama/blob/main/llm_mlx_llama.py#L81
   - learn the kv cache layout
+- [ ] a better gemmv
 - use uniform to store the meta buffers

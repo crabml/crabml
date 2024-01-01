@@ -88,25 +88,6 @@ impl<'a> CpuTensor<'a> {
         self.buf.is_owned()
     }
 
-    pub fn iter_axis(&'a self, pos: &[usize], axis: usize) -> Result<CpuTensorBufIter> {
-        // speculize the fast path on iterating a contiguous memory buf
-        if self.strider.is_contiguous_on_axis(axis) {
-            if axis == self.shape().len() - 1 && pos[axis] == 0 {
-                let start = self.strider.at(pos)?;
-                let end = start + self.strider.shape()[axis];
-                return Ok(self.buf.iter_range(start, end, 1));
-            }
-        }
-
-        let stride = self.strider.strides()[axis];
-        let start = self.strider.at(pos)?;
-
-        let remains = (self.strider.shape()[axis] - pos[axis]) - 1;
-        let end = start + remains * stride + 1;
-        let iter = self.buf.iter_range(start, end, stride);
-        return Ok(iter);
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = f32> + '_ {
         if self.is_contiguous() {
             return self.buf.iter();
@@ -420,47 +401,6 @@ mod tests {
         assert_eq!(tr.iter().collect::<Vec<f32>>(), vec![
             1.0, 2.0, 3.0, 4.0, 5.0, 6.0
         ]);
-        Ok(())
-    }
-
-    #[test]
-    fn test_tensor_iter_axis() -> Result<()> {
-        struct Test<'a> {
-            tensor: &'a CpuTensor<'a>,
-            input: (Vec<usize>, usize),
-            want: Vec<f32>,
-        }
-
-        // 1, 2, 3
-        // 4, 5, 6
-        let device = CpuTensorDevice::new();
-        let t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], device.clone())?;
-
-        let tests = vec![
-            Test {
-                tensor: &t,
-                input: (vec![0, 0], 1),
-                want: vec![1.0, 2.0, 3.0],
-            },
-            Test {
-                tensor: &t,
-                input: (vec![0, 0], 0),
-                want: vec![1.0, 4.0],
-            },
-            Test {
-                tensor: &t,
-                input: (vec![0, 1], 0),
-                want: vec![2.0, 5.0],
-            },
-        ];
-        for tt in tests {
-            let r = tt
-                .tensor
-                .iter_axis(&tt.input.0, tt.input.1)?
-                .collect::<Vec<_>>();
-            assert_eq!(r, tt.want);
-        }
-
         Ok(())
     }
 

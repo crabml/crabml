@@ -205,17 +205,6 @@ fn rms_norm_inplace_vec_f32(x: &mut [f32], eps: f32) {
     }
 }
 
-fn mul_inplace_vec_f32(a: &mut [f32], b: &[f32]) {
-    let ac = a.as_chunks_mut::<32>().0;
-    let bc = b.as_chunks::<32>().0;
-    ac.iter_mut().zip(bc).for_each(|(a, b)| {
-        let mut va = f32x32::from_slice(a);
-        let vb = f32x32::from_slice(b);
-        va *= vb;
-        va.copy_to_slice(a);
-    });
-}
-
 pub fn add_inplace_vec_f32(a: &mut [f32], b: &[f32]) {
     let acs = a.as_chunks_mut::<32>().0;
     let bcs = b.as_chunks::<32>().0;
@@ -314,44 +303,6 @@ pub fn matmul_vec_q8_0_f32_2d_1d<'a>(wb: &QuantBufQ8_0<'a>, xb: &[f32], out: &mu
                 }
             }
         });
-}
-
-pub fn rope_inplace_old<'a>(
-    mut q: CpuTensor<'a>,
-    mut k: CpuTensor<'a>,
-    pos: usize,
-    freq_base: f32,
-    freq_scale: f32,
-    _n_rot: usize,
-) -> Result<(CpuTensor<'a>, CpuTensor<'a>)> {
-    require_tensor_contiguous(&q)?;
-    require_tensor_contiguous(&k)?;
-    require_tensor_dims(&q, &[2])?;
-    require_tensor_dims(&k, &[2])?;
-
-    let kv_dim: usize = k.shape().iter().product();
-    let head_size = q.shape()[1];
-
-    for i in (0..kv_dim).step_by(2) {
-        let head_dim = i % head_size;
-        let freq = freq_base / freq_scale.powf(head_dim as f32 / head_size as f32);
-        let val = pos as f32 * freq;
-        let fcr = val.cos();
-        let fci = val.sin();
-        let rotn = if i < kv_dim { 2 } else { 1 }; // how many vectors? 2 = q & k, 1 = q only
-        for v in 0..rotn {
-            let vec = if v == 0 {
-                q.f32_buf_mut()?
-            } else {
-                k.f32_buf_mut()?
-            };
-            let v0 = vec[i];
-            let v1 = vec[i + 1];
-            vec[i] = v0 * fcr - v1 * fci;
-            vec[i + 1] = v0 * fci + v1 * fcr;
-        }
-    }
-    Ok((q, k))
 }
 
 #[cfg(test)]

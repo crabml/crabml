@@ -27,15 +27,16 @@ impl<'a, 'b> TensorArithmetics for CpuTensor<'a> {
         do_batch_matmul(self, y)
     }
 
+    // gemv
     // (m, k) @ (k, ) => (m, )
-    fn matmul(&self, x: &CpuTensor<'a>) -> Result<Self> {
+    fn matmul_vec(&self, x: &CpuTensor<'a>) -> Result<Self> {
         let bufa = self.buf();
         let bufb = x.buf();
         let mut c = CpuTensor::alloc(&[self.shape()[0]], None, x.device())?;
         let bufc = c.buf_mut();
         let strider1 = self.strider();
         let strider2 = x.strider();
-        primitives::matmul(bufa, bufb, bufc, strider1, strider2)?;
+        primitives::matmul_vec(bufa, bufb, bufc, strider1, strider2)?;
         Ok(c)
     }
 
@@ -119,75 +120,6 @@ where 'b: 'a {
     return Ok(out);
 }
 
-pub fn maybe_matmul_vec_2d_1d<'a, 'b: 'a>(
-    w: &CpuTensor<'a>,
-    x: &CpuTensor<'b>,
-) -> Option<Result<CpuTensor<'b>>> {
-    if !(w.is_contiguous() && x.is_contiguous()) {
-        return None;
-    }
-    let mut out: Vec<f32> = vec![0.0; w.shape()[0]];
-
-    match (w.buf(), x.buf()) {
-        (CpuTensorBuf::Q8_0(wb), CpuTensorBuf::F32(xb)) => {
-            matmul_vec_q8_0_f32_2d_1d(wb, xb, &mut out)
-        }
-        (CpuTensorBuf::F32(wb), CpuTensorBuf::F32(xb)) => {
-            if w.len() % 32 != 0 {
-                return None;
-            }
-            matmul_vec_generic_xxx_f32_2d_1d(wb, xb, &mut out)
-        }
-        _ => return None,
-    };
-
-    Some(CpuTensor::new(out, &[w.shape()[0]], x.device()))
-}
-
-pub fn matmul_vec_generic_xxx_f32_2d_1d<'a, T: BufVecDot + Sync>(
-    wb: &T,
-    xb: &[f32],
-    out: &mut [f32],
-) {
-    // wb: [w_rows, w_cols]
-    // xb: [w_cols]
-    // out: [w_rows]
-    let w_cols = xb.len();
-    out.par_iter_mut().enumerate().for_each(|(w_row, o)| {
-        let offset = w_row * w_cols;
-        *o = wb.vec_dot_f32(offset, xb);
-    });
-}
-
-pub fn matmul_vec_q8_0_f32_2d_1d<'a>(wb: &QuantBufQ8_0<'a>, xb: &[f32], out: &mut [f32]) {
-    // wb: [w_rows, w_cols]
-    // xb: [w_cols]
-    // out: [w_rows]
-    let w_cols = xb.len();
-    let xb16 = xb.iter().map(|x| f16::from_f32(*x)).collect::<Vec<_>>();
-    let xb_chunk_size: usize = 32;
-    let xb_chunks: &[[f16; 32]] = xb16.as_chunks().0; // to keep it in L1 cache
-    assert!(
-        xb16.len() % xb_chunk_size == 0,
-        "xb16.len() need to be a multiple of {}, but got {}",
-        xb_chunk_size,
-        xb16.len()
-    );
-    let out_chunk_size = out.len() / 32;
-    out.par_chunks_mut(out_chunk_size)
-        .enumerate()
-        .for_each(move |(o_chunk_idx, o_chunk)| {
-            for (oi, o) in o_chunk.iter_mut().enumerate() {
-                let w_row = o_chunk_idx * out_chunk_size + oi;
-                for (xb_chunk_idx, xb_chunk) in xb_chunks.iter().enumerate() {
-                    let w_offset = w_row * w_cols + xb_chunk_size * xb_chunk_idx;
-                    let wbq = wb.blocks_range(w_offset, w_offset + xb_chunk_size);
-                    *o += vec_dot_q8_0_f16(wbq, xb_chunk);
-                }
-            }
-        });
-}
-
 #[cfg(test)]
 mod tests {
     use approx::assert_relative_eq;
@@ -256,7 +188,7 @@ mod tests {
         // 0
         // 1*1 + 2*2 + 3*3 = 1 + 4 + 9
         // 1*4 + 2*5 + 3*6 = 4 + 10 + 18
-        let out = w.matmul(&b)?;
+        let out = w.matmul_vec(&b)?;
         assert_eq!(out.iter().collect::<Vec<_>>(), &[14.0, 32.0]);
 
         Ok(())

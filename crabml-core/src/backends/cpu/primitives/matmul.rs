@@ -8,7 +8,7 @@ use crate::error::Result;
 use crate::tensor::TensorStrider;
 
 // A (m,k) @ B (k,) -> xout (m,)
-pub fn matmul<'a>(
+pub fn matmul_vec<'a>(
     bufa: &CpuTensorBuf<'a>,
     bufb: &CpuTensorBuf<'a>,
     bufc: &mut CpuTensorBuf<'a>,
@@ -24,7 +24,7 @@ pub fn matmul<'a>(
     let m = strider1.shape()[0];
     let k = strider1.shape()[1];
 
-    let ok = maybe_matmul_vec_2d_1d(bufa, bufb, bufc);
+    let ok = maybe_matmul_vec_simd(bufa, bufb, bufc);
     if ok {
         return Ok(());
     }
@@ -53,7 +53,7 @@ pub fn matmul<'a>(
     return Ok(());
 }
 
-pub fn maybe_matmul_vec_2d_1d<'a, 'b: 'a>(
+pub fn maybe_matmul_vec_simd<'a, 'b: 'a>(
     bufa: &CpuTensorBuf<'a>,
     bufb: &CpuTensorBuf<'b>,
     bufc: &mut CpuTensorBuf<'a>,
@@ -68,13 +68,13 @@ pub fn maybe_matmul_vec_2d_1d<'a, 'b: 'a>(
             if bufa.len() % 32 != 0 {
                 return false;
             }
-            matmul_vec_generic_xxx_f32_2d_1d(bufa, bufb, bufc);
+            matmul_vec_generic_xxx_f32_simd(bufa, bufb, bufc);
         }
         (CpuTensorBuf::F32(bufa), CpuTensorBuf::F32(bufb)) => {
             if bufa.len() % 32 != 0 {
                 return false;
             }
-            matmul_vec_generic_xxx_f32_2d_1d(bufa, bufb, bufc);
+            matmul_vec_generic_xxx_f32_simd(bufa, bufb, bufc);
         }
         _ => return false,
     };
@@ -82,7 +82,7 @@ pub fn maybe_matmul_vec_2d_1d<'a, 'b: 'a>(
     true
 }
 
-pub fn matmul_vec_generic_xxx_f32_2d_1d<'a, T: BufVecDot + Sync>(a: &T, b: &[f32], c: &mut [f32]) {
+pub fn matmul_vec_generic_xxx_f32_simd<'a, T: BufVecDot + Sync>(a: &T, b: &[f32], c: &mut [f32]) {
     // a: [m, k]
     // b: [k]
     // out: [m]

@@ -450,7 +450,7 @@ impl TensorArithmetics for WgpuTensor {
         Ok(self)
     }
 
-    fn matmul(&self, y: &Self) -> Result<Self> {
+    fn matmul_vec(&self, y: &Self) -> Result<Self> {
         assert!(self.shape().len() == 2);
         assert!(self.shape()[1] == y.shape()[0]);
         assert!(y.shape().len() == 1);
@@ -709,7 +709,7 @@ mod tests {
 
         let t1 = WgpuTensor::new(&v1, &[32, 8], device.clone())?;
         let t2 = WgpuTensor::new(&[2.0; 8], &[8], device.clone())?;
-        let t3 = t1.matmul(&t2)?;
+        let t3 = t1.matmul_vec(&t2)?;
         let mut dst1 = vec![0.0; 32];
         t3.export(&mut dst1)?;
         assert_eq!(dst1[0..32], vec![

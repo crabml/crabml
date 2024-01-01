@@ -43,7 +43,7 @@ pub trait TensorArithmetics: Sized {
 
     fn div_scalar_inplace(self, rhs: f32) -> Result<Self>;
 
-    fn matmul(&self, y: &Self) -> Result<Self>;
+    fn matmul_vec(&self, y: &Self) -> Result<Self>;
 
     fn batch_matmul(&self, y: &Self) -> Result<Self>;
 }

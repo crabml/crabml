@@ -79,27 +79,10 @@ impl<'a, 'b> TensorArithmetics for CpuTensor<'a> {
         Ok(self)
     }
 
-    fn softmax_inplace(self, axis: usize) -> Result<Self> {
-        let mut t = self;
-        require_tensor_dims(&t, &[2])?;
-
-        if axis != 1 {
-            return Err((ErrorKind::TensorError, "only axis=1 is supported").into());
-        }
-
-        for row in 0..t.shape()[0] {
-            let max = t.iter_axis(&[row, 0], 1)?.fold(f32::NAN, |a, b| a.max(b));
-            let sum = t.iter_axis_mut(vec![row, 0], 1)?.fold(0.0, |mut acc, val| {
-                *val = (*val - max).exp();
-                acc += *val;
-                acc
-            });
-            t.iter_axis_mut(vec![row, 0], 1)?.for_each(|val| {
-                *val /= sum;
-            });
-        }
-
-        Ok(t)
+    fn softmax_inplace(mut self, axis: usize) -> Result<Self> {
+        let strider1 = self.strider().clone();
+        primitives::softmax_inplace(self.buf_mut(), strider1, axis)?;
+        Ok(self)
     }
 
     fn rope_inplace(mut self, pos: usize, rope_dims: usize) -> Result<Self> {

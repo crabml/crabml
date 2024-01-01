@@ -8,6 +8,7 @@ use rayon::prelude::*;
 
 use super::buf::buf_q8_0::vec_dot_q8_0_f16;
 use super::buf::QuantBufQ8_0;
+use super::primitives;
 use crate::backends::cpu::buf::BufVecDot;
 use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::backends::cpu::validate::require_tensor_contiguous;
@@ -53,21 +54,9 @@ impl<'a, 'b> TensorArithmetics for CpuTensor<'a> {
     }
 
     fn mul_inplace(mut self, rhs: &CpuTensor<'a>) -> Result<Self> {
-        require_tensor_shape(&self, rhs.shape())?;
-
-        if rhs.is_contiguous() && rhs.is_contiguous() {
-            match (self.buf_mut(), rhs.buf()) {
-                (CpuTensorBuf::F32(Cow::Owned(ab)), CpuTensorBuf::F32(bb)) => {
-                    mul_inplace_vec_f32(ab, bb);
-                    return Ok(self);
-                }
-                _ => (),
-            }
-        }
-
-        for (ia, ib) in self.iter_mut()?.zip(rhs.iter()) {
-            *ia *= ib;
-        }
+        let strider1 = self.strider().clone();
+        let strider2 = rhs.strider();
+        primitives::mul_inplace(self.buf_mut(), rhs.buf(), &strider1, strider2)?;
         Ok(self)
     }
 

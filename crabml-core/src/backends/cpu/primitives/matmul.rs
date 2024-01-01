@@ -8,6 +8,7 @@ use crate::error::Result;
 use crate::tensor::TensorStrider;
 
 // A (m,k) @ B (k,) -> xout (m,)
+// A is allowed to be not contiguous
 pub fn matmul_vec<'a>(
     bufa: &CpuTensorBuf<'a>,
     bufb: &CpuTensorBuf<'a>,
@@ -18,13 +19,12 @@ pub fn matmul_vec<'a>(
     assert!(strider1.shape().len() == 2);
     assert!(strider2.shape().len() == 1);
     assert!(strider1.shape()[1] == strider2.shape()[0]);
-    assert!(strider1.is_contiguous());
     assert!(strider2.is_contiguous());
 
     let m = strider1.shape()[0];
     let k = strider1.shape()[1];
 
-    let ok = maybe_matmul_vec_simd(bufa, bufb, bufc);
+    let ok = maybe_matmul_vec_simd(bufa, bufb, bufc, &strider1);
     if ok {
         return Ok(());
     }
@@ -42,10 +42,13 @@ pub fn matmul_vec<'a>(
         _ => panic!("only support f32 yet"),
     };
 
+    let m_stride = strider1.strides()[0];
+    let k_stride = strider1.strides()[1];
+
     for mi in 0..m {
         let mut sum = 0.0;
         for ki in 0..k {
-            sum += a[mi * k + ki] * b[ki];
+            sum += a[mi * m_stride + ki * k_stride] * b[ki];
         }
         out[mi] = sum;
     }
@@ -57,7 +60,11 @@ pub fn maybe_matmul_vec_simd<'a, 'b: 'a>(
     bufa: &CpuTensorBuf<'a>,
     bufb: &CpuTensorBuf<'b>,
     bufc: &mut CpuTensorBuf<'a>,
+    strider1: &TensorStrider,
 ) -> bool {
+    if !strider1.is_contiguous() {
+        return false;
+    }
     let bufc = match bufc {
         CpuTensorBuf::F32(Cow::Owned(buf)) => buf,
         _ => return false,

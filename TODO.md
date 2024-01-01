@@ -6,7 +6,7 @@
   - [x] rope
   - [x] softmax
   - [x] rms_norm
-  - [ ] batch_matmul
+  - [x] batch_matmul
   - [ ] matmul
   - [x] silu
 - [ ] a better gemmv

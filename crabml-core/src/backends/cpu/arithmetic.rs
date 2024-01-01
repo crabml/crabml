@@ -27,29 +27,16 @@ impl<'a, 'b> TensorArithmetics for CpuTensor<'a> {
         do_batch_matmul(self, y)
     }
 
-    // W (w_rows,w_cols) @ x (w_cols,x_cols) -> xout (w_rows,x_cols)
-    // W (w_rows,w_cols) @ x (w_cols,) -> xout (w_rows,)
+    // (m, k) @ (k, ) => (m, )
     fn matmul(&self, x: &CpuTensor<'a>) -> Result<Self> {
-        let w = self;
-        require_tensor_dims(w, &[2])?;
-        require_tensor_dims(x, &[1])?;
-        require_tensor_matmul_2d_shapes(w, x)?;
-        require_tensor_contiguous(w)?;
-        require_tensor_contiguous(x)?;
-
-        match maybe_matmul_vec_2d_1d(w, x) {
-            Some(r) => return r,
-            _ => (),
-        }
-
-        let mut out = CpuTensor::alloc(&[w.shape()[0]], None, x.device())?;
-        let o_row_iter = out.iter_axis_mut(vec![0], 0)?; // (x_cols, )
-        o_row_iter.enumerate().for_each(|(w_row, o)| {
-            let w_row_iter = w.iter_axis(&[w_row, 0], 1).unwrap(); // (w_cols, )
-            let x_col_iter = x.iter_axis(&[0], 0).unwrap(); // (w_cols, )
-            *o = w_row_iter.zip(x_col_iter).map(|(w, x)| w * x).sum::<f32>();
-        });
-        return Ok(out);
+        let bufa = self.buf();
+        let bufb = x.buf();
+        let mut c = CpuTensor::alloc(&[self.shape()[0]], None, x.device())?;
+        let bufc = c.buf_mut();
+        let strider1 = self.strider();
+        let strider2 = x.strider();
+        primitives::matmul(bufa, bufb, bufc, strider1, strider2)?;
+        Ok(c)
     }
 
     fn mul_inplace(mut self, rhs: &CpuTensor<'a>) -> Result<Self> {

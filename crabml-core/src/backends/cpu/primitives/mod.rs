@@ -1,5 +1,6 @@
 mod add;
 mod div;
+mod matmul;
 mod mul;
 mod rms_norm;
 mod rope;
@@ -8,6 +9,7 @@ mod softmax;
 
 pub use add::add_inplace;
 pub use div::div_inplace;
+pub use matmul::matmul;
 pub use mul::mul_inplace;
 pub use rms_norm::rms_norm_inplace;
 pub use rope::rope_inplace;

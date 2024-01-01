@@ -4,10 +4,11 @@
   - referenced: https://github.com/huggingface/candle/blob/main/candle-core/src/cpu_backend.rs
 - [ ] factor out TensorArithmetic
   - [x] rope
-  - [ ] softmax
-  - [ ] rms_norm
+  - [x] softmax
+  - [x] rms_norm
   - [ ] batch_matmul
-  - [ ] silu
+  - [ ] matmul
+  - [x] silu
 - [ ] a better gemmv
 - [ ] revise the dot product attention primitive
   - reference mlx: https://github.com/simonw/llm-mlx-llama/blob/main/llm_mlx_llama.py#L81

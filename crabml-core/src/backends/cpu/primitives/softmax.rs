@@ -5,6 +5,7 @@ use crate::error::ErrorKind;
 use crate::error::Result;
 use crate::tensor::TensorStrider;
 
+// TODO: support f16
 pub fn softmax_inplace<'a>(
     buf: &mut CpuTensorBuf<'a>,
     strider: TensorStrider,

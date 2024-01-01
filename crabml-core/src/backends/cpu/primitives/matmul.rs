@@ -7,7 +7,7 @@ use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::error::Result;
 use crate::tensor::TensorStrider;
 
-// A (m,k) @ B (k,) -> xout (m,)
+// matmul_vec is an implementation of GEMV: A (m,k) @ B (k,) -> xout (m,).
 // A is allowed to be not contiguous
 pub fn matmul_vec<'a>(
     bufa: &CpuTensorBuf<'a>,

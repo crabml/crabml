@@ -5,7 +5,7 @@ use crate::error::Result;
 use crate::tensor::TensorStrider;
 
 // (b, m, k) @ (b, k, ) -> (b, m, )
-// a is allowed to be not contiguous
+// a is allowed to be not contiguous, but not quantized
 pub fn batch_matmul_vec<'a, 'b>(
     a: &CpuTensorBuf<'a>,
     b: &CpuTensorBuf<'b>,

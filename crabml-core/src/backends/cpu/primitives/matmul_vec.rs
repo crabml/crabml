@@ -2,13 +2,13 @@ use std::borrow::Cow;
 
 use rayon::prelude::*;
 
-use crate::backends::cpu::buf::BufVecDot;
 use crate::backends::cpu::buf::CpuTensorBuf;
+use crate::backends::cpu::buf::VecDotF32;
 use crate::error::Result;
 use crate::tensor::TensorStrider;
 
 // matmul_vec is an implementation of GEMV: A (m,k) @ B (k,) -> xout (m,).
-// A is allowed to be not contiguous
+// A is allowed to be not contiguous, and quantized
 pub fn matmul_vec<'a>(
     bufa: &CpuTensorBuf<'a>,
     bufb: &CpuTensorBuf<'a>,
@@ -89,7 +89,7 @@ pub fn maybe_matmul_vec_simd<'a, 'b: 'a>(
     true
 }
 
-pub fn matmul_vec_generic_xxx_f32_simd<'a, T: BufVecDot + Sync>(a: &T, b: &[f32], c: &mut [f32]) {
+pub fn matmul_vec_generic_xxx_f32_simd<'a, T: VecDotF32 + Sync>(a: &T, b: &[f32], c: &mut [f32]) {
     // a: [m, k]
     // b: [k]
     // out: [m]

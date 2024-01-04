@@ -2,7 +2,7 @@ use std::io::Write;
 use std::time::Instant;
 
 use clap::Parser;
-use crabml::backends::cpu::cpu_tensor::CpuTensorDevice;
+use crabml::backends::cpu::CpuTensorDevice;
 use crabml::backends::wgpu::WgpuTensorDevice;
 use crabml::backends::wgpu::WgpuTensorDeviceOptions;
 use crabml::error::Result;

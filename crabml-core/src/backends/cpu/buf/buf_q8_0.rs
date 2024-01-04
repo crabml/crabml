@@ -3,7 +3,7 @@ use std::simd::prelude::SimdFloat;
 
 use half::f16;
 
-use super::buf::BufVecDot;
+use super::buf::VecDotF32;
 
 #[repr(C, packed)]
 #[derive(Debug, Clone)]
@@ -99,7 +99,7 @@ impl<'a> QuantBufQ8_0<'a> {
     }
 }
 
-impl<'a> BufVecDot for QuantBufQ8_0<'a> {
+impl<'a> VecDotF32 for QuantBufQ8_0<'a> {
     fn vec_dot_f32(&self, offset: usize, x: &[f32]) -> f32 {
         let blocks = BlockQ8_0::from_bytes(self.raw);
         let row = &blocks[offset / 32..(offset + x.len()) / 32];

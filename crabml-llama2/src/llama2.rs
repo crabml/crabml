@@ -151,9 +151,9 @@ impl<'a, T: Tensor> Llama2Runner<T> {
                 // wq: (embed_dim, embed_dim) @ x (embed_dim, ) => (embed_dim, )
                 // wk: (kv_dim, embed_dim) @ x (embed_dim, ) => (kv_dim, )
                 // wv: (kv_dim, embed_dim) @ x (embed_dim, ) => (kv_dim, )
-                let q = self.weights.wq[l].matmul(&x)?;
-                let k = self.weights.wk[l].matmul(&x)?;
-                let v = self.weights.wv[l].matmul(&x)?;
+                let q = self.weights.wq[l].matmul_vec(&x)?;
+                let k = self.weights.wk[l].matmul_vec(&x)?;
+                let v = self.weights.wv[l].matmul_vec(&x)?;
 
                 (
                     q.with_name(format!("q:{}:{}", l, pos)),
@@ -208,7 +208,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
                 let k_cache_strider_orig = k_cache.strider().clone();
                 let k_cache = k_cache.transpose(&[1, 0, 2])?;
                 // (n_heads, n_seq, head_size) @ (n_head, head_size) => (n_heads, n_seq)
-                let attn = k_cache.batch_matmul(&q)?;
+                let attn = k_cache.batch_matmul_vec(&q)?;
                 let attn = attn.div_scalar_inplace((head_size as f32).sqrt())?;
                 let attn = attn
                     .softmax_inplace(1)?
@@ -220,12 +220,12 @@ impl<'a, T: Tensor> Llama2Runner<T> {
                 // get the weighted sum of the values and attention scores
                 let v_cache = v_cache.transpose(&[1, 2, 0])?;
                 // (n_heads, head_size, n_seq) @ (n_heads, n_seq) => (n_heads, head_size)
-                let x_with_attn = v_cache.batch_matmul(&attn)?; // (n_heads, head_size)
+                let x_with_attn = v_cache.batch_matmul_vec(&attn)?; // (n_heads, head_size)
                 let x_with_attn = x_with_attn.reshape(&[embed_dim])?;
                 self.value_cache[l].replace(v_cache.with_strider(v_cache_strider_orig)?);
 
                 // final matmul to get the output of the attention
-                self.weights.wo[l].matmul(&x_with_attn)?
+                self.weights.wo[l].matmul_vec(&x_with_attn)?
             };
 
             // residual connection back into x
@@ -247,8 +247,8 @@ impl<'a, T: Tensor> Llama2Runner<T> {
                 // first calculate self.w1(x) and self.w3(x)
                 // w1: (hidden_dim, embed_dim) @ x (embed_dim, ) => (hidden_dim, )
                 // w3: (hidden_dim, embed_dim) @ x (embed_dim, ) => (hidden_dim, )
-                let mut h1 = self.weights.w1[l].matmul(&x)?;
-                let h2 = self.weights.w3[l].matmul(&x)?;
+                let mut h1 = self.weights.w1[l].matmul_vec(&x)?;
+                let h2 = self.weights.w3[l].matmul_vec(&x)?;
 
                 // F.silu; silu(x)=x*σ(x),where σ(x) is the logistic sigmoid
                 h1 = h1.silu_inplace()?;
@@ -257,7 +257,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
                 h1 = h1.mul_inplace(&h2)?;
 
                 // final matmul to get the output of the ffn
-                x = self.weights.w2[l].matmul(&h1)?;
+                x = self.weights.w2[l].matmul_vec(&h1)?;
 
                 // residual connection
                 x = x.add_inplace(&x_orig_ffn)?;
@@ -273,7 +273,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         };
 
         // classifier into logits
-        let logits = self.weights.wcls.matmul(&x)?; // (vocab_size,
+        let logits = self.weights.wcls.matmul_vec(&x)?; // (vocab_size,
         logits.export(&mut self.logits)?;
         Ok(&mut self.logits)
     }
@@ -384,8 +384,8 @@ impl<'a, T: Tensor> Iterator for Llama2RunnerOutputGenerator<'a, T> {
 #[cfg(test)]
 mod tests {
     use approx::assert_relative_eq;
-    use crabml::backends::cpu::cpu_tensor::CpuTensorDevice;
-    use crabml::backends::cpu::cpu_tensor::CpuTensorDeviceOptions;
+    use crabml::backends::cpu::CpuTensorDevice;
+    use crabml::backends::cpu::CpuTensorDeviceOptions;
     use crabml::backends::wgpu::WgpuTensorDevice;
     use crabml::backends::wgpu::WgpuTensorDeviceOptions;
     use crabml::gguf::GGUFFileLoader;

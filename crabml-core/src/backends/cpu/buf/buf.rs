@@ -180,6 +180,6 @@ impl<'a> ExactSizeIterator for CpuTensorBufIter<'a> {
     }
 }
 
-pub trait BufVecDot {
+pub trait VecDotF32 {
     fn vec_dot_f32(&self, row: usize, x: &[f32]) -> f32;
 }

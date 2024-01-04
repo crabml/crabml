@@ -15,7 +15,7 @@ use crabml_llama2::CpuLlama2Model;
 #[derive(Parser, Debug)]
 struct CommandArgs {
     /// The checkpoint file to load
-    #[arg(short, long, default_value_t = format!("./testdata/tinyllamas-stories-260k-f32.gguf"))]
+    #[arg(short, long, default_value_t = format!("./testdata/tinyllamas-stories-15m-f32.gguf"))]
     model: String,
 
     // The number of tokens to generate

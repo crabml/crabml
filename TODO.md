@@ -6,5 +6,6 @@
 - [x] revise the dot product attention primitive
   - reference mlx: https://github.com/simonw/llm-mlx-llama/blob/main/llm_mlx_llama.py#L81
   - learn the kv cache layout
-- [ ] a better gemmv
-- use uniform to store the meta buffers
+- [x] use uniform to store the meta buffers
+- [ ] a better gemv
+- [ ] f16 activations

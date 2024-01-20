@@ -6,6 +6,7 @@ pub trait Tensor: Sized + Clone {
 
     /// alloc an owned tensor, only used on storing activations and kv caches.
     /// only F32 and F16 (not yet implemented) are supported.
+    /// TODO: add dtype parameter
     fn alloc(shape: &[usize], capacity: Option<usize>, device: Self::Device) -> Result<Self>;
 
     fn with_strider(self, strider: TensorStrider) -> Result<Self>;

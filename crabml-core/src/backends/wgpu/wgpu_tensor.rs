@@ -10,6 +10,7 @@ use crate::backends::wgpu::meta::BatchMatmulMeta;
 use crate::backends::wgpu::meta::RopeMeta;
 use crate::error::ErrorKind;
 use crate::error::Result;
+use crate::gguf::GGMLType;
 use crate::tensor::Tensor;
 use crate::tensor::TensorArithmetics;
 use crate::tensor::TensorStrider;
@@ -17,6 +18,7 @@ use crate::tensor::TensorStrider;
 #[derive(Clone)]
 pub struct WgpuTensor {
     buf: Rc<wgpu::Buffer>,
+    dtype: GGMLType,
     capacity: usize, // max element count
     strider: TensorStrider,
     device: WgpuTensorDeviceRef,
@@ -39,6 +41,31 @@ impl WgpuTensor {
         Ok(Self {
             buf: Rc::new(buf),
             capacity: src.len(),
+            dtype: GGMLType::F32,
+            strider,
+            device,
+            name: None,
+        })
+    }
+
+    pub fn from_buf(
+        buf: &[u8],
+        dtype: GGMLType,
+        shape: &[usize],
+        device: WgpuTensorDeviceRef,
+    ) -> Result<Self> {
+        let buf = device
+            .inner
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("tensor weights buffer"),
+                contents: buf,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            });
+        let strider = TensorStrider::new(shape.to_vec());
+        Ok(Self {
+            buf: Rc::new(buf),
+            dtype,
+            capacity: strider.len(),
             strider,
             device,
             name: None,
@@ -74,6 +101,7 @@ impl Tensor for WgpuTensor {
         let strider = TensorStrider::new(shape.to_vec());
         Ok(Self {
             buf: Rc::new(buf),
+            dtype: GGMLType::F32,
             capacity,
             strider,
             device,
@@ -85,6 +113,7 @@ impl Tensor for WgpuTensor {
         Ok(Self {
             buf: self.buf,
             capacity: self.capacity,
+            dtype: self.dtype,
             strider: strider,
             device: self.device,
             name: None,
@@ -486,9 +515,9 @@ impl TensorArithmetics for WgpuTensor {
                 resource: output.buf.as_entire_binding(),
             },
         ];
-        let encoder =
-            self.device
-                .encode_pipeline_commnad("matmul_vec_f32", entries, (meta.M / 32, 1, 1));
+        let encoder = self
+            .device
+            .encode_pipeline_commnad("sgemv", entries, (meta.M / 32, 1, 1));
         self.device.queue.submit(Some(encoder.finish()));
 
         Ok(output)

@@ -4,6 +4,8 @@ use crate::error::Result;
 pub trait Tensor: Sized + Clone + TensorArithmetics {
     type Device: Clone;
 
+    /// alloc an owned tensor, only used on storing activations and kv caches.
+    /// only F32 and F16 (not yet implemented) are supported.
     fn alloc(shape: &[usize], capacity: Option<usize>, device: Self::Device) -> Result<Self>;
 
     fn with_strider(self, strider: TensorStrider) -> Result<Self>;

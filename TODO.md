@@ -7,5 +7,6 @@
   - reference mlx: https://github.com/simonw/llm-mlx-llama/blob/main/llm_mlx_llama.py#L81
   - learn the kv cache layout
 - [x] use uniform to store the meta buffers
-- [ ] a better gemv
+- [x] a better gemv
+- [ ] q8 quantization on webgpu
 - [ ] f16 activations

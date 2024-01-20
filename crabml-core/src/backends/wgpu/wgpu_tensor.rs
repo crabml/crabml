@@ -12,7 +12,6 @@ use crate::error::ErrorKind;
 use crate::error::Result;
 use crate::gguf::GGMLType;
 use crate::tensor::Tensor;
-use crate::tensor::TensorArithmetics;
 use crate::tensor::TensorStrider;
 
 #[derive(Clone)]
@@ -278,9 +277,7 @@ impl Tensor for WgpuTensor {
             .unwrap();
         Ok(new_tensor)
     }
-}
 
-impl TensorArithmetics for WgpuTensor {
     fn rope_inplace(self, pos: usize, rope_dims: usize) -> Result<Self> {
         assert!(self.shape().len() == 2);
         assert!(self.is_contiguous());
@@ -588,7 +585,6 @@ mod tests {
     use crate::backends::wgpu::WgpuTensorDeviceOptions;
     use crate::error::Result;
     use crate::tensor::Tensor;
-    use crate::tensor::TensorArithmetics;
     use crate::tensor::TensorStrider;
 
     #[test]

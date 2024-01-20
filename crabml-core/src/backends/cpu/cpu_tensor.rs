@@ -7,7 +7,6 @@ use crate::error::ErrorKind;
 use crate::error::Result;
 use crate::gguf::GGMLType;
 use crate::tensor::Tensor;
-use crate::tensor::TensorArithmetics;
 use crate::tensor::TensorStrider;
 
 #[derive(Debug, Clone)]
@@ -107,80 +106,6 @@ impl<'a> CpuTensor<'a> {
 
     pub(crate) fn buf_mut(&mut self) -> &mut CpuTensorBuf<'a> {
         &mut self.buf
-    }
-}
-
-impl<'a, 'b> TensorArithmetics for CpuTensor<'a> {
-    fn batch_matmul_vec(&self, b: &CpuTensor<'a>) -> Result<Self> {
-        // (b, m, k) @ (b, k, ) -> (b, m, )
-        let bufa = self.buf();
-        let bufb = b.buf();
-        let mut c = CpuTensor::alloc(&[self.shape()[0], self.shape()[1]], None, self.device())?;
-        let bufc = c.buf_mut();
-        let strider1 = self.strider();
-        let strider2 = b.strider();
-        primitives::batch_matmul_vec(bufa, bufb, bufc, strider1, strider2)?;
-        Ok(c)
-    }
-
-    // gemv
-    // (m, k) @ (k, ) => (m, )
-    fn matmul_vec(&self, x: &CpuTensor<'a>) -> Result<Self> {
-        let bufa = self.buf();
-        let bufb = x.buf();
-        let mut c = CpuTensor::alloc(&[self.shape()[0]], None, x.device())?;
-        let bufc = c.buf_mut();
-        let strider1 = self.strider();
-        let strider2 = x.strider();
-        primitives::matmul_vec(bufa, bufb, bufc, strider1, strider2)?;
-        Ok(c)
-    }
-
-    fn mul_inplace(mut self, rhs: &CpuTensor<'a>) -> Result<Self> {
-        let strider1 = self.strider().clone();
-        let strider2 = rhs.strider();
-        primitives::mul_inplace(self.buf_mut(), rhs.buf(), &strider1, strider2)?;
-        Ok(self)
-    }
-
-    fn add_inplace(mut self, b: &Self) -> Result<Self> {
-        let strider1 = self.strider().clone();
-        let strider2 = b.strider();
-        primitives::add_inplace(self.buf_mut(), b.buf(), &strider1, strider2)?;
-        Ok(self)
-    }
-
-    fn div_scalar_inplace(mut self, b: f32) -> Result<Self> {
-        let rhs = CpuTensor::new(vec![b], &[1], self.device())?;
-        let strider1 = self.strider().clone();
-        let strider2 = rhs.strider();
-        primitives::div_inplace(self.buf_mut(), rhs.buf(), &strider1, strider2)?;
-        Ok(self)
-    }
-
-    fn silu_inplace(mut self) -> Result<Self> {
-        primitives::silu_inplace(self.buf_mut())?;
-        Ok(self)
-    }
-
-    fn softmax_inplace(mut self, axis: usize) -> Result<Self> {
-        let strider1 = self.strider().clone();
-        primitives::softmax_inplace(self.buf_mut(), strider1, axis)?;
-        Ok(self)
-    }
-
-    fn rope_inplace(mut self, pos: usize, rope_dims: usize) -> Result<Self> {
-        let strider1 = self.strider().clone();
-        let buf1 = self.buf_mut();
-        primitives::rope_inplace(buf1, &strider1, pos, rope_dims)?;
-        Ok(self)
-    }
-
-    fn rms_norm_inplace(mut self, eps: f32) -> Result<Self> {
-        let strider1 = self.strider().clone();
-        let buf1 = self.buf_mut();
-        primitives::rms_norm_inplace(buf1, &strider1, eps)?;
-        Ok(self)
     }
 }
 
@@ -306,6 +231,78 @@ impl<'a> Tensor for CpuTensor<'a> {
         });
         Ok(())
     }
+
+    fn batch_matmul_vec(&self, b: &CpuTensor<'a>) -> Result<Self> {
+        // (b, m, k) @ (b, k, ) -> (b, m, )
+        let bufa = self.buf();
+        let bufb = b.buf();
+        let mut c = CpuTensor::alloc(&[self.shape()[0], self.shape()[1]], None, self.device())?;
+        let bufc = c.buf_mut();
+        let strider1 = self.strider();
+        let strider2 = b.strider();
+        primitives::batch_matmul_vec(bufa, bufb, bufc, strider1, strider2)?;
+        Ok(c)
+    }
+
+    // gemv
+    // (m, k) @ (k, ) => (m, )
+    fn matmul_vec(&self, x: &CpuTensor<'a>) -> Result<Self> {
+        let bufa = self.buf();
+        let bufb = x.buf();
+        let mut c = CpuTensor::alloc(&[self.shape()[0]], None, x.device())?;
+        let bufc = c.buf_mut();
+        let strider1 = self.strider();
+        let strider2 = x.strider();
+        primitives::matmul_vec(bufa, bufb, bufc, strider1, strider2)?;
+        Ok(c)
+    }
+
+    fn mul_inplace(mut self, rhs: &CpuTensor<'a>) -> Result<Self> {
+        let strider1 = self.strider().clone();
+        let strider2 = rhs.strider();
+        primitives::mul_inplace(self.buf_mut(), rhs.buf(), &strider1, strider2)?;
+        Ok(self)
+    }
+
+    fn add_inplace(mut self, b: &Self) -> Result<Self> {
+        let strider1 = self.strider().clone();
+        let strider2 = b.strider();
+        primitives::add_inplace(self.buf_mut(), b.buf(), &strider1, strider2)?;
+        Ok(self)
+    }
+
+    fn div_scalar_inplace(mut self, b: f32) -> Result<Self> {
+        let rhs = CpuTensor::new(vec![b], &[1], self.device())?;
+        let strider1 = self.strider().clone();
+        let strider2 = rhs.strider();
+        primitives::div_inplace(self.buf_mut(), rhs.buf(), &strider1, strider2)?;
+        Ok(self)
+    }
+
+    fn silu_inplace(mut self) -> Result<Self> {
+        primitives::silu_inplace(self.buf_mut())?;
+        Ok(self)
+    }
+
+    fn softmax_inplace(mut self, axis: usize) -> Result<Self> {
+        let strider1 = self.strider().clone();
+        primitives::softmax_inplace(self.buf_mut(), strider1, axis)?;
+        Ok(self)
+    }
+
+    fn rope_inplace(mut self, pos: usize, rope_dims: usize) -> Result<Self> {
+        let strider1 = self.strider().clone();
+        let buf1 = self.buf_mut();
+        primitives::rope_inplace(buf1, &strider1, pos, rope_dims)?;
+        Ok(self)
+    }
+
+    fn rms_norm_inplace(mut self, eps: f32) -> Result<Self> {
+        let strider1 = self.strider().clone();
+        let buf1 = self.buf_mut();
+        primitives::rms_norm_inplace(buf1, &strider1, eps)?;
+        Ok(self)
+    }
 }
 
 #[cfg(test)]
@@ -314,7 +311,6 @@ mod tests {
 
     use super::*;
     use crate::backends::cpu::CpuTensorDevice;
-    use crate::tensor::TensorArithmetics;
 
     #[test]
     fn test_tensor_view() -> Result<()> {

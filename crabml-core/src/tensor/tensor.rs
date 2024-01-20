@@ -1,7 +1,7 @@
 use super::strider::TensorStrider;
 use crate::error::Result;
 
-pub trait Tensor: Sized + Clone + TensorArithmetics {
+pub trait Tensor: Sized + Clone {
     type Device: Clone;
 
     /// alloc an owned tensor, only used on storing activations and kv caches.
@@ -28,9 +28,7 @@ pub trait Tensor: Sized + Clone + TensorArithmetics {
 
     /// duplicate the tensor and the underlying storage
     fn dup(&self) -> Result<Self>;
-}
 
-pub trait TensorArithmetics: Sized {
     fn rope_inplace(self, pos: usize, rope_dims: usize) -> Result<Self>;
 
     fn rms_norm_inplace(self, eps: f32) -> Result<Self>;

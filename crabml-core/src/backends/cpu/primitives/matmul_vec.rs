@@ -63,8 +63,15 @@ fn gemv_simd_f32<'a>(
     let bufb = bufb.as_f32_ref();
 
     let k = bufb.len();
-    bufc.par_iter_mut().enumerate().for_each(|(mi, cp)| {
-        let offset = mi * k;
-        *cp = bufa.vec_dot_f32(offset, bufb);
+    bufc.par_chunks_mut(8).enumerate().for_each(|(cn, cp)| {
+        let mi = cn * 8;
+        cp[0] = bufa.vec_dot_f32(mi * k, bufb);
+        cp[1] = bufa.vec_dot_f32((mi + 1) * k, bufb);
+        cp[2] = bufa.vec_dot_f32((mi + 2) * k, bufb);
+        cp[3] = bufa.vec_dot_f32((mi + 3) * k, bufb);
+        cp[4] = bufa.vec_dot_f32((mi + 4) * k, bufb);
+        cp[5] = bufa.vec_dot_f32((mi + 5) * k, bufb);
+        cp[6] = bufa.vec_dot_f32((mi + 6) * k, bufb);
+        cp[7] = bufa.vec_dot_f32((mi + 7) * k, bufb);
     });
 }

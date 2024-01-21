@@ -63,30 +63,6 @@ impl<'a> CpuTensorBuf<'a> {
         }
     }
 
-    pub fn iter_range(&self, start: usize, end: usize, step: usize) -> CpuTensorBufIter {
-        match self {
-            CpuTensorBuf::F32(buf) => {
-                CpuTensorBufIter::StepBy(buf[start..end].iter().step_by(step))
-            }
-            CpuTensorBuf::Q8_0(buf) => CpuTensorBufIter::Boxed(
-                Box::new(buf.iter_range(start, end, step)),
-                self.len() / step,
-            ),
-        }
-    }
-
-    pub fn iter_range_mut(
-        &mut self,
-        start: usize,
-        end: usize,
-        step: usize,
-    ) -> impl ExactSizeIterator<Item = &mut f32> {
-        match self {
-            CpuTensorBuf::F32(Cow::Owned(buf)) => buf[start..end].iter_mut().step_by(step),
-            _ => unreachable!("only owned buffers can be mutable"),
-        }
-    }
-
     pub fn iter(&self) -> CpuTensorBufIter {
         match self {
             CpuTensorBuf::F32(buf) => CpuTensorBufIter::Slice(buf.iter()),

@@ -86,12 +86,9 @@ impl<'a> CpuTensor<'a> {
         self.buf.is_owned()
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = f32> + '_ {
-        if self.is_contiguous() {
-            return self.buf.iter();
-        }
-        let iter = self.strider.iter().map(|i| self.buf.at_unchecked(i));
-        CpuTensorBufIter::Boxed(Box::new(iter), self.len())
+    fn to_vec(&self) -> Vec<f32> {
+        assert!(self.is_contiguous());
+        return self.buf.iter().collect();
     }
 
     pub fn is_contiguous(&self) -> bool {
@@ -185,7 +182,7 @@ impl<'a> Tensor for CpuTensor<'a> {
                 .into());
         }
 
-        self.buf.extend(t.iter());
+        self.buf.extend(t.buf.iter());
         let new_shape = {
             let mut shape = self.shape().to_vec();
             shape[0] += 1;
@@ -200,7 +197,7 @@ impl<'a> Tensor for CpuTensor<'a> {
         assert!(self.is_contiguous());
 
         let len = self.len();
-        let mut v = self.iter().collect::<Vec<_>>();
+        let mut v = self.to_vec();
         v = v.into_iter().cycle().take(len * n).collect::<Vec<_>>();
 
         let mut new_shape = self.shape().to_vec();
@@ -246,7 +243,9 @@ impl<'a> Tensor for CpuTensor<'a> {
     }
 
     fn export(&self, dst: &mut [f32]) -> Result<()> {
-        dst.iter_mut().zip(self.iter()).for_each(|(dst, src)| {
+        assert!(self.is_contiguous());
+
+        dst.iter_mut().zip(self.buf.iter()).for_each(|(dst, src)| {
             *dst = src;
         });
         Ok(())
@@ -339,9 +338,7 @@ mod tests {
         let t = t.reshape(&[3, 2])?;
 
         let tr = t.reshape(&[2, 3])?;
-        assert_eq!(tr.iter().collect::<Vec<f32>>(), vec![
-            1.0, 2.0, 3.0, 4.0, 5.0, 6.0
-        ]);
+        assert_eq!(tr.to_vec(), vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
         Ok(())
     }
 
@@ -354,10 +351,10 @@ mod tests {
         let mut t2 = CpuTensor::new(vec![0.0; 2], &[2], device.clone())?;
 
         t2.copy_from(&t1, &[1, 0], 2)?;
-        assert_eq!(t2.iter().collect::<Vec<_>>(), vec![3.0, 4.0]);
+        assert_eq!(t2.to_vec(), vec![3.0, 4.0]);
 
         t2.copy_from(&t1, &[0, 0], 2)?;
-        assert_eq!(t2.iter().collect::<Vec<_>>(), vec![1.0, 2.0]);
+        assert_eq!(t2.to_vec(), vec![1.0, 2.0]);
 
         Ok(())
     }
@@ -374,7 +371,7 @@ mod tests {
         t1.extend(&t2)?;
 
         assert_eq!(t1.shape(), &[2, 2, 3]);
-        assert_eq!(t1.iter().collect::<Vec<_>>(), &[
+        assert_eq!(t1.to_vec(), &[
             1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0
         ]);
         Ok(())
@@ -392,7 +389,7 @@ mod tests {
         let t1 = t1.repeat_n(2)?;
         assert_eq!(t1.shape(), &[2, 2, 3]);
 
-        assert_eq!(t1.iter().collect::<Vec<_>>(), &[
+        assert_eq!(t1.to_vec(), &[
             1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0
         ]);
 
@@ -431,7 +428,7 @@ mod tests {
         let t1 = CpuTensor::new(v1, &[2, 16], device.clone())?;
 
         let r1 = t1.rope_inplace(1, 2)?;
-        let out = r1.iter().collect::<Vec<_>>();
+        let out = r1.to_vec();
         assert_relative_eq!(
             &out[..],
             &[
@@ -460,7 +457,7 @@ mod tests {
         // 1*1 + 2*2 + 3*3 = 1 + 4 + 9
         // 1*4 + 2*5 + 3*6 = 4 + 10 + 18
         let out = w.matmul_vec(&b)?;
-        assert_eq!(out.iter().collect::<Vec<_>>(), &[14.0, 32.0]);
+        assert_eq!(out.to_vec(), &[14.0, 32.0]);
 
         Ok(())
     }
@@ -471,7 +468,7 @@ mod tests {
         let t1 = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], device.clone())?;
         let t1 = t1.softmax_inplace(1)?;
 
-        assert_eq!(t1.iter().collect::<Vec<_>>(), &[
+        assert_eq!(t1.to_vec(), &[
             0.09003057, 0.24472848, 0.66524094, 0.09003057, 0.24472848, 0.66524094
         ]);
         Ok(())
@@ -483,7 +480,7 @@ mod tests {
         let t1 = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[6], device.clone())?;
         let t1 = t1.silu_inplace()?;
 
-        assert_eq!(t1.iter().collect::<Vec<_>>(), &[
+        assert_eq!(t1.to_vec(), &[
             0.7310586, 1.761594, 2.8577225, 3.928055, 4.9665356, 5.9851646
         ]);
         Ok(())

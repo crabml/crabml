@@ -49,13 +49,6 @@ impl<'a> CpuTensorDevice<'a> {
         Rc::new(device)
     }
 
-    pub fn export_tensor(self: Rc<Self>, tensor: &CpuTensor<'a>, dst: &mut [f32]) -> Result<()> {
-        tensor.iter().zip(dst.iter_mut()).for_each(|(src, dst)| {
-            *dst = src;
-        });
-        Ok(())
-    }
-
     pub fn dump_debug_tensor(&self, name: &str) -> Option<Vec<f32>> {
         self.debug_tensors.borrow().get(name).cloned()
     }

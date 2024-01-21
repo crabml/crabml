@@ -100,6 +100,20 @@ impl<'a> CpuTensorBuf<'a> {
         Ok(())
     }
 
+    pub fn as_f32_ref(&self) -> &[f32] {
+        match self {
+            CpuTensorBuf::F32(buf) => buf,
+            _ => panic!("not f32, but got {:?}", self.dtype()),
+        }
+    }
+
+    pub fn as_f32_mut(&mut self) -> &mut [f32] {
+        match self {
+            CpuTensorBuf::F32(Cow::Owned(buf)) => buf,
+            _ => panic!("not f32, but got {:?}", self.dtype()),
+        }
+    }
+
     /// the quantized tensor can not be iterated directly. to iterate the quantized tensor,
     /// use `dequantize` to convert it to f32/f16 tensor first.
     pub fn iter_f32(&self) -> impl Iterator<Item = f32> + '_ {

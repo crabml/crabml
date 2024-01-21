@@ -4,7 +4,6 @@ use std::rc::Rc;
 
 use super::CpuTensor;
 use crate::backends::cpu::buf::CpuTensorBuf;
-use crate::error::Result;
 
 #[derive(Debug, Clone)]
 pub struct CpuTensorDeviceOptions {
@@ -49,19 +48,12 @@ impl<'a> CpuTensorDevice<'a> {
         Rc::new(device)
     }
 
-    pub fn export_tensor(self: Rc<Self>, tensor: &CpuTensor<'a>, dst: &mut [f32]) -> Result<()> {
-        tensor.iter().zip(dst.iter_mut()).for_each(|(src, dst)| {
-            *dst = src;
-        });
-        Ok(())
-    }
-
     pub fn dump_debug_tensor(&self, name: &str) -> Option<Vec<f32>> {
         self.debug_tensors.borrow().get(name).cloned()
     }
 
     pub(crate) fn add_debug_tensor(&self, tensor: &CpuTensor<'a>) {
-        let buf = tensor.buf().iter().collect::<Vec<_>>();
+        let buf = tensor.buf().iter_f32().collect::<Vec<_>>();
         self.debug_tensors
             .borrow_mut()
             .insert(tensor.name.clone().unwrap(), buf);

@@ -1,5 +1,6 @@
 use super::strider::TensorStrider;
 use crate::error::Result;
+use crate::gguf::GGMLType;
 
 pub trait Tensor: Sized + Clone {
     type Device: Clone;
@@ -8,6 +9,8 @@ pub trait Tensor: Sized + Clone {
     /// only F32 and F16 (not yet implemented) are supported.
     /// TODO: add dtype parameter
     fn alloc(shape: &[usize], capacity: Option<usize>, device: Self::Device) -> Result<Self>;
+
+    fn dtype(&self) -> GGMLType;
 
     fn with_strider(self, strider: TensorStrider) -> Result<Self>;
 
@@ -23,6 +26,8 @@ pub trait Tensor: Sized + Clone {
 
     fn extend(&mut self, rhs: &Self) -> Result<()>;
 
+    /// copy from another tensor. used on loading weights from vocab table.
+    /// the src and dst tensor must have the same dtype.
     fn copy_from(&mut self, rhs: &Self, pos: &[usize], len: usize) -> Result<()>;
 
     fn export(&self, buf: &mut [f32]) -> Result<()>;

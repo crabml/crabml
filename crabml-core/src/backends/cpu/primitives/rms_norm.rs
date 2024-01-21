@@ -23,9 +23,9 @@ pub fn rms_norm_inplace<'a>(
     }
 
     let len = strider.shape()[0];
-    let sum = buf.iter().fold(0.0, |s, n| s + n * n);
+    let sum = buf.iter_f32().fold(0.0, |s, n| s + n * n);
     let rms = ((sum / len as f32) + eps).sqrt();
-    buf.iter_mut().for_each(|n| *n = *n / rms);
+    buf.iter_f32_mut().for_each(|n| *n = *n / rms);
     Ok(())
 }
 

@@ -1,6 +1,5 @@
 use super::CpuTensorDeviceRef;
 use crate::backends::cpu::buf::CpuTensorBuf;
-use crate::backends::cpu::buf::CpuTensorBufIter;
 use crate::backends::cpu::primitives;
 use crate::error::Error;
 use crate::error::ErrorKind;
@@ -58,11 +57,20 @@ impl<'a> CpuTensor<'a> {
     }
 
     pub fn dequantize(self, dtype: GGMLType) -> Result<Self> {
-        todo!()
+        let strider = self.strider.clone();
+        let device = self.device.clone();
+        let name = self.name.clone();
+        let buf = self.buf.dequantize(dtype)?;
+        Ok(Self {
+            buf,
+            strider,
+            device,
+            name,
+        })
     }
 
     pub fn typ(&self) -> GGMLType {
-        self.buf.typ()
+        self.buf.dtype()
     }
 
     pub fn device(&self) -> CpuTensorDeviceRef<'a> {
@@ -77,23 +85,11 @@ impl<'a> CpuTensor<'a> {
         self.buf.is_owned()
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = f32> + '_ {
-        if self.is_contiguous() {
-            return self.buf.iter();
-        }
-        let iter = self.strider.iter().map(|i| self.buf.at_unchecked(i));
-        CpuTensorBufIter::Boxed(Box::new(iter), self.len())
-    }
-
-    // TODO: remove it
-    pub fn iter_from(&self, pos: &[usize]) -> Result<impl Iterator<Item = f32> + '_> {
-        if !self.is_contiguous() {
-            return Err((ErrorKind::TensorError, "not contiguous").into());
-        }
-
-        let start = self.strider.at(pos).unwrap();
-        let iter = (start..self.strider.len()).map(|i| self.buf.at_unchecked(i));
-        Ok(CpuTensorBufIter::Boxed(Box::new(iter), self.len()))
+    /// to_vec is only used for test.
+    fn to_vec(&self) -> Vec<f32> {
+        assert!(self.is_contiguous());
+        // TODO: if it's f16, convert it to f32
+        return self.buf.iter_f32().collect();
     }
 
     pub fn is_contiguous(&self) -> bool {
@@ -119,6 +115,10 @@ impl<'a> Tensor for CpuTensor<'a> {
     fn alloc(shape: &[usize], _capacity: Option<usize>, device: Self::Device) -> Result<Self> {
         let buf = vec![0.0; shape.iter().product()];
         Self::new(buf, shape, device)
+    }
+
+    fn dtype(&self) -> GGMLType {
+        self.buf.dtype()
     }
 
     fn reshape(self, shape: &[usize]) -> Result<Self> {
@@ -183,7 +183,7 @@ impl<'a> Tensor for CpuTensor<'a> {
                 .into());
         }
 
-        self.buf.extend(t.iter());
+        self.buf.extend(t.buf.iter_f32());
         let new_shape = {
             let mut shape = self.shape().to_vec();
             shape[0] += 1;
@@ -198,7 +198,7 @@ impl<'a> Tensor for CpuTensor<'a> {
         assert!(self.is_contiguous());
 
         let len = self.len();
-        let mut v = self.iter().collect::<Vec<_>>();
+        let mut v = self.to_vec();
         v = v.into_iter().cycle().take(len * n).collect::<Vec<_>>();
 
         let mut new_shape = self.shape().to_vec();
@@ -207,32 +207,45 @@ impl<'a> Tensor for CpuTensor<'a> {
         CpuTensor::new(v, &new_shape, self.device.clone())
     }
 
-    fn copy_from(&mut self, t: &CpuTensor<'a>, pos: &[usize], len: usize) -> Result<()> {
+    fn copy_from(&mut self, src: &CpuTensor<'a>, pos: &[usize], len: usize) -> Result<()> {
         if !self.is_owned() {
             return Err((ErrorKind::TensorError, "not owned").into());
         }
         if !self.is_contiguous() {
-            return Err((ErrorKind::TensorError, "not contiguous").into());
+            return Err((ErrorKind::TensorError, "dst tensor is not contiguous").into());
+        }
+        if !src.is_contiguous() {
+            return Err((ErrorKind::TensorError, "src tensor is not contiguous").into());
+        }
+        if self.dtype() != src.dtype() {
+            return Err((
+                ErrorKind::TensorError,
+                format!(
+                    "dtype mismatch on copy_from, want {:?} but got {:?}",
+                    self.dtype(),
+                    src.dtype()
+                ),
+            )
+                .into());
         }
 
-        self.buf
-            .iter_mut()
-            .zip(t.iter_from(pos)?.take(len))
-            .for_each(|(dst, src)| {
-                *dst = src;
-            });
-        Ok(())
+        let offset = src.strider().at(pos)?;
+        self.buf.copy_from(&src.buf, offset, len)
     }
 
     fn dup(&self) -> Result<Self> {
-        let buf = self.buf.iter().collect::<Vec<_>>();
+        let buf = self.buf.iter_f32().collect::<Vec<_>>();
         Self::new(buf, self.shape(), self.device.clone())
     }
 
     fn export(&self, dst: &mut [f32]) -> Result<()> {
-        dst.iter_mut().zip(self.iter()).for_each(|(dst, src)| {
-            *dst = src;
-        });
+        assert!(self.is_contiguous());
+
+        dst.iter_mut()
+            .zip(self.buf.iter_f32())
+            .for_each(|(dst, src)| {
+                *dst = src;
+            });
         Ok(())
     }
 
@@ -323,9 +336,7 @@ mod tests {
         let t = t.reshape(&[3, 2])?;
 
         let tr = t.reshape(&[2, 3])?;
-        assert_eq!(tr.iter().collect::<Vec<f32>>(), vec![
-            1.0, 2.0, 3.0, 4.0, 5.0, 6.0
-        ]);
+        assert_eq!(tr.to_vec(), vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
         Ok(())
     }
 
@@ -338,10 +349,10 @@ mod tests {
         let mut t2 = CpuTensor::new(vec![0.0; 2], &[2], device.clone())?;
 
         t2.copy_from(&t1, &[1, 0], 2)?;
-        assert_eq!(t2.iter().collect::<Vec<_>>(), vec![3.0, 4.0]);
+        assert_eq!(t2.to_vec(), vec![3.0, 4.0]);
 
         t2.copy_from(&t1, &[0, 0], 2)?;
-        assert_eq!(t2.iter().collect::<Vec<_>>(), vec![1.0, 2.0]);
+        assert_eq!(t2.to_vec(), vec![1.0, 2.0]);
 
         Ok(())
     }
@@ -358,7 +369,7 @@ mod tests {
         t1.extend(&t2)?;
 
         assert_eq!(t1.shape(), &[2, 2, 3]);
-        assert_eq!(t1.iter().collect::<Vec<_>>(), &[
+        assert_eq!(t1.to_vec(), &[
             1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0
         ]);
         Ok(())
@@ -376,7 +387,7 @@ mod tests {
         let t1 = t1.repeat_n(2)?;
         assert_eq!(t1.shape(), &[2, 2, 3]);
 
-        assert_eq!(t1.iter().collect::<Vec<_>>(), &[
+        assert_eq!(t1.to_vec(), &[
             1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0
         ]);
 
@@ -415,7 +426,7 @@ mod tests {
         let t1 = CpuTensor::new(v1, &[2, 16], device.clone())?;
 
         let r1 = t1.rope_inplace(1, 2)?;
-        let out = r1.iter().collect::<Vec<_>>();
+        let out = r1.to_vec();
         assert_relative_eq!(
             &out[..],
             &[
@@ -444,7 +455,7 @@ mod tests {
         // 1*1 + 2*2 + 3*3 = 1 + 4 + 9
         // 1*4 + 2*5 + 3*6 = 4 + 10 + 18
         let out = w.matmul_vec(&b)?;
-        assert_eq!(out.iter().collect::<Vec<_>>(), &[14.0, 32.0]);
+        assert_eq!(out.to_vec(), &[14.0, 32.0]);
 
         Ok(())
     }
@@ -455,7 +466,7 @@ mod tests {
         let t1 = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], device.clone())?;
         let t1 = t1.softmax_inplace(1)?;
 
-        assert_eq!(t1.iter().collect::<Vec<_>>(), &[
+        assert_eq!(t1.to_vec(), &[
             0.09003057, 0.24472848, 0.66524094, 0.09003057, 0.24472848, 0.66524094
         ]);
         Ok(())
@@ -467,7 +478,7 @@ mod tests {
         let t1 = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[6], device.clone())?;
         let t1 = t1.silu_inplace()?;
 
-        assert_eq!(t1.iter().collect::<Vec<_>>(), &[
+        assert_eq!(t1.to_vec(), &[
             0.7310586, 1.761594, 2.8577225, 3.928055, 4.9665356, 5.9851646
         ]);
         Ok(())

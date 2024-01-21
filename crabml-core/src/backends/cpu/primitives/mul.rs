@@ -4,7 +4,7 @@ use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::error::Result;
 use crate::tensor::TensorStrider;
 
-// buf1 have to be owned, buf2 can be quantized
+// both buf1 and buf2 have to be owned, the dtype should be the same
 pub fn mul_inplace<'a>(
     buf1: &mut CpuTensorBuf<'a>,
     buf2: &CpuTensorBuf<'a>,
@@ -15,8 +15,9 @@ pub fn mul_inplace<'a>(
     assert!(strider1.shape() == strider2.shape());
     assert!(strider1.is_contiguous());
     assert!(strider2.is_contiguous());
+    assert!(buf1.dtype() == buf2.dtype());
 
-    for (ia, ib) in buf1.iter_mut().zip(buf2.iter()) {
+    for (ia, ib) in buf1.iter_f32_mut().zip(buf2.iter_f32()) {
         *ia *= ib;
     }
 

@@ -13,8 +13,10 @@ pub fn add_inplace<'a>(
     assert!(strider1.is_contiguous());
     assert!(strider2.is_contiguous());
 
-    buf1.iter_mut().zip(buf2.iter()).for_each(|(ia, ib)| {
-        *ia += ib;
-    });
+    buf1.iter_f32_mut()
+        .zip(buf2.iter_f32())
+        .for_each(|(ia, ib)| {
+            *ia += ib;
+        });
     Ok(())
 }

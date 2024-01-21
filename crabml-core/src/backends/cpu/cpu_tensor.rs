@@ -228,13 +228,8 @@ impl<'a> Tensor for CpuTensor<'a> {
                 .into());
         }
 
-        let src_idx = src.strider().at(pos)?;
-        let src_iter = src.buf.iter_from(src_idx).take(len);
-
-        self.buf.iter_mut().zip(src_iter).for_each(|(dst, src)| {
-            *dst = src;
-        });
-        Ok(())
+        let offset = src.strider().at(pos)?;
+        self.buf.copy_from(&src.buf, offset, len)
     }
 
     fn dup(&self) -> Result<Self> {

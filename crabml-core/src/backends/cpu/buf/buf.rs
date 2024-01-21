@@ -87,15 +87,26 @@ impl<'a> CpuTensorBuf<'a> {
         }
     }
 
-    pub fn iter_from(&self, pos: usize) -> CpuTensorBufIter {
-        match self {
+    pub fn copy_from(&mut self, src: &Self, offset: usize, len: usize) -> Result<()> {
+        assert!(self.is_owned(), "only owned buffers can be copied to");
+        assert!(
+            self.dtype() == GGMLType::F32 || self.dtype() == GGMLType::F16,
+            "only f32/f16 can be copied to"
+        );
+        assert!(self.dtype() == src.dtype(), "only same dtype can be copied");
+
+        match src {
             CpuTensorBuf::F32(buf) => {
-                CpuTensorBufIter::Boxed(Box::new(buf.iter().skip(pos).cloned()), self.len() - pos)
+                let src_iter = buf.iter().skip(offset).take(len);
+                self.iter_mut().zip(src_iter).for_each(|(dst, src)| {
+                    *dst = *src;
+                });
             }
-            CpuTensorBuf::Q8_0(buf) => {
-                CpuTensorBufIter::Boxed(Box::new(buf.dequantize_from(pos)), self.len())
-            }
-        }
+            // TODO: add f16 support
+            _ => unreachable!("only f32/f16 buffers can be copied"),
+        };
+
+        Ok(())
     }
 
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut f32> {

@@ -26,6 +26,7 @@ pub trait Tensor: Sized + Clone {
 
     fn extend(&mut self, rhs: &Self) -> Result<()>;
 
+    /// copy from another tensor. used on loading weights from vocab table.
     fn copy_from(&mut self, rhs: &Self, pos: &[usize], len: usize) -> Result<()>;
 
     fn export(&self, buf: &mut [f32]) -> Result<()>;

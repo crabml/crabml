@@ -65,6 +65,17 @@ impl<'a> CpuTensorBuf<'a> {
         }
     }
 
+    pub fn iter_from(&self, pos: usize) -> CpuTensorBufIter {
+        match self {
+            CpuTensorBuf::F32(buf) => {
+                CpuTensorBufIter::Boxed(Box::new(buf.iter().skip(pos).cloned()), self.len() - pos)
+            }
+            CpuTensorBuf::Q8_0(buf) => {
+                CpuTensorBufIter::Boxed(Box::new(buf.iter_range(pos, buf.len(), 1)), self.len())
+            }
+        }
+    }
+
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut f32> {
         match self {
             CpuTensorBuf::F32(Cow::Owned(buf)) => buf.iter_mut(),

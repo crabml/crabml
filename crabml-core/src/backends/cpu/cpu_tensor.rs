@@ -85,17 +85,6 @@ impl<'a> CpuTensor<'a> {
         CpuTensorBufIter::Boxed(Box::new(iter), self.len())
     }
 
-    // TODO: remove it
-    fn iter_from(&self, pos: &[usize]) -> Result<impl Iterator<Item = f32> + '_> {
-        if !self.is_contiguous() {
-            return Err((ErrorKind::TensorError, "not contiguous").into());
-        }
-
-        let start = self.strider.at(pos).unwrap();
-        let iter = (start..self.strider.len()).map(|i| self.buf.at_unchecked(i));
-        Ok(CpuTensorBufIter::Boxed(Box::new(iter), self.len()))
-    }
-
     pub fn is_contiguous(&self) -> bool {
         self.strider.is_contiguous()
     }
@@ -222,12 +211,12 @@ impl<'a> Tensor for CpuTensor<'a> {
             return Err((ErrorKind::TensorError, "src tensor is not contiguous").into());
         }
 
-        self.buf
-            .iter_mut()
-            .zip(src.iter_from(pos)?.take(len))
-            .for_each(|(dst, src)| {
-                *dst = src;
-            });
+        let src_idx = src.strider().at(pos)?;
+        let src_iter = src.buf.iter_from(src_idx).take(len);
+
+        self.buf.iter_mut().zip(src_iter).for_each(|(dst, src)| {
+            *dst = src;
+        });
         Ok(())
     }
 

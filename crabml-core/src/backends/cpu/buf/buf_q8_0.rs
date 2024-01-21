@@ -30,17 +30,11 @@ impl<'a> QuantBufQ8_0<'a> {
         self.num_blocks * 32
     }
 
-    pub fn iter_range(
-        &'a self,
-        start: usize,
-        end: usize,
-        step: usize,
-    ) -> impl Iterator<Item = f32> + 'a {
+    pub fn iter_range(&'a self, start: usize, end: usize) -> impl Iterator<Item = f32> + 'a {
         BlockBufIterQ8_0 {
             buf: &self,
             pos: start,
             end: end,
-            step: step,
             current_f32_buf: [0.0; 32],
             current_block: usize::MAX,
         }
@@ -133,7 +127,6 @@ pub struct BlockBufIterQ8_0<'a> {
     current_block: usize,
     pos: usize,
     end: usize,
-    step: usize,
 }
 
 impl<'a> Iterator for BlockBufIterQ8_0<'a> {
@@ -152,7 +145,7 @@ impl<'a> Iterator for BlockBufIterQ8_0<'a> {
         }
 
         let val = self.current_f32_buf[self.pos % 32];
-        self.pos += self.step;
+        self.pos += 1;
         Some(val)
     }
 }
@@ -185,12 +178,12 @@ mod tests {
 
         let bf = QuantBufQ8_0::from_bytes(&buf);
         assert_eq!(bf.len(), 64);
-        assert_eq!(bf.iter_range(0, bf.len(), 1).collect::<Vec<_>>(), vec![
+        assert_eq!(bf.iter_range(0, bf.len()).collect::<Vec<_>>(), vec![
             6.0, 9.0, 12.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0,
             3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 21.0, 3.0, 3.0,
             3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0,
             3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 27.0, 27.0
         ]);
-        assert_eq!(bf.iter_range(10, bf.len(), 1).collect::<Vec<_>>().len(), 54);
+        assert_eq!(bf.iter_range(10, bf.len()).collect::<Vec<_>>().len(), 54);
     }
 }

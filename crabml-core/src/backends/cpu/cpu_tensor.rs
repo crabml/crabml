@@ -58,7 +58,16 @@ impl<'a> CpuTensor<'a> {
     }
 
     pub fn dequantize(self, dtype: GGMLType) -> Result<Self> {
-        todo!()
+        let strider = self.strider.clone();
+        let device = self.device.clone();
+        let name = self.name.clone();
+        let buf = self.buf.dequantize(dtype)?;
+        Ok(Self {
+            buf,
+            strider,
+            device,
+            name,
+        })
     }
 
     pub fn typ(&self) -> GGMLType {

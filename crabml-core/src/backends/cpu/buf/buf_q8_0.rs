@@ -5,6 +5,48 @@ use half::f16;
 
 use super::buf::VecDotF32;
 
+#[derive(Debug, Clone)]
+pub struct QuantBufQ8_0<'a> {
+    raw: &'a [u8],
+    num_blocks: usize,
+}
+
+impl<'a> QuantBufQ8_0<'a> {
+    pub fn from_bytes(buf: &'a [u8]) -> Self {
+        let block_mem = std::mem::size_of::<BlockQ8_0>();
+        // assert!(buf.len() % block_mem == 0);
+        let num_blocks = buf.len() / block_mem;
+        Self {
+            raw: buf,
+            num_blocks,
+        }
+    }
+
+    fn blocks(&self) -> &[BlockQ8_0] {
+        BlockQ8_0::from_bytes(self.raw)
+    }
+
+    pub fn len(&self) -> usize {
+        self.num_blocks * 32
+    }
+
+    pub fn iter_range(
+        &'a self,
+        start: usize,
+        end: usize,
+        step: usize,
+    ) -> impl Iterator<Item = f32> + 'a {
+        BlockBufIterQ8_0 {
+            buf: &self,
+            pos: start,
+            end: end,
+            step: step,
+            current_f32_buf: [0.0; 32],
+            current_block: usize::MAX,
+        }
+    }
+}
+
 #[repr(C, packed)]
 #[derive(Debug, Clone)]
 pub struct BlockQ8_0 {
@@ -53,52 +95,6 @@ impl BlockQ8_0 {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct QuantBufQ8_0<'a> {
-    raw: &'a [u8],
-    num_blocks: usize,
-}
-
-impl<'a> QuantBufQ8_0<'a> {
-    pub fn from_bytes(buf: &'a [u8]) -> Self {
-        let block_mem = std::mem::size_of::<BlockQ8_0>();
-        // assert!(buf.len() % block_mem == 0);
-        let num_blocks = buf.len() / block_mem;
-        Self {
-            raw: buf,
-            num_blocks,
-        }
-    }
-
-    pub fn blocks(&self) -> &[BlockQ8_0] {
-        BlockQ8_0::from_bytes(self.raw)
-    }
-
-    pub fn blocks_range(&self, start: usize, end: usize) -> &[BlockQ8_0] {
-        &self.blocks()[start / 32..end / 32]
-    }
-
-    pub fn len(&self) -> usize {
-        self.num_blocks * 32
-    }
-
-    pub fn iter_range(
-        &'a self,
-        start: usize,
-        end: usize,
-        step: usize,
-    ) -> impl Iterator<Item = f32> + 'a {
-        BlockBufIterQ8_0 {
-            buf: &self,
-            pos: start,
-            end: end,
-            step: step,
-            current_f32_buf: [0.0; 32],
-            current_block: usize::MAX,
-        }
-    }
-}
-
 impl<'a> VecDotF32 for QuantBufQ8_0<'a> {
     fn vec_dot_f32(&self, offset: usize, x: &[f32]) -> f32 {
         let blocks = BlockQ8_0::from_bytes(self.raw);
@@ -130,70 +126,7 @@ impl<'a> VecDotF32 for QuantBufQ8_0<'a> {
     }
 }
 
-pub fn vec_dot_q8_0_f16(w: &[BlockQ8_0], x: &[f16]) -> f32 {
-    let mut sum = 0.0;
-    for (xb, wb) in x.chunks(32).zip(w.iter()) {
-        let mut sum_block = 0.0;
-        for j in 0..4 {
-            let qv = f32x8::from_array([
-                wb.qs[j * 8] as f32,
-                wb.qs[j * 8 + 1] as f32,
-                wb.qs[j * 8 + 2] as f32,
-                wb.qs[j * 8 + 3] as f32,
-                wb.qs[j * 8 + 4] as f32,
-                wb.qs[j * 8 + 5] as f32,
-                wb.qs[j * 8 + 6] as f32,
-                wb.qs[j * 8 + 7] as f32,
-            ]);
-            let xv = f32x8::from_array([
-                xb[j * 8].to_f32(),
-                xb[j * 8 + 1].to_f32(),
-                xb[j * 8 + 2].to_f32(),
-                xb[j * 8 + 3].to_f32(),
-                xb[j * 8 + 4].to_f32(),
-                xb[j * 8 + 5].to_f32(),
-                xb[j * 8 + 6].to_f32(),
-                xb[j * 8 + 7].to_f32(),
-            ]);
-            sum_block += (qv * xv).reduce_sum();
-        }
-        sum += sum_block * wb.d.to_f32();
-    }
-    sum
-}
-
-pub fn vec_dot_q8_0_q8_0(w: &[BlockQ8_0], x: &[BlockQ8_0]) -> f32 {
-    let mut sum = 0.0;
-    for (xb, wb) in x.iter().zip(w.iter()) {
-        let mut sum_block = 0.0;
-        for j in 0..4 {
-            let qv = f32x8::from_array([
-                wb.qs[j * 8] as f32,
-                wb.qs[j * 8 + 1] as f32,
-                wb.qs[j * 8 + 2] as f32,
-                wb.qs[j * 8 + 3] as f32,
-                wb.qs[j * 8 + 4] as f32,
-                wb.qs[j * 8 + 5] as f32,
-                wb.qs[j * 8 + 6] as f32,
-                wb.qs[j * 8 + 7] as f32,
-            ]);
-            let xv = f32x8::from_array([
-                xb.qs[j * 8] as f32,
-                xb.qs[j * 8 + 1] as f32,
-                xb.qs[j * 8 + 2] as f32,
-                xb.qs[j * 8 + 3] as f32,
-                xb.qs[j * 8 + 4] as f32,
-                xb.qs[j * 8 + 5] as f32,
-                xb.qs[j * 8 + 6] as f32,
-                xb.qs[j * 8 + 7] as f32,
-            ]);
-            sum_block += (qv * xv).reduce_sum();
-        }
-        sum += sum_block * wb.d.to_f32() * xb.d.to_f32();
-    }
-    sum
-}
-
+/// TODO: replace it as chained iterator, as it is not considered as a fast path.
 pub struct BlockBufIterQ8_0<'a> {
     buf: &'a QuantBufQ8_0<'a>,
     current_f32_buf: [f32; 32],

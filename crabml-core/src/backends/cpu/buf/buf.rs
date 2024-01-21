@@ -66,7 +66,10 @@ impl<'a> CpuTensorBuf<'a> {
 
         match self {
             CpuTensorBuf::F32(buf) => Ok(CpuTensorBuf::F32(buf)),
-            CpuTensorBuf::Q8_0(buf) => todo!(),
+            CpuTensorBuf::Q8_0(buf) => match dtype {
+                GGMLType::F32 => Ok(CpuTensorBuf::F32(buf.iter_range(0, buf.len(), 1).collect())),
+                _ => unimplemented!(),
+            },
         }
     }
 

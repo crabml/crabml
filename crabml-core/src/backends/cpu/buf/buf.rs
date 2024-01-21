@@ -29,6 +29,13 @@ impl<'a> CpuTensorBuf<'a> {
         }
     }
 
+    pub fn is_quantized(&self) -> bool {
+        match self {
+            CpuTensorBuf::F32(_) => true,
+            _ => false,
+        }
+    }
+
     pub fn len(&self) -> usize {
         match self {
             CpuTensorBuf::F32(buf) => buf.len(),
@@ -71,15 +78,6 @@ impl<'a> CpuTensorBuf<'a> {
         }
     }
 
-    pub fn iter(&self) -> CpuTensorBufIter {
-        match self {
-            CpuTensorBuf::F32(buf) => CpuTensorBufIter::Slice(buf.iter()),
-            CpuTensorBuf::Q8_0(buf) => {
-                CpuTensorBufIter::Boxed(Box::new(buf.dequantize(0)), self.len())
-            }
-        }
-    }
-
     pub fn copy_from(&mut self, src: &Self, offset: usize, len: usize) -> Result<()> {
         assert!(self.is_owned(), "only owned buffers can be copied to");
         assert!(
@@ -91,7 +89,7 @@ impl<'a> CpuTensorBuf<'a> {
         match src {
             CpuTensorBuf::F32(buf) => {
                 let src_iter = buf.iter().skip(offset).take(len);
-                self.iter_mut().zip(src_iter).for_each(|(dst, src)| {
+                self.iter_f32_mut().zip(src_iter).for_each(|(dst, src)| {
                     *dst = *src;
                 });
             }
@@ -102,7 +100,16 @@ impl<'a> CpuTensorBuf<'a> {
         Ok(())
     }
 
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut f32> {
+    /// the quantized tensor can not be iterated directly. to iterate the quantized tensor,
+    /// use `dequantize` to convert it to f32/f16 tensor first.
+    pub fn iter_f32(&self) -> impl Iterator<Item = f32> + '_ {
+        match self {
+            CpuTensorBuf::F32(buf) => buf.iter().cloned(),
+            _ => unreachable!("only f32/f16 buffers can be iterated"),
+        }
+    }
+
+    pub fn iter_f32_mut(&mut self) -> impl Iterator<Item = &mut f32> {
         match self {
             CpuTensorBuf::F32(Cow::Owned(buf)) => buf.iter_mut(),
             _ => unreachable!("only owned buffers can be mutable"),
@@ -121,13 +128,6 @@ impl<'a> CpuTensorBuf<'a> {
         let f32_buf = unsafe { slice::from_raw_parts(ptr, new_len) };
         f32_buf.into()
     }
-
-    pub fn buf_mut(&mut self) -> &mut [f32] {
-        match self {
-            CpuTensorBuf::F32(Cow::Owned(buf)) => buf,
-            _ => unreachable!("only owned buffers can be mutable"),
-        }
-    }
 }
 
 impl Clone for CpuTensorBuf<'_> {
@@ -136,12 +136,6 @@ impl Clone for CpuTensorBuf<'_> {
             CpuTensorBuf::F32(buf) => Self::F32(buf.clone()),
             CpuTensorBuf::Q8_0(buf) => Self::Q8_0(buf.clone()),
         }
-    }
-}
-
-impl Default for CpuTensorBuf<'_> {
-    fn default() -> Self {
-        Self::F32(Vec::new().into())
     }
 }
 
@@ -154,35 +148,6 @@ impl From<Vec<f32>> for CpuTensorBuf<'_> {
 impl<'a> From<&'a [f32]> for CpuTensorBuf<'a> {
     fn from(buf: &'a [f32]) -> Self {
         Self::F32(buf.into())
-    }
-}
-
-// a enum dispatcher seems 3 times faster than a trait object on the benchmarks
-pub enum CpuTensorBufIter<'a> {
-    Slice(slice::Iter<'a, f32>),
-    StepBy(std::iter::StepBy<std::slice::Iter<'a, f32>>),
-    Boxed(Box<dyn Iterator<Item = f32> + 'a>, usize),
-}
-
-impl<'a> Iterator for CpuTensorBufIter<'a> {
-    type Item = f32;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            CpuTensorBufIter::Slice(iter) => iter.next().cloned(),
-            CpuTensorBufIter::StepBy(iter) => iter.next().cloned(),
-            CpuTensorBufIter::Boxed(iter, _) => iter.next(),
-        }
-    }
-}
-
-impl<'a> ExactSizeIterator for CpuTensorBufIter<'a> {
-    fn len(&self) -> usize {
-        match self {
-            CpuTensorBufIter::Slice(iter) => iter.len(),
-            CpuTensorBufIter::StepBy(iter) => iter.len(),
-            CpuTensorBufIter::Boxed(_, hint) => *hint,
-        }
     }
 }
 

@@ -14,15 +14,17 @@ pub fn div_inplace<'a>(
     assert!(strider2.is_contiguous());
 
     if buf2.len() == 1 {
-        let ib = buf2.iter().next().unwrap();
-        buf1.iter_mut().for_each(|ia| {
+        let ib = buf2.iter_f32().next().unwrap();
+        buf1.iter_f32_mut().for_each(|ia| {
             *ia /= ib;
         });
         return Ok(());
     }
 
-    buf1.iter_mut().zip(buf2.iter()).for_each(|(ia, ib)| {
-        *ia /= ib;
-    });
+    buf1.iter_f32_mut()
+        .zip(buf2.iter_f32())
+        .for_each(|(ia, ib)| {
+            *ia /= ib;
+        });
     Ok(())
 }

@@ -54,7 +54,7 @@ impl<'a> CpuTensorDevice<'a> {
     }
 
     pub(crate) fn add_debug_tensor(&self, tensor: &CpuTensor<'a>) {
-        let buf = tensor.buf().iter().collect::<Vec<_>>();
+        let buf = tensor.buf().iter_f32().collect::<Vec<_>>();
         self.debug_tensors
             .borrow_mut()
             .insert(tensor.name.clone().unwrap(), buf);

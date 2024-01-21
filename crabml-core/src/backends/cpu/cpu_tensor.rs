@@ -87,7 +87,7 @@ impl<'a> CpuTensor<'a> {
 
     fn to_vec(&self) -> Vec<f32> {
         assert!(self.is_contiguous());
-        return self.buf.iter().collect();
+        return self.buf.iter_f32().collect();
     }
 
     pub fn is_contiguous(&self) -> bool {
@@ -181,7 +181,7 @@ impl<'a> Tensor for CpuTensor<'a> {
                 .into());
         }
 
-        self.buf.extend(t.buf.iter());
+        self.buf.extend(t.buf.iter_f32());
         let new_shape = {
             let mut shape = self.shape().to_vec();
             shape[0] += 1;
@@ -232,16 +232,18 @@ impl<'a> Tensor for CpuTensor<'a> {
     }
 
     fn dup(&self) -> Result<Self> {
-        let buf = self.buf.iter().collect::<Vec<_>>();
+        let buf = self.buf.iter_f32().collect::<Vec<_>>();
         Self::new(buf, self.shape(), self.device.clone())
     }
 
     fn export(&self, dst: &mut [f32]) -> Result<()> {
         assert!(self.is_contiguous());
 
-        dst.iter_mut().zip(self.buf.iter()).for_each(|(dst, src)| {
-            *dst = src;
-        });
+        dst.iter_mut()
+            .zip(self.buf.iter_f32())
+            .for_each(|(dst, src)| {
+                *dst = src;
+            });
         Ok(())
     }
 

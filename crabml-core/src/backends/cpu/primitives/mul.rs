@@ -17,7 +17,7 @@ pub fn mul_inplace<'a>(
     assert!(strider2.is_contiguous());
     assert!(buf1.dtype() == buf2.dtype());
 
-    for (ia, ib) in buf1.iter_mut().zip(buf2.iter()) {
+    for (ia, ib) in buf1.iter_f32_mut().zip(buf2.iter_f32()) {
         *ia *= ib;
     }
 

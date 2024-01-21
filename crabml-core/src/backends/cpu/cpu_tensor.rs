@@ -85,8 +85,10 @@ impl<'a> CpuTensor<'a> {
         self.buf.is_owned()
     }
 
+    /// to_vec is only used for test.
     fn to_vec(&self) -> Vec<f32> {
         assert!(self.is_contiguous());
+        // TODO: if it's f16, convert it to f32
         return self.buf.iter_f32().collect();
     }
 

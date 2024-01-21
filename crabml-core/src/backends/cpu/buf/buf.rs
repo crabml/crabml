@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 
 use super::buf_f32::f32_buf_from_bytes;
+use super::buf_f32::f32_buf_vec_dot_f32;
 use crate::backends::cpu::buf::QuantBufQ8_0;
 use crate::error::ErrorKind;
 use crate::error::Result;
@@ -71,6 +72,13 @@ impl<'a> CpuTensorBuf<'a> {
         }
     }
 
+    pub fn vec_dot_f32(&self, row: usize, x: &[f32]) -> f32 {
+        match self {
+            CpuTensorBuf::F32(buf) => f32_buf_vec_dot_f32(buf, row, x),
+            CpuTensorBuf::Q8_0(buf) => buf.vec_dot_f32(row, x),
+        }
+    }
+
     pub fn extend(&mut self, iter: impl Iterator<Item = f32>) {
         match self {
             CpuTensorBuf::F32(Cow::Owned(buf)) => buf.extend(iter),
@@ -117,17 +125,12 @@ impl<'a> CpuTensorBuf<'a> {
     /// the quantized tensor can not be iterated directly. to iterate the quantized tensor,
     /// use `dequantize` to convert it to f32/f16 tensor first.
     pub fn iter_f32(&self) -> impl Iterator<Item = f32> + '_ {
-        match self {
-            CpuTensorBuf::F32(buf) => buf.iter().cloned(),
-            _ => unreachable!("only f32/f16 buffers can be iterated"),
-        }
+        // TODO: convert f16 to f32 here, to make debug easier.
+        self.as_f32_ref().iter().copied()
     }
 
     pub fn iter_f32_mut(&mut self) -> impl Iterator<Item = &mut f32> {
-        match self {
-            CpuTensorBuf::F32(Cow::Owned(buf)) => buf.iter_mut(),
-            _ => unreachable!("only owned buffers can be mutable"),
-        }
+        self.as_f32_mut().iter_mut()
     }
 }
 

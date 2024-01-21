@@ -40,6 +40,35 @@ impl<'a> QuantBufQ8_0<'a> {
             buf.into_iter()
         })
     }
+
+    pub fn vec_dot_f32(&self, offset: usize, x: &[f32]) -> f32 {
+        let blocks = BlockQ8_0::from_bytes(self.raw);
+        let row = &blocks[offset / 32..(offset + x.len()) / 32];
+        assert!(row.len() * 32 == x.len());
+        let mut sum = 0.0;
+        for i in 0..row.len() {
+            let block = &row[i];
+            let d = block.d.to_f32();
+            let mut sum_block = 0.0;
+            for j in 0..4 {
+                let qs = &block.qs[j * 8..(j + 1) * 8];
+                let qv = f32x8::from_array([
+                    qs[0] as f32,
+                    qs[1] as f32,
+                    qs[2] as f32,
+                    qs[3] as f32,
+                    qs[4] as f32,
+                    qs[5] as f32,
+                    qs[6] as f32,
+                    qs[7] as f32,
+                ]);
+                let xv = f32x8::from_slice(&x[i * 32 + j * 8..i * 32 + (j + 1) * 8]);
+                sum_block += (qv * xv).reduce_sum();
+            }
+            sum += sum_block * d;
+        }
+        sum
+    }
 }
 
 #[repr(C, packed)]
@@ -87,37 +116,6 @@ impl BlockQ8_0 {
             let q = self.qs[i];
             buf[i] = q as f32 * d;
         }
-    }
-}
-
-impl<'a> CpuTensorBufVecDot for QuantBufQ8_0<'a> {
-    fn vec_dot_f32(&self, offset: usize, x: &[f32]) -> f32 {
-        let blocks = BlockQ8_0::from_bytes(self.raw);
-        let row = &blocks[offset / 32..(offset + x.len()) / 32];
-        assert!(row.len() * 32 == x.len());
-        let mut sum = 0.0;
-        for i in 0..row.len() {
-            let block = &row[i];
-            let d = block.d.to_f32();
-            let mut sum_block = 0.0;
-            for j in 0..4 {
-                let qs = &block.qs[j * 8..(j + 1) * 8];
-                let qv = f32x8::from_array([
-                    qs[0] as f32,
-                    qs[1] as f32,
-                    qs[2] as f32,
-                    qs[3] as f32,
-                    qs[4] as f32,
-                    qs[5] as f32,
-                    qs[6] as f32,
-                    qs[7] as f32,
-                ]);
-                let xv = f32x8::from_slice(&x[i * 32 + j * 8..i * 32 + (j + 1) * 8]);
-                sum_block += (qv * xv).reduce_sum();
-            }
-            sum += sum_block * d;
-        }
-        sum
     }
 }
 

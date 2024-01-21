@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::slice;
 
 use crate::backends::cpu::buf::QuantBufQ8_0;
+use crate::error::ErrorKind;
 use crate::error::Result;
 use crate::gguf::GGMLType;
 
@@ -46,6 +47,26 @@ impl<'a> CpuTensorBuf<'a> {
         match self {
             CpuTensorBuf::F32(_) => GGMLType::F32,
             CpuTensorBuf::Q8_0(_) => GGMLType::Q8_0,
+        }
+    }
+
+    /// dequantize the quantized tensors to f32 or f16
+    ///
+    /// - a f32 buf can not be dequantized to f16
+    /// - a f16 buf can only be dequantized to f32 or f16
+    /// - the lower bit quantized buf can be dequantized to f32 or f16
+    pub fn dequantize(self, dtype: GGMLType) -> Result<Self> {
+        if dtype != GGMLType::F32 || dtype != GGMLType::F16 {
+            return Err((
+                ErrorKind::TensorError,
+                format!("dequantize to {:?} is not supported", dtype),
+            )
+                .into());
+        }
+
+        match self {
+            CpuTensorBuf::F32(buf) => Ok(CpuTensorBuf::F32(buf)),
+            CpuTensorBuf::Q8_0(buf) => todo!(),
         }
     }
 

@@ -57,6 +57,10 @@ impl<'a> CpuTensor<'a> {
         })
     }
 
+    pub fn dequantize(self, dtype: GGMLType) -> Result<Self> {
+        todo!()
+    }
+
     pub fn typ(&self) -> GGMLType {
         self.buf.typ()
     }

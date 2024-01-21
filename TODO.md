@@ -9,4 +9,7 @@
 - [x] use uniform to store the meta buffers
 - [x] a better gemv
 - [ ] q8 quantization on webgpu
+  - [ ] add dequantize in CpuTensor
+  - [ ] refactor the CPU side: dequantize these on loading: token_embedding_table, rms_att_weight, rms_ffn_weight, rms_final_weight, wcls
+  - [ ] all the other are only matmul
 - [ ] f16 activations

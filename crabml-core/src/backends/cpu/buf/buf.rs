@@ -22,13 +22,6 @@ impl<'a> CpuTensorBuf<'a> {
         }
     }
 
-    pub fn at_unchecked(&self, pos: usize) -> f32 {
-        match self {
-            CpuTensorBuf::F32(buf) => buf[pos],
-            CpuTensorBuf::Q8_0(buf) => buf.dequantize(pos).next().unwrap(),
-        }
-    }
-
     pub fn is_owned(&self) -> bool {
         match self {
             CpuTensorBuf::F32(Cow::Owned(_)) => true,

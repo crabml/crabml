@@ -14,7 +14,7 @@ pub fn div_inplace<'a>(
     assert!(strider2.is_contiguous());
 
     if buf2.len() == 1 {
-        let ib = buf2.at_unchecked(0);
+        let ib = buf2.iter().next().unwrap();
         buf1.iter_mut().for_each(|ia| {
             *ia /= ib;
         });

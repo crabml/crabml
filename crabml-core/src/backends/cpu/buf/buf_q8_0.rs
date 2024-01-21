@@ -3,7 +3,7 @@ use std::simd::prelude::SimdFloat;
 
 use half::f16;
 
-use super::buf::VecDotF32;
+use super::buf::QuantizedBuf;
 
 #[derive(Debug, Clone)]
 pub struct QuantBufQ8_0<'a> {
@@ -30,7 +30,7 @@ impl<'a> QuantBufQ8_0<'a> {
         self.num_blocks * 32
     }
 
-    pub fn iter_from(&'a self, start: usize) -> impl Iterator<Item = f32> + 'a {
+    pub fn dequantize_from(&'a self, start: usize) -> impl Iterator<Item = f32> + 'a {
         assert!(start % 32 == 0);
 
         let block_start = start / 32;
@@ -90,7 +90,7 @@ impl BlockQ8_0 {
     }
 }
 
-impl<'a> VecDotF32 for QuantBufQ8_0<'a> {
+impl<'a> QuantizedBuf for QuantBufQ8_0<'a> {
     fn vec_dot_f32(&self, offset: usize, x: &[f32]) -> f32 {
         let blocks = BlockQ8_0::from_bytes(self.raw);
         let row = &blocks[offset / 32..(offset + x.len()) / 32];
@@ -149,7 +149,7 @@ mod tests {
 
         let bf = QuantBufQ8_0::from_bytes(&buf);
         assert_eq!(bf.len(), 64);
-        assert_eq!(bf.iter_from(0).collect::<Vec<_>>(), vec![
+        assert_eq!(bf.dequantize_from(0).collect::<Vec<_>>(), vec![
             6.0, 9.0, 12.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0,
             3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 21.0, 3.0, 3.0,
             3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0,

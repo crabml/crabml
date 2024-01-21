@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use rayon::prelude::*;
 
 use crate::backends::cpu::buf::CpuTensorBuf;
-use crate::backends::cpu::buf::VecDotF32;
+use crate::backends::cpu::buf::QuantizedBuf;
 use crate::error::Result;
 use crate::tensor::TensorStrider;
 
@@ -89,7 +89,11 @@ pub fn maybe_matmul_vec_simd<'a, 'b: 'a>(
     true
 }
 
-pub fn matmul_vec_generic_xxx_f32_simd<'a, T: VecDotF32 + Sync>(a: &T, b: &[f32], c: &mut [f32]) {
+pub fn matmul_vec_generic_xxx_f32_simd<'a, T: QuantizedBuf + Sync>(
+    a: &T,
+    b: &[f32],
+    c: &mut [f32],
+) {
     // a: [m, k]
     // b: [k]
     // out: [m]

@@ -154,7 +154,3 @@ impl<'a> From<&'a [f32]> for CpuTensorBuf<'a> {
         Self::F32(buf.into())
     }
 }
-
-pub trait CpuTensorBufVecDot {
-    fn vec_dot_f32(&self, row: usize, x: &[f32]) -> f32;
-}

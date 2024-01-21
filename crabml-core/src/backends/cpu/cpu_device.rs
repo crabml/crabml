@@ -4,7 +4,6 @@ use std::rc::Rc;
 
 use super::CpuTensor;
 use crate::backends::cpu::buf::CpuTensorBuf;
-use crate::error::Result;
 
 #[derive(Debug, Clone)]
 pub struct CpuTensorDeviceOptions {

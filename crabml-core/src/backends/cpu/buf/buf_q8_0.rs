@@ -3,8 +3,6 @@ use std::simd::prelude::SimdFloat;
 
 use half::f16;
 
-use super::CpuTensorBufVecDot;
-
 #[derive(Debug, Clone)]
 pub struct QuantBufQ8_0<'a> {
     raw: &'a [u8],

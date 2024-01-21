@@ -3,8 +3,6 @@ use std::simd::f32x32;
 use std::simd::prelude::SimdFloat;
 use std::slice;
 
-use super::buf::CpuTensorBufVecDot;
-
 pub fn f32_buf_from_bytes<'a>(buf: &[u8]) -> Cow<'a, [f32]> {
     let len = buf.len();
     assert_eq!(

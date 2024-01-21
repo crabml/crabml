@@ -30,14 +30,15 @@ impl<'a> QuantBufQ8_0<'a> {
         self.num_blocks * 32
     }
 
-    pub fn iter_range(&'a self, start: usize, end: usize) -> impl Iterator<Item = f32> + 'a {
-        BlockBufIterQ8_0 {
-            buf: &self,
-            pos: start,
-            end: end,
-            current_f32_buf: [0.0; 32],
-            current_block: usize::MAX,
-        }
+    pub fn iter_from(&'a self, start: usize) -> impl Iterator<Item = f32> + 'a {
+        assert!(start % 32 == 0);
+
+        let block_start = start / 32;
+        self.blocks()[block_start..].iter().flat_map(|blk| {
+            let mut buf = [0.0; 32];
+            blk.dequantize(&mut buf);
+            buf.into_iter()
+        })
     }
 }
 
@@ -120,36 +121,6 @@ impl<'a> VecDotF32 for QuantBufQ8_0<'a> {
     }
 }
 
-/// TODO: replace it as chained iterator, as it is not considered as a fast path.
-pub struct BlockBufIterQ8_0<'a> {
-    buf: &'a QuantBufQ8_0<'a>,
-    current_f32_buf: [f32; 32],
-    current_block: usize,
-    pos: usize,
-    end: usize,
-}
-
-impl<'a> Iterator for BlockBufIterQ8_0<'a> {
-    type Item = f32;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.pos >= self.end {
-            return None;
-        }
-
-        let block_idx = self.pos / BlockQ8_0::BLOCK_ELEMS;
-        if block_idx != self.current_block {
-            let block = &self.buf.blocks()[block_idx];
-            block.dequantize(&mut self.current_f32_buf);
-            self.current_block = block_idx;
-        }
-
-        let val = self.current_f32_buf[self.pos % 32];
-        self.pos += 1;
-        Some(val)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -178,12 +149,11 @@ mod tests {
 
         let bf = QuantBufQ8_0::from_bytes(&buf);
         assert_eq!(bf.len(), 64);
-        assert_eq!(bf.iter_range(0, bf.len()).collect::<Vec<_>>(), vec![
+        assert_eq!(bf.iter_from(0).collect::<Vec<_>>(), vec![
             6.0, 9.0, 12.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0,
             3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 21.0, 3.0, 3.0,
             3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0,
             3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 27.0, 27.0
         ]);
-        assert_eq!(bf.iter_range(10, bf.len()).collect::<Vec<_>>().len(), 54);
     }
 }

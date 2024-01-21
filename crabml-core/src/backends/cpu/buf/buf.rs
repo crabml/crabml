@@ -54,7 +54,7 @@ impl<'a> CpuTensorBuf<'a> {
     /// f32 to f16 is not considered as dequantization, but it still will be supported to
     /// simplify the conversion on half-precision activation is enabled.
     pub fn dequantize(self, dtype: GGMLType) -> Result<Self> {
-        if dtype != GGMLType::F32 || dtype != GGMLType::F16 {
+        if dtype != GGMLType::F32 && dtype != GGMLType::F16 {
             return Err((
                 ErrorKind::TensorError,
                 format!("dequantize to {:?} is not supported", dtype),

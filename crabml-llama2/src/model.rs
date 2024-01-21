@@ -9,6 +9,7 @@ use crabml::backends::wgpu::WgpuTensorDeviceRef;
 use crabml::error::Error;
 use crabml::error::ErrorKind;
 use crabml::error::Result;
+use crabml::gguf::GGMLType;
 use crabml::gguf::GGUFFile;
 use crabml::tensor::Tensor;
 use crabml::tokenizer::BpeTokenizer;
@@ -95,7 +96,8 @@ impl<'a> CpuLlama2Model<'a> {
         device: CpuTensorDeviceRef<'a>,
     ) -> Result<Llama2Weights<CpuTensor<'a>>> {
         // [64 (dim), 512 (vocab_size)]
-        let token_embedding_table = Self::load_tensor(gf, "token_embd.weight", device.clone())?;
+        let token_embedding_table = Self::load_tensor(gf, "token_embd.weight", device.clone())?
+            .dequantize(GGMLType::F32)?;
         let mut wq = vec![];
         let mut wk = vec![];
         let mut wv = vec![];
@@ -142,18 +144,25 @@ impl<'a> CpuLlama2Model<'a> {
                 &format!("blk.{}.ffn_up.weight", layer),
                 device.clone(),
             )?);
-            rms_att_weight.push(Self::load_tensor(
-                gf,
-                &format!("blk.{}.attn_norm.weight", layer),
-                device.clone(),
-            )?);
-            rms_ffn_weight.push(Self::load_tensor(
-                gf,
-                &format!("blk.{}.ffn_norm.weight", layer),
-                device.clone(),
-            )?);
+            rms_att_weight.push(
+                Self::load_tensor(
+                    gf,
+                    &format!("blk.{}.attn_norm.weight", layer),
+                    device.clone(),
+                )?
+                .dequantize(GGMLType::F32)?,
+            );
+            rms_ffn_weight.push(
+                Self::load_tensor(
+                    gf,
+                    &format!("blk.{}.ffn_norm.weight", layer),
+                    device.clone(),
+                )?
+                .dequantize(GGMLType::F32)?,
+            );
         }
-        let rms_final_weight = Self::load_tensor(gf, "output_norm.weight", device.clone())?;
+        let rms_final_weight = Self::load_tensor(gf, "output_norm.weight", device.clone())?
+            .dequantize(GGMLType::F32)?;
         let wcls = Self::load_tensor(gf, "output.weight", device.clone())?;
         Ok(Llama2Weights {
             token_embedding_table,
@@ -385,8 +394,11 @@ mod tests {
         let device = CpuTensorDevice::new();
         let lm = CpuLlama2Model::load(&gf, device)?;
         assert_eq!(lm.conf.vocab_size, 32000);
-        assert_eq!(lm.weights.rms_att_weight[0].dtype(), GGMLType::F32);
         assert_eq!(lm.weights.wk[0].dtype(), GGMLType::Q8_0);
+        assert_eq!(lm.weights.rms_att_weight[0].dtype(), GGMLType::F32);
+        assert_eq!(lm.weights.rms_ffn_weight[0].dtype(), GGMLType::F32);
+        assert_eq!(lm.weights.rms_final_weight.dtype(), GGMLType::F32);
+        assert_eq!(lm.weights.token_embedding_table.dtype(), GGMLType::F32);
         Ok(())
     }
 }

@@ -219,6 +219,17 @@ impl<'a> Tensor for CpuTensor<'a> {
         if !src.is_contiguous() {
             return Err((ErrorKind::TensorError, "src tensor is not contiguous").into());
         }
+        if self.dtype() != src.dtype() {
+            return Err((
+                ErrorKind::TensorError,
+                format!(
+                    "dtype mismatch on copy_from, want {:?} but got {:?}",
+                    self.dtype(),
+                    src.dtype()
+                ),
+            )
+                .into());
+        }
 
         let src_idx = src.strider().at(pos)?;
         let src_iter = src.buf.iter_from(src_idx).take(len);

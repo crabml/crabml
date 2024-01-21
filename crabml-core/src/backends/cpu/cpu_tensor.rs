@@ -62,7 +62,7 @@ impl<'a> CpuTensor<'a> {
     }
 
     pub fn typ(&self) -> GGMLType {
-        self.buf.typ()
+        self.buf.dtype()
     }
 
     pub fn device(&self) -> CpuTensorDeviceRef<'a> {
@@ -86,7 +86,7 @@ impl<'a> CpuTensor<'a> {
     }
 
     // TODO: remove it
-    pub fn iter_from(&self, pos: &[usize]) -> Result<impl Iterator<Item = f32> + '_> {
+    fn iter_from(&self, pos: &[usize]) -> Result<impl Iterator<Item = f32> + '_> {
         if !self.is_contiguous() {
             return Err((ErrorKind::TensorError, "not contiguous").into());
         }
@@ -119,6 +119,10 @@ impl<'a> Tensor for CpuTensor<'a> {
     fn alloc(shape: &[usize], _capacity: Option<usize>, device: Self::Device) -> Result<Self> {
         let buf = vec![0.0; shape.iter().product()];
         Self::new(buf, shape, device)
+    }
+
+    fn dtype(&self) -> GGMLType {
+        self.buf.dtype()
     }
 
     fn reshape(self, shape: &[usize]) -> Result<Self> {
@@ -207,17 +211,20 @@ impl<'a> Tensor for CpuTensor<'a> {
         CpuTensor::new(v, &new_shape, self.device.clone())
     }
 
-    fn copy_from(&mut self, t: &CpuTensor<'a>, pos: &[usize], len: usize) -> Result<()> {
+    fn copy_from(&mut self, src: &CpuTensor<'a>, pos: &[usize], len: usize) -> Result<()> {
         if !self.is_owned() {
             return Err((ErrorKind::TensorError, "not owned").into());
         }
         if !self.is_contiguous() {
-            return Err((ErrorKind::TensorError, "not contiguous").into());
+            return Err((ErrorKind::TensorError, "dst tensor is not contiguous").into());
+        }
+        if !src.is_contiguous() {
+            return Err((ErrorKind::TensorError, "src tensor is not contiguous").into());
         }
 
         self.buf
             .iter_mut()
-            .zip(t.iter_from(pos)?.take(len))
+            .zip(src.iter_from(pos)?.take(len))
             .for_each(|(dst, src)| {
                 *dst = src;
             });

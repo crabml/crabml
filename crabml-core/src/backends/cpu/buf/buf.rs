@@ -42,17 +42,10 @@ impl<'a> CpuTensorBuf<'a> {
         }
     }
 
-    pub fn typ(&self) -> GGMLType {
+    pub fn dtype(&self) -> GGMLType {
         match self {
             CpuTensorBuf::F32(_) => GGMLType::F32,
             CpuTensorBuf::Q8_0(_) => GGMLType::Q8_0,
-        }
-    }
-
-    pub fn as_ref(&'a self) -> CpuTensorBuf<'a> {
-        match self {
-            CpuTensorBuf::F32(buf) => CpuTensorBuf::F32(Cow::Borrowed(buf.as_ref())),
-            CpuTensorBuf::Q8_0(buf) => CpuTensorBuf::Q8_0(buf.clone()),
         }
     }
 

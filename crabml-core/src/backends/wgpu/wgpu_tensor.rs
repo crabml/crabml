@@ -108,6 +108,10 @@ impl Tensor for WgpuTensor {
         })
     }
 
+    fn dtype(&self) -> GGMLType {
+        self.dtype
+    }
+
     fn with_strider(self, strider: TensorStrider) -> Result<Self> {
         Ok(Self {
             buf: self.buf,

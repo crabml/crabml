@@ -1,6 +1,6 @@
 use std::borrow::Cow;
-use std::slice;
 
+use super::buf_f32::f32_buf_from_bytes;
 use crate::backends::cpu::buf::QuantBufQ8_0;
 use crate::error::ErrorKind;
 use crate::error::Result;
@@ -16,7 +16,7 @@ pub enum CpuTensorBuf<'a> {
 impl<'a> CpuTensorBuf<'a> {
     pub fn from_raw_bytes(buf: &'a [u8], typ: GGMLType) -> Result<Self> {
         match typ {
-            GGMLType::F32 => Ok(Self::from_raw_bytes_f32(buf)),
+            GGMLType::F32 => Ok(CpuTensorBuf::F32(f32_buf_from_bytes(buf))),
             GGMLType::Q8_0 => Ok(CpuTensorBuf::Q8_0(QuantBufQ8_0::from_bytes(buf))),
             _ => unimplemented!(),
         }
@@ -114,19 +114,6 @@ impl<'a> CpuTensorBuf<'a> {
             CpuTensorBuf::F32(Cow::Owned(buf)) => buf.iter_mut(),
             _ => unreachable!("only owned buffers can be mutable"),
         }
-    }
-
-    fn from_raw_bytes_f32(buf: &'a [u8]) -> Self {
-        let len = buf.len();
-        assert_eq!(
-            len % std::mem::size_of::<f32>(),
-            0,
-            "Length of slice must be multiple of f32 size"
-        );
-        let new_len = len / std::mem::size_of::<f32>();
-        let ptr = buf.as_ptr() as *const f32;
-        let f32_buf = unsafe { slice::from_raw_parts(ptr, new_len) };
-        f32_buf.into()
     }
 }
 

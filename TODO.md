@@ -10,7 +10,7 @@
 - [x] a better gemv
 - [x] refactor the buf code
 - [ ] seek again why ggml is faster on inferencing 3B model with CPU
-  - [ ] plot the time duration during matmul and batch matmul
+  - [ ] plot the time duration during matmul and batch matmul in GGML
 - [ ] q8 quantization on webgpu
   - [ ] add dequantize in CpuTensor
   - [ ] refactor the CPU side: dequantize these on loading: token_embedding_table, rms_att_weight, rms_ffn_weight, rms_final_weight, wcls

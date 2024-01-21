@@ -6,34 +6,22 @@ use crate::tensor::TensorStrider;
 
 // (b, m, k) @ (b, k, ) -> (b, m, )
 // a is allowed to be not contiguous, but not quantized
-pub fn batch_matmul_vec<'a, 'b>(
+pub fn batch_matmul_vec<'a>(
     a: &CpuTensorBuf<'a>,
-    b: &CpuTensorBuf<'b>,
-    c: &mut CpuTensorBuf<'b>,
+    b: &CpuTensorBuf<'a>,
+    c: &mut CpuTensorBuf<'a>,
     strider1: &TensorStrider,
     strider2: &TensorStrider,
-) -> Result<()>
-where
-    'b: 'a,
-{
+) -> Result<()> {
     assert!(strider1.shape().len() == 3);
     assert!(strider2.shape().len() == 2);
     assert!(strider1.shape()[0] == strider2.shape()[0]);
     assert!(strider1.shape()[2] == strider2.shape()[1]);
     assert!(strider2.is_contiguous());
 
-    let bufa = match a {
-        CpuTensorBuf::F32(Cow::Owned(buf)) => buf,
-        _ => panic!("only support f32 yet"),
-    };
-    let bufb = match b {
-        CpuTensorBuf::F32(Cow::Owned(buf)) => buf,
-        _ => panic!("only support f32 yet"),
-    };
-    let bufc = match c {
-        CpuTensorBuf::F32(Cow::Owned(buf)) => buf,
-        _ => panic!("only support f32 yet"),
-    };
+    let bufa = a.as_f32_ref();
+    let bufb = b.as_f32_ref();
+    let bufc = c.as_f32_mut();
 
     let batch = strider1.shape()[0];
     let m = strider1.shape()[1];

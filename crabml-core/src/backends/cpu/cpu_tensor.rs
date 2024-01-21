@@ -1,6 +1,5 @@
 use super::CpuTensorDeviceRef;
 use crate::backends::cpu::buf::CpuTensorBuf;
-use crate::backends::cpu::buf::CpuTensorBufIter;
 use crate::backends::cpu::primitives;
 use crate::error::Error;
 use crate::error::ErrorKind;

@@ -4,6 +4,6 @@ pub mod buf_q8_0;
 
 pub use buf::CpuTensorBuf;
 pub use buf::CpuTensorBufIter;
-pub use buf::QuantizedBuf;
+pub use buf::CpuTensorBufVecDot;
 pub use buf_q8_0::BlockQ8_0;
 pub use buf_q8_0::QuantBufQ8_0;

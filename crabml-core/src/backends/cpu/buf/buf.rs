@@ -25,7 +25,7 @@ impl<'a> CpuTensorBuf<'a> {
     pub fn at_unchecked(&self, pos: usize) -> f32 {
         match self {
             CpuTensorBuf::F32(buf) => buf[pos],
-            CpuTensorBuf::Q8_0(buf) => buf.dequantize_from(pos).next().unwrap(),
+            CpuTensorBuf::Q8_0(buf) => buf.dequantize(pos).next().unwrap(),
         }
     }
 
@@ -65,7 +65,7 @@ impl<'a> CpuTensorBuf<'a> {
         match self {
             CpuTensorBuf::F32(buf) => Ok(CpuTensorBuf::F32(buf)),
             CpuTensorBuf::Q8_0(buf) => match dtype {
-                GGMLType::F32 => Ok(CpuTensorBuf::F32(buf.dequantize_from(0).collect())),
+                GGMLType::F32 => Ok(CpuTensorBuf::F32(buf.dequantize(0).collect())),
                 _ => unimplemented!(),
             },
         }
@@ -82,7 +82,7 @@ impl<'a> CpuTensorBuf<'a> {
         match self {
             CpuTensorBuf::F32(buf) => CpuTensorBufIter::Slice(buf.iter()),
             CpuTensorBuf::Q8_0(buf) => {
-                CpuTensorBufIter::Boxed(Box::new(buf.dequantize_from(0)), self.len())
+                CpuTensorBufIter::Boxed(Box::new(buf.dequantize(0)), self.len())
             }
         }
     }
@@ -193,6 +193,6 @@ impl<'a> ExactSizeIterator for CpuTensorBufIter<'a> {
     }
 }
 
-pub trait QuantizedBuf {
+pub trait CpuTensorBufVecDot {
     fn vec_dot_f32(&self, row: usize, x: &[f32]) -> f32;
 }

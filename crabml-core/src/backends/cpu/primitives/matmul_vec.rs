@@ -1,3 +1,6 @@
+use std::time::Duration;
+use std::time::Instant;
+
 use rayon::prelude::*;
 
 use crate::backends::cpu::buf::CpuTensorBuf;
@@ -57,6 +60,7 @@ fn gemv_simd_f32<'a>(
     bufb: &CpuTensorBuf<'a>,
     bufc: &mut CpuTensorBuf<'a>,
 ) {
+    let start_time = Instant::now();
     assert!(bufa.len() % 32 == 0);
 
     let bufc = bufc.as_f32_mut();
@@ -74,4 +78,9 @@ fn gemv_simd_f32<'a>(
         cp[6] = bufa.vec_dot_f32((mi + 6) * k, bufb);
         cp[7] = bufa.vec_dot_f32((mi + 7) * k, bufb);
     });
+
+    println!(
+        "gemv_simd_f32: {:?} ms",
+        start_time.elapsed().as_secs_f64() * 1000.0
+    );
 }

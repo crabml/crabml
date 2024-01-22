@@ -1,6 +1,8 @@
 use std::borrow::Cow;
 use std::simd::f32x8;
+use std::simd::i32x4;
 use std::simd::prelude::SimdFloat;
+use std::simd::SimdInt;
 
 use half::f16;
 
@@ -92,6 +94,35 @@ impl<'a> QuantBufQ8_0<'a> {
     }
 
     pub fn vec_dot(&self, offset: usize, b: &Self) -> f32 {
+        let abs = &self.blocks[offset / 32..((offset + b.len()) / 32)];
+        assert!(abs.len() == b.blocks().len());
+
+        let bbs = b.blocks();
+        let mut sumf: f32 = 0.0;
+        for i in 0..bbs.len() {
+            let mut sumi: i32 = 0;
+            for j in 0..8 {
+                let ax = i32x4::from_array([
+                    abs[i].qs[j * 4] as i32,
+                    abs[i].qs[j * 4 + 1] as i32,
+                    abs[i].qs[j * 4 + 2] as i32,
+                    abs[i].qs[j * 4 + 3] as i32,
+                ]);
+                let bx = i32x4::from_array([
+                    bbs[i].qs[j * 4] as i32,
+                    bbs[i].qs[j * 4 + 1] as i32,
+                    bbs[i].qs[j * 4 + 2] as i32,
+                    bbs[i].qs[j * 4 + 3] as i32,
+                ]);
+                sumi += (ax * bx).reduce_sum();
+            }
+            sumf += sumi as f32 * abs[i].d.to_f32() * bbs[i].d.to_f32();
+        }
+
+        sumf
+    }
+
+    fn vec_dot_naive(&self, offset: usize, b: &Self) -> f32 {
         let abs = &self.blocks[offset / 32..((offset + b.len()) / 32)];
         assert!(abs.len() == b.blocks().len());
 

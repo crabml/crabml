@@ -95,14 +95,17 @@ impl<'a> QuantBufQ8_0<'a> {
         let abs = &self.blocks[offset / 32..((offset + b.len()) / 32)];
         assert!(abs.len() == b.blocks().len());
 
-        let mut sum: f32 = 0.0;
-        abs.iter().zip(b.blocks().iter()).for_each(|(ab, bb)| {
-            ab.qs.iter().zip(bb.qs.iter()).for_each(|(aq, bq)| {
-                sum += *aq as f32 * *bq as f32 * ab.d.to_f32() * bb.d.to_f32();
-            });
-        });
+        let bbs = b.blocks();
+        let mut sumf: f32 = 0.0;
+        for i in 0..bbs.len() {
+            let mut sumi: i32 = 0;
+            for j in 0..32 {
+                sumi += (abs[i].qs[j] as i32) * (bbs[i].qs[j] as i32);
+            }
+            sumf += sumi as f32 * abs[i].d.to_f32() * bbs[i].d.to_f32();
+        }
 
-        sum
+        sumf
     }
 }
 

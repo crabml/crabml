@@ -91,13 +91,12 @@ impl<'a> QuantBufQ8_0<'a> {
         sum
     }
 
-    pub fn vec_dot_f32_q(&self, offset: usize, b: &[f32]) -> f32 {
-        let abs = &self.blocks[offset / 32..(offset + b.len()) / 32];
-        let bbs = &QuantBufQ8_0::quantize(b).blocks;
-        assert!(abs.len() * 32 == b.len());
+    pub fn vec_dot(&self, offset: usize, b: &Self) -> f32 {
+        let abs = &self.blocks[offset / 32..((offset + b.len()) / 32)];
+        assert!(abs.len() == b.blocks().len());
 
         let mut sum: f32 = 0.0;
-        abs.iter().zip(bbs.iter()).for_each(|(ab, bb)| {
+        abs.iter().zip(b.blocks().iter()).for_each(|(ab, bb)| {
             ab.qs.iter().zip(bb.qs.iter()).for_each(|(aq, bq)| {
                 sum += *aq as f32 * *bq as f32 * ab.d.to_f32() * bb.d.to_f32();
             });

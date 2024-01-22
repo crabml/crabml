@@ -3,8 +3,10 @@ use std::time::Instant;
 
 use rayon::prelude::*;
 
+use crate::backends::cpu::buf;
 use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::error::Result;
+use crate::gguf::GGMLType;
 use crate::tensor::TensorStrider;
 
 // matmul_vec is an implementation of GEMV: A (m,k) @ B (k,) -> xout (m,).
@@ -64,23 +66,20 @@ fn gemv_simd_f32<'a>(
     assert!(bufa.len() % 32 == 0);
 
     let bufc = bufc.as_f32_mut();
-    let bufb = bufb.as_f32_ref();
+    let bufb = bufb.quantize(bufa.dtype()).unwrap();
 
     let k = bufb.len();
     bufc.par_chunks_mut(8).enumerate().for_each(|(cn, cp)| {
         let mi = cn * 8;
-        cp[0] = bufa.vec_dot_f32(mi * k, bufb);
-        cp[1] = bufa.vec_dot_f32((mi + 1) * k, bufb);
-        cp[2] = bufa.vec_dot_f32((mi + 2) * k, bufb);
-        cp[3] = bufa.vec_dot_f32((mi + 3) * k, bufb);
-        cp[4] = bufa.vec_dot_f32((mi + 4) * k, bufb);
-        cp[5] = bufa.vec_dot_f32((mi + 5) * k, bufb);
-        cp[6] = bufa.vec_dot_f32((mi + 6) * k, bufb);
-        cp[7] = bufa.vec_dot_f32((mi + 7) * k, bufb);
+        cp[0] = bufa.vec_dot(mi * k, &bufb);
+        cp[1] = bufa.vec_dot((mi + 1) * k, &bufb);
+        cp[2] = bufa.vec_dot((mi + 2) * k, &bufb);
+        cp[3] = bufa.vec_dot((mi + 3) * k, &bufb);
+        cp[4] = bufa.vec_dot((mi + 4) * k, &bufb);
+        cp[5] = bufa.vec_dot((mi + 5) * k, &bufb);
+        cp[6] = bufa.vec_dot((mi + 6) * k, &bufb);
+        cp[7] = bufa.vec_dot((mi + 7) * k, &bufb);
     });
 
-    println!(
-        "gemv_simd_f32: {:?} ms",
-        start_time.elapsed().as_secs_f64() * 1000.0
-    );
+    // println!( "gemv_simd_f32: {:?} ms", start_time.elapsed().as_secs_f64() * 1000.0);
 }

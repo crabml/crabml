@@ -263,14 +263,17 @@ impl<'a> Tensor for CpuTensor<'a> {
 
     // gemv
     // (m, k) @ (k, ) => (m, )
-    fn matmul_vec(&self, x: &CpuTensor<'a>) -> Result<Self> {
+    fn matmul_vec(&self, x: &CpuTensor<'a>, quantized: bool) -> Result<Self> {
         let bufa = self.buf();
         let bufb = x.buf();
         let mut c = CpuTensor::alloc(&[self.shape()[0]], None, x.device())?;
         let bufc = c.buf_mut();
         let strider1 = self.strider();
         let strider2 = x.strider();
-        primitives::matmul_vec(bufa, bufb, bufc, strider1, strider2)?;
+
+        if quantized {}
+
+        primitives::matmul_vec(bufa, bufb, bufc, strider1, strider2, quantized)?;
         Ok(c)
     }
 
@@ -454,7 +457,7 @@ mod tests {
         // 0
         // 1*1 + 2*2 + 3*3 = 1 + 4 + 9
         // 1*4 + 2*5 + 3*6 = 4 + 10 + 18
-        let out = w.matmul_vec(&b)?;
+        let out = w.matmul_vec(&b, false)?;
         assert_eq!(out.to_vec(), &[14.0, 32.0]);
 
         Ok(())

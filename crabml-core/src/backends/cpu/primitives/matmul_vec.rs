@@ -17,6 +17,7 @@ pub fn matmul_vec<'a>(
     bufc: &mut CpuTensorBuf<'a>,
     strider1: &TensorStrider,
     strider2: &TensorStrider,
+    quantized: bool,
 ) -> Result<()> {
     assert!(strider1.shape().len() == 2);
     assert!(strider2.shape().len() == 1);
@@ -25,6 +26,10 @@ pub fn matmul_vec<'a>(
 
     // if the input is contiguous, we can use SIMD to accelerate the computation
     if strider1.is_contiguous() && bufa.len() % 32 == 0 {
+        if quantized {
+            gemv_simd_q8_0(bufa, bufb, bufc);
+            return Ok(());
+        }
         gemv_simd_f32(bufa, bufb, bufc);
         return Ok(());
     }
@@ -80,6 +85,33 @@ fn gemv_simd_f32<'a>(
         cp[5] = bufa.vec_dot_f32((mi + 5) * k, &bufb);
         cp[6] = bufa.vec_dot_f32((mi + 6) * k, &bufb);
         cp[7] = bufa.vec_dot_f32((mi + 7) * k, &bufb);
+    });
+
+    // println!( "gemv_simd_f32: {:?} ms", start_time.elapsed().as_secs_f64() * 1000.0);
+}
+
+fn gemv_simd_q8_0<'a>(
+    bufa: &CpuTensorBuf<'a>,
+    bufb: &CpuTensorBuf<'a>,
+    bufc: &mut CpuTensorBuf<'a>,
+) {
+    let start_time = Instant::now();
+    assert!(bufa.len() % 32 == 0);
+
+    let bufc = bufc.as_f32_mut();
+    let bufb = bufb.quantize(bufa.dtype()).unwrap();
+
+    let k = bufb.len();
+    bufc.par_chunks_mut(8).enumerate().for_each(|(cn, cp)| {
+        let mi = cn * 8;
+        cp[0] = bufa.vec_dot(mi * k, &bufb);
+        cp[1] = bufa.vec_dot((mi + 1) * k, &bufb);
+        cp[2] = bufa.vec_dot((mi + 2) * k, &bufb);
+        cp[3] = bufa.vec_dot((mi + 3) * k, &bufb);
+        cp[4] = bufa.vec_dot((mi + 4) * k, &bufb);
+        cp[5] = bufa.vec_dot((mi + 5) * k, &bufb);
+        cp[6] = bufa.vec_dot((mi + 6) * k, &bufb);
+        cp[7] = bufa.vec_dot((mi + 7) * k, &bufb);
     });
 
     // println!( "gemv_simd_f32: {:?} ms", start_time.elapsed().as_secs_f64() * 1000.0);

@@ -152,8 +152,8 @@ impl<'a, T: Tensor> Llama2Runner<T> {
                 // wk: (kv_dim, embed_dim) @ x (embed_dim, ) => (kv_dim, )
                 // wv: (kv_dim, embed_dim) @ x (embed_dim, ) => (kv_dim, )
                 let q = self.weights.wq[l].matmul_vec(&x, true)?;
-                let k = self.weights.wk[l].matmul_vec(&x, false)?;
-                let v = self.weights.wv[l].matmul_vec(&x, false)?;
+                let k = self.weights.wk[l].matmul_vec(&x, true)?;
+                let v = self.weights.wv[l].matmul_vec(&x, true)?;
 
                 (
                     q.with_name(format!("q:{}:{}", l, pos)),
@@ -247,8 +247,8 @@ impl<'a, T: Tensor> Llama2Runner<T> {
                 // first calculate self.w1(x) and self.w3(x)
                 // w1: (hidden_dim, embed_dim) @ x (embed_dim, ) => (hidden_dim, )
                 // w3: (hidden_dim, embed_dim) @ x (embed_dim, ) => (hidden_dim, )
-                let mut h1 = self.weights.w1[l].matmul_vec(&x, false)?;
-                let h2 = self.weights.w3[l].matmul_vec(&x, false)?;
+                let mut h1 = self.weights.w1[l].matmul_vec(&x, true)?;
+                let h2 = self.weights.w3[l].matmul_vec(&x, true)?;
 
                 // F.silu; silu(x)=x*σ(x),where σ(x) is the logistic sigmoid
                 h1 = h1.silu_inplace()?;
@@ -257,7 +257,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
                 h1 = h1.mul_inplace(&h2)?;
 
                 // final matmul to get the output of the ffn
-                x = self.weights.w2[l].matmul_vec(&h1, false)?;
+                x = self.weights.w2[l].matmul_vec(&h1, true)?;
 
                 // residual connection
                 x = x.add_inplace(&x_orig_ffn)?;

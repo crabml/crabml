@@ -30,8 +30,8 @@ impl<'a> QuantBufQ8_0<'a> {
         for chunk in chunks {
             let mut max = f32::MIN;
             for i in 0..32 {
-                if chunk[i] > max {
-                    max = chunk[i];
+                if chunk[i].abs() > max {
+                    max = chunk[i].abs();
                 }
             }
             let d = f16::from_f32(max / 127.0);

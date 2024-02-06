@@ -1,31 +1,57 @@
+use std::borrow::Cow;
 use std::simd::f32x8;
+use std::simd::i32x4;
 use std::simd::prelude::SimdFloat;
+use std::simd::SimdInt;
 
 use half::f16;
 
 #[derive(Debug, Clone)]
 pub struct QuantBufQ8_0<'a> {
-    raw: &'a [u8],
-    num_blocks: usize,
+    blocks: Cow<'a, [BlockQ8_0]>,
 }
 
 impl<'a> QuantBufQ8_0<'a> {
-    pub fn from_bytes(buf: &'a [u8]) -> Self {
-        let block_mem = std::mem::size_of::<BlockQ8_0>();
-        // assert!(buf.len() % block_mem == 0);
-        let num_blocks = buf.len() / block_mem;
+    pub fn from_bytes(data: &'a [u8]) -> Self {
+        let blk_size = std::mem::size_of::<BlockQ8_0>();
+        assert!(
+            data.len() % blk_size == 0,
+            "data length must be a multiple of QuantBlockQ8_0 size"
+        );
+        let blocks = unsafe {
+            std::slice::from_raw_parts(data.as_ptr() as *const BlockQ8_0, data.len() / blk_size)
+        };
         Self {
-            raw: buf,
-            num_blocks,
+            blocks: blocks.into(),
         }
     }
 
+    pub fn quantize(data: &[f32]) -> Self {
+        let mut bs: Vec<BlockQ8_0> = vec![];
+        let chunks = data.chunks(32);
+        for chunk in chunks {
+            let mut max = f32::MIN;
+            for i in 0..32 {
+                if chunk[i].abs() > max {
+                    max = chunk[i].abs();
+                }
+            }
+            let d = f16::from_f32(max / 127.0);
+            let mut qs = [0_i8; 32];
+            for i in 0..32 {
+                qs[i] = (chunk[i] / d.to_f32()).round() as i8;
+            }
+            bs.push(BlockQ8_0 { d, qs })
+        }
+        Self { blocks: bs.into() }
+    }
+
     fn blocks(&self) -> &[BlockQ8_0] {
-        BlockQ8_0::from_bytes(self.raw)
+        &self.blocks
     }
 
     pub fn len(&self) -> usize {
-        self.num_blocks * 32
+        self.blocks.len() * 32
     }
 
     pub fn dequantize(&'a self, start: usize) -> impl Iterator<Item = f32> + 'a {
@@ -40,8 +66,7 @@ impl<'a> QuantBufQ8_0<'a> {
     }
 
     pub fn vec_dot_f32(&self, offset: usize, x: &[f32]) -> f32 {
-        let blocks = BlockQ8_0::from_bytes(self.raw);
-        let row = &blocks[offset / 32..(offset + x.len()) / 32];
+        let row = &self.blocks[offset / 32..(offset + x.len()) / 32];
         assert!(row.len() * 32 == x.len());
         let mut sum = 0.0;
         for i in 0..row.len() {
@@ -67,6 +92,52 @@ impl<'a> QuantBufQ8_0<'a> {
         }
         sum
     }
+
+    pub fn vec_dot(&self, offset: usize, b: &Self) -> f32 {
+        let abs = &self.blocks[offset / 32..((offset + b.len()) / 32)];
+        assert!(abs.len() == b.blocks().len());
+
+        let bbs = b.blocks();
+        let mut sumf: f32 = 0.0;
+        for i in 0..bbs.len() {
+            let mut sumi: i32 = 0;
+            for j in 0..8 {
+                let ax = i32x4::from_array([
+                    abs[i].qs[j * 4] as i32,
+                    abs[i].qs[j * 4 + 1] as i32,
+                    abs[i].qs[j * 4 + 2] as i32,
+                    abs[i].qs[j * 4 + 3] as i32,
+                ]);
+                let bx = i32x4::from_array([
+                    bbs[i].qs[j * 4] as i32,
+                    bbs[i].qs[j * 4 + 1] as i32,
+                    bbs[i].qs[j * 4 + 2] as i32,
+                    bbs[i].qs[j * 4 + 3] as i32,
+                ]);
+                sumi += (ax * bx).reduce_sum();
+            }
+            sumf += sumi as f32 * abs[i].d.to_f32() * bbs[i].d.to_f32();
+        }
+
+        sumf
+    }
+
+    fn vec_dot_naive(&self, offset: usize, b: &Self) -> f32 {
+        let abs = &self.blocks[offset / 32..((offset + b.len()) / 32)];
+        assert!(abs.len() == b.blocks().len());
+
+        let bbs = b.blocks();
+        let mut sumf: f32 = 0.0;
+        for i in 0..bbs.len() {
+            let mut sumi: i32 = 0;
+            for j in 0..32 {
+                sumi += (abs[i].qs[j] as i32) * (bbs[i].qs[j] as i32);
+            }
+            sumf += sumi as f32 * abs[i].d.to_f32() * bbs[i].d.to_f32();
+        }
+
+        sumf
+    }
 }
 
 #[repr(C, packed)]
@@ -78,35 +149,6 @@ pub struct BlockQ8_0 {
 
 impl BlockQ8_0 {
     pub const BLOCK_ELEMS: usize = 32;
-
-    pub fn from_bytes(data: &[u8]) -> &[BlockQ8_0] {
-        let size = std::mem::size_of::<BlockQ8_0>();
-        assert!(
-            data.len() % size == 0,
-            "data length must be a multiple of QuantBlockQ8_0 size"
-        );
-        unsafe { std::slice::from_raw_parts(data.as_ptr() as *const BlockQ8_0, data.len() / size) }
-    }
-
-    pub fn quantize(data: &[f32]) -> Vec<BlockQ8_0> {
-        let mut bs: Vec<BlockQ8_0> = vec![];
-        let chunks = data.chunks(32);
-        for chunk in chunks {
-            let mut max = f32::MIN;
-            for i in 0..32 {
-                if chunk[i] > max {
-                    max = chunk[i];
-                }
-            }
-            let d = f16::from_f32(max / 127.0);
-            let mut qs = [0_i8; 32];
-            for i in 0..32 {
-                qs[i] = (chunk[i] / d.to_f32()).round() as i8;
-            }
-            bs.push(BlockQ8_0 { d, qs })
-        }
-        bs
-    }
 
     pub fn dequantize(&self, buf: &mut [f32]) {
         let d = self.d.to_f32();
@@ -136,7 +178,7 @@ mod tests {
         buf[66] = 9;
         buf[67] = 9;
 
-        let blocks = BlockQ8_0::from_bytes(&buf[0..34]);
+        let blocks = QuantBufQ8_0::from_bytes(&buf[0..34]).blocks;
         assert_eq!(blocks[0].d.to_f32(), 3.0);
         assert_eq!(blocks[0].qs, [
             2, 3, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
@@ -151,5 +193,10 @@ mod tests {
             3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0,
             3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 27.0, 27.0
         ]);
+    }
+
+    #[test]
+    fn test_vec_dot_q() {
+        let mut buf: [u8; 64] = [0x1; 64];
     }
 }

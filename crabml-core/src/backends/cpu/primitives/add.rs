@@ -18,5 +18,6 @@ pub fn add_inplace<'a>(
         .for_each(|(ia, ib)| {
             *ia += ib;
         });
+
     Ok(())
 }

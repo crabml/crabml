@@ -72,10 +72,40 @@ impl<'a> CpuTensorBuf<'a> {
         }
     }
 
-    pub fn vec_dot_f32(&self, row: usize, x: &[f32]) -> f32 {
+    pub fn quantize(&self, dtype: GGMLType) -> Result<Self> {
+        match dtype {
+            GGMLType::F32 => Ok(CpuTensorBuf::F32(self.as_f32_ref().to_vec().into())),
+            GGMLType::Q8_0 => Ok(CpuTensorBuf::Q8_0(QuantBufQ8_0::quantize(
+                self.as_f32_ref(),
+            ))),
+            _ => Err((
+                ErrorKind::TensorError,
+                format!("quantize to {:?} is not supported", dtype),
+            )
+                .into()),
+        }
+    }
+
+    pub fn vec_dot_f32(&self, offset: usize, x: &[f32]) -> f32 {
         match self {
-            CpuTensorBuf::F32(buf) => f32_buf_vec_dot_f32(buf, row, x),
-            CpuTensorBuf::Q8_0(buf) => buf.vec_dot_f32(row, x),
+            CpuTensorBuf::F32(buf) => f32_buf_vec_dot_f32(buf, offset, x),
+            CpuTensorBuf::Q8_0(buf) => buf.vec_dot_f32(offset, x),
+        }
+    }
+
+    pub fn vec_dot(&self, row: usize, b: &Self) -> f32 {
+        assert!(
+            self.dtype() == b.dtype(),
+            "only same dtype can be dotted, but got {:?} and {:?}",
+            self.dtype(),
+            b.dtype()
+        );
+
+        use CpuTensorBuf::*;
+        match (self, b) {
+            (F32(a), F32(b)) => f32_buf_vec_dot_f32(a, row, b),
+            (Q8_0(a), Q8_0(b)) => a.vec_dot(row, b),
+            _ => unreachable!(),
         }
     }
 

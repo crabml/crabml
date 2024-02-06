@@ -9,14 +9,8 @@
 - [x] use uniform to store the meta buffers
 - [x] a better gemv
 - [x] refactor the buf code
-- [ ] seek again why ggml is faster on inferencing 3B model with CPU
-  - [ ] plot the time duration during matmul and batch matmul in GGML
-  - ggml matmul only takes 0.25ms, but we need 1~60ms
-  - ggml will quantize the activation to int8 before matmul, let's take another try.
-  - two ways:
-    - [ ] dequantize before dot product using blas
-    - [ ] quantize the activation to int8 before dot product
-      - the previous failure may related to the overflow issue on multiplying two u8 mumbers, we need a u16 number to store the result
+- [x] q8_0 dot product
+- [ ] compare the matmul q8_0 FLOPS between ggml and crabml
 - [ ] q8 quantization on webgpu
   - [ ] add dequantize in CpuTensor
   - [ ] refactor the CPU side: dequantize these on loading: token_embedding_table, rms_att_weight, rms_ffn_weight, rms_final_weight, wcls

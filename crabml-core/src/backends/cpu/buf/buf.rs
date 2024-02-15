@@ -86,13 +86,6 @@ impl<'a> CpuTensorBuf<'a> {
         }
     }
 
-    pub fn vec_dot_f32(&self, offset: usize, x: &[f32]) -> f32 {
-        match self {
-            CpuTensorBuf::F32(buf) => f32_buf_vec_dot_f32(buf, offset, x),
-            CpuTensorBuf::Q8_0(buf) => buf.vec_dot_f32(offset, x),
-        }
-    }
-
     pub fn vec_dot(&self, row: usize, b: &Self) -> f32 {
         assert!(
             self.dtype() == b.dtype(),

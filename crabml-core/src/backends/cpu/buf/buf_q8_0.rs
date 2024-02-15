@@ -65,34 +65,6 @@ impl<'a> QuantBufQ8_0<'a> {
         })
     }
 
-    pub fn vec_dot_f32(&self, offset: usize, x: &[f32]) -> f32 {
-        let row = &self.blocks[offset / 32..(offset + x.len()) / 32];
-        assert!(row.len() * 32 == x.len());
-        let mut sum = 0.0;
-        for i in 0..row.len() {
-            let block = &row[i];
-            let d = block.d.to_f32();
-            let mut sum_block = 0.0;
-            for j in 0..4 {
-                let qs = &block.qs[j * 8..(j + 1) * 8];
-                let qv = f32x8::from_array([
-                    qs[0] as f32,
-                    qs[1] as f32,
-                    qs[2] as f32,
-                    qs[3] as f32,
-                    qs[4] as f32,
-                    qs[5] as f32,
-                    qs[6] as f32,
-                    qs[7] as f32,
-                ]);
-                let xv = f32x8::from_slice(&x[i * 32 + j * 8..i * 32 + (j + 1) * 8]);
-                sum_block += (qv * xv).reduce_sum();
-            }
-            sum += sum_block * d;
-        }
-        sum
-    }
-
     #[cfg(not(all(target_feature = "neon")))]
     pub fn vec_dot(&self, offset: usize, b: &Self) -> f32 {
         let abs = &self.blocks[offset / 32..((offset + b.len()) / 32)];
@@ -126,74 +98,12 @@ impl<'a> QuantBufQ8_0<'a> {
     #[cfg(target_feature = "neon")]
     pub fn vec_dot(&self, offset: usize, b: &Self) -> f32 {
         let abs = &self.blocks[offset / 32..((offset + b.len()) / 32)];
-        assert!(abs.len() == b.blocks().len());
-        assert!(
-            abs.len() % 2 == 0,
-            "abs len must be a multiple of 2, got: {}",
-            abs.len()
-        );
         let bbs = b.blocks();
 
-        unsafe {
-            use std::arch::aarch64;
-            let mut sumv0 = aarch64::vdupq_n_f32(0.0);
-            let mut sumv1 = aarch64::vdupq_n_f32(0.0);
-            let zerov = aarch64::vdupq_n_s32(0);
-
-            for i in (0..bbs.len()).step_by(2) {
-                let ab0 = abs.get_unchecked(i);
-                let ab1 = abs.get_unchecked(i + 1);
-                let bb0 = bbs.get_unchecked(i);
-                let bb1 = bbs.get_unchecked(i + 1);
-
-                let av00 = aarch64::vld1q_s8(ab0.qs.as_ptr());
-                let av01 = aarch64::vld1q_s8(ab0.qs.as_ptr().add(16));
-                let av10 = aarch64::vld1q_s8(ab1.qs.as_ptr());
-                let av11 = aarch64::vld1q_s8(ab1.qs.as_ptr().add(16));
-
-                let bv00 = aarch64::vld1q_s8(bb0.qs.as_ptr());
-                let bv01 = aarch64::vld1q_s8(bb0.qs.as_ptr().add(16));
-                let bv10 = aarch64::vld1q_s8(bb1.qs.as_ptr());
-                let bv11 = aarch64::vld1q_s8(bb1.qs.as_ptr().add(16));
-
-                sumv0 = aarch64::vmlaq_n_f32(
-                    sumv0,
-                    aarch64::vcvtq_f32_s32(aarch64::vaddq_s32(
-                        aarch64::vdotq_s32(zerov, av00, bv00),
-                        aarch64::vdotq_s32(zerov, av01, bv01),
-                    )),
-                    f16::to_f32(ab0.d) * f16::to_f32(bb0.d),
-                );
-
-                sumv1 = aarch64::vmlaq_n_f32(
-                    sumv1,
-                    aarch64::vcvtq_f32_s32(aarch64::vaddq_s32(
-                        aarch64::vdotq_s32(zerov, av10, bv10),
-                        aarch64::vdotq_s32(zerov, av11, bv11),
-                    )),
-                    f16::to_f32(ab1.d) * f16::to_f32(bb1.d),
-                );
-            }
-
-            aarch64::vaddvq_f32(sumv0) + aarch64::vaddvq_f32(sumv1)
+        if bbs.len() % 2 == 0 {
+            return vec_dot_q8_0_q8_0_neon_unrolled(abs, bbs);
         }
-    }
-
-    fn vec_dot_naive(&self, offset: usize, b: &Self) -> f32 {
-        let abs = &self.blocks[offset / 32..((offset + b.len()) / 32)];
-        assert!(abs.len() == b.blocks().len());
-
-        let bbs = b.blocks();
-        let mut sumf: f32 = 0.0;
-        for i in 0..bbs.len() {
-            let mut sumi: i32 = 0;
-            for j in 0..32 {
-                sumi += (abs[i].qs[j] as i32) * (bbs[i].qs[j] as i32);
-            }
-            sumf += sumi as f32 * abs[i].d.to_f32() * bbs[i].d.to_f32();
-        }
-
-        sumf
+        vec_dot_q8_0_q8_0_neon(abs, bbs)
     }
 }
 
@@ -213,6 +123,106 @@ impl BlockQ8_0 {
             let q = self.qs[i];
             buf[i] = q as f32 * d;
         }
+    }
+}
+
+fn vec_dot_q8_0_q8_0_naive(abs: &[BlockQ8_0], bbs: &[BlockQ8_0]) -> f32 {
+    let mut sumf: f32 = 0.0;
+    for i in 0..bbs.len() {
+        let mut sumi: i32 = 0;
+        for j in 0..32 {
+            sumi += (abs[i].qs[j] as i32) * (bbs[i].qs[j] as i32);
+        }
+        sumf += sumi as f32 * abs[i].d.to_f32() * bbs[i].d.to_f32();
+    }
+
+    sumf
+}
+
+#[cfg(target_feature = "neon")]
+pub fn vec_dot_q8_0_q8_0_neon(abs: &[BlockQ8_0], bbs: &[BlockQ8_0]) -> f32 {
+    assert!(abs.len() == bbs.len());
+
+    unsafe {
+        use std::arch::aarch64;
+        let mut sumv0 = aarch64::vdupq_n_f32(0.0);
+        let zerov = aarch64::vdupq_n_s32(0);
+
+        for i in 0..bbs.len() {
+            let ab0 = abs.get_unchecked(i);
+            let bb0 = bbs.get_unchecked(i);
+
+            let av00 = aarch64::vld1q_s8(ab0.qs.as_ptr());
+            let av01 = aarch64::vld1q_s8(ab0.qs.as_ptr().add(16));
+
+            let bv00 = aarch64::vld1q_s8(bb0.qs.as_ptr());
+            let bv01 = aarch64::vld1q_s8(bb0.qs.as_ptr().add(16));
+
+            sumv0 = aarch64::vmlaq_n_f32(
+                sumv0,
+                aarch64::vcvtq_f32_s32(aarch64::vaddq_s32(
+                    aarch64::vdotq_s32(zerov, av00, bv00),
+                    aarch64::vdotq_s32(zerov, av01, bv01),
+                )),
+                f16::to_f32(ab0.d) * f16::to_f32(bb0.d),
+            );
+        }
+
+        aarch64::vaddvq_f32(sumv0)
+    }
+}
+
+#[cfg(target_feature = "neon")]
+pub fn vec_dot_q8_0_q8_0_neon_unrolled(abs: &[BlockQ8_0], bbs: &[BlockQ8_0]) -> f32 {
+    assert!(abs.len() == bbs.len());
+    assert!(
+        bbs.len() % 2 == 0,
+        "bbs.len() must be a multiple of 64, got: {}",
+        bbs.len()
+    );
+
+    unsafe {
+        use std::arch::aarch64;
+        let mut sumv0 = aarch64::vdupq_n_f32(0.0);
+        let mut sumv1 = aarch64::vdupq_n_f32(0.0);
+        let zerov = aarch64::vdupq_n_s32(0);
+
+        for i in (0..bbs.len()).step_by(2) {
+            let ab0 = abs.get_unchecked(i);
+            let ab1 = abs.get_unchecked(i + 1);
+            let bb0 = bbs.get_unchecked(i);
+            let bb1 = bbs.get_unchecked(i + 1);
+
+            let av00 = aarch64::vld1q_s8(ab0.qs.as_ptr());
+            let av01 = aarch64::vld1q_s8(ab0.qs.as_ptr().add(16));
+            let av10 = aarch64::vld1q_s8(ab1.qs.as_ptr());
+            let av11 = aarch64::vld1q_s8(ab1.qs.as_ptr().add(16));
+
+            let bv00 = aarch64::vld1q_s8(bb0.qs.as_ptr());
+            let bv01 = aarch64::vld1q_s8(bb0.qs.as_ptr().add(16));
+            let bv10 = aarch64::vld1q_s8(bb1.qs.as_ptr());
+            let bv11 = aarch64::vld1q_s8(bb1.qs.as_ptr().add(16));
+
+            sumv0 = aarch64::vmlaq_n_f32(
+                sumv0,
+                aarch64::vcvtq_f32_s32(aarch64::vaddq_s32(
+                    aarch64::vdotq_s32(zerov, av00, bv00),
+                    aarch64::vdotq_s32(zerov, av01, bv01),
+                )),
+                f16::to_f32(ab0.d) * f16::to_f32(bb0.d),
+            );
+
+            sumv1 = aarch64::vmlaq_n_f32(
+                sumv1,
+                aarch64::vcvtq_f32_s32(aarch64::vaddq_s32(
+                    aarch64::vdotq_s32(zerov, av10, bv10),
+                    aarch64::vdotq_s32(zerov, av11, bv11),
+                )),
+                f16::to_f32(ab1.d) * f16::to_f32(bb1.d),
+            );
+        }
+
+        aarch64::vaddvq_f32(sumv0) + aarch64::vaddvq_f32(sumv1)
     }
 }
 

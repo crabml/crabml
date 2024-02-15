@@ -10,8 +10,8 @@
 - [x] a better gemv
 - [x] refactor the buf code
 - [x] q8_0 dot product
-- [ ] compare the matmul q8_0 FLOPS between ggml and crabml
-  - [ ] compare the perforamnce between the rust fast-llm.rs
-  - [ ] aligh the performance: try using manual neon instructions
+- [x] compare the matmul q8_0 FLOPS between ggml and crabml
+  - [x] aligh the performance on dot prod: try using manual neon instructions
+  - [ ] optimize the performance of MHA
 - [ ] q8 quantization on webgpu
   - [ ] add dequantize in CpuTensor

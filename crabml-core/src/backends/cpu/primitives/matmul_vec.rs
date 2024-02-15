@@ -1,12 +1,9 @@
-use std::time::Duration;
 use std::time::Instant;
 
 use rayon::prelude::*;
 
-use crate::backends::cpu::buf;
 use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::error::Result;
-use crate::gguf::GGMLType;
 use crate::tensor::TensorStrider;
 
 // matmul_vec is an implementation of GEMV: A (m,k) @ B (k,) -> xout (m,).

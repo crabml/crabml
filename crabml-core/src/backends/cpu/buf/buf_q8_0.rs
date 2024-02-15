@@ -93,7 +93,7 @@ impl<'a> QuantBufQ8_0<'a> {
         sum
     }
 
-    pub fn vec_dot(&self, offset: usize, b: &Self) -> f32 {
+    pub fn vec_dot_fallback(&self, offset: usize, b: &Self) -> f32 {
         let abs = &self.blocks[offset / 32..((offset + b.len()) / 32)];
         assert!(abs.len() == b.blocks().len());
 
@@ -120,6 +120,37 @@ impl<'a> QuantBufQ8_0<'a> {
         }
 
         sumf
+    }
+
+    pub fn vec_dot(&self, offset: usize, b: &Self) -> f32 {
+        let abs = &self.blocks[offset / 32..((offset + b.len()) / 32)];
+        assert!(abs.len() == b.blocks().len());
+        let bbs = b.blocks();
+
+        unsafe {
+            use std::arch::aarch64;
+
+            let mut sumv = aarch64::vdupq_n_f32(0.0);
+            let zerov = aarch64::vdupq_n_s32(0);
+
+            for i in 0..bbs.len() {
+                let ab = abs.get_unchecked(i);
+                let bb = bbs.get_unchecked(i);
+
+                let av0 = aarch64::vld1q_s8(ab.qs.as_ptr());
+                let av1 = aarch64::vld1q_s8(ab.qs.as_ptr().add(16));
+                let bv0 = aarch64::vld1q_s8(bb.qs.as_ptr());
+                let bv1 = aarch64::vld1q_s8(bb.qs.as_ptr().add(16));
+
+                let tmpv = aarch64::vcvtq_f32_s32(aarch64::vaddq_s32(
+                    aarch64::vdotq_s32(zerov, av0, bv0),
+                    aarch64::vdotq_s32(zerov, av1, bv1),
+                ));
+                sumv = aarch64::vmlaq_n_f32(sumv, tmpv, f16::to_f32(ab.d) * f16::to_f32(bb.d));
+            }
+
+            aarch64::vaddvq_f32(sumv)
+        }
     }
 
     fn vec_dot_naive(&self, offset: usize, b: &Self) -> f32 {

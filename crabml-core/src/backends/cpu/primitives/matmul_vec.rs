@@ -14,7 +14,6 @@ pub fn matmul_vec<'a>(
     bufc: &mut CpuTensorBuf<'a>,
     strider1: &TensorStrider,
     strider2: &TensorStrider,
-    quantized: bool,
 ) -> Result<()> {
     assert!(strider1.shape().len() == 2);
     assert!(strider2.shape().len() == 1);

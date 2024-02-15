@@ -93,7 +93,8 @@ impl<'a> QuantBufQ8_0<'a> {
         sum
     }
 
-    pub fn vec_dot_fallback(&self, offset: usize, b: &Self) -> f32 {
+    #[cfg(not(all(target_feature = "neon")))]
+    pub fn vec_dot(&self, offset: usize, b: &Self) -> f32 {
         let abs = &self.blocks[offset / 32..((offset + b.len()) / 32)];
         assert!(abs.len() == b.blocks().len());
 
@@ -122,6 +123,7 @@ impl<'a> QuantBufQ8_0<'a> {
         sumf
     }
 
+    #[cfg(target_feature = "neon")]
     pub fn vec_dot(&self, offset: usize, b: &Self) -> f32 {
         let abs = &self.blocks[offset / 32..((offset + b.len()) / 32)];
         assert!(abs.len() == b.blocks().len());

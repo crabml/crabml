@@ -62,17 +62,17 @@ impl<'a> QuantBufQ8_0<'a> {
     }
 
     #[cfg(not(all(target_feature = "neon")))]
-    pub fn vec_dot(&self, offset: usize, b: &Self) -> f32 {
-        let abs = &self.blocks[offset / 32..((offset + b.len()) / 32)];
-        assert!(abs.len() == b.blocks().len());
+    pub fn vec_dot(&self, a_offset: usize, b: &Self, b_offset: usize, len: usize) -> f32 {
+        let abs = &self.blocks[a_offset / 32..(a_offset + len) / 32];
+        let bbs = &b.blocks()[b_offset / 32..(b_offset + len) / 32];
 
         vec_dot_q8_0_q8_0_naive(abs, bbs)
     }
 
     #[cfg(target_feature = "neon")]
-    pub fn vec_dot(&self, offset: usize, b: &Self) -> f32 {
-        let abs = &self.blocks[offset / 32..((offset + b.len()) / 32)];
-        let bbs = b.blocks();
+    pub fn vec_dot(&self, a_offset: usize, b: &Self, b_offset: usize, len: usize) -> f32 {
+        let abs = &self.blocks[a_offset / 32..(a_offset + len) / 32];
+        let bbs = &b.blocks()[b_offset / 32..(b_offset + len) / 32];
 
         if bbs.len() % 2 == 0 {
             return vec_dot_q8_0_q8_0_neon_unrolled(abs, bbs);

@@ -75,11 +75,10 @@ fn gemv_simd<'a>(
 
     // TODO: make a block tiling?
     let k = bufb.len();
-    println!("k: {}", k);
     bufc.par_chunks_mut(32).enumerate().for_each(|(cn, cp)| {
         let mi = cn * 32;
         for i in 0..32 {
-            cp[i] = bufa.vec_dot((mi + i) * k, bufb);
+            cp[i] = bufa.vec_dot((mi + i) * k, bufb, 0, k);
         }
     });
 }

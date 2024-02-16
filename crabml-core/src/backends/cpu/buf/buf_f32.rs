@@ -16,13 +16,12 @@ pub fn f32_buf_from_bytes<'a>(buf: &[u8]) -> Cow<'a, [f32]> {
     f32_buf.into()
 }
 
-pub fn vec_dot_f32_f32(lhs: &[f32], offset: usize, x: &[f32]) -> f32 {
-    let chunks = lhs[offset..offset + x.len()].chunks(32);
-    let mut acc = f32x32::splat(0.0);
-    for (chunk_idx, chunk) in chunks.enumerate() {
-        let block = f32x32::from_slice(chunk);
-        let x = f32x32::from_slice(&x[chunk_idx * 32..(chunk_idx + 1) * 32]);
-        acc += block * x;
+pub fn vec_dot_f32_f32(a: &[f32], a_offset: usize, b: &[f32], b_offset: usize, len: usize) -> f32 {
+    let ac = &a[a_offset..a_offset + len];
+    let bc = &b[b_offset..b_offset + len];
+    let mut sum = 0.0;
+    for i in 0..len {
+        sum += ac[i] * bc[i];
     }
-    acc.reduce_sum()
+    sum
 }

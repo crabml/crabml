@@ -7,6 +7,7 @@ use crabml::backends::wgpu::WgpuTensorDevice;
 use crabml::backends::wgpu::WgpuTensorDeviceOptions;
 use crabml::error::Result;
 use crabml::gguf::GGUFFileLoader;
+use crabml::tensor::TensorDeviceMetrics;
 use crabml_llama2::llama2::Llama2Runner;
 use crabml_llama2::model::WgpuLlama2Model;
 use crabml_llama2::sampler::Llama2Sampler;
@@ -50,7 +51,8 @@ fn main() -> Result<()> {
     let gl = GGUFFileLoader::new(&args.model)?;
     let gf = gl.open()?;
 
-    let device_cpu = CpuTensorDevice::new();
+    let metrics = TensorDeviceMetrics::default();
+    let device_cpu = CpuTensorDevice::new().with_metrics(metrics);
     let model_cpu = CpuLlama2Model::load(&gf, device_cpu)?;
     let conf = model_cpu.conf();
 
@@ -76,10 +78,12 @@ fn main() -> Result<()> {
 
     let mut output = runner.generate(&args.prompt, args.steps, &mut sampler)?;
     print!("{}", &args.prompt);
+
     for token in output.by_ref() {
         print!("{}", token?);
         std::io::stdout().flush().unwrap();
     }
+
     println!();
     println!(
         "{} tokens/s, {} threads",

@@ -13,7 +13,7 @@
 - [x] compare the matmul q8_0 FLOPS between ggml and crabml
   - [x] aligh the performance on dot prod: try using manual neon instructions
 - [ ] find the performance difference between ggml
-  - [ ] record the time spent on different operators like matmul, etc.
+  - [ ] record the time spent on different phases in ggml like QKV, MQA, FFN.
   - [ ] optimize the performance of MHA
 - [ ] q8 quantization on webgpu
   - [ ] add dequantize in CpuTensor

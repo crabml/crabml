@@ -480,7 +480,7 @@ impl Tensor for WgpuTensor {
         Ok(self)
     }
 
-    fn matmul_vec(&self, y: &Self, quantized: bool) -> Result<Self> {
+    fn matmul_vec(&self, y: &Self) -> Result<Self> {
         assert!(self.shape().len() == 2);
         assert!(self.shape()[1] == y.shape()[0]);
         assert!(y.shape().len() == 1);
@@ -582,14 +582,12 @@ impl Tensor for WgpuTensor {
 #[cfg(test)]
 mod tests {
     use approx::assert_relative_eq;
-    use half::vec;
 
     use super::WgpuTensor;
     use crate::backends::wgpu::WgpuTensorDevice;
     use crate::backends::wgpu::WgpuTensorDeviceOptions;
     use crate::error::Result;
     use crate::tensor::Tensor;
-    use crate::tensor::TensorStrider;
 
     #[test]
     fn test_wgpu_tensor_new_and_export() -> Result<()> {
@@ -738,7 +736,7 @@ mod tests {
 
         let t1 = WgpuTensor::new(&v1, &[32, 8], device.clone())?;
         let t2 = WgpuTensor::new(&[2.0; 8], &[8], device.clone())?;
-        let t3 = t1.matmul_vec(&t2, false)?;
+        let t3 = t1.matmul_vec(&t2)?;
         let mut dst1 = vec![0.0; 32];
         t3.export(&mut dst1)?;
         assert_eq!(dst1[0..32], vec![

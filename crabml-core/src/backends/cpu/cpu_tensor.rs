@@ -207,6 +207,7 @@ impl<'a> Tensor for CpuTensor<'a> {
         CpuTensor::new(v, &new_shape, self.device.clone())
     }
 
+    // TODO(2024-02-15): dequantize the tensor here, not dequantize the embedding table on loading
     fn copy_from(&mut self, src: &CpuTensor<'a>, pos: &[usize], len: usize) -> Result<()> {
         if !self.is_owned() {
             return Err((ErrorKind::TensorError, "not owned").into());
@@ -263,7 +264,7 @@ impl<'a> Tensor for CpuTensor<'a> {
 
     // gemv
     // (m, k) @ (k, ) => (m, )
-    fn matmul_vec(&self, x: &CpuTensor<'a>, quantized: bool) -> Result<Self> {
+    fn matmul_vec(&self, x: &CpuTensor<'a>) -> Result<Self> {
         let bufa = self.buf();
         let bufb = x.buf();
         let mut c = CpuTensor::alloc(&[self.shape()[0]], None, x.device())?;
@@ -271,9 +272,7 @@ impl<'a> Tensor for CpuTensor<'a> {
         let strider1 = self.strider();
         let strider2 = x.strider();
 
-        if quantized {}
-
-        primitives::matmul_vec(bufa, bufb, bufc, strider1, strider2, quantized)?;
+        primitives::matmul_vec(bufa, bufb, bufc, strider1, strider2)?;
         Ok(c)
     }
 
@@ -457,7 +456,7 @@ mod tests {
         // 0
         // 1*1 + 2*2 + 3*3 = 1 + 4 + 9
         // 1*4 + 2*5 + 3*6 = 4 + 10 + 18
-        let out = w.matmul_vec(&b, false)?;
+        let out = w.matmul_vec(&b)?;
         assert_eq!(out.to_vec(), &[14.0, 32.0]);
 
         Ok(())

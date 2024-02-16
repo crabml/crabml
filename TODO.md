@@ -10,9 +10,10 @@
 - [x] a better gemv
 - [x] refactor the buf code
 - [x] q8_0 dot product
-- [ ] compare the matmul q8_0 FLOPS between ggml and crabml
+- [x] compare the matmul q8_0 FLOPS between ggml and crabml
+  - [x] aligh the performance on dot prod: try using manual neon instructions
+- [ ] find the performance difference between ggml
+  - [ ] record the time spent on different phases in ggml like QKV, MQA, FFN.
+  - [ ] optimize the performance of MHA
 - [ ] q8 quantization on webgpu
   - [ ] add dequantize in CpuTensor
-  - [ ] refactor the CPU side: dequantize these on loading: token_embedding_table, rms_att_weight, rms_ffn_weight, rms_final_weight, wcls
-  - [ ] all the other are only matmul
-- [ ] f16 activations

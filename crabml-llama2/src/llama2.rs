@@ -151,9 +151,9 @@ impl<'a, T: Tensor> Llama2Runner<T> {
                 // wq: (embed_dim, embed_dim) @ x (embed_dim, ) => (embed_dim, )
                 // wk: (kv_dim, embed_dim) @ x (embed_dim, ) => (kv_dim, )
                 // wv: (kv_dim, embed_dim) @ x (embed_dim, ) => (kv_dim, )
-                let q = self.weights.wq[l].matmul_vec(&x, true)?;
-                let k = self.weights.wk[l].matmul_vec(&x, true)?;
-                let v = self.weights.wv[l].matmul_vec(&x, true)?;
+                let q = self.weights.wq[l].matmul_vec(&x)?;
+                let k = self.weights.wk[l].matmul_vec(&x)?;
+                let v = self.weights.wv[l].matmul_vec(&x)?;
 
                 (
                     q.with_name(format!("q:{}:{}", l, pos)),
@@ -225,7 +225,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
                 self.value_cache[l].replace(v_cache.with_strider(v_cache_strider_orig)?);
 
                 // final matmul to get the output of the attention
-                self.weights.wo[l].matmul_vec(&x_with_attn, true)?
+                self.weights.wo[l].matmul_vec(&x_with_attn)?
             };
 
             // residual connection back into x
@@ -247,8 +247,8 @@ impl<'a, T: Tensor> Llama2Runner<T> {
                 // first calculate self.w1(x) and self.w3(x)
                 // w1: (hidden_dim, embed_dim) @ x (embed_dim, ) => (hidden_dim, )
                 // w3: (hidden_dim, embed_dim) @ x (embed_dim, ) => (hidden_dim, )
-                let mut h1 = self.weights.w1[l].matmul_vec(&x, true)?;
-                let h2 = self.weights.w3[l].matmul_vec(&x, true)?;
+                let mut h1 = self.weights.w1[l].matmul_vec(&x)?;
+                let h2 = self.weights.w3[l].matmul_vec(&x)?;
 
                 // F.silu; silu(x)=x*σ(x),where σ(x) is the logistic sigmoid
                 h1 = h1.silu_inplace()?;
@@ -257,7 +257,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
                 h1 = h1.mul_inplace(&h2)?;
 
                 // final matmul to get the output of the ffn
-                x = self.weights.w2[l].matmul_vec(&h1, true)?;
+                x = self.weights.w2[l].matmul_vec(&h1)?;
 
                 // residual connection
                 x = x.add_inplace(&x_orig_ffn)?;
@@ -273,7 +273,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         };
 
         // classifier into logits
-        let logits = self.weights.wcls.matmul_vec(&x, false)?; // (vocab_size,
+        let logits = self.weights.wcls.matmul_vec(&x)?; // (vocab_size,
         logits.export(&mut self.logits)?;
         Ok(&mut self.logits)
     }

@@ -11,3 +11,10 @@ Its design goals are:
 - fast enough inferencing on cheap hardwares.
 - `mmap()` from day one.
 - prioritize SIMD ahead of GPU.
+
+## Build
+
+```
+RUSTFLAGS="-C target-feature=+neon" cargo build --release
+./target/release/crabml-cli -m ./testdata/open-llama-3b-q8_0.gguf "captain america" --steps 100 -t 0.8 -p 1.0
+```

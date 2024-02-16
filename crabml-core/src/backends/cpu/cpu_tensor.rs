@@ -254,6 +254,7 @@ impl<'a> Tensor for CpuTensor<'a> {
         // (b, m, k) @ (b, k, ) -> (b, m, )
         let bufa = self.buf();
         let bufb = b.buf();
+        let _t = self.device.metrics.batch_matmul_walltime.track();
         let mut c = CpuTensor::alloc(&[self.shape()[0], self.shape()[1]], None, self.device())?;
         let bufc = c.buf_mut();
         let strider1 = self.strider();
@@ -271,14 +272,15 @@ impl<'a> Tensor for CpuTensor<'a> {
         let bufc = c.buf_mut();
         let strider1 = self.strider();
         let strider2 = x.strider();
-
-        primitives::matmul_vec(bufa, bufb, bufc, strider1, strider2)?;
+        let _t = self.device.metrics.matmul_walltime.track();
+        primitives::matmul_vec(self.device.clone(), bufa, bufb, bufc, strider1, strider2)?;
         Ok(c)
     }
 
     fn mul_inplace(mut self, rhs: &CpuTensor<'a>) -> Result<Self> {
         let strider1 = self.strider().clone();
         let strider2 = rhs.strider();
+        let _t = self.device.metrics.mul_walltime.track();
         primitives::mul_inplace(self.buf_mut(), rhs.buf(), &strider1, strider2)?;
         Ok(self)
     }

@@ -1,23 +1,49 @@
+use std::collections::HashMap;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
 /// stores the metrics on the tensor's privimives
 #[derive(Debug, Default, Clone)]
 pub struct TensorDeviceMetrics {
-    pub rms_norm_milliseconds: TimeMetric,
-    pub add_milliseconds: TimeMetric,
-    pub mul_milliseconds: TimeMetric,
-    pub matmul_milliseconds: TimeMetric,
-    pub batch_matmul_milliseconds: TimeMetric,
+    pub rms_norm_walltime: TimeMetric,
+    pub add_walltime: TimeMetric,
+    pub mul_walltime: TimeMetric,
+    pub matmul_walltime: TimeMetric,
+    pub matmul_quantize_walltime: TimeMetric,
+    pub batch_matmul_walltime: TimeMetric,
 }
 
 impl TensorDeviceMetrics {
     pub fn reset(&self) {
-        self.rms_norm_milliseconds.reset();
-        self.add_milliseconds.reset();
-        self.mul_milliseconds.reset();
-        self.matmul_milliseconds.reset();
-        self.batch_matmul_milliseconds.reset();
+        self.rms_norm_walltime.reset();
+        self.add_walltime.reset();
+        self.mul_walltime.reset();
+        self.matmul_walltime.reset();
+        self.matmul_quantize_walltime.reset();
+        self.batch_matmul_walltime.reset();
+    }
+
+    pub fn as_vec(&self) -> Vec<(String, f64)> {
+        vec![
+            (
+                "rms_norm_walltime".to_string(),
+                self.rms_norm_walltime.as_millis(),
+            ),
+            ("add_walltime".to_string(), self.add_walltime.as_millis()),
+            ("mul_walltime".to_string(), self.mul_walltime.as_millis()),
+            (
+                "matmul_walltime".to_string(),
+                self.matmul_walltime.as_millis(),
+            ),
+            (
+                "matmul_quantize_walltime".to_string(),
+                self.matmul_quantize_walltime.as_millis(),
+            ),
+            (
+                "batch_matmul_walltime".to_string(),
+                self.batch_matmul_walltime.as_millis(),
+            ),
+        ]
     }
 }
 
@@ -42,6 +68,10 @@ impl TimeMetric {
         self.inner.store(0, std::sync::atomic::Ordering::Relaxed);
     }
 
+    pub fn as_millis(&self) -> f64 {
+        self.inner.load(std::sync::atomic::Ordering::Relaxed) as f64 / 1000000.0
+    }
+
     pub fn track(&self) -> TimeMetricGuard {
         TimeMetricGuard {
             m: self.clone(),
@@ -52,7 +82,7 @@ impl TimeMetric {
 
 impl Drop for TimeMetricGuard {
     fn drop(&mut self) {
-        let elapsed = self.start_at.elapsed().as_millis() as u64;
+        let elapsed = self.start_at.elapsed().as_nanos() as u64;
         self.m
             .inner
             .fetch_add(elapsed, std::sync::atomic::Ordering::Relaxed);

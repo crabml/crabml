@@ -44,7 +44,7 @@ fn main() -> Result<()> {
     // configure rayon
     let threads = num_cpus::get();
     rayon::ThreadPoolBuilder::new()
-        .num_threads(threads)
+        .num_threads(threads + 1)
         .build_global()
         .unwrap();
 
@@ -52,7 +52,7 @@ fn main() -> Result<()> {
     let gf = gl.open()?;
 
     let metrics = TensorDeviceMetrics::default();
-    let device_cpu = CpuTensorDevice::new().with_metrics(metrics);
+    let device_cpu = CpuTensorDevice::new().with_metrics(metrics.clone());
     let model_cpu = CpuLlama2Model::load(&gf, device_cpu)?;
     let conf = model_cpu.conf();
 
@@ -81,6 +81,13 @@ fn main() -> Result<()> {
 
     for token in output.by_ref() {
         print!("{}", token?);
+        if args.verbose {
+            print!("\nmetrics per token: ");
+            for (name, value) in metrics.as_vec().iter() {
+                println!("{}: {}ms", name, value);
+            }
+        }
+        metrics.reset();
         std::io::stdout().flush().unwrap();
     }
 

@@ -3,12 +3,14 @@ use std::time::Instant;
 use rayon::prelude::*;
 
 use crate::backends::cpu::buf::CpuTensorBuf;
+use crate::backends::cpu::CpuTensorDeviceRef;
 use crate::error::Result;
 use crate::tensor::TensorStrider;
 
 // matmul_vec is an implementation of GEMV: A (m,k) @ B (k,) -> xout (m,).
 // A is allowed to be not contiguous and quantized
 pub fn matmul_vec<'a>(
+    device: CpuTensorDeviceRef<'a>,
     bufa: &CpuTensorBuf<'a>,
     bufb: &CpuTensorBuf<'a>,
     bufc: &mut CpuTensorBuf<'a>,
@@ -22,7 +24,7 @@ pub fn matmul_vec<'a>(
 
     // if the input is contiguous, we can use SIMD to accelerate the computation
     if strider1.is_contiguous() && bufa.len() % 32 == 0 {
-        gemv_simd(bufa, bufb, bufc);
+        gemv_simd(device, bufa, bufb, bufc);
         return Ok(());
     }
 
@@ -54,11 +56,19 @@ fn gemv_naive_f32<'a>(
     }
 }
 
-fn gemv_simd<'a>(bufa: &CpuTensorBuf<'a>, bufb: &CpuTensorBuf<'a>, bufc: &mut CpuTensorBuf<'a>) {
+fn gemv_simd<'a>(
+    device: CpuTensorDeviceRef<'a>,
+    bufa: &CpuTensorBuf<'a>,
+    bufb: &CpuTensorBuf<'a>,
+    bufc: &mut CpuTensorBuf<'a>,
+) {
     assert!(bufa.len() % 32 == 0);
 
     let bufc = bufc.as_f32_mut();
-    let bufb = &bufb.quantize(bufa.dtype()).unwrap();
+    let bufb = {
+        let _t = device.metrics().matmul_quantize_walltime.track();
+        &bufb.quantize(bufa.dtype()).unwrap()
+    };
 
     let k = bufb.len();
     bufc.par_chunks_mut(8).enumerate().for_each(|(cn, cp)| {

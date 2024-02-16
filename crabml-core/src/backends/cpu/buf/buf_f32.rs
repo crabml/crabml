@@ -16,7 +16,7 @@ pub fn f32_buf_from_bytes<'a>(buf: &[u8]) -> Cow<'a, [f32]> {
     f32_buf.into()
 }
 
-pub fn f32_buf_vec_dot_f32(lhs: &[f32], offset: usize, x: &[f32]) -> f32 {
+pub fn vec_dot_f32_f32(lhs: &[f32], offset: usize, x: &[f32]) -> f32 {
     let chunks = lhs[offset..offset + x.len()].chunks(32);
     let mut acc = f32x32::splat(0.0);
     for (chunk_idx, chunk) in chunks.enumerate() {

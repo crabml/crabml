@@ -63,23 +63,23 @@ fn gemv_simd<'a>(
     bufc: &mut CpuTensorBuf<'a>,
 ) {
     assert!(bufa.len() % 32 == 0);
+    let metrics = device.metrics().clone();
 
     let bufc = bufc.as_f32_mut();
     let bufb = {
-        let _t = device.metrics().matmul_quantize_walltime.track();
+        let _t = metrics.matmul_quantize_walltime.track();
         &bufb.quantize(bufa.dtype()).unwrap()
     };
 
+    let _t = metrics.matmul_vec_dot_walltime.track();
+
+    // TODO: make a block tiling?
     let k = bufb.len();
-    bufc.par_chunks_mut(8).enumerate().for_each(|(cn, cp)| {
-        let mi = cn * 8;
-        cp[0] = bufa.vec_dot(mi * k, bufb);
-        cp[1] = bufa.vec_dot((mi + 1) * k, bufb);
-        cp[2] = bufa.vec_dot((mi + 2) * k, bufb);
-        cp[3] = bufa.vec_dot((mi + 3) * k, bufb);
-        cp[4] = bufa.vec_dot((mi + 4) * k, bufb);
-        cp[5] = bufa.vec_dot((mi + 5) * k, bufb);
-        cp[6] = bufa.vec_dot((mi + 6) * k, bufb);
-        cp[7] = bufa.vec_dot((mi + 7) * k, bufb);
+    println!("k: {}", k);
+    bufc.par_chunks_mut(32).enumerate().for_each(|(cn, cp)| {
+        let mi = cn * 32;
+        for i in 0..32 {
+            cp[i] = bufa.vec_dot((mi + i) * k, bufb);
+        }
     });
 }

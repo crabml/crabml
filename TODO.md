@@ -13,7 +13,8 @@
 - [x] compare the matmul q8_0 FLOPS between ggml and crabml
   - [x] aligh the performance on dot prod: try using manual neon instructions
 - [ ] find the performance difference between ggml
-  - [ ] add performance metrics on every token
-  - [ ] optimize the performance of MHA
+  - [x] add performance metrics on every token
+  - [ ] add b_offset to dot product
+  - [ ] tiled gemv, partition the columns
 - [ ] q8 quantization on webgpu
   - [ ] add dequantize in CpuTensor

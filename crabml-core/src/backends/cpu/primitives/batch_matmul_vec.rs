@@ -1,3 +1,5 @@
+use rayon::prelude::*;
+
 use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::error::Result;
 use crate::tensor::TensorStrider;
@@ -21,21 +23,65 @@ pub fn batch_matmul_vec<'a>(
     let bufb = b.as_f32_ref();
     let bufc = c.as_f32_mut();
 
-    let batch = strider1.shape()[0];
     let m = strider1.shape()[1];
     let k = strider1.shape()[2];
     let bi_stride = strider1.strides()[0];
     let mi_stride = strider1.strides()[1];
     let ki_stride = strider1.strides()[2];
 
-    for bi in 0..batch {
-        for mi in 0..m {
-            let mut sum = 0.0;
-            for ki in 0..k {
-                sum += bufa[bi * bi_stride + mi * mi_stride + ki * ki_stride] * bufb[bi * k + ki];
-            }
-            bufc[bi * m + mi] = sum;
-        }
-    }
+    bufc.par_iter_mut().enumerate().for_each(|(i, bufcp)| {
+        let mi = i % m;
+        let bi = (i - mi) / m;
+        *bufcp = dot_product_f32(
+            bufa,
+            bi * bi_stride + mi * mi_stride,
+            ki_stride,
+            k,
+            &bufb[bi * k..(bi + 1) * k],
+        );
+    });
+
     return Ok(());
+}
+
+pub fn dot_product_f32(a: &[f32], a_base: usize, a_stride: usize, k: usize, b: &[f32]) -> f32 {
+    let mut sum = 0.0;
+    let k_rounded = k - k % 4;
+    for ki in (0..k_rounded).step_by(4) {
+        sum += a[a_base + ki * a_stride] * b[ki];
+        sum += a[a_base + (ki + 1) * a_stride] * b[ki + 1];
+        sum += a[a_base + (ki + 2) * a_stride] * b[ki + 2];
+        sum += a[a_base + (ki + 3) * a_stride] * b[ki + 3];
+    }
+    for ki in (k_rounded..k).step_by(1) {
+        sum += a[a_base + ki * a_stride] * b[ki];
+    }
+    sum
+}
+
+pub fn dot_product_f32_simd(
+    a: &[f32],
+    a_base: usize,
+    a_stride: usize,
+    len: usize,
+    b: &[f32],
+) -> f32 {
+    use std::arch::aarch64;
+
+    unsafe {
+        let mut sumv0 = aarch64::vdupq_n_f32(0.0);
+        for ki in (0..len).step_by(4) {
+            let av_tmp = [
+                a[a_base + ki * a_stride],
+                a[a_base + (ki + 1) * a_stride],
+                a[a_base + (ki + 2) * a_stride],
+                a[a_base + (ki + 3) * a_stride],
+            ];
+            let av0 = aarch64::vld1q_f32(av_tmp.as_ptr());
+            let bv0 = aarch64::vld1q_f32(&b[ki]);
+            sumv0 = aarch64::vfmaq_f32(sumv0, av0, bv0);
+        }
+
+        aarch64::vaddvq_f32(sumv0)
+    }
 }

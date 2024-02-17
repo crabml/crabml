@@ -4,7 +4,7 @@ use half::f16;
 
 #[derive(Debug, Clone)]
 pub struct QuantBufQ8_0<'a> {
-    blocks: Cow<'a, [BlockQ8_0]>,
+    pub blocks: Cow<'a, [BlockQ8_0]>,
 }
 
 impl<'a> QuantBufQ8_0<'a> {

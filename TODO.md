@@ -12,9 +12,11 @@
 - [x] q8_0 dot product
 - [x] compare the matmul q8_0 FLOPS between ggml and crabml
   - [x] aligh the performance on dot prod: try using manual neon instructions
-- [ ] find the performance difference between ggml
+- [x] find the performance difference between ggml
   - [x] add performance metrics on every token
-  - [ ] add b_offset to dot product
+  - [x] add b_offset to dot product
+- [ ] ggml matmul: ~65ms per token, crabml: ~75ms per token, about 10ms slower
+  - [ ] add GEMV benchmark on 3200 x 8640, then 8640 x 3200
   - [ ] tiled gemv, partition the columns
 - [ ] q8 quantization on webgpu
   - [ ] add dequantize in CpuTensor

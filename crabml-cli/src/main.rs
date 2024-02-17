@@ -7,6 +7,7 @@ use crabml::backends::wgpu::WgpuTensorDevice;
 use crabml::backends::wgpu::WgpuTensorDeviceOptions;
 use crabml::error::Result;
 use crabml::gguf::GGUFFileLoader;
+use crabml::tensor::TensorDeviceMetrics;
 use crabml_llama2::llama2::Llama2Runner;
 use crabml_llama2::model::WgpuLlama2Model;
 use crabml_llama2::sampler::Llama2Sampler;
@@ -32,6 +33,9 @@ struct CommandArgs {
     #[arg(short, long, default_value_t = false)]
     verbose: bool,
 
+    #[arg(short = 'T', long, default_value_t = 2)]
+    threads: usize,
+
     /// The prompt
     prompt: String,
 }
@@ -41,7 +45,10 @@ fn main() -> Result<()> {
     let start_time = Instant::now();
 
     // configure rayon
-    let threads = num_cpus::get();
+    let mut threads = args.threads;
+    if threads == 0 {
+        threads = num_cpus::get();
+    }
     rayon::ThreadPoolBuilder::new()
         .num_threads(threads)
         .build_global()
@@ -50,7 +57,8 @@ fn main() -> Result<()> {
     let gl = GGUFFileLoader::new(&args.model)?;
     let gf = gl.open()?;
 
-    let device_cpu = CpuTensorDevice::new();
+    let metrics = TensorDeviceMetrics::default();
+    let device_cpu = CpuTensorDevice::new().with_metrics(metrics.clone());
     let model_cpu = CpuLlama2Model::load(&gf, device_cpu)?;
     let conf = model_cpu.conf();
 
@@ -76,10 +84,29 @@ fn main() -> Result<()> {
 
     let mut output = runner.generate(&args.prompt, args.steps, &mut sampler)?;
     print!("{}", &args.prompt);
-    for token in output.by_ref() {
-        print!("{}", token?);
+
+    loop {
+        let token = {
+            let _t = metrics.total_walltime.track();
+            match output.next() {
+                Some(token) => token?,
+                None => break,
+            }
+        };
+
+        print!("{}", token);
+
+        if args.verbose {
+            print!("\nmetrics per token: ");
+            for (name, value) in metrics.as_vec().iter() {
+                println!("{}: {}ms", name, value);
+            }
+        }
+
+        metrics.reset();
         std::io::stdout().flush().unwrap();
     }
+
     println!();
     println!(
         "{} tokens/s, {} threads",

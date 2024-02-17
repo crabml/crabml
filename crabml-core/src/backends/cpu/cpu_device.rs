@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use super::CpuTensor;
-use crate::backends::cpu::buf::CpuTensorBuf;
+use crate::tensor::TensorDeviceMetrics;
 
 #[derive(Debug, Clone)]
 pub struct CpuTensorDeviceOptions {
@@ -23,8 +23,10 @@ impl Default for CpuTensorDeviceOptions {
 #[derive(Debug)]
 pub struct CpuTensorDevice<'a> {
     pub(crate) opts: CpuTensorDeviceOptions,
-    _bufs: Vec<CpuTensorBuf<'a>>,
+    pub(crate) metrics: TensorDeviceMetrics,
     pub(crate) debug_tensors: RefCell<HashMap<String, Vec<f32>>>,
+    pub(crate) wbuf: RefCell<Option<Vec<f32>>>,
+    _phantom: std::marker::PhantomData<&'a ()>,
 }
 
 pub type CpuTensorDeviceRef<'a> = Rc<CpuTensorDevice<'a>>;
@@ -33,8 +35,10 @@ impl<'a> CpuTensorDevice<'a> {
     pub fn new() -> CpuTensorDeviceRef<'a> {
         let device = Self {
             opts: CpuTensorDeviceOptions::default(),
-            _bufs: vec![],
             debug_tensors: RefCell::new(HashMap::new()),
+            metrics: TensorDeviceMetrics::default(),
+            wbuf: RefCell::new(Some(vec![0.0; 32000])),
+            _phantom: std::marker::PhantomData,
         };
         Rc::new(device)
     }
@@ -42,10 +46,27 @@ impl<'a> CpuTensorDevice<'a> {
     pub fn with_options(opts: CpuTensorDeviceOptions) -> CpuTensorDeviceRef<'a> {
         let device = Self {
             opts,
-            _bufs: vec![],
             debug_tensors: RefCell::new(HashMap::new()),
+            metrics: TensorDeviceMetrics::default(),
+            wbuf: RefCell::new(Some(vec![0.0; 32000])),
+            _phantom: std::marker::PhantomData,
         };
         Rc::new(device)
+    }
+
+    pub fn with_metrics(self: Rc<Self>, metrics: TensorDeviceMetrics) -> CpuTensorDeviceRef<'a> {
+        let device = Self {
+            opts: self.opts.clone(),
+            debug_tensors: self.debug_tensors.clone(),
+            wbuf: self.wbuf.clone(),
+            metrics,
+            _phantom: std::marker::PhantomData,
+        };
+        Rc::new(device)
+    }
+
+    pub fn metrics(&self) -> &TensorDeviceMetrics {
+        &self.metrics
     }
 
     pub fn dump_debug_tensor(&self, name: &str) -> Option<Vec<f32>> {

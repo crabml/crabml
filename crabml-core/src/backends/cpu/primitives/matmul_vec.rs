@@ -3,12 +3,14 @@ use std::time::Instant;
 use rayon::prelude::*;
 
 use crate::backends::cpu::buf::CpuTensorBuf;
+use crate::backends::cpu::CpuTensorDeviceRef;
 use crate::error::Result;
 use crate::tensor::TensorStrider;
 
 // matmul_vec is an implementation of GEMV: A (m,k) @ B (k,) -> xout (m,).
 // A is allowed to be not contiguous and quantized
 pub fn matmul_vec<'a>(
+    device: CpuTensorDeviceRef<'a>,
     bufa: &CpuTensorBuf<'a>,
     bufb: &CpuTensorBuf<'a>,
     bufc: &mut CpuTensorBuf<'a>,
@@ -22,7 +24,7 @@ pub fn matmul_vec<'a>(
 
     // if the input is contiguous, we can use SIMD to accelerate the computation
     if strider1.is_contiguous() && bufa.len() % 32 == 0 {
-        gemv_simd(bufa, bufb, bufc);
+        gemv_simd(device, bufa, bufb, bufc);
         return Ok(());
     }
 
@@ -54,22 +56,31 @@ fn gemv_naive_f32<'a>(
     }
 }
 
-fn gemv_simd<'a>(bufa: &CpuTensorBuf<'a>, bufb: &CpuTensorBuf<'a>, bufc: &mut CpuTensorBuf<'a>) {
+fn gemv_simd<'a>(
+    device: CpuTensorDeviceRef<'a>,
+    bufa: &CpuTensorBuf<'a>,
+    bufb: &CpuTensorBuf<'a>,
+    bufc: &mut CpuTensorBuf<'a>,
+) {
     assert!(bufa.len() % 32 == 0);
+    let metrics = device.metrics().clone();
 
     let bufc = bufc.as_f32_mut();
-    let bufb = &bufb.quantize(bufa.dtype()).unwrap();
+    let bufb = {
+        let _t = metrics.matmul_quantize_walltime.track();
+        &bufb.quantize(bufa.dtype()).unwrap()
+    };
+
+    let _t = metrics.matmul_vec_dot_walltime.track();
 
     let k = bufb.len();
-    bufc.par_chunks_mut(8).enumerate().for_each(|(cn, cp)| {
-        let mi = cn * 8;
-        cp[0] = bufa.vec_dot(mi * k, bufb);
-        cp[1] = bufa.vec_dot((mi + 1) * k, bufb);
-        cp[2] = bufa.vec_dot((mi + 2) * k, bufb);
-        cp[3] = bufa.vec_dot((mi + 3) * k, bufb);
-        cp[4] = bufa.vec_dot((mi + 4) * k, bufb);
-        cp[5] = bufa.vec_dot((mi + 5) * k, bufb);
-        cp[6] = bufa.vec_dot((mi + 6) * k, bufb);
-        cp[7] = bufa.vec_dot((mi + 7) * k, bufb);
-    });
+    bufc.par_chunks_exact_mut(4)
+        .enumerate()
+        .for_each(|(cn, cp)| {
+            let mi = cn * 4;
+            cp[0] = bufa.vec_dot((mi + 0) * k, bufb, 0, k);
+            cp[1] = bufa.vec_dot((mi + 1) * k, bufb, 0, k);
+            cp[2] = bufa.vec_dot((mi + 2) * k, bufb, 0, k);
+            cp[3] = bufa.vec_dot((mi + 3) * k, bufb, 0, k);
+        });
 }

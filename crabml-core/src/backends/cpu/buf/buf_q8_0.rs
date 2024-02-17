@@ -1,10 +1,11 @@
+use std::arch::aarch64::float32x4_t;
 use std::borrow::Cow;
 
 use half::f16;
 
 #[derive(Debug, Clone)]
 pub struct QuantBufQ8_0<'a> {
-    blocks: Cow<'a, [BlockQ8_0]>,
+    pub blocks: Cow<'a, [BlockQ8_0]>,
 }
 
 impl<'a> QuantBufQ8_0<'a> {
@@ -23,22 +24,7 @@ impl<'a> QuantBufQ8_0<'a> {
     }
 
     pub fn quantize(data: &[f32]) -> Self {
-        let mut bs: Vec<BlockQ8_0> = vec![];
-        let chunks = data.chunks(32);
-        for chunk in chunks {
-            let mut max = f32::MIN;
-            for i in 0..32 {
-                if chunk[i].abs() > max {
-                    max = chunk[i].abs();
-                }
-            }
-            let d = f16::from_f32(max / 127.0);
-            let mut qs = [0_i8; 32];
-            for i in 0..32 {
-                qs[i] = (chunk[i] / d.to_f32()).round() as i8;
-            }
-            bs.push(BlockQ8_0 { d, qs })
-        }
+        let bs = unsafe { quantize_f32_q8_0_neon(data) };
         Self { blocks: bs.into() }
     }
 
@@ -62,17 +48,17 @@ impl<'a> QuantBufQ8_0<'a> {
     }
 
     #[cfg(not(all(target_feature = "neon")))]
-    pub fn vec_dot(&self, offset: usize, b: &Self) -> f32 {
-        let abs = &self.blocks[offset / 32..((offset + b.len()) / 32)];
-        assert!(abs.len() == b.blocks().len());
+    pub fn vec_dot(&self, a_offset: usize, b: &Self, b_offset: usize, len: usize) -> f32 {
+        let abs = &self.blocks[a_offset / 32..(a_offset + len) / 32];
+        let bbs = &b.blocks()[b_offset / 32..(b_offset + len) / 32];
 
         vec_dot_q8_0_q8_0_naive(abs, bbs)
     }
 
     #[cfg(target_feature = "neon")]
-    pub fn vec_dot(&self, offset: usize, b: &Self) -> f32 {
-        let abs = &self.blocks[offset / 32..((offset + b.len()) / 32)];
-        let bbs = b.blocks();
+    pub fn vec_dot(&self, a_offset: usize, b: &Self, b_offset: usize, len: usize) -> f32 {
+        let abs = &self.blocks[a_offset / 32..(a_offset + len) / 32];
+        let bbs = &b.blocks()[b_offset / 32..(b_offset + len) / 32];
 
         if bbs.len() % 2 == 0 {
             return vec_dot_q8_0_q8_0_neon_unrolled(abs, bbs);
@@ -98,6 +84,52 @@ impl BlockQ8_0 {
             buf[i] = q as f32 * d;
         }
     }
+}
+
+unsafe fn quantize_f32_q8_0_neon(data: &[f32]) -> Vec<BlockQ8_0> {
+    use std::arch::aarch64;
+
+    let mut bs = Vec::with_capacity(data.len() / 32);
+    for i in (0..data.len()).step_by(32) {
+        let mut vsrc = [aarch64::vdupq_n_f32(0.0); 8];
+        let mut vasrc = [aarch64::vdupq_n_f32(0.0); 8];
+        let mut vmax = [aarch64::vdupq_n_f32(0.0); 8];
+
+        for j in 0..8 {
+            vsrc[j] = aarch64::vld1q_f32(data.as_ptr().add(i + j * 4));
+            vasrc[j] = aarch64::vabsq_f32(vsrc[j]);
+        }
+
+        for j in 0..4 {
+            vmax[2 * j] = aarch64::vmaxq_f32(vasrc[2 * j], vasrc[2 * j + 1]);
+        }
+        for j in 0..2 {
+            vmax[4 * j] = aarch64::vmaxq_f32(vmax[4 * j], vmax[4 * j + 2]);
+        }
+        for j in 0..1 {
+            vmax[8 * j] = aarch64::vmaxq_f32(vmax[8 * j], vmax[8 * j + 4]);
+        }
+        let max = aarch64::vmaxvq_f32(vmax[0]);
+
+        let d = max / 127.0;
+        let mut qs = [0_i8; 32];
+
+        for j in 0..8 {
+            let v = aarch64::vdivq_f32(vsrc[j], aarch64::vdupq_n_f32(d));
+            let vi = aarch64::vcvtq_s32_f32(v);
+            qs[4 * j] = aarch64::vgetq_lane_s32(vi, 0) as i8;
+            qs[4 * j + 1] = aarch64::vgetq_lane_s32(vi, 1) as i8;
+            qs[4 * j + 2] = aarch64::vgetq_lane_s32(vi, 2) as i8;
+            qs[4 * j + 3] = aarch64::vgetq_lane_s32(vi, 3) as i8;
+        }
+
+        bs.push(BlockQ8_0 {
+            d: f16::from_f32(d),
+            qs,
+        });
+    }
+
+    bs
 }
 
 fn vec_dot_q8_0_q8_0_naive(abs: &[BlockQ8_0], bbs: &[BlockQ8_0]) -> f32 {

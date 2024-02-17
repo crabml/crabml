@@ -25,6 +25,7 @@ pub struct CpuTensorDevice<'a> {
     pub(crate) opts: CpuTensorDeviceOptions,
     pub(crate) metrics: TensorDeviceMetrics,
     pub(crate) debug_tensors: RefCell<HashMap<String, Vec<f32>>>,
+    pub(crate) wbuf: RefCell<Option<Vec<f32>>>,
     _phantom: std::marker::PhantomData<&'a ()>,
 }
 
@@ -36,6 +37,7 @@ impl<'a> CpuTensorDevice<'a> {
             opts: CpuTensorDeviceOptions::default(),
             debug_tensors: RefCell::new(HashMap::new()),
             metrics: TensorDeviceMetrics::default(),
+            wbuf: RefCell::new(Some(vec![0.0; 32000])),
             _phantom: std::marker::PhantomData,
         };
         Rc::new(device)
@@ -46,6 +48,7 @@ impl<'a> CpuTensorDevice<'a> {
             opts,
             debug_tensors: RefCell::new(HashMap::new()),
             metrics: TensorDeviceMetrics::default(),
+            wbuf: RefCell::new(Some(vec![0.0; 32000])),
             _phantom: std::marker::PhantomData,
         };
         Rc::new(device)
@@ -55,6 +58,7 @@ impl<'a> CpuTensorDevice<'a> {
         let device = Self {
             opts: self.opts.clone(),
             debug_tensors: self.debug_tensors.clone(),
+            wbuf: self.wbuf.clone(),
             metrics,
             _phantom: std::marker::PhantomData,
         };

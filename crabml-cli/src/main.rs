@@ -33,6 +33,9 @@ struct CommandArgs {
     #[arg(short, long, default_value_t = false)]
     verbose: bool,
 
+    #[arg(short = 'T', long, default_value_t = 2)]
+    threads: usize,
+
     /// The prompt
     prompt: String,
 }
@@ -42,9 +45,12 @@ fn main() -> Result<()> {
     let start_time = Instant::now();
 
     // configure rayon
-    let threads = num_cpus::get();
+    let mut threads = args.threads;
+    if threads == 0 {
+        threads = num_cpus::get();
+    }
     rayon::ThreadPoolBuilder::new()
-        .num_threads(threads + 1)
+        .num_threads(threads)
         .build_global()
         .unwrap();
 

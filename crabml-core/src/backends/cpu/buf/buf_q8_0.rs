@@ -92,15 +92,16 @@ unsafe fn quantize_f32_q8_0_neon(data: &[f32]) -> Vec<BlockQ8_0> {
     let mut bs = Vec::with_capacity(data.len() / 32);
     for i in (0..data.len()).step_by(32) {
         let mut vsrc = [aarch64::vdupq_n_f32(0.0); 8];
+        let mut vasrc = [aarch64::vdupq_n_f32(0.0); 8];
         let mut vmax = [aarch64::vdupq_n_f32(0.0); 8];
 
-        vsrc.iter_mut().enumerate().for_each(|(j, vsrcp)| {
-            *vsrcp = aarch64::vld1q_f32(data.as_ptr().add(i + j * 4));
-            *vsrcp = aarch64::vabsq_f32(*vsrcp);
-        });
+        for j in 0..8 {
+            vsrc[j] = aarch64::vld1q_f32(data.as_ptr().add(i + j * 4));
+            vasrc[j] = aarch64::vabsq_f32(vsrc[j]);
+        }
 
         for j in 0..4 {
-            vmax[2 * j] = aarch64::vmaxq_f32(vsrc[2 * j], vsrc[2 * j + 1]);
+            vmax[2 * j] = aarch64::vmaxq_f32(vasrc[2 * j], vasrc[2 * j + 1]);
         }
         for j in 0..2 {
             vmax[4 * j] = aarch64::vmaxq_f32(vmax[4 * j], vmax[4 * j + 2]);
@@ -112,8 +113,14 @@ unsafe fn quantize_f32_q8_0_neon(data: &[f32]) -> Vec<BlockQ8_0> {
 
         let d = max / 127.0;
         let mut qs = [0_i8; 32];
-        for j in 0..32 {
-            qs[j] = (data.get_unchecked(i + j) / d).round() as i8;
+
+        for j in 0..8 {
+            let v = aarch64::vdivq_f32(vsrc[j], aarch64::vdupq_n_f32(d));
+            let vi = aarch64::vcvtq_s32_f32(v);
+            qs[4 * j] = aarch64::vgetq_lane_s32(vi, 0) as i8;
+            qs[4 * j + 1] = aarch64::vgetq_lane_s32(vi, 1) as i8;
+            qs[4 * j + 2] = aarch64::vgetq_lane_s32(vi, 2) as i8;
+            qs[4 * j + 3] = aarch64::vgetq_lane_s32(vi, 3) as i8;
         }
 
         bs.push(BlockQ8_0 {

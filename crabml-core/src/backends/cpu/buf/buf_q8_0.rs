@@ -1,3 +1,4 @@
+use std::arch::aarch64::float32x4_t;
 use std::borrow::Cow;
 
 use half::f16;
@@ -23,22 +24,7 @@ impl<'a> QuantBufQ8_0<'a> {
     }
 
     pub fn quantize(data: &[f32]) -> Self {
-        let mut bs: Vec<BlockQ8_0> = vec![];
-        let chunks = data.chunks(32);
-        for chunk in chunks {
-            let mut max = f32::MIN;
-            for i in 0..32 {
-                if chunk[i].abs() > max {
-                    max = chunk[i].abs();
-                }
-            }
-            let d = f16::from_f32(max / 127.0);
-            let mut qs = [0_i8; 32];
-            for i in 0..32 {
-                qs[i] = (chunk[i] / d.to_f32()).round() as i8;
-            }
-            bs.push(BlockQ8_0 { d, qs })
-        }
+        let bs = unsafe { quantize_f32_q8_0_neon(data) };
         Self { blocks: bs.into() }
     }
 
@@ -98,6 +84,41 @@ impl BlockQ8_0 {
             buf[i] = q as f32 * d;
         }
     }
+}
+
+unsafe fn quantize_f32_q8_0_neon(data: &[f32]) -> Vec<BlockQ8_0> {
+    use std::arch::aarch64;
+
+    let mut bs = Vec::with_capacity(data.len() / 32);
+    for i in (0..data.len()).step_by(32) {
+        let mut vsrc = [aarch64::vdupq_n_f32(0.0); 8];
+        let mut vmax = [aarch64::vdupq_n_f32(0.0); 8];
+
+        for j in 0..8 {
+            vsrc[j] = aarch64::vld1q_f32(data.as_ptr().add(i + j * 4));
+            vsrc[j] = aarch64::vabsq_f32(vsrc[j]);
+        }
+
+        for j in 0..4 {
+            vmax[2 * j] = aarch64::vmaxq_f32(vsrc[2 * j], vsrc[2 * j + 1]);
+        }
+        for j in 0..2 {
+            vmax[4 * j] = aarch64::vmaxq_f32(vmax[4 * j], vmax[4 * j + 2]);
+        }
+        for j in 0..1 {
+            vmax[8 * j] = aarch64::vmaxq_f32(vmax[8 * j], vmax[8 * j + 4]);
+        }
+        let max = aarch64::vmaxvq_f32(vmax[0]);
+
+        let d = f16::from_f32(max / 127.0);
+        let mut qs = [0_i8; 32];
+        for j in 0..32 {
+            qs[j] = (data[i + j] / d.to_f32()).round() as i8;
+        }
+        bs.push(BlockQ8_0 { d, qs });
+    }
+
+    bs
 }
 
 fn vec_dot_q8_0_q8_0_naive(abs: &[BlockQ8_0], bbs: &[BlockQ8_0]) -> f32 {

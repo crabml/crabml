@@ -32,7 +32,7 @@ pub fn batch_matmul_vec<'a>(
     bufc.par_iter_mut().enumerate().for_each(|(i, bufcp)| {
         let mi = i % m;
         let bi = (i - mi) / m;
-        *bufcp = dot_product_f32(
+        *bufcp = dot_product_f32_simd(
             bufa,
             bi * bi_stride + mi * mi_stride,
             ki_stride,
@@ -59,29 +59,30 @@ pub fn dot_product_f32(a: &[f32], a_base: usize, a_stride: usize, k: usize, b: &
     sum
 }
 
-pub fn dot_product_f32_simd(
-    a: &[f32],
-    a_base: usize,
-    a_stride: usize,
-    len: usize,
-    b: &[f32],
-) -> f32 {
+pub fn dot_product_f32_simd(a: &[f32], a_base: usize, a_stride: usize, k: usize, b: &[f32]) -> f32 {
     use std::arch::aarch64;
 
     unsafe {
+        let a_ptr = a.as_ptr().add(a_base);
+
         let mut sumv0 = aarch64::vdupq_n_f32(0.0);
-        for ki in (0..len).step_by(4) {
+        let k_rounded = k - k % 4;
+        for ki in (0..k_rounded).step_by(4) {
             let av_tmp = [
-                a[a_base + ki * a_stride],
-                a[a_base + (ki + 1) * a_stride],
-                a[a_base + (ki + 2) * a_stride],
-                a[a_base + (ki + 3) * a_stride],
+                *a_ptr.add(ki * a_stride),
+                *a_ptr.add((ki + 1) * a_stride),
+                *a_ptr.add((ki + 2) * a_stride),
+                *a_ptr.add((ki + 3) * a_stride),
             ];
             let av0 = aarch64::vld1q_f32(av_tmp.as_ptr());
-            let bv0 = aarch64::vld1q_f32(&b[ki]);
+            let bv0 = aarch64::vld1q_f32(b.as_ptr().add(ki));
             sumv0 = aarch64::vfmaq_f32(sumv0, av0, bv0);
         }
 
-        aarch64::vaddvq_f32(sumv0)
+        let mut sum = aarch64::vaddvq_f32(sumv0);
+        for ki in k_rounded..k {
+            sum += a[a_base + ki * a_stride] * b[ki];
+        }
+        sum
     }
 }

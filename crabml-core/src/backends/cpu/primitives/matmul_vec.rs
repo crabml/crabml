@@ -73,12 +73,14 @@ fn gemv_simd<'a>(
 
     let _t = metrics.matmul_vec_dot_walltime.track();
 
-    // TODO: make a block tiling?
     let k = bufb.len();
-    bufc.par_chunks_mut(32).enumerate().for_each(|(cn, cp)| {
-        let mi = cn * 32;
-        for i in 0..32 {
-            cp[i] = bufa.vec_dot((mi + i) * k, bufb, 0, k);
-        }
-    });
+    bufc.par_chunks_exact_mut(4)
+        .enumerate()
+        .for_each(|(cn, cp)| {
+            let mi = cn * 4;
+            cp[0] = bufa.vec_dot((mi + 0) * k, bufb, 0, k);
+            cp[1] = bufa.vec_dot((mi + 1) * k, bufb, 0, k);
+            cp[2] = bufa.vec_dot((mi + 2) * k, bufb, 0, k);
+            cp[3] = bufa.vec_dot((mi + 3) * k, bufb, 0, k);
+        });
 }

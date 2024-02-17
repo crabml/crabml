@@ -16,7 +16,7 @@
   - [x] add performance metrics on every token
   - [x] add b_offset to dot product
 - [ ] ggml matmul: ~65ms per token, crabml: ~75ms per token, about 10ms slower
-  - [ ] add GEMV benchmark on 3200 x 8640, then 8640 x 3200
-  - [ ] tiled gemv, partition the columns
+  - [x] add GEMV benchmark on 3200 x 8640, then 8640 x 3200
+  - [ ] tile seems no effect at all, maybe the performance gap is due to the memory reuse?
 - [ ] q8 quantization on webgpu
   - [ ] add dequantize in CpuTensor

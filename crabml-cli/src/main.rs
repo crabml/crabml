@@ -85,14 +85,24 @@ fn main() -> Result<()> {
     let mut output = runner.generate(&args.prompt, args.steps, &mut sampler)?;
     print!("{}", &args.prompt);
 
-    for token in output.by_ref() {
-        print!("{}", token?);
+    loop {
+        let token = {
+            let _t = metrics.total_walltime.track();
+            match output.next() {
+                Some(token) => token?,
+                None => break,
+            }
+        };
+
+        print!("{}", token);
+
         if args.verbose {
             print!("\nmetrics per token: ");
             for (name, value) in metrics.as_vec().iter() {
                 println!("{}: {}ms", name, value);
             }
         }
+
         metrics.reset();
         std::io::stdout().flush().unwrap();
     }

@@ -66,20 +66,28 @@ pub fn dot_product_f32_simd(a: &[f32], a_base: usize, a_stride: usize, k: usize,
         let a_ptr = a.as_ptr().add(a_base);
 
         let mut sumv0 = aarch64::vdupq_n_f32(0.0);
-        let k_rounded = k - k % 4;
-        for ki in (0..k_rounded).step_by(4) {
+        let mut sumv1 = aarch64::vdupq_n_f32(0.0);
+        let k_rounded = k - k % 8;
+        for ki in (0..k_rounded).step_by(8) {
             let av_tmp = [
                 *a_ptr.add(ki * a_stride),
                 *a_ptr.add((ki + 1) * a_stride),
                 *a_ptr.add((ki + 2) * a_stride),
                 *a_ptr.add((ki + 3) * a_stride),
+                *a_ptr.add((ki + 4) * a_stride),
+                *a_ptr.add((ki + 5) * a_stride),
+                *a_ptr.add((ki + 6) * a_stride),
+                *a_ptr.add((ki + 7) * a_stride),
             ];
             let av0 = aarch64::vld1q_f32(av_tmp.as_ptr());
             let bv0 = aarch64::vld1q_f32(b.as_ptr().add(ki));
+            let av1 = aarch64::vld1q_f32(av_tmp.as_ptr().add(4));
+            let bv1 = aarch64::vld1q_f32(b.as_ptr().add(ki + 4));
             sumv0 = aarch64::vfmaq_f32(sumv0, av0, bv0);
+            sumv1 = aarch64::vfmaq_f32(sumv1, av1, bv1);
         }
 
-        let mut sum = aarch64::vaddvq_f32(sumv0);
+        let mut sum = aarch64::vaddvq_f32(sumv0) + aarch64::vaddvq_f32(sumv1);
         for ki in k_rounded..k {
             sum += a[a_base + ki * a_stride] * b[ki];
         }

@@ -306,12 +306,14 @@ impl<'a> Tensor for CpuTensor<'a> {
     }
 
     fn softmax_inplace(mut self, axis: usize) -> Result<Self> {
+        let _t = self.device.metrics.softmax_walltime.track();
         let strider1 = self.strider().clone();
         primitives::softmax_inplace(self.buf_mut(), strider1, axis)?;
         Ok(self)
     }
 
     fn rope_inplace(mut self, pos: usize, rope_dims: usize) -> Result<Self> {
+        let _t = self.device.metrics.rope_walltime.track();
         let strider1 = self.strider().clone();
         let buf1 = self.buf_mut();
         primitives::rope_inplace(buf1, &strider1, pos, rope_dims)?;

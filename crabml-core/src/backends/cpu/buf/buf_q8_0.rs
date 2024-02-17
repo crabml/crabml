@@ -94,10 +94,10 @@ unsafe fn quantize_f32_q8_0_neon(data: &[f32]) -> Vec<BlockQ8_0> {
         let mut vsrc = [aarch64::vdupq_n_f32(0.0); 8];
         let mut vmax = [aarch64::vdupq_n_f32(0.0); 8];
 
-        for j in 0..8 {
-            vsrc[j] = aarch64::vld1q_f32(data.as_ptr().add(i + j * 4));
-            vsrc[j] = aarch64::vabsq_f32(vsrc[j]);
-        }
+        vsrc.iter_mut().enumerate().for_each(|(j, vsrcp)| {
+            *vsrcp = aarch64::vld1q_f32(data.as_ptr().add(i + j * 4));
+            *vsrcp = aarch64::vabsq_f32(*vsrcp);
+        });
 
         for j in 0..4 {
             vmax[2 * j] = aarch64::vmaxq_f32(vsrc[2 * j], vsrc[2 * j + 1]);
@@ -110,12 +110,16 @@ unsafe fn quantize_f32_q8_0_neon(data: &[f32]) -> Vec<BlockQ8_0> {
         }
         let max = aarch64::vmaxvq_f32(vmax[0]);
 
-        let d = f16::from_f32(max / 127.0);
+        let d = max / 127.0;
         let mut qs = [0_i8; 32];
         for j in 0..32 {
-            qs[j] = (data[i + j] / d.to_f32()).round() as i8;
+            qs[j] = (data.get_unchecked(i + j) / d).round() as i8;
         }
-        bs.push(BlockQ8_0 { d, qs });
+
+        bs.push(BlockQ8_0 {
+            d: f16::from_f32(d),
+            qs,
+        });
     }
 
     bs

@@ -23,14 +23,18 @@ pub fn rope_inplace<'a>(
         _ => panic!("only support f32 yet"),
     };
 
+    let theta_scale = 10000_f32.powf(-2.0 / head_size as f32);
+
     // apply RoPE rotation for each head
     for h in 0..n_heads {
+        let mut theta: f32 = pos as f32;
+
         for i in 0..rope_dims / 2 {
-            let theta_scale = 10000_f32.powf(-2.0 * i as f32 / head_size as f32);
-            let theta = pos as f32 * theta_scale;
+            theta *= theta_scale;
 
             let cos_theta = theta.cos();
             let sin_theta = theta.sin();
+
             let qp = &mut qb[h * head_size + i * 2..];
             let qp0 = qp[0];
             let qp1 = qp[1];

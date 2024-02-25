@@ -15,9 +15,7 @@ pub fn rope_inplace<'a>(
     assert!(strider1.is_contiguous());
     assert!(strider1.shape().len() == 2);
 
-    let n_heads = strider1.shape()[0];
     let head_size = strider1.shape()[1];
-
     let qb = match buf1 {
         CpuTensorBuf::F32(Cow::Owned(buf)) => buf,
         _ => panic!("only support f32 yet"),
@@ -29,10 +27,10 @@ pub fn rope_inplace<'a>(
         let mut theta: f32 = pos as f32;
 
         for i in 0..rope_dims / 2 {
-            theta *= theta_scale;
-
             let cos_theta = theta.cos();
             let sin_theta = theta.sin();
+
+            theta *= theta_scale;
 
             unsafe {
                 let qp0 = *chunk.get_unchecked(i * 2);

@@ -35,11 +35,13 @@ pub fn rope_inplace<'a>(
             let cos_theta = theta.cos();
             let sin_theta = theta.sin();
 
-            let qp = &mut qb[h * head_size + i * 2..];
-            let qp0 = qp[0];
-            let qp1 = qp[1];
-            qp[0] = qp0 * cos_theta - qp1 * sin_theta;
-            qp[1] = qp0 * sin_theta + qp1 * cos_theta;
+            unsafe {
+                let qp = qb.as_mut_ptr().add(h * head_size + i * 2);
+                let qp0 = *qp;
+                let qp1 = *qp.add(1);
+                *qp = qp0 * cos_theta - qp1 * sin_theta;
+                *qp.add(1) = qp0 * sin_theta + qp1 * cos_theta;
+            }
         }
     }
 

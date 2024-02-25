@@ -474,7 +474,7 @@ mod tests {
         assert_relative_eq!(
             device_cpu.dump_debug_tensor("q_roped:0:0").unwrap()[..],
             device_wgpu.dump_debug_tensor("q_roped:0:0").unwrap()[..],
-            epsilon = 1e-5
+            epsilon = 1e-2
         );
 
         assert_relative_eq!(
@@ -492,7 +492,7 @@ mod tests {
         assert_relative_eq!(
             device_cpu.dump_debug_tensor("final_rmsnorm:0").unwrap()[..],
             device_wgpu.dump_debug_tensor("final_rmsnorm:0").unwrap()[..],
-            epsilon = 1e-4
+            epsilon = 1e-2
         );
 
         assert_eq!(

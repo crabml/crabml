@@ -1,12 +1,17 @@
 use std::borrow::Cow;
 
+use half::f16;
+
+use crate::backends::cpu::buf::buf_f32::exp_f32_cached;
 use crate::backends::cpu::buf::CpuTensorBuf;
+use crate::backends::cpu::CpuTensorDeviceRef;
 use crate::error::ErrorKind;
 use crate::error::Result;
 use crate::tensor::TensorStrider;
 
 // TODO: support f16
 pub fn softmax_inplace<'a>(
+    device: CpuTensorDeviceRef<'a>,
     buf: &mut CpuTensorBuf<'a>,
     strider: TensorStrider,
     axis: usize,
@@ -29,7 +34,7 @@ pub fn softmax_inplace<'a>(
         let buf_row = &mut buf[row * cols..(row + 1) * cols];
         let max = buf_row.iter().fold(0.0, |m, val| val.max(m));
         let sum = buf_row.iter_mut().fold(0.0, |mut acc, val| {
-            *val = (*val - max).exp();
+            *val = exp_f32_cached(*val - max, &device.exp_cache);
             acc += *val;
             acc
         });

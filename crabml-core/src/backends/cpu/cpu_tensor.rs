@@ -301,14 +301,15 @@ impl<'a> Tensor for CpuTensor<'a> {
     }
 
     fn silu_inplace(mut self) -> Result<Self> {
-        primitives::silu_inplace(self.buf_mut())?;
+        let _t = self.device.metrics.silu_walltime.track();
+        primitives::silu_inplace(self.device(), self.buf_mut())?;
         Ok(self)
     }
 
     fn softmax_inplace(mut self, axis: usize) -> Result<Self> {
         let _t = self.device.metrics.softmax_walltime.track();
         let strider1 = self.strider().clone();
-        primitives::softmax_inplace(self.buf_mut(), strider1, axis)?;
+        primitives::softmax_inplace(self.device(), self.buf_mut(), strider1, axis)?;
         Ok(self)
     }
 
@@ -321,6 +322,7 @@ impl<'a> Tensor for CpuTensor<'a> {
     }
 
     fn rms_norm_inplace(mut self, eps: f32) -> Result<Self> {
+        let _t = self.device.metrics.rms_norm_walltime.track();
         let strider1 = self.strider().clone();
         let buf1 = self.buf_mut();
         primitives::rms_norm_inplace(buf1, &strider1, eps)?;
@@ -472,9 +474,13 @@ mod tests {
         let t1 = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], device.clone())?;
         let t1 = t1.softmax_inplace(1)?;
 
-        assert_eq!(t1.to_vec(), &[
-            0.09003057, 0.24472848, 0.66524094, 0.09003057, 0.24472848, 0.66524094
-        ]);
+        assert_relative_eq!(
+            &t1.to_vec()[..],
+            &[
+                0.09003057, 0.24472848, 0.66524094, 0.09003057, 0.24472848, 0.66524094
+            ][..],
+            epsilon = 1e-3
+        );
         Ok(())
     }
 
@@ -484,9 +490,13 @@ mod tests {
         let t1 = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[6], device.clone())?;
         let t1 = t1.silu_inplace()?;
 
-        assert_eq!(t1.to_vec(), &[
-            0.7310586, 1.761594, 2.8577225, 3.928055, 4.9665356, 5.9851646
-        ]);
+        assert_relative_eq!(
+            &t1.to_vec()[..],
+            &[
+                0.7310586, 1.761594, 2.8577225, 3.928055, 4.9665356, 5.9851646
+            ][..],
+            epsilon = 1e-3
+        );
         Ok(())
     }
 }

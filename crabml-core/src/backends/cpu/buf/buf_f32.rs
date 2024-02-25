@@ -3,6 +3,8 @@ use std::simd::f32x32;
 use std::simd::prelude::SimdFloat;
 use std::slice;
 
+use half::f16;
+
 pub fn f32_buf_from_bytes<'a>(buf: &[u8]) -> Cow<'a, [f32]> {
     let len = buf.len();
     assert_eq!(
@@ -24,4 +26,12 @@ pub fn vec_dot_f32_f32(a: &[f32], a_offset: usize, b: &[f32], b_offset: usize, l
         sum += ac[i] * bc[i];
     }
     sum
+}
+
+pub fn exp_f32_cached(x: f32, cache: &[f16]) -> f32 {
+    let cache_ptr = cache.as_ptr();
+    let x16 = f16::from_f32(x);
+    let x16n = x16.to_bits();
+    let r = unsafe { (*cache_ptr.add(x16n as usize)).to_f32() };
+    r
 }

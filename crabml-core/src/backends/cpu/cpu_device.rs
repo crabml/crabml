@@ -2,6 +2,8 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use half::f16;
+
 use super::CpuTensor;
 use crate::tensor::TensorDeviceMetrics;
 
@@ -26,6 +28,7 @@ pub struct CpuTensorDevice<'a> {
     pub(crate) metrics: TensorDeviceMetrics,
     pub(crate) debug_tensors: RefCell<HashMap<String, Vec<f32>>>,
     pub(crate) wbuf: RefCell<Option<Vec<f32>>>,
+    pub(crate) exp_cache: Vec<f16>,
     _phantom: std::marker::PhantomData<&'a ()>,
 }
 
@@ -38,6 +41,7 @@ impl<'a> CpuTensorDevice<'a> {
             debug_tensors: RefCell::new(HashMap::new()),
             metrics: TensorDeviceMetrics::default(),
             wbuf: RefCell::new(Some(vec![0.0; 32000])),
+            exp_cache: Self::init_exp_cache(),
             _phantom: std::marker::PhantomData,
         };
         Rc::new(device)
@@ -49,6 +53,7 @@ impl<'a> CpuTensorDevice<'a> {
             debug_tensors: RefCell::new(HashMap::new()),
             metrics: TensorDeviceMetrics::default(),
             wbuf: RefCell::new(Some(vec![0.0; 32000])),
+            exp_cache: Self::init_exp_cache(),
             _phantom: std::marker::PhantomData,
         };
         Rc::new(device)
@@ -59,6 +64,7 @@ impl<'a> CpuTensorDevice<'a> {
             opts: self.opts.clone(),
             debug_tensors: self.debug_tensors.clone(),
             wbuf: self.wbuf.clone(),
+            exp_cache: self.exp_cache.clone(),
             metrics,
             _phantom: std::marker::PhantomData,
         };
@@ -71,6 +77,15 @@ impl<'a> CpuTensorDevice<'a> {
 
     pub fn dump_debug_tensor(&self, name: &str) -> Option<Vec<f32>> {
         self.debug_tensors.borrow().get(name).cloned()
+    }
+
+    fn init_exp_cache() -> Vec<f16> {
+        (0..65536)
+            .map(|x| {
+                let exp32 = f16::from_bits(x as u16).to_f32().exp();
+                f16::from_f32(exp32)
+            })
+            .collect()
     }
 
     pub(crate) fn add_debug_tensor(&self, tensor: &CpuTensor<'a>) {

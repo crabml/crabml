@@ -19,7 +19,6 @@
   - [x] add GEMV benchmark on 3200 x 8640, then 8640 x 3200
   - [x] tile seems no effect at all, maybe the performance gap is due to the memory reuse?
   - [x] set threads as 2 have the best performance, strange
-  - [ ] learn multi threading GEMV: https://www.cs.utexas.edu/users/flame/BLISRetreat2022/slides/BLIS_Retreat_AMD_Multithreading_SGEMV_HariAndBhasker.pdf
   - [ ] re-arrange the kv cache memory layout to leverage dense dot prod.
   - [ ] benchmark between rayon and vanilla thread pool on gemv
 - [ ] q8 quantization on webgpu

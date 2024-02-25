@@ -308,7 +308,7 @@ impl<'a> Tensor for CpuTensor<'a> {
     fn softmax_inplace(mut self, axis: usize) -> Result<Self> {
         let _t = self.device.metrics.softmax_walltime.track();
         let strider1 = self.strider().clone();
-        primitives::softmax_inplace(self.buf_mut(), strider1, axis)?;
+        primitives::softmax_inplace(self.device(), self.buf_mut(), strider1, axis)?;
         Ok(self)
     }
 

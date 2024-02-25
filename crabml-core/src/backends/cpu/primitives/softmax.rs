@@ -2,6 +2,7 @@ use std::borrow::Cow;
 
 use half::f16;
 
+use crate::backends::cpu::buf::buf_f32::exp_f32_cached;
 use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::backends::cpu::CpuTensorDeviceRef;
 use crate::error::ErrorKind;
@@ -43,12 +44,4 @@ pub fn softmax_inplace<'a>(
     }
 
     Ok(())
-}
-
-fn exp_f32_cached(x: f32, cache: &[f16]) -> f32 {
-    let cache_ptr = cache.as_ptr();
-    let x16 = f16::from_f32(x);
-    let x16n = x16.to_bits();
-    let r = unsafe { (*cache_ptr.add(x16n as usize)).to_f32() };
-    r
 }

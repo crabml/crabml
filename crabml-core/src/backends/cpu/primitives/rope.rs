@@ -25,8 +25,7 @@ pub fn rope_inplace<'a>(
 
     let theta_scale = 10000_f32.powf(-2.0 / head_size as f32);
 
-    // apply RoPE rotation for each head
-    for h in 0..n_heads {
+    qb.chunks_exact_mut(head_size).for_each(|chunk| {
         let mut theta: f32 = pos as f32;
 
         for i in 0..rope_dims / 2 {
@@ -36,14 +35,13 @@ pub fn rope_inplace<'a>(
             let sin_theta = theta.sin();
 
             unsafe {
-                let qp = qb.as_mut_ptr().add(h * head_size + i * 2);
-                let qp0 = *qp;
-                let qp1 = *qp.add(1);
-                *qp = qp0 * cos_theta - qp1 * sin_theta;
-                *qp.add(1) = qp0 * sin_theta + qp1 * cos_theta;
+                let qp0 = *chunk.get_unchecked(i * 2);
+                let qp1 = *chunk.get_unchecked(i * 2 + 1);
+                *chunk.get_unchecked_mut(i * 2) = qp0 * cos_theta - qp1 * sin_theta;
+                *chunk.get_unchecked_mut(i * 2 + 1) = qp0 * sin_theta + qp1 * cos_theta;
             }
         }
-    }
+    });
 
     Ok(())
 }

@@ -10,6 +10,7 @@ pub struct TensorDeviceMetrics {
     pub mul_walltime: TimeMetric,
     pub rope_walltime: TimeMetric,
     pub softmax_walltime: TimeMetric,
+    pub silu_walltime: TimeMetric,
     pub matmul_walltime: TimeMetric,
     pub matmul_quantize_walltime: TimeMetric,
     pub matmul_vec_dot_walltime: TimeMetric,
@@ -24,6 +25,7 @@ impl TensorDeviceMetrics {
         self.rope_walltime.reset();
         self.softmax_walltime.reset();
         self.matmul_walltime.reset();
+        self.silu_walltime.reset();
         self.total_walltime.reset();
         self.matmul_quantize_walltime.reset();
         self.matmul_vec_dot_walltime.reset();
@@ -37,6 +39,7 @@ impl TensorDeviceMetrics {
                 self.rms_norm_walltime.as_millis(),
             ),
             ("add_walltime".to_string(), self.add_walltime.as_millis()),
+            ("silu_walltime".to_string(), self.silu_walltime.as_millis()),
             (
                 "total_walltime".to_string(),
                 self.total_walltime.as_millis(),

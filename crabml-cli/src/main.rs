@@ -11,7 +11,7 @@ use crabml::tensor::TensorDeviceMetrics;
 use crabml_llama2::llama2::Llama2Runner;
 use crabml_llama2::model::WgpuLlama2Model;
 use crabml_llama2::sampler::Llama2Sampler;
-use crabml_llama2::CpuLlama2Model;
+use crabml_llama2::CpuModel;
 
 #[derive(Parser, Debug)]
 struct CommandArgs {
@@ -59,7 +59,7 @@ fn main() -> Result<()> {
 
     let metrics = TensorDeviceMetrics::default();
     let device_cpu = CpuTensorDevice::new().with_metrics(metrics.clone());
-    let model_cpu = CpuLlama2Model::load(&gf, device_cpu)?;
+    let model_cpu = CpuModel::load(&gf, device_cpu)?;
     let conf = model_cpu.conf();
 
     let device_wgpu = WgpuTensorDevice::new(

@@ -129,6 +129,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         let n_heads = self.conf.n_heads;
         let n_kv_heads = self.conf.n_kv_heads;
         let head_size = self.conf.head_size();
+        let rope_dim = self.conf.rope_dim.unwrap_or(head_size);
 
         // copy the token embedding into x
         let mut x = T::alloc(&[embed_dim], None, self.device.clone())?;
@@ -167,8 +168,8 @@ impl<'a, T: Tensor> Llama2Runner<T> {
                 let q = q.reshape(&[n_heads, head_size])?;
                 let k = k.reshape(&[n_kv_heads, head_size])?;
 
-                let q = q.rope_inplace(pos, self.conf.rope_dim)?;
-                let k = k.rope_inplace(pos, self.conf.rope_dim)?;
+                let q = q.rope_inplace(pos, rope_dim)?;
+                let k = k.rope_inplace(pos, rope_dim)?;
                 (
                     q.with_name(format!("q_roped:{}:{}", l, pos)),
                     k.with_name(format!("k_roped:{}:{}", l, pos)),
@@ -427,8 +428,26 @@ mod tests {
 
         let device = CpuTensorDevice::new();
         let lm = CpuLlama2Model::load(&gf, device)?;
-        assert_eq!(lm.conf().rope_dim, 48);
+        assert_eq!(lm.conf().rope_dim, Some(48));
         assert_eq!(lm.conf().head_size(), 48);
+
+        let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0);
+        let mut runner = Llama2Runner::try_from(&lm)?;
+        let output = runner.generate("Lily is a cute cat, ", 10, &mut sampler)?;
+        let s = output.collect::<Result<Vec<String>>>()?.join("");
+        assert_eq!(s, "3 years old. She likes to play with her");
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_gemma_q8_0() -> Result<()> {
+        let gl = GGUFFileLoader::new("../testdata/gemma-2b.Q8_0.gguf")?;
+        let gf = gl.open()?;
+
+        let device = CpuTensorDevice::new();
+        let lm = CpuLlama2Model::load(&gf, device)?;
+        assert_eq!(lm.conf().rope_dim, None);
+        assert_eq!(lm.conf().head_size(), 256);
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0);
         let mut runner = Llama2Runner::try_from(&lm)?;

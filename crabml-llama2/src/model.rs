@@ -24,7 +24,7 @@ pub struct Llama2Config {
     pub vocab_size: usize,
     pub seq_len: usize,
     pub rms_norm_eps: f32,
-    pub rope_dim: usize,
+    pub rope_dim: Option<usize>,
 }
 
 impl Llama2Config {
@@ -163,7 +163,7 @@ impl<'a> CpuLlama2Model<'a> {
         }
         let rms_final_weight = Self::load_tensor(gf, "output_norm.weight", device.clone())?
             .dequantize(GGMLType::F32)?;
-        let output_weight = Some(Self::load_tensor(gf, "output.weight", device.clone())?);
+        let output_weight = None;
         Ok(Llama2Weights {
             token_embed,
             wq,
@@ -188,7 +188,7 @@ impl<'a> CpuLlama2Model<'a> {
         let info = match gf.get_tensor_info(name) {
             None => {
                 return Err(Error {
-                    kind: ErrorKind::IOError,
+                    kind: ErrorKind::TensorNotFound,
                     message: format!("failed to find tensor {}", name),
                     cause: None,
                 });
@@ -236,25 +236,28 @@ impl<'a> CpuLlama2Model<'a> {
 
     fn load_config(gf: &GGUFFile) -> Llama2Config {
         // let rope_dims = gf.metadata().get_u32("llama.rope.dimension_count").unwrap();
-        let n_heads = gf.metadata().get_u32("llama.attention.head_count").unwrap() as usize;
-        let n_layers = gf.metadata().get_u32("llama.block_count").unwrap() as usize;
-        let hidden_dim = gf.metadata().get_u32("llama.feed_forward_length").unwrap() as usize;
+        let n_heads = gf.metadata().get_u32("gemma.attention.head_count").unwrap() as usize;
+        let n_layers = gf.metadata().get_u32("gemma.block_count").unwrap() as usize;
+        let hidden_dim = gf.metadata().get_u32("gemma.feed_forward_length").unwrap() as usize;
         let n_kv_heads = gf
             .metadata()
-            .get_u32("llama.attention.head_count_kv")
+            .get_u32("gemma.attention.head_count_kv")
             .unwrap() as usize;
-        let seq_len = gf.metadata().get_u32("llama.context_length").unwrap() as usize;
+        let seq_len = gf.metadata().get_u32("gemma.context_length").unwrap() as usize;
         let vocab_size = gf
             .metadata()
             .get_string_array("tokenizer.ggml.tokens")
             .unwrap()
             .len();
-        let embedding_dim = gf.metadata().get_u32("llama.embedding_length").unwrap() as usize;
+        let embedding_dim = gf.metadata().get_u32("gemma.embedding_length").unwrap() as usize;
         let rms_norm_eps = gf
             .metadata()
-            .get_f32("llama.attention.layer_norm_rms_epsilon")
+            .get_f32("gemma.attention.layer_norm_rms_epsilon")
             .unwrap();
-        let n_rot = gf.metadata().get_u32("llama.rope.dimension_count").unwrap() as usize;
+        let n_rot = gf
+            .metadata()
+            .get_u32("gemma.rope.dimension_count")
+            .map(|v| v as usize);
         Llama2Config {
             n_heads,
             n_kv_heads,

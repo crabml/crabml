@@ -66,6 +66,7 @@ pub const KEY_TOKENIZER_RWKV: &str = "tokenizer.rwkv.world";
 pub enum GGUFVersion {
     V1 = 1,
     V2 = 2,
+    V3 = 3,
 }
 
 impl Display for GGUFVersion {
@@ -73,6 +74,7 @@ impl Display for GGUFVersion {
         match self {
             GGUFVersion::V1 => write!(f, "1"),
             GGUFVersion::V2 => write!(f, "2"),
+            GGUFVersion::V3 => write!(f, "3"),
         }
     }
 }
@@ -397,6 +399,7 @@ impl<'a, 'b> GGUFMetadataReader<'a, 'b> {
         let v = match self.version {
             GGUFVersion::V1 => self.read_u32()? as usize,
             GGUFVersion::V2 => self.read_u64()? as usize,
+            GGUFVersion::V3 => self.read_u64()? as usize,
         };
         Ok(v)
     }
@@ -410,7 +413,7 @@ impl<'a, 'b> GGUFMetadataReader<'a, 'b> {
                 .iter()
                 .map(|v| *v as usize)
                 .collect(),
-            GGUFVersion::V2 => self
+            GGUFVersion::V2 | GGUFVersion::V3 => self
                 .read_u64_array(n)?
                 .iter()
                 .map(|v| *v as usize)

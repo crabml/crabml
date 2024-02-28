@@ -6,6 +6,9 @@ pub enum ErrorKind {
     /// raised on any IO error, like EOF
     IOError,
 
+    /// raised when tensor not found in the model
+    TensorNotFound,
+
     /// raised when user supplied invalid input arguments
     BadInput,
 

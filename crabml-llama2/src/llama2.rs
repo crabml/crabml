@@ -12,7 +12,7 @@ use crabml::error::Result;
 use crabml::tensor::Tensor;
 use crabml::tokenizer::BpeTokenizer;
 
-use crate::model::CpuModel;
+use crate::model::CpuLlama2Model;
 use crate::model::Llama2Config;
 use crate::model::Llama2Weights;
 use crate::model::WgpuLlama2Model;
@@ -28,10 +28,10 @@ pub struct Llama2Runner<T: Tensor> {
     value_cache: Vec<Option<T>>, // (layer, seq_len, kv_dim)
 }
 
-impl<'a> TryFrom<&'a CpuModel<'a>> for Llama2Runner<CpuTensor<'a>> {
+impl<'a> TryFrom<&'a CpuLlama2Model<'a>> for Llama2Runner<CpuTensor<'a>> {
     type Error = crabml::error::Error;
 
-    fn try_from(model: &'a CpuModel<'a>) -> Result<Self> {
+    fn try_from(model: &'a CpuLlama2Model<'a>) -> Result<Self> {
         let conf = &model.conf;
         let device = model.device.clone();
         let weights = model.weights.clone();
@@ -401,7 +401,7 @@ mod tests {
         let device = CpuTensorDevice::with_options(CpuTensorDeviceOptions {
             debug_named_tensors: false,
         });
-        let lm = CpuModel::load(&gf, device.clone())?;
+        let lm = CpuLlama2Model::load(&gf, device.clone())?;
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0);
         let mut runner = Llama2Runner::try_from(&lm)?;
@@ -421,7 +421,7 @@ mod tests {
         let gf = gl.open()?;
 
         let device = CpuTensorDevice::new();
-        let lm = CpuModel::load(&gf, device)?;
+        let lm = CpuLlama2Model::load(&gf, device)?;
         assert_eq!(lm.conf().rope_dim, 48);
         assert_eq!(lm.conf().head_size(), 48);
 
@@ -442,7 +442,7 @@ mod tests {
         let device_cpu = CpuTensorDevice::with_options(CpuTensorDeviceOptions {
             debug_named_tensors: true,
         });
-        let model_cpu = CpuModel::load(&gf, device_cpu.clone())?;
+        let model_cpu = CpuLlama2Model::load(&gf, device_cpu.clone())?;
 
         let device_wgpu = WgpuTensorDevice::new(
             WgpuTensorDeviceOptions::new()

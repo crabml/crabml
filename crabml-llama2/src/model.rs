@@ -58,14 +58,14 @@ pub struct Llama2Weights<T: Tensor> {
     pub wcls: T, // (vocab_size, dim)
 }
 
-pub struct CpuModel<'a> {
+pub struct CpuLlama2Model<'a> {
     pub conf: Llama2Config,
     pub weights: Rc<Llama2Weights<CpuTensor<'a>>>,
     pub tokenizer: Rc<BpeTokenizer>,
     pub device: CpuTensorDeviceRef<'a>,
 }
 
-impl<'a> CpuModel<'a> {
+impl<'a> CpuLlama2Model<'a> {
     pub fn load(gf: &'a GGUFFile<'a>, device: CpuTensorDeviceRef<'a>) -> Result<Self> {
         let conf = Self::load_config(gf);
         let weights = Self::load_weights(gf, conf.n_layers, device.clone())?;
@@ -278,7 +278,7 @@ pub struct WgpuLlama2Model {
 }
 
 impl WgpuLlama2Model {
-    pub fn from_cpu(cpu_model: &CpuModel, device: WgpuTensorDeviceRef) -> Result<Self> {
+    pub fn from_cpu(cpu_model: &CpuLlama2Model, device: WgpuTensorDeviceRef) -> Result<Self> {
         let weights = Self::convert_cpu_weights(&cpu_model.weights, device.clone())?;
         Ok(Self {
             conf: cpu_model.conf.clone(),
@@ -384,7 +384,7 @@ mod tests {
     use crabml::gguf::GGUFFileLoader;
     use crabml::tensor::Tensor;
 
-    use crate::CpuModel;
+    use crate::CpuLlama2Model;
 
     #[test]
     fn test_load_q8_0() -> Result<()> {
@@ -392,7 +392,7 @@ mod tests {
         let gf = gl.open()?;
 
         let device = CpuTensorDevice::new();
-        let lm = CpuModel::load(&gf, device)?;
+        let lm = CpuLlama2Model::load(&gf, device)?;
         assert_eq!(lm.conf.vocab_size, 32000);
         assert_eq!(lm.weights.wk[0].dtype(), GGMLType::Q8_0);
         assert_eq!(lm.weights.rms_att_weight[0].dtype(), GGMLType::F32);

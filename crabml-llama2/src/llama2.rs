@@ -273,7 +273,12 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         };
 
         // classifier into logits
-        let logits = self.weights.wcls.matmul_vec(&x)?; // (vocab_size,
+        let logits = self
+            .weights
+            .wcls
+            .as_ref()
+            .unwrap_or_else(|| &self.weights.token_embedding_table)
+            .matmul_vec(&x)?; // (vocab_size,
         logits.export(&mut self.logits)?;
         Ok(&mut self.logits)
     }

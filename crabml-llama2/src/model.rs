@@ -55,7 +55,7 @@ pub struct Llama2Weights<T: Tensor> {
     // final rmsnorm
     pub rms_final_weight: T, // (dim, )
     // (optional) classifier weights for the logits, on the last layer
-    pub wcls: T, // (vocab_size, dim)
+    pub wcls: Option<T>, // (vocab_size, dim)
 }
 
 pub struct CpuLlama2Model<'a> {
@@ -163,7 +163,7 @@ impl<'a> CpuLlama2Model<'a> {
         }
         let rms_final_weight = Self::load_tensor(gf, "output_norm.weight", device.clone())?
             .dequantize(GGMLType::F32)?;
-        let wcls = Self::load_tensor(gf, "output.weight", device.clone())?;
+        let wcls = Some(Self::load_tensor(gf, "output.weight", device.clone())?);
         Ok(Llama2Weights {
             token_embedding_table,
             wq,
@@ -340,7 +340,10 @@ impl WgpuLlama2Model {
             .map(|t| Self::convert_cpu_tensor(&t, device.clone()))
             .collect::<Result<Vec<_>>>()?;
         let rms_final_weight = Self::convert_cpu_tensor(&weights.rms_final_weight, device.clone())?;
-        let wcls = Self::convert_cpu_tensor(&weights.wcls, device.clone())?;
+        let wcls = weights
+            .wcls
+            .as_ref()
+            .map(|wcls| Self::convert_cpu_tensor(&wcls, device.clone()).unwrap());
         let weights = Llama2Weights {
             token_embedding_table,
             wq,

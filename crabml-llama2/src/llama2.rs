@@ -132,7 +132,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
 
         // copy the token embedding into x
         let mut x = T::alloc(&[embed_dim], None, self.device.clone())?;
-        x.copy_from(&self.weights.token_embedding_table, &[token, 0], embed_dim)?;
+        x.copy_from(&self.weights.token_embed, &[token, 0], embed_dim)?;
 
         // forward all the layers
         for l in 0..self.conf.n_layers {
@@ -275,9 +275,9 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         // classifier into logits
         let logits = self
             .weights
-            .wcls
+            .output_weight
             .as_ref()
-            .unwrap_or_else(|| &self.weights.token_embedding_table)
+            .unwrap_or_else(|| &self.weights.token_embed)
             .matmul_vec(&x)?; // (vocab_size,
         logits.export(&mut self.logits)?;
         Ok(&mut self.logits)

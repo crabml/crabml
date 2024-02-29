@@ -1,4 +1,3 @@
-use std::arch::aarch64::float32x4_t;
 use std::borrow::Cow;
 
 use half::f16;

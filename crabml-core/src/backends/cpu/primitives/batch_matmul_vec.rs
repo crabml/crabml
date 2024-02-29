@@ -59,6 +59,8 @@ pub fn dot_product_f32(a: &[f32], a_base: usize, a_stride: usize, k: usize, b: &
     sum
 }
 
+
+#[cfg(target_arch = "aarch64")]
 pub fn dot_product_f32_simd(a: &[f32], a_base: usize, a_stride: usize, k: usize, b: &[f32]) -> f32 {
     use std::arch::aarch64;
 
@@ -93,4 +95,9 @@ pub fn dot_product_f32_simd(a: &[f32], a_base: usize, a_stride: usize, k: usize,
         }
         sum
     }
+}
+
+#[cfg(not(target_arch = "aarch64"))]
+pub fn dot_product_f32_simd(a: &[f32], a_base: usize, a_stride: usize, k: usize, b: &[f32]) -> f32 {
+    unimplemented!("non aarch64 is not supported yet")
 }

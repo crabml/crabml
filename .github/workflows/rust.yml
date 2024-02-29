@@ -35,6 +35,9 @@ jobs:
           sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-jammy.list http://packages.lunarg.com/vulkan/lunarg-vulkan-jammy.list
           sudo apt update
           sudo apt install vulkan-sdk
+          
+          # Refer to https://github.com/gfx-rs/wgpu/issues/5086
+          sudo apt install vulkan-validationlayers
 
       - name: Run tests
         run: cargo test --workspace

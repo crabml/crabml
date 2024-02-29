@@ -127,14 +127,7 @@ impl WgpuTensorDevice {
         // `request_device` instantiates the feature specific connection to the GPU, defining some parameters,
         //  `features` being the available features.
         let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    label: None,
-                    features: wgpu::Features::empty(),
-                    limits: wgpu::Limits::downlevel_defaults(),
-                },
-                None,
-            )
+            .request_device(&wgpu::DeviceDescriptor::default(), None)
             .await
             .unwrap();
         (device, queue)
@@ -158,8 +151,7 @@ impl WgpuTensorDevice {
             .inner
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         {
-            let mut cpass =
-                encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: None });
+            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
             cpass.set_pipeline(&pipeline);
             cpass.set_bind_group(0, &bind_group, &[]);
             cpass.dispatch_workgroups(work_group_size.0, work_group_size.1, work_group_size.2);

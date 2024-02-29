@@ -2,6 +2,7 @@ use std::borrow::Cow;
 
 use super::buf_f32::f32_buf_from_bytes;
 use super::buf_f32::vec_dot_f32_f32;
+#[cfg(target_arch = "aarch64")]
 use crate::backends::cpu::buf::QuantBufQ8_0;
 use crate::error::ErrorKind;
 use crate::error::Result;
@@ -9,8 +10,10 @@ use crate::gguf::GGMLType;
 
 /// All the quantized tensor are read-only.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum CpuTensorBuf<'a> {
     F32(Cow<'a, [f32]>),
+    #[cfg(target_arch = "aarch64")]
     Q8_0(QuantBufQ8_0<'a>),
 }
 
@@ -18,35 +21,36 @@ impl<'a> CpuTensorBuf<'a> {
     pub fn from_raw_bytes(buf: &'a [u8], typ: GGMLType) -> Result<Self> {
         match typ {
             GGMLType::F32 => Ok(CpuTensorBuf::F32(f32_buf_from_bytes(buf))),
+            #[cfg(target_arch = "aarch64")]
             GGMLType::Q8_0 => Ok(CpuTensorBuf::Q8_0(QuantBufQ8_0::from_bytes(buf))),
             _ => unimplemented!(),
         }
     }
 
     pub fn is_owned(&self) -> bool {
-        match self {
-            CpuTensorBuf::F32(Cow::Owned(_)) => true,
-            _ => false,
-        }
+        matches!(self, CpuTensorBuf::F32(Cow::Owned(_)))
     }
 
     pub fn is_quantized(&self) -> bool {
-        match self {
-            CpuTensorBuf::F32(_) => true,
-            _ => false,
-        }
+        matches!(self, CpuTensorBuf::F32(_))
     }
 
     pub fn len(&self) -> usize {
         match self {
             CpuTensorBuf::F32(buf) => buf.len(),
+            #[cfg(target_arch = "aarch64")]
             CpuTensorBuf::Q8_0(buf) => buf.len(),
         }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     pub fn dtype(&self) -> GGMLType {
         match self {
             CpuTensorBuf::F32(_) => GGMLType::F32,
+            #[cfg(target_arch = "aarch64")]
             CpuTensorBuf::Q8_0(_) => GGMLType::Q8_0,
         }
     }
@@ -65,6 +69,7 @@ impl<'a> CpuTensorBuf<'a> {
 
         match self {
             CpuTensorBuf::F32(buf) => Ok(CpuTensorBuf::F32(buf)),
+            #[cfg(target_arch = "aarch64")]
             CpuTensorBuf::Q8_0(buf) => match dtype {
                 GGMLType::F32 => Ok(CpuTensorBuf::F32(buf.dequantize(0).collect())),
                 _ => unimplemented!(),
@@ -75,6 +80,7 @@ impl<'a> CpuTensorBuf<'a> {
     pub fn quantize(&self, dtype: GGMLType) -> Result<Self> {
         match dtype {
             GGMLType::F32 => Ok(CpuTensorBuf::F32(self.as_f32_ref().to_vec().into())),
+            #[cfg(target_arch = "aarch64")]
             GGMLType::Q8_0 => Ok(CpuTensorBuf::Q8_0(QuantBufQ8_0::quantize(
                 self.as_f32_ref(),
             ))),
@@ -97,6 +103,7 @@ impl<'a> CpuTensorBuf<'a> {
         use CpuTensorBuf::*;
         match (self, b) {
             (F32(a), F32(b)) => vec_dot_f32_f32(a, a_offset, b, b_offset, len),
+            #[cfg(target_arch = "aarch64")]
             (Q8_0(a), Q8_0(b)) => a.vec_dot(a_offset, b, b_offset, len),
             _ => unreachable!(),
         }
@@ -161,6 +168,7 @@ impl Clone for CpuTensorBuf<'_> {
     fn clone(&self) -> Self {
         match self {
             CpuTensorBuf::F32(buf) => Self::F32(buf.clone()),
+            #[cfg(target_arch = "aarch64")]
             CpuTensorBuf::Q8_0(buf) => Self::Q8_0(buf.clone()),
         }
     }

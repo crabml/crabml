@@ -6,26 +6,23 @@ use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::error::Result;
 use crate::tensor::TensorStrider;
 
-pub fn rms_norm_inplace<'a>(
-    buf: &mut CpuTensorBuf<'a>,
+pub fn rms_norm_inplace(
+    buf: &mut CpuTensorBuf<'_>,
     strider: &TensorStrider,
     eps: f32,
 ) -> Result<()> {
     assert!(strider.is_contiguous());
     assert!(strider.shape().len() == 1);
 
-    match buf {
-        CpuTensorBuf::F32(Cow::Owned(xb)) => {
-            rms_norm_inplace_vec_f32(xb, eps);
-            return Ok(());
-        }
-        _ => (),
+    if let CpuTensorBuf::F32(Cow::Owned(xb)) = buf {
+        rms_norm_inplace_vec_f32(xb, eps);
+        return Ok(());
     }
 
     let len = strider.shape()[0];
     let sum = buf.iter_f32().fold(0.0, |s, n| s + n * n);
     let rms = ((sum / len as f32) + eps).sqrt();
-    buf.iter_f32_mut().for_each(|n| *n = *n / rms);
+    buf.iter_f32_mut().for_each(|n| *n /= rms);
     Ok(())
 }
 

@@ -59,7 +59,7 @@ impl TensorStrider {
     pub fn iter(&self) -> impl Iterator<Item = usize> + '_ {
         let mut pos = vec![0; self.shape.len()];
         let shape = &self.shape;
-        (0..self.len()).into_iter().map(move |_i| {
+        (0..self.len()).map(move |_i| {
             let v = self.at_unchecked(&pos);
             Self::increment_pos(&mut pos, shape);
             v
@@ -153,7 +153,7 @@ impl TensorStrider {
     // if the tensor is contiguous on the given axis, you can safely iterate
     // the axis with a simple `.iter().step_by(strides[axis])`.
     pub fn is_contiguous_on_axis(&self, axis: usize) -> bool {
-        if self.strides.len() == 0 {
+        if self.strides.is_empty() {
             return true;
         }
 
@@ -174,6 +174,10 @@ impl TensorStrider {
 
     pub fn len(&self) -> usize {
         self.shape.iter().product()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     fn compute_strides(shape: &[usize]) -> Vec<usize> {

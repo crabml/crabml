@@ -1,7 +1,7 @@
 pub mod metrics;
 mod strider;
-mod tensor;
+mod api;
 
 pub use metrics::TensorDeviceMetrics;
 pub use strider::TensorStrider;
-pub use tensor::Tensor;
+pub use api::Tensor;

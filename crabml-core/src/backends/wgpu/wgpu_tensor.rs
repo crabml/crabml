@@ -709,8 +709,8 @@ mod tests {
             let rms = ((ss / x.len() as f32) + 1e-5).sqrt();
             let scale = 1.0 / rms;
             // normalize and scale
-            for i in 0..x.len() {
-                x[i] *= scale;
+            for i in x {
+                *i *= scale;
             }
         }
 

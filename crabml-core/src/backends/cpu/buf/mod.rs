@@ -1,5 +1,5 @@
-pub mod buf;
-pub use buf::CpuTensorBuf;
+pub mod api;
+pub use api::CpuTensorBuf;
 
 
 pub mod buf_f32;

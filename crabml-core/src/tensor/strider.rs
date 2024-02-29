@@ -176,6 +176,10 @@ impl TensorStrider {
         self.shape.iter().product()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     fn compute_strides(shape: &[usize]) -> Vec<usize> {
         let mut strides = Vec::with_capacity(shape.len());
         strides.push(1);

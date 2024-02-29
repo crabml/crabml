@@ -28,17 +28,11 @@ impl<'a> CpuTensorBuf<'a> {
     }
 
     pub fn is_owned(&self) -> bool {
-        match self {
-            CpuTensorBuf::F32(Cow::Owned(_)) => true,
-            _ => false,
-        }
+        matches!(self,  CpuTensorBuf::F32(Cow::Owned(_)))
     }
 
     pub fn is_quantized(&self) -> bool {
-        match self {
-            CpuTensorBuf::F32(_) => true,
-            _ => false,
-        }
+        matches!(self, CpuTensorBuf::F32(_))
     }
 
     pub fn len(&self) -> usize {
@@ -47,6 +41,10 @@ impl<'a> CpuTensorBuf<'a> {
             #[cfg(target_arch = "aarch64")]
             CpuTensorBuf::Q8_0(buf) => buf.len(),
         }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     pub fn dtype(&self) -> GGMLType {

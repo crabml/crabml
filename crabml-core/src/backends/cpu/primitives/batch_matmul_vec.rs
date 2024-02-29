@@ -51,17 +51,24 @@ pub fn dot_product_f32(a: &[f32], a_base: usize, a_stride: usize, k: usize, b: &
         dot_product_f32_simd(a, a_base, a_stride, k, b)
     }
     #[cfg(target_arch = "x86_64")]
+    #[cfg(target_feature = "avx2")]
     {
         dot_product_f32_simd(a, a_base, a_stride, k, b)
     }
-    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
+    #[cfg(not(any(
+        target_arch = "aarch64",
+        all(target_arch = "x86_64", target_feature = "avx2")
+    )))]
     {
         dot_product_f32_fallback(a, a_base, a_stride, k, b)
     }
 }
 
-#[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
- fn dot_product_f32_fallback(a: &[f32], a_base: usize, a_stride: usize, k: usize, b: &[f32]) -> f32 {
+#[cfg(not(any(
+    target_arch = "aarch64",
+    all(target_arch = "x86_64", target_feature = "avx2")
+)))]
+fn dot_product_f32_fallback(a: &[f32], a_base: usize, a_stride: usize, k: usize, b: &[f32]) -> f32 {
     let mut sum = 0.0;
     let k_rounded = k - k % 4;
     for ki in (0..k_rounded).step_by(4) {
@@ -77,7 +84,7 @@ pub fn dot_product_f32(a: &[f32], a_base: usize, a_stride: usize, k: usize, b: &
 }
 
 #[cfg(target_arch = "aarch64")]
- fn dot_product_f32_simd(a: &[f32], a_base: usize, a_stride: usize, k: usize, b: &[f32]) -> f32 {
+fn dot_product_f32_simd(a: &[f32], a_base: usize, a_stride: usize, k: usize, b: &[f32]) -> f32 {
     use std::arch::aarch64;
 
     unsafe {
@@ -115,13 +122,7 @@ pub fn dot_product_f32(a: &[f32], a_base: usize, a_stride: usize, k: usize, b: &
 
 #[cfg(target_arch = "x86_64")]
 #[cfg(target_feature = "avx2")]
-fn dot_product_f32_simd(
-    a: &[f32],
-    a_base: usize,
-    a_stride: usize,
-    k: usize,
-    b: &[f32],
-) -> f32 {
+fn dot_product_f32_simd(a: &[f32], a_base: usize, a_stride: usize, k: usize, b: &[f32]) -> f32 {
     use std::arch::x86_64::*;
 
     unsafe {

@@ -38,3 +38,5 @@ jobs:
 
       - name: Run tests
         run: cargo test --workspace
+        env:
+          WGPU_BACKEND: vulkan

@@ -7,15 +7,12 @@ use half::f16;
 use super::CpuTensor;
 use crate::tensor::TensorDeviceMetrics;
 
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub struct CpuTensorDeviceOptions {
     /// when enabled, whenever tensor called with `with_name`, the name and the
     /// tensor will be recorded in the device. only used in test.
     pub debug_named_tensors: bool,
 }
-
-
 
 #[derive(Debug)]
 pub struct CpuTensorDevice<'a> {

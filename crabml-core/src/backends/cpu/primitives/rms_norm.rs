@@ -14,11 +14,10 @@ pub fn rms_norm_inplace(
     assert!(strider.is_contiguous());
     assert!(strider.shape().len() == 1);
 
-        if let CpuTensorBuf::F32(Cow::Owned(xb)) = buf {
-              rms_norm_inplace_vec_f32(xb, eps);
-                return Ok(());
-          }
-
+    if let CpuTensorBuf::F32(Cow::Owned(xb)) = buf {
+        rms_norm_inplace_vec_f32(xb, eps);
+        return Ok(());
+    }
 
     let len = strider.shape()[0];
     let sum = buf.iter_f32().fold(0.0, |s, n| s + n * n);

@@ -172,7 +172,8 @@ mod tests {
         let token_scores = gf
             .metadata()
             .get_f32_array("tokenizer.ggml.scores")
-            .unwrap().to_vec();
+            .unwrap()
+            .to_vec();
         let tk = BpeTokenizer::new(tokens, token_scores, 1, 2);
 
         let tests = vec![

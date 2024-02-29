@@ -197,11 +197,7 @@ impl<'a> CpuLlama2Model<'a> {
         };
 
         // the dimensions stored in GGUF seems in a reverse order of numpy's shape
-        let dims = info
-            .dimensions()
-            .iter()
-            .rev().copied()
-            .collect::<Vec<_>>();
+        let dims = info.dimensions().iter().rev().copied().collect::<Vec<_>>();
 
         let tensor = CpuTensor::from_bytes(info.data(), info.typ(), &dims, device.clone())?;
         Ok(tensor)
@@ -218,7 +214,8 @@ impl<'a> CpuLlama2Model<'a> {
         let vocab_scores = gf
             .metadata()
             .get_f32_array("tokenizer.ggml.scores")
-            .unwrap().to_vec();
+            .unwrap()
+            .to_vec();
         let eos_token = gf
             .metadata()
             .get_u32("tokenizer.ggml.eos_token_id")

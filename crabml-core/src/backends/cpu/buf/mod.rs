@@ -1,7 +1,6 @@
 pub mod api;
 pub use api::CpuTensorBuf;
 
-
 pub mod buf_f32;
 
 #[cfg(target_arch = "aarch64")]

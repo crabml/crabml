@@ -3,13 +3,10 @@ use std::time::Instant;
 
 use clap::Parser;
 use crabml::backends::cpu::CpuTensorDevice;
-use crabml::backends::wgpu::WgpuTensorDevice;
-use crabml::backends::wgpu::WgpuTensorDeviceOptions;
 use crabml::error::Result;
 use crabml::gguf::GGUFFileLoader;
 use crabml::tensor::TensorDeviceMetrics;
 use crabml_llama2::llama2::Llama2Runner;
-use crabml_llama2::model::WgpuLlama2Model;
 use crabml_llama2::sampler::Llama2Sampler;
 use crabml_llama2::CpuLlama2Model;
 
@@ -62,9 +59,9 @@ fn main() -> Result<()> {
     let model_cpu = CpuLlama2Model::load(&gf, device_cpu)?;
     let conf = model_cpu.conf();
 
-    let device_wgpu = WgpuTensorDevice::new(
-        WgpuTensorDeviceOptions::new().with_staging_buf_bytes(conf.vocab_size * 4),
-    );
+    // let device_wgpu = WgpuTensorDevice::new(
+    //     WgpuTensorDeviceOptions::new().with_staging_buf_bytes(conf.vocab_size * 4),
+    // );
     // let model_wgpu = WgpuLlama2Model::from_cpu(&model_cpu, device_wgpu)?;
 
     let mut sampler = Llama2Sampler::new(conf.vocab_size, args.temperature, args.probability);

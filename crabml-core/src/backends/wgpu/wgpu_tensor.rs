@@ -288,8 +288,8 @@ impl Tensor for WgpuTensor {
 
         let n_heads = self.shape()[0];
         let meta = RopeMeta {
-            M: 1,
-            N: self.strider.len() as u32,
+            m: 1,
+            n: self.strider.len() as u32,
             pos: pos as u32,
             n_heads: n_heads as u32,
             rope_dims: rope_dims as u32,
@@ -321,8 +321,8 @@ impl Tensor for WgpuTensor {
         let meta_buf = self.device.make_storage_buffer(
             "meta",
             bytemuck::bytes_of(&RmsNormMeta {
-                M: 1,
-                N: self.strider.len() as u32,
+                m: 1,
+                n: self.strider.len() as u32,
                 eps: eps,
                 _padding: 0.0,
             }),
@@ -489,9 +489,9 @@ impl Tensor for WgpuTensor {
 
         let output = Self::alloc(&[self.strider.shape()[0]], None, self.device.clone())?;
         let meta = MatmulMeta {
-            M: self.strider.shape()[0] as u32,
-            K: self.strider.shape()[1] as u32,
-            N: 1,
+            m: self.strider.shape()[0] as u32,
+            k: self.strider.shape()[1] as u32,
+            n: 1,
             _padding: 0,
         };
 
@@ -518,7 +518,7 @@ impl Tensor for WgpuTensor {
         ];
         let encoder = self
             .device
-            .encode_pipeline_commnad("sgemv", entries, (meta.M / 32, 1, 1));
+            .encode_pipeline_commnad("sgemv", entries, (meta.m / 32, 1, 1));
         self.device.queue.submit(Some(encoder.finish()));
 
         Ok(output)
@@ -539,9 +539,9 @@ impl Tensor for WgpuTensor {
         )?;
 
         let meta = BatchMatmulMeta {
-            M: self.strider.shape()[0] as u32,
-            N: self.strider.shape()[1] as u32,
-            K: self.strider.shape()[2] as u32,
+            m: self.strider.shape()[0] as u32,
+            n: self.strider.shape()[1] as u32,
+            k: self.strider.shape()[2] as u32,
             strides_0: [
                 self.strider.strides()[0] as u32,
                 self.strider.strides()[1] as u32,
@@ -572,7 +572,7 @@ impl Tensor for WgpuTensor {
         ];
         let encoder =
             self.device
-                .encode_pipeline_commnad("batch_matmul", entries, (meta.M / 32 + 1, 1, 1));
+                .encode_pipeline_commnad("batch_matmul", entries, (meta.m / 32 + 1, 1, 1));
         self.device.queue.submit(Some(encoder.finish()));
 
         Ok(output)

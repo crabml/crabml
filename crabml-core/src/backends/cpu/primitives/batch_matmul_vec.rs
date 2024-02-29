@@ -44,6 +44,7 @@ pub fn batch_matmul_vec<'a>(
     return Ok(());
 }
 
+#[allow(unused)]
 pub fn dot_product_f32(a: &[f32], a_base: usize, a_stride: usize, k: usize, b: &[f32]) -> f32 {
     let mut sum = 0.0;
     let k_rounded = k - k % 4;
@@ -98,6 +99,6 @@ pub fn dot_product_f32_simd(a: &[f32], a_base: usize, a_stride: usize, k: usize,
 }
 
 #[cfg(not(target_arch = "aarch64"))]
-pub fn dot_product_f32_simd(a: &[f32], a_base: usize, a_stride: usize, k: usize, b: &[f32]) -> f32 {
+pub fn dot_product_f32_simd(_a: &[f32], _a_base: usize, _a_stride: usize, _k: usize, _b: &[f32]) -> f32 {
     unimplemented!("non aarch64 is not supported yet")
 }

@@ -10,6 +10,7 @@ use crate::gguf::GGMLType;
 
 /// All the quantized tensor are read-only.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum CpuTensorBuf<'a> {
     F32(Cow<'a, [f32]>),
     #[cfg(target_arch = "aarch64")]

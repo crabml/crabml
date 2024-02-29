@@ -1,6 +1,5 @@
 use std::borrow::Cow;
-use std::simd::f32x32;
-use std::simd::prelude::SimdFloat;
+
 use std::slice;
 
 use half::f16;

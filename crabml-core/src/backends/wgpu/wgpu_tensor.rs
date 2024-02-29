@@ -117,7 +117,7 @@ impl Tensor for WgpuTensor {
             buf: self.buf,
             capacity: self.capacity,
             dtype: self.dtype,
-            strider: strider,
+            strider,
             device: self.device,
             name: None,
         })
@@ -179,7 +179,7 @@ impl Tensor for WgpuTensor {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         encoder.copy_buffer_to_buffer(
             &rhs.buf,
-            0 as u64,
+            0_u64,
             &self.buf,
             copy_offset as u64,
             copy_bytes_len as u64,
@@ -206,7 +206,7 @@ impl Tensor for WgpuTensor {
         }
         let mut new_shape = self.shape().to_vec();
         new_shape[0] *= n;
-        Ok(new_tensor.reshape(&new_shape)?)
+        new_tensor.reshape(&new_shape)
     }
 
     fn copy_from(&mut self, rhs: &Self, pos: &[usize], len: usize) -> Result<()> {
@@ -277,7 +277,7 @@ impl Tensor for WgpuTensor {
     fn dup(&self) -> Result<Self> {
         let mut new_tensor = Self::alloc(self.strider.shape(), None, self.device.clone())?;
         new_tensor
-            .copy_from(&self, &vec![0; self.shape().len()], self.strider.len())
+            .copy_from(self, &vec![0; self.shape().len()], self.strider.len())
             .unwrap();
         Ok(new_tensor)
     }
@@ -323,7 +323,7 @@ impl Tensor for WgpuTensor {
             bytemuck::bytes_of(&RmsNormMeta {
                 m: 1,
                 n: self.strider.len() as u32,
-                eps: eps,
+                eps,
                 _padding: 0.0,
             }),
         );

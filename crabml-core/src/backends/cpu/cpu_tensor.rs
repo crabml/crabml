@@ -409,7 +409,7 @@ mod tests {
             let rms = ((ss / x.len() as f32) + 1e-5).sqrt();
             // normalize and scale
             for i in 0..x.len() {
-                x[i] = x[i] / rms;
+                x[i] /= rms;
             }
         }
 

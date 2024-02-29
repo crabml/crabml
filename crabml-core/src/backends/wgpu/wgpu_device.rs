@@ -13,6 +13,12 @@ pub struct WgpuTensorDeviceOptions {
     pub debug_named_tensor: bool,
 }
 
+impl Default for WgpuTensorDeviceOptions {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl WgpuTensorDeviceOptions {
     pub fn new() -> Self {
         Self {
@@ -106,7 +112,7 @@ impl WgpuTensorDevice {
             .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
                 label: None,
                 layout: None,
-                module: &module,
+                module,
                 entry_point: "main",
             })
     }

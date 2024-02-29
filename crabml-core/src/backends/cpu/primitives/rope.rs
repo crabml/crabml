@@ -6,8 +6,8 @@ use crate::tensor::TensorStrider;
 
 // only support f32 yet
 // TODO: support f16
-pub fn rope_inplace<'a>(
-    buf1: &mut CpuTensorBuf<'a>,
+pub fn rope_inplace(
+    buf1: &mut CpuTensorBuf<'_>,
     strider1: &TensorStrider,
     pos: usize,
     rope_dims: usize,

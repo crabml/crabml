@@ -8,19 +8,14 @@ use super::CpuTensor;
 use crate::tensor::TensorDeviceMetrics;
 
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct CpuTensorDeviceOptions {
     /// when enabled, whenever tensor called with `with_name`, the name and the
     /// tensor will be recorded in the device. only used in test.
     pub debug_named_tensors: bool,
 }
 
-impl Default for CpuTensorDeviceOptions {
-    fn default() -> Self {
-        Self {
-            debug_named_tensors: false,
-        }
-    }
-}
+
 
 #[derive(Debug)]
 pub struct CpuTensorDevice<'a> {

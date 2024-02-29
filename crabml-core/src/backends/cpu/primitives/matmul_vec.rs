@@ -30,7 +30,7 @@ pub fn matmul_vec<'a>(
 
     // fall back to the naive implementation if stride1 is not contiguous
     gemv_naive_f32(bufa, bufb, bufc, strider1);
-    return Ok(());
+    Ok(())
 }
 
 fn gemv_naive_f32<'a>(
@@ -78,7 +78,7 @@ fn gemv_simd<'a>(
         .enumerate()
         .for_each(|(cn, cp)| {
             let mi = cn * 4;
-            cp[0] = bufa.vec_dot((mi + 0) * k, bufb, 0, k);
+            cp[0] = bufa.vec_dot(mi * k, bufb, 0, k);
             cp[1] = bufa.vec_dot((mi + 1) * k, bufb, 0, k);
             cp[2] = bufa.vec_dot((mi + 2) * k, bufb, 0, k);
             cp[3] = bufa.vec_dot((mi + 3) * k, bufb, 0, k);

@@ -31,6 +31,6 @@ pub fn exp_f32_cached(x: f32, cache: &[f16]) -> f32 {
     let cache_ptr = cache.as_ptr();
     let x16 = f16::from_f32(x);
     let x16n = x16.to_bits();
-    let r = unsafe { (*cache_ptr.add(x16n as usize)).to_f32() };
-    r
+    
+    unsafe { (*cache_ptr.add(x16n as usize)).to_f32() }
 }

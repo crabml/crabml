@@ -41,7 +41,7 @@ pub fn batch_matmul_vec<'a>(
         );
     });
 
-    return Ok(());
+    Ok(())
 }
 
 #[allow(unused)]

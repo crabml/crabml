@@ -37,7 +37,7 @@ jobs:
           sudo apt install vulkan-sdk
           
           # Install OpenGL drivers
-          sudo apt install mesa
+          sudo apt install mesa-vulkan-drivers
           
           # Refer to https://github.com/gfx-rs/wgpu/issues/5086
           sudo apt install vulkan-validationlayers

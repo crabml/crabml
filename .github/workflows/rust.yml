@@ -36,10 +36,11 @@ jobs:
           sudo apt update
           sudo apt install vulkan-sdk
           
+          # Install OpenGL drivers
+          sudo apt install mesa
+          
           # Refer to https://github.com/gfx-rs/wgpu/issues/5086
           sudo apt install vulkan-validationlayers
 
       - name: Run tests
         run: cargo test --workspace
-        env:
-          WGPU_BACKEND: vulkan

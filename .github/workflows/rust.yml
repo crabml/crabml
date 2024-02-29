@@ -26,7 +26,7 @@ jobs:
 
       # Inspired by [gfx-rs/wgpu](https://github.com/gfx-rs/wgpu/blob/trunk/.github/workflows/ci.yml)
       - name: (linux) install vulkan sdk
-        if: matrix.os == 'ubuntu-22.04'
+        if: runner.os == 'Linux'
         shell: bash
         run: |
           set -e
@@ -41,7 +41,7 @@ jobs:
           sudo apt install -y vulkan-sdk
 
       - name: (linux) install mesa
-        if: matrix.os == 'ubuntu-22.04'
+        if: runner.os == 'Linux'
         shell: bash
         run: |
           set -e

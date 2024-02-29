@@ -172,6 +172,12 @@ impl<'a> Tensor for CpuTensor<'a> {
             return Err((ErrorKind::TensorError, "not contiguous").into());
         }
         if !t.shape().eq(&self.shape()[1..]) {
+            assert!(
+                false,
+                "shape mismatch on extend, want {:?} but got {:?}",
+                &self.shape(),
+                &t.shape()
+            );
             return Err((
                 ErrorKind::TensorError,
                 format!(

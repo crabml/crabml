@@ -18,5 +18,5 @@ Its design goals are:
 
 ```
 RUSTFLAGS="-C target-feature=+neon" cargo build --release
-./target/release/crabml-cli -m ./testdata/open-llama-3b-q8_0.gguf "captain america" --steps 100 -t 0.8 -p 1.0
+./target/release/crabml-cli -m ./testdata/tinyllamas-stories-15m-f32.gguf  "captain america" --steps 100 -t 0.8 -p 1.0
 ```

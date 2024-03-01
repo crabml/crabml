@@ -77,7 +77,7 @@ impl<'a> QuantBufQ8_0<'a> {
     }
 }
 
-#[cfg(all(target_arch = "aaarch64", target_feature = "neon"))]
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 mod impl_aarch64_neon {
     use std::arch::aarch64;
 
@@ -143,7 +143,6 @@ mod impl_aarch64_neon {
 
     fn vec_dot_q8_0_q8_0_rolled(abs: &[BlockQ8_0], bbs: &[BlockQ8_0]) -> f32 {
         unsafe {
-            use std::arch::aarch64;
             let mut sumv0 = aarch64::vdupq_n_f32(0.0);
             let zerov = aarch64::vdupq_n_s32(0);
 
@@ -179,7 +178,6 @@ mod impl_aarch64_neon {
         );
 
         unsafe {
-            use std::arch::aarch64;
             let mut sumv0 = aarch64::vdupq_n_f32(0.0);
             let mut sumv1 = aarch64::vdupq_n_f32(0.0);
             let zerov = aarch64::vdupq_n_s32(0);
@@ -223,7 +221,7 @@ mod impl_aarch64_neon {
         }
     }
 }
-#[cfg(all(target_arch = "aaarch64", target_feature = "neon"))]
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 use impl_aarch64_neon::*;
 
 #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]

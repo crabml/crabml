@@ -11,17 +11,11 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
-  check:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v3
-    - name: Format
-      run: cargo fmt --all -- --check
-    - name: Clippy
-      run: cargo clippy --all-targets --all-features -- -D warnings
-
-  test:
-    runs-on: ubuntu-latest
+  build-and-test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v3
 
@@ -36,12 +30,24 @@ jobs:
           sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-jammy.list http://packages.lunarg.com/vulkan/lunarg-vulkan-jammy.list
           sudo apt update
           sudo apt install vulkan-sdk
-          
+         
           # Install OpenGL drivers
           sudo apt install mesa-vulkan-drivers
-          
+         
           # Refer to https://github.com/gfx-rs/wgpu/issues/5086
           sudo apt install vulkan-validationlayers
+      
+      - name: Setup environment (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          flags="-C target-feature=+neon"
+          echo "RUSTFLAGS=${flags}" >> $GITHUB_ENV
 
+      - name: Format
+        run: cargo fmt --all -- --check
+      
+      - name: Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      
       - name: Run tests
         run: cargo test --workspace

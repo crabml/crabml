@@ -48,3 +48,4 @@ pub fn vec_dot_q8_0_q8_0(abs: &[BlockQ8_0], bbs: &[BlockQ8_0]) -> f32 {
 
     sumf
 }
+

@@ -211,11 +211,7 @@ unsafe fn quantize_f32_q8_0_avx2(data: &[f32]) -> Vec<BlockQ8_1> {
 
         s *= d; // Multiply the sum by d to get the final value of s
 
-        bs.push(BlockQ8_1 {
-            d,
-            qs,
-            s, // Add the computed s value to the struct
-        });
+        bs.push(BlockQ8_1 { d, s, qs });
     }
 
     bs
@@ -255,7 +251,7 @@ fn quantize_f32_q8_1_fallback(data: &[f32]) -> Vec<BlockQ8_1> {
         s *= d; // Multiply the sum by d to get the final value of s
 
         // Store the block with the scaling factor, quantized values, and the sum
-        bs.push(BlockQ8_1 { d, qs, s });
+        bs.push(BlockQ8_1 { d, s, qs });
     }
 
     bs

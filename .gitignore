@@ -20,3 +20,9 @@ Cargo.lock
 /Cargo.lock
 
 testdata/*.gguf
+
+# MacOS
+.DS_Store
+
+# Jetbrains IDE
+.idea

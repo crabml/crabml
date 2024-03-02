@@ -363,7 +363,7 @@ mod tests {
 
     #[test]
     fn test_q8_1_block() {
-        const _: () = assert_eq!(
+        assert_eq!(
             std::mem::size_of::<BlockQ8_1>(),
             2 * std::mem::size_of::<f32>() + 32,
             "wrong q8_1 block size/padding"

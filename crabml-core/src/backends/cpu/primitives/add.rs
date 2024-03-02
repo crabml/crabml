@@ -8,10 +8,18 @@ pub fn add_inplace<'a>(
     strider1: &TensorStrider,
     strider2: &TensorStrider,
 ) -> Result<()> {
-    assert!(buf1.len() == buf2.len());
-    assert!(strider1.shape() == strider2.shape());
+    assert!(buf1.len() == buf2.len() || buf2.len() == 1);
+    assert!(strider1.shape() == strider2.shape() || strider2.len() == 1);
     assert!(strider1.is_contiguous());
     assert!(strider2.is_contiguous());
+
+    if buf2.len() == 1 {
+        let ib = buf2.iter_f32().next().unwrap();
+        buf1.iter_f32_mut().for_each(|ia| {
+            *ia += ib;
+        });
+        return Ok(());
+    }
 
     buf1.iter_f32_mut()
         .zip(buf2.iter_f32())

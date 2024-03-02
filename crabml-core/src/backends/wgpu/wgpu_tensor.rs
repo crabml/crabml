@@ -450,6 +450,66 @@ impl Tensor for WgpuTensor {
         Ok(self)
     }
 
+    fn add_scalar_inplace(self, rhs: f32) -> Result<Self> {
+        // assert!(self.strider().len() % 32 == 0);
+        let meta_buf = self.device.make_storage_buffer(
+            "meta",
+            bytemuck::cast_slice(&[1u32, self.strider.len() as u32]),
+        );
+        let rhs_buf = self
+            .device
+            .make_storage_buffer("rhs", bytemuck::cast_slice(&[rhs]));
+        let entries = &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: self.buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: rhs_buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: meta_buf.as_entire_binding(),
+            },
+        ];
+        let encoder = self
+            .device
+            .encode_pipeline_commnad("add_inplace", entries, (1, 1, 1));
+        self.device.queue.submit(Some(encoder.finish()));
+        Ok(self)
+    }
+
+    fn mul_scalar_inplace(self, rhs: f32) -> Result<Self> {
+        // assert!(self.strider().len() % 32 == 0);
+        let meta_buf = self.device.make_storage_buffer(
+            "meta",
+            bytemuck::cast_slice(&[1u32, self.strider.len() as u32]),
+        );
+        let rhs_buf = self
+            .device
+            .make_storage_buffer("rhs", bytemuck::cast_slice(&[rhs]));
+        let entries = &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: self.buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: rhs_buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: meta_buf.as_entire_binding(),
+            },
+        ];
+        let encoder = self
+            .device
+            .encode_pipeline_commnad("mul_inplace", entries, (1, 1, 1));
+        self.device.queue.submit(Some(encoder.finish()));
+        Ok(self)
+    }
+
     fn div_scalar_inplace(self, rhs: f32) -> Result<Self> {
         // assert!(self.strider().len() % 32 == 0);
         let meta_buf = self.device.make_storage_buffer(

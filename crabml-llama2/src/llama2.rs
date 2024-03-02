@@ -128,12 +128,14 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         let embed_dim = self.conf.embedding_dim;
         let n_heads = self.conf.n_heads;
         let n_kv_heads = self.conf.n_kv_heads;
-        let head_size = self.conf.head_size();
-        let rope_dim = self.conf.rope_dim.unwrap_or(head_size);
+        let head_dim = self.conf.head_size();
+        let rope_dim = self.conf.rope_dim.unwrap_or(head_dim);
 
         // copy the token embedding into x
         let mut x = T::alloc(&[embed_dim], None, self.device.clone())?;
         x.copy_from(&self.weights.token_embed, &[token, 0], embed_dim)?;
+
+        x = x.mul_scalar_inplace((embed_dim as f32).sqrt())?;
 
         // forward all the layers
         for l in 0..self.conf.n_layers {
@@ -165,8 +167,8 @@ impl<'a, T: Tensor> Llama2Runner<T> {
 
             // ROPE
             let (q, k) = {
-                let q = q.reshape(&[n_heads, head_size])?;
-                let k = k.reshape(&[n_kv_heads, head_size])?;
+                let q = q.reshape(&[n_heads, head_dim])?;
+                let k = k.reshape(&[n_kv_heads, head_dim])?;
 
                 let q = q.rope_inplace(pos, rope_dim)?;
                 let k = k.rope_inplace(pos, rope_dim)?;
@@ -179,7 +181,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             // save to kv cache
             {
                 let v = v
-                    .reshape(&[n_kv_heads, head_size])?
+                    .reshape(&[n_kv_heads, head_dim])?
                     .repeat_n(n_heads / n_kv_heads)?;
                 let k = k.repeat_n(n_heads / n_kv_heads)?;
 
@@ -193,7 +195,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
 
             // multi query attention
             x = {
-                let q = q.reshape(&[n_heads, head_size])?;
+                let q = q.reshape(&[n_heads, head_dim])?;
 
                 // - key_cache: [seq, n_head, head_size]
                 // - key_cache = key_cache.transpose(1, 0, 2) => [n_head, seq, head_size]
@@ -210,7 +212,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
                 let k_cache = k_cache.transpose(&[1, 0, 2])?;
                 // (n_heads, n_seq, head_size) @ (n_head, head_size) => (n_heads, n_seq)
                 let attn = k_cache.batch_matmul_vec(&q)?;
-                let attn = attn.div_scalar_inplace((head_size as f32).sqrt())?;
+                let attn = attn.div_scalar_inplace((head_dim as f32).sqrt())?;
                 let attn = attn
                     .softmax_inplace(1)?
                     .with_name(format!("k_cache_attn:{}:{}", l, pos));
@@ -440,28 +442,6 @@ mod tests {
     }
 
     #[test]
-    fn test_generate_gemma_q8_0() -> Result<()> {
-        let gl = GGUFFileLoader::new("../testdata/gemma-2b.Q8_0.gguf")?;
-        let gf = gl.open()?;
-
-        let device = CpuTensorDevice::new();
-        let lm = CpuLlama2Model::load(&gf, device)?;
-        assert_eq!(lm.conf().rope_dim, None);
-        assert_eq!(lm.conf().n_kv_heads, 1);
-        assert_eq!(lm.conf().n_heads, 8);
-        assert_eq!(lm.conf().rms_norm_eps, 1e-6);
-        assert_eq!(lm.conf().embedding_dim, 2048);
-        assert_eq!(lm.conf().head_size(), 256);
-
-        let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0);
-        let mut runner = Llama2Runner::try_from(&lm)?;
-        let output = runner.generate("Lily is a cute ", 10, &mut sampler)?;
-        let s = output.collect::<Result<Vec<String>>>()?.join("");
-        assert_eq!(s, "3 years old. She likes to play with her");
-        Ok(())
-    }
-
-    #[test]
     fn test_generate_f32_gpu() -> Result<()> {
         let gl: GGUFFileLoader =
             GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-f32.gguf")?;
@@ -533,6 +513,28 @@ mod tests {
             " who likes to play with yarn. She has many colors of yarn in her box. She likes to make shapes with yarn and show"
         );
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_gemma_q8_0() -> Result<()> {
+        let gl = GGUFFileLoader::new("../testdata/gemma-2b.Q8_0.gguf")?;
+        let gf = gl.open()?;
+
+        let device = CpuTensorDevice::new();
+        let lm = CpuLlama2Model::load(&gf, device)?;
+        assert_eq!(lm.conf().rope_dim, None);
+        assert_eq!(lm.conf().n_kv_heads, 1);
+        assert_eq!(lm.conf().n_heads, 8);
+        assert_eq!(lm.conf().rms_norm_eps, 1e-6);
+        assert_eq!(lm.conf().embedding_dim, 2048);
+        assert_eq!(lm.conf().head_size(), 256);
+
+        let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0);
+        let mut runner = Llama2Runner::try_from(&lm)?;
+        let output = runner.generate("hello ", 10, &mut sampler)?;
+        let s = output.collect::<Result<Vec<String>>>()?.join("");
+        assert_eq!(s, "3 years old. She likes to play with her");
         Ok(())
     }
 }

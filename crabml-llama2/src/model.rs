@@ -150,7 +150,8 @@ impl<'a> CpuLlama2Model<'a> {
                     &format!("blk.{}.attn_norm.weight", layer),
                     device.clone(),
                 )?
-                .dequantize(GGMLType::F32)?,
+                .dequantize(GGMLType::F32)?
+                .add_scalar_inplace(1.0)?,
             );
             rms_ffn_weight.push(
                 Self::load_tensor(
@@ -158,11 +159,13 @@ impl<'a> CpuLlama2Model<'a> {
                     &format!("blk.{}.ffn_norm.weight", layer),
                     device.clone(),
                 )?
-                .dequantize(GGMLType::F32)?,
+                .dequantize(GGMLType::F32)?
+                .add_scalar_inplace(1.0)?,
             );
         }
         let rms_final_weight = Self::load_tensor(gf, "output_norm.weight", device.clone())?
-            .dequantize(GGMLType::F32)?;
+            .dequantize(GGMLType::F32)?
+            .add_scalar_inplace(1.0)?;
         let output_weight = None;
         Ok(Llama2Weights {
             token_embed,

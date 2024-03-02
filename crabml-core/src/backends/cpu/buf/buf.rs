@@ -63,13 +63,20 @@ impl<'a> CpuTensorBuf<'a> {
                 .into());
         }
 
-        match self {
-            CpuTensorBuf::F32(buf) => Ok(CpuTensorBuf::F32(buf)),
+        let result = match self {
+            CpuTensorBuf::F32(buf) => CpuTensorBuf::F32(Cow::Owned(buf.to_owned().to_vec())),
             CpuTensorBuf::Q8_0(buf) => match dtype {
-                GGMLType::F32 => Ok(CpuTensorBuf::F32(buf.dequantize(0).collect())),
+                GGMLType::F32 => {
+                    let v: Vec<f32> = buf.dequantize(0).collect();
+                    let b = CpuTensorBuf::F32(Cow::Owned(v));
+                    b
+                }
                 _ => unimplemented!(),
             },
-        }
+        };
+
+        assert!(result.is_owned());
+        Ok(result)
     }
 
     pub fn quantize(&self, dtype: GGMLType) -> Result<Self> {
@@ -141,7 +148,11 @@ impl<'a> CpuTensorBuf<'a> {
     pub fn as_f32_mut(&mut self) -> &mut [f32] {
         match self {
             CpuTensorBuf::F32(Cow::Owned(buf)) => buf,
-            _ => panic!("not f32, but got {:?}", self.dtype()),
+            _ => panic!(
+                "not owned f32, but got {:?}, owned: {}",
+                self.dtype(),
+                self.is_owned()
+            ),
         }
     }
 

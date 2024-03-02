@@ -50,7 +50,7 @@ pub trait Tensor: Sized + Clone {
 
     fn div_scalar_inplace(self, rhs: f32) -> Result<Self>;
 
-    fn mul_scalar_inplace(self, rhs: f32) -> Result<Self>;
+    fn scale_inplace(self, rhs: f32) -> Result<Self>;
 
     fn matmul_vec(&self, y: &Self) -> Result<Self>;
 

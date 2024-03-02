@@ -133,9 +133,11 @@ impl<'a, T: Tensor> Llama2Runner<T> {
 
         // copy the token embedding into x
         let mut x = T::alloc(&[embed_dim], None, self.device.clone())?;
+        println!("tok: {}", token);
         x.copy_from(&self.weights.token_embed, &[token, 0], embed_dim)?;
 
-        x = x.mul_scalar_inplace((embed_dim as f32).sqrt())?;
+        x = x.scale_inplace((embed_dim as f32).sqrt())?;
+        x = x.with_name("scaled_embed".to_string());
 
         // forward all the layers
         for l in 0..self.conf.n_layers {
@@ -211,9 +213,8 @@ impl<'a, T: Tensor> Llama2Runner<T> {
                 let k_cache_strider_orig = k_cache.strider().clone();
                 let k_cache = k_cache.transpose(&[1, 0, 2])?;
                 // (n_heads, n_seq, head_size) @ (n_head, head_size) => (n_heads, n_seq)
-                let q_scaled = q.mul_scalar_inplace(1.0 / (head_dim as f32).sqrt())?;
-                let attn = k_cache.batch_matmul_vec(&q_scaled)?;
-                let attn = attn.div_scalar_inplace((head_dim as f32).sqrt())?;
+                let q = q.div_scalar_inplace((head_dim as f32).sqrt())?;
+                let attn = k_cache.batch_matmul_vec(&q)?;
                 let attn = attn
                     .softmax_inplace(1)?
                     .with_name(format!("k_cache_attn:{}:{}", l, pos));
@@ -533,7 +534,7 @@ mod tests {
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0);
         let mut runner = Llama2Runner::try_from(&lm)?;
-        let output = runner.generate("a cat ", 10, &mut sampler)?;
+        let output = runner.generate("captain america ", 30, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
         assert_eq!(s, "3 years old. She likes to play with her");
         Ok(())

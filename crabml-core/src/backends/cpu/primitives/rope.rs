@@ -1,3 +1,4 @@
+use core::time;
 use std::borrow::Cow;
 
 use crate::backends::cpu::buf::CpuTensorBuf;
@@ -15,29 +16,24 @@ pub fn rope_inplace<'a>(
     assert!(strider1.is_contiguous());
     assert!(strider1.shape().len() == 2);
 
-    let head_size = strider1.shape()[1];
+    let head_dim = strider1.shape()[1];
     let qb = match buf1 {
         CpuTensorBuf::F32(Cow::Owned(buf)) => buf,
         _ => panic!("only support f32 yet"),
     };
 
-    let theta_scale = 10000_f32.powf(-2.0 / head_size as f32);
-
-    qb.chunks_exact_mut(head_size).for_each(|chunk| {
-        let mut theta: f32 = pos as f32;
-
+    qb.chunks_exact_mut(head_dim).for_each(|chunk| {
         for i in 0..rope_dims / 2 {
+            let freq_exponents = 2.0 * i as f32 / head_dim as f32;
+            let timescale = 10000_f32.powf(freq_exponents);
+            let theta = pos as f32 / timescale;
             let cos_theta = theta.cos();
             let sin_theta = theta.sin();
 
-            theta *= theta_scale;
-
-            unsafe {
-                let qp0 = *chunk.get_unchecked(i * 2);
-                let qp1 = *chunk.get_unchecked(i * 2 + 1);
-                *chunk.get_unchecked_mut(i * 2) = qp0 * cos_theta - qp1 * sin_theta;
-                *chunk.get_unchecked_mut(i * 2 + 1) = qp0 * sin_theta + qp1 * cos_theta;
-            }
+            let qp0 = chunk[i];
+            let qp1 = chunk[i + head_dim / 2];
+            chunk[i] = qp0 * cos_theta - qp1 * sin_theta;
+            chunk[i + head_dim / 2] = qp0 * sin_theta + qp1 * cos_theta;
         }
     });
 

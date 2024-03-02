@@ -480,7 +480,7 @@ impl Tensor for WgpuTensor {
         Ok(self)
     }
 
-    fn mul_scalar_inplace(self, rhs: f32) -> Result<Self> {
+    fn scale_inplace(self, rhs: f32) -> Result<Self> {
         // assert!(self.strider().len() % 32 == 0);
         let meta_buf = self.device.make_storage_buffer(
             "meta",

@@ -151,6 +151,10 @@ impl<'a> Tensor for CpuTensor<'a> {
     }
 
     fn with_name(mut self, name: String) -> Self {
+        if name.contains("q_roped:0") || name.contains("scaled_embed") {
+            println!("{}: {:?}", &name, &self.buf.as_f32_ref()[0..5]);
+        }
+
         self.name = Some(name);
 
         // only used in test
@@ -226,7 +230,8 @@ impl<'a> Tensor for CpuTensor<'a> {
         }
 
         let offset = src.strider().at(pos)?;
-        self.buf.copy_from(&src.buf, offset, len)
+        self.buf.copy_from(&src.buf, offset, len)?;
+        Ok(())
     }
 
     fn dup(&self) -> Result<Self> {
@@ -303,7 +308,7 @@ impl<'a> Tensor for CpuTensor<'a> {
         Ok(self)
     }
 
-    fn mul_scalar_inplace(mut self, rhs: f32) -> Result<Self> {
+    fn scale_inplace(mut self, rhs: f32) -> Result<Self> {
         let rhs = CpuTensor::new(vec![rhs], &[1], self.device())?;
         let strider1 = self.strider().clone();
         let strider2 = rhs.strider();

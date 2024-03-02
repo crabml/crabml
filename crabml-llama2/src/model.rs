@@ -49,9 +49,9 @@ pub struct Llama2Weights<T: Tensor> {
     pub wv: Vec<T>, // (layer, kv_dim, embedding_dim)
     pub wo: Vec<T>, // (layer, embedding_dim, embedding_dim)
     // weights for ffn
-    pub w1: Vec<T>, // (layer, hidden_dim, embedding_dim)
-    pub w2: Vec<T>, // (layer, embedding_dim, hidden_dim)
-    pub w3: Vec<T>, // (layer, hidden_dim, embedding_dim)
+    pub ffn_gate_weight: Vec<T>, // (layer, hidden_dim, embedding_dim)
+    pub ffn_down_weight: Vec<T>, // (layer, embedding_dim, hidden_dim)
+    pub ffn_up_weight: Vec<T>,   // (layer, hidden_dim, embedding_dim)
     // final rmsnorm
     pub rms_final_weight: T, // (dim, )
     // (optional) classifier weights for the logits, on the last layer
@@ -101,9 +101,9 @@ impl<'a> CpuLlama2Model<'a> {
         let mut wk = vec![];
         let mut wv = vec![];
         let mut wo = vec![];
-        let mut w1 = vec![];
-        let mut w2 = vec![];
-        let mut w3 = vec![];
+        let mut ffn_gate_weight = vec![];
+        let mut ffn_down_weight = vec![];
+        let mut ffn_up_weight = vec![];
         let mut rms_att_weight = vec![];
         let mut rms_ffn_weight = vec![];
         for layer in 0..n_layers {
@@ -128,17 +128,17 @@ impl<'a> CpuLlama2Model<'a> {
                 device.clone(),
             )?);
             // (hidden_dim:172, embedding_dim:64)
-            w1.push(Self::load_tensor(
+            ffn_gate_weight.push(Self::load_tensor(
                 gf,
                 &format!("blk.{}.ffn_gate.weight", layer),
                 device.clone(),
             )?);
-            w2.push(Self::load_tensor(
+            ffn_down_weight.push(Self::load_tensor(
                 gf,
                 &format!("blk.{}.ffn_down.weight", layer),
                 device.clone(),
             )?);
-            w3.push(Self::load_tensor(
+            ffn_up_weight.push(Self::load_tensor(
                 gf,
                 &format!("blk.{}.ffn_up.weight", layer),
                 device.clone(),
@@ -169,9 +169,9 @@ impl<'a> CpuLlama2Model<'a> {
             wk,
             wv,
             wo,
-            w1,
-            w2,
-            w3,
+            ffn_gate_weight,
+            ffn_down_weight,
+            ffn_up_weight,
             rms_att_weight,
             rms_ffn_weight,
             rms_final_weight,
@@ -316,17 +316,17 @@ impl WgpuLlama2Model {
             .map(|t| Self::convert_cpu_tensor(&t, device.clone()))
             .collect::<Result<Vec<_>>>()?;
         let w1 = weights
-            .w1
+            .ffn_gate_weight
             .iter()
             .map(|t| Self::convert_cpu_tensor(&t, device.clone()))
             .collect::<Result<Vec<_>>>()?;
         let w2 = weights
-            .w2
+            .ffn_down_weight
             .iter()
             .map(|t| Self::convert_cpu_tensor(&t, device.clone()))
             .collect::<Result<Vec<_>>>()?;
         let w3 = weights
-            .w3
+            .ffn_up_weight
             .iter()
             .map(|t| Self::convert_cpu_tensor(&t, device.clone()))
             .collect::<Result<Vec<_>>>()?;
@@ -351,9 +351,9 @@ impl WgpuLlama2Model {
             wk,
             wv,
             wo,
-            w1,
-            w2,
-            w3,
+            ffn_gate_weight: w1,
+            ffn_down_weight: w2,
+            ffn_up_weight: w3,
             rms_att_weight,
             rms_ffn_weight,
             rms_final_weight,

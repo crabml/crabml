@@ -247,12 +247,12 @@ impl<'a, T: Tensor> Llama2Runner<T> {
                     x
                 };
 
-                // Now for FFN in PyTorch we have: self.w2(F.silu(self.w1(x)) * self.w3(x))
+                // Now for FFN in PyTorch we have: self.down_proj(F.silu(self.gate_proj(x)) * self.up_proj(x))
                 // first calculate self.w1(x) and self.w3(x)
                 // w1: (hidden_dim, embed_dim) @ x (embed_dim, ) => (hidden_dim, )
                 // w3: (hidden_dim, embed_dim) @ x (embed_dim, ) => (hidden_dim, )
-                let mut h1 = self.weights.w1[l].matmul_vec(&x)?;
-                let h2 = self.weights.w3[l].matmul_vec(&x)?;
+                let mut h1 = self.weights.ffn_gate_weight[l].matmul_vec(&x)?;
+                let h2 = self.weights.ffn_up_weight[l].matmul_vec(&x)?;
 
                 // F.silu; silu(x)=x*σ(x),where σ(x) is the logistic sigmoid
                 h1 = h1.silu_inplace()?;
@@ -261,7 +261,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
                 h1 = h1.mul_inplace(&h2)?;
 
                 // final matmul to get the output of the ffn
-                x = self.weights.w2[l].matmul_vec(&h1)?;
+                x = self.weights.ffn_down_weight[l].matmul_vec(&h1)?;
 
                 // residual connection
                 x = x.add_inplace(&x_orig_ffn)?;

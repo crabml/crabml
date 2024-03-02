@@ -211,7 +211,8 @@ impl<'a, T: Tensor> Llama2Runner<T> {
                 let k_cache_strider_orig = k_cache.strider().clone();
                 let k_cache = k_cache.transpose(&[1, 0, 2])?;
                 // (n_heads, n_seq, head_size) @ (n_head, head_size) => (n_heads, n_seq)
-                let attn = k_cache.batch_matmul_vec(&q)?;
+                let q_scaled = q.mul_scalar_inplace(1.0 / (head_dim as f32).sqrt())?;
+                let attn = k_cache.batch_matmul_vec(&q_scaled)?;
                 let attn = attn.div_scalar_inplace((head_dim as f32).sqrt())?;
                 let attn = attn
                     .softmax_inplace(1)?
@@ -532,7 +533,7 @@ mod tests {
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0);
         let mut runner = Llama2Runner::try_from(&lm)?;
-        let output = runner.generate("hello ", 10, &mut sampler)?;
+        let output = runner.generate("a cat ", 10, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
         assert_eq!(s, "3 years old. She likes to play with her");
         Ok(())

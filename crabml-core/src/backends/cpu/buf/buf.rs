@@ -122,7 +122,6 @@ impl<'a> CpuTensorBuf<'a> {
             self.dtype() == GGMLType::F32 || self.dtype() == GGMLType::F16,
             "only f32/f16 can be copied to"
         );
-        assert!(self.dtype() == src.dtype(), "only same dtype can be copied");
 
         match src {
             CpuTensorBuf::F32(buf) => {
@@ -131,6 +130,17 @@ impl<'a> CpuTensorBuf<'a> {
                     *dst = *src;
                 });
             }
+            CpuTensorBuf::Q8_0(buf) => {
+                assert!(offset % 32 == 0, "offset must be multiple of 32");
+                let src_iter = buf.dequantize(offset);
+                self.iter_f32_mut()
+                    .zip(src_iter)
+                    .take(len)
+                    .for_each(|(dst, src)| {
+                        *dst = src;
+                    })
+            }
+
             // TODO: add f16 support
             _ => unreachable!("only f32/f16 buffers can be copied"),
         };

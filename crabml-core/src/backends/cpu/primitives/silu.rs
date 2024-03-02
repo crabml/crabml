@@ -15,9 +15,8 @@ pub fn silu_inplace<'a>(device: CpuTensorDeviceRef<'a>, buf: &mut CpuTensorBuf<'
 }
 
 fn gelu(x: f32) -> f32 {
-    let a: f32 = 0.5;
-    let b: f32 = 0.044715;
-    let sqrt_2_over_pi: f32 = (2.0 / std::f32::consts::PI).sqrt();
+    let coef_a = 0.044715;
+    let sqrt_2_over_pi: f32 = 0.79788456080286535587989211986876;
 
-    a * x * (1.0 + ((sqrt_2_over_pi * (x + b * x * x * x)).tanh()))
+    0.5 * x * (1.0 + (sqrt_2_over_pi * x * (1.0 + coef_a * x * x)).tanh())
 }

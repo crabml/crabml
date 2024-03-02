@@ -76,11 +76,6 @@ pub struct BlockQ8_1 {
     qs: [i8; 32], // quants
 }
 
-const _: () = assert!(
-    std::mem::size_of::<BlockQ8_1>() == 2 * std::mem::size_of::<f32>() + 32,
-    "wrong q8_1 block size/padding"
-);
-
 impl BlockQ8_1 {
     pub fn dequantize(&self, buf: &mut [f32]) {
         for (i, v) in buf.iter_mut().enumerate().take(32) {
@@ -372,6 +367,12 @@ mod tests {
 
     #[test]
     fn test_q8_1_block() {
+        const _: () = assert_eq!(
+            std::mem::size_of::<BlockQ8_1>(),
+            2 * std::mem::size_of::<f32>() + 32,
+            "wrong q8_1 block size/padding"
+        );
+
         let mut buf: [u8; 80] = [0x1; 80];
 
         let d_bytes = f32::to_le_bytes(3.0);

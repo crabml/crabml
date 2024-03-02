@@ -2,8 +2,8 @@ use std::borrow::Cow;
 
 use super::buf_f32::f32_buf_from_bytes;
 use super::buf_f32::vec_dot_f32_f32;
-use crate::backends::cpu::buf::buf_q8_1::QuantBufQ8_1;
 use crate::backends::cpu::buf::QuantBufQ8_0;
+use crate::backends::cpu::buf::QuantBufQ8_1;
 use crate::error::ErrorKind;
 use crate::error::Result;
 use crate::gguf::GGMLType;

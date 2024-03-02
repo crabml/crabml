@@ -1,7 +1,10 @@
 [package]
 name = "crabml"
-version = "0.1.0"
-edition = "2021"
+version = { workspace = true }
+edition = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+description = "crabml core package"
 
 [dependencies]
 int-enum = "0.5.0"

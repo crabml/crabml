@@ -104,7 +104,7 @@ unsafe fn quantize_f32_q8_1(data: &[f32]) -> Vec<BlockQ8_1> {
         all(target_arch = "x86_64", target_feature = "avx2")
     )))]
     {
-        quantize_f32_q8_0_fallback(data)
+        quantize_f32_q8_1_fallback(data)
     }
 }
 

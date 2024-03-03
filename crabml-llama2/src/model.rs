@@ -370,8 +370,6 @@ impl WgpuLlama2Model {
 }
 
 #[cfg(test)]
-// Only run tests on aarch64
-#[cfg(target_arch = "aarch64")]
 mod tests {
     use crabml::backends::cpu::CpuTensorDevice;
     use crabml::error::Result;

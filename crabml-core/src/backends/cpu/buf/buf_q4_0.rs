@@ -88,10 +88,10 @@ mod impl_fallback {
     use crate::backends::cpu::buf::buf_q8_0::BlockQ8_0;
     pub fn quantize_f32_q4_0(data: &[f32]) -> Vec<BlockQ4_0> {
         let mut bs = Vec::with_capacity(data.len() / 32);
-    
+
         for chunk in data.chunks(32) {
             let mut max_abs_value = 0.0;
-    
+
             // Find the maximum absolute value in the chunk
             for &value in chunk {
                 let abs_value = value.abs();
@@ -99,11 +99,11 @@ mod impl_fallback {
                     max_abs_value = abs_value;
                 }
             }
-    
+
             let d = max_abs_value / -8.0; // Compute the scaling factor
             let id = if d != 0f32 { 1. / d } else { 0. };
             let mut qs = [0_u8; 16]; // Initialize the quantized values array
-    
+
             // Quantize the chunk
             for (i, value) in qs.iter_mut().enumerate() {
                 let x0 = chunk[i] * id;
@@ -118,7 +118,7 @@ mod impl_fallback {
                 qs,
             });
         }
-    
+
         bs
     }
 
@@ -133,7 +133,7 @@ mod impl_fallback {
             }
             sumf += sumi as f32 * f16::to_f32(abs[i].d) * f16::to_f32(bbs[i].d)
         }
-    
+
         sumf
     }
 }

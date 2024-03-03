@@ -72,7 +72,6 @@ impl<'a> QuantBufQ4_0<'_> {
         })
     }
 
-    #[cfg(not(all(target_feature = "neon")))]
     pub fn vec_dot(&self, a_offset: usize, b: &QuantBufQ8_0, b_offset: usize, len: usize) -> f32 {
         let abs = &self.blocks[a_offset / 32..(a_offset + len) / 32];
         let bbs = &b.blocks[b_offset / 32..(b_offset + len) / 32];

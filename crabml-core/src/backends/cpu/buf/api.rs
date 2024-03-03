@@ -110,19 +110,12 @@ impl<'a> CpuTensorBuf<'a> {
     }
 
     pub fn vec_dot(&self, a_offset: usize, b: &Self, b_offset: usize, len: usize) -> f32 {
-        assert!(
-            self.dtype() == b.dtype(),
-            "only same dtype can be dotted, but got {:?} and {:?}",
-            self.dtype(),
-            b.dtype()
-        );
-
         use CpuTensorBuf::*;
         match (self, b) {
             (F32(a), F32(b)) => vec_dot_f32_f32(a, a_offset, b, b_offset, len),
             (Q8_0(a), Q8_0(b)) => a.vec_dot(a_offset, b, b_offset, len),
             (Q8_1(a), Q8_1(b)) => a.vec_dot(a_offset, b, b_offset, len),
-            (Q4_0(a), Q4_0(b)) => a.vec_dot(a_offset, b, b_offset, len),
+            (Q4_0(a), Q8_0(b)) => a.vec_dot(a_offset, b, b_offset, len),
             _ => unreachable!(),
         }
     }

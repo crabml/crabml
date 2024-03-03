@@ -2,6 +2,8 @@ use std::borrow::Cow;
 
 use half::f16;
 
+use super::{buf_q8_0::BlockQ8_0, QuantBufQ8_0};
+
 #[derive(Debug, Clone)]
 pub struct QuantBufQ4_0<'a> {
     pub blocks: Cow<'a, [BlockQ4_0]>,
@@ -51,11 +53,12 @@ impl<'a> QuantBufQ4_0<'_> {
     }
 
     #[cfg(not(all(target_feature = "neon")))]
-    pub fn vec_dot(&self, a_offset: usize, b: &Self, b_offset: usize, len: usize) -> f32 {
-        let abs = &self.blocks[a_offset / 32..(a_offset + len) / 32];
-        let bbs = &b.blocks()[b_offset / 32..(b_offset + len) / 32];
+    pub fn vec_dot(&self, a_offset: usize, b: &QuantBufQ8_0, b_offset: usize, len: usize) -> f32 {
 
-        vec_dot_q4_0_q4_0_naive(abs, bbs)
+        let abs = &self.blocks[a_offset / 32..(a_offset + len) / 32];
+        let bbs = &b.blocks[b_offset / 32..(b_offset + len) / 32];
+
+        vec_dot_q4_0_q8_0_naive(abs, bbs)
     }
 }
 
@@ -129,11 +132,11 @@ fn quantize_f32_q4_0_fallback(data: &[f32]) -> Vec<BlockQ4_0> {
     bs
 }
 
-pub fn vec_dot_q4_0_q4_0_naive(abs: &[BlockQ4_0], bbs: &[BlockQ4_0]) -> f32 {
+pub fn vec_dot_q4_0_q8_0_naive(abs: &[BlockQ4_0], bbs: &[BlockQ8_0]) -> f32 {
     let mut sumf: f32 = 0f32;
     for i in 0..bbs.len() {
         let mut sumi: i32 = 0;
-        for j in 0..32 {
+        for j in 0..16 {
             let v0 = (abs[i].qs[j] & 0x0F) as i32 - 8;
             let v1 = (abs[i].qs[j] >> 4) as i32 - 8;
             sumi += v0 * bbs[i].qs[j] as i32 + v1 * bbs[i].qs[j + 16] as i32

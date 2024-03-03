@@ -2,8 +2,27 @@ use std::borrow::Cow;
 
 use half::f16;
 
-use super::buf_q8_0::BlockQ8_0;
 use super::QuantBufQ8_0;
+
+#[repr(C, packed)]
+#[derive(Debug, Clone)]
+pub struct BlockQ4_0 {
+    d: f16,       // delta
+    qs: [u8; 16], // quants
+}
+
+impl BlockQ4_0 {
+    pub fn dequantize(&self, buf: &mut [f32]) {
+        let d = self.d.to_f32();
+        for i in 0..16 {
+            let x0 = (self.qs[i] & 0x0F) as i16 - 8;
+            let x1 = (self.qs[i] >> 4) as i16 - 8;
+
+            buf[i] = (x0 as f32) * d;
+            buf[i + 16] = (x1 as f32) * d;
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct QuantBufQ4_0<'a> {
@@ -26,7 +45,7 @@ impl<'a> QuantBufQ4_0<'_> {
         }
     }
     pub fn quantize(data: &[f32]) -> Self {
-        let bs = unsafe { quantize_f32_q4_0(data) };
+        let bs = quantize_f32_q4_0(data);
         Self { blocks: bs.into() }
     }
 
@@ -58,94 +77,67 @@ impl<'a> QuantBufQ4_0<'_> {
         let abs = &self.blocks[a_offset / 32..(a_offset + len) / 32];
         let bbs = &b.blocks[b_offset / 32..(b_offset + len) / 32];
 
-        vec_dot_q4_0_q8_0_naive(abs, bbs)
+        vec_dot_q4_0_q8_0(abs, bbs)
     }
 }
 
-#[derive(Debug, Clone)]
-#[repr(C)]
-pub struct BlockQ4_0 {
-    d: f16,       // delta
-    qs: [u8; 16], // quants
-}
+mod impl_fallback {
+    use half::f16;
 
-impl BlockQ4_0 {
-    pub fn dequantize(&self, buf: &mut [f32]) {
-        let d = self.d.to_f32();
-        for i in 0..16 {
-            let x0 = (self.qs[i] & 0x0F) as i16 - 8;
-            let x1 = (self.qs[i] >> 4) as i16 - 8;
-
-            buf[i] = (x0 as f32) * d;
-            buf[i + 16] = (x1 as f32) * d;
-        }
-    }
-}
-
-unsafe fn quantize_f32_q4_0(data: &[f32]) -> Vec<BlockQ4_0> {
-    #[cfg(not(any(
-        target_arch = "aarch64",
-        all(target_arch = "x86_64", target_feature = "avx2")
-    )))]
-    {
-        quantize_f32_q4_0_fallback(data)
-    }
-}
-
-#[cfg(not(any(
-    target_arch = "aarch64",
-    all(target_arch = "x86_64", target_feature = "avx2")
-)))]
-fn quantize_f32_q4_0_fallback(data: &[f32]) -> Vec<BlockQ4_0> {
-    let mut bs = Vec::with_capacity(data.len() / 32);
-
-    for chunk in data.chunks(32) {
-        let mut max_abs_value = 0.0;
-
-        // Find the maximum absolute value in the chunk
-        for &value in chunk {
-            let abs_value = value.abs();
-            if abs_value > max_abs_value {
-                max_abs_value = abs_value;
+    use super::BlockQ4_0;
+    use crate::backends::cpu::buf::buf_q8_0::BlockQ8_0;
+    pub fn quantize_f32_q4_0(data: &[f32]) -> Vec<BlockQ4_0> {
+        let mut bs = Vec::with_capacity(data.len() / 32);
+    
+        for chunk in data.chunks(32) {
+            let mut max_abs_value = 0.0;
+    
+            // Find the maximum absolute value in the chunk
+            for &value in chunk {
+                let abs_value = value.abs();
+                if abs_value > max_abs_value {
+                    max_abs_value = abs_value;
+                }
             }
+    
+            let d = max_abs_value / -8.0; // Compute the scaling factor
+            let id = if d != 0f32 { 1. / d } else { 0. };
+            let mut qs = [0_u8; 16]; // Initialize the quantized values array
+    
+            // Quantize the chunk
+            for (i, value) in qs.iter_mut().enumerate() {
+                let x0 = chunk[i] * id;
+                let x1 = chunk[16 + i] * id;
+                let xi0 = u8::min(15, (x0 + 8.5) as u8);
+                let xi1 = u8::min(15, (x1 + 8.5) as u8);
+                *value = xi0 | (xi1 << 4)
+            }
+            // Store the block with the scaling factor, quantized values
+            bs.push(BlockQ4_0 {
+                d: f16::from_f32(d),
+                qs,
+            });
         }
-
-        let d = max_abs_value / -8.0; // Compute the scaling factor
-        let id = if d != 0f32 { 1. / d } else { 0. };
-        let mut qs = [0_u8; 16]; // Initialize the quantized values array
-
-        // Quantize the chunk
-        for (i, value) in qs.iter_mut().enumerate() {
-            let x0 = chunk[i] * id;
-            let x1 = chunk[16 + i] * id;
-            let xi0 = u8::min(15, (x0 + 8.5) as u8);
-            let xi1 = u8::min(15, (x1 + 8.5) as u8);
-            *value = xi0 | (xi1 << 4)
-        }
-        // Store the block with the scaling factor, quantized values
-        bs.push(BlockQ4_0 {
-            d: f16::from_f32(d),
-            qs,
-        });
+    
+        bs
     }
 
-    bs
-}
-
-pub fn vec_dot_q4_0_q8_0_naive(abs: &[BlockQ4_0], bbs: &[BlockQ8_0]) -> f32 {
-    let mut sumf: f32 = 0f32;
-    for i in 0..bbs.len() {
-        let mut sumi: i32 = 0;
-        for j in 0..16 {
-            let v0 = (abs[i].qs[j] & 0x0F) as i32 - 8;
-            let v1 = (abs[i].qs[j] >> 4) as i32 - 8;
-            sumi += v0 * bbs[i].qs[j] as i32 + v1 * bbs[i].qs[j + 16] as i32
+    pub fn vec_dot_q4_0_q8_0(abs: &[BlockQ4_0], bbs: &[BlockQ8_0]) -> f32 {
+        let mut sumf: f32 = 0f32;
+        for i in 0..bbs.len() {
+            let mut sumi: i32 = 0;
+            for j in 0..16 {
+                let v0 = (abs[i].qs[j] & 0x0F) as i32 - 8;
+                let v1 = (abs[i].qs[j] >> 4) as i32 - 8;
+                sumi += v0 * bbs[i].qs[j] as i32 + v1 * bbs[i].qs[j + 16] as i32
+            }
+            sumf += sumi as f32 * f16::to_f32(abs[i].d) * f16::to_f32(bbs[i].d)
         }
-        sumf += sumi as f32 * f16::to_f32(abs[i].d) * f16::to_f32(bbs[i].d)
+    
+        sumf
     }
-
-    sumf
 }
+use impl_fallback::*;
 
 #[cfg(test)]
 mod tests {

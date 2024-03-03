@@ -2,7 +2,8 @@ use std::borrow::Cow;
 
 use half::f16;
 
-use super::{buf_q8_0::BlockQ8_0, QuantBufQ8_0};
+use super::buf_q8_0::BlockQ8_0;
+use super::QuantBufQ8_0;
 
 #[derive(Debug, Clone)]
 pub struct QuantBufQ4_0<'a> {
@@ -54,7 +55,6 @@ impl<'a> QuantBufQ4_0<'_> {
 
     #[cfg(not(all(target_feature = "neon")))]
     pub fn vec_dot(&self, a_offset: usize, b: &QuantBufQ8_0, b_offset: usize, len: usize) -> f32 {
-
         let abs = &self.blocks[a_offset / 32..(a_offset + len) / 32];
         let bbs = &b.blocks[b_offset / 32..(b_offset + len) / 32];
 

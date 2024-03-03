@@ -1,53 +1,61 @@
 name: Rust
-
 on:
   push:
-    branches: [ "main" ]
+    branches:
+      - main
   pull_request:
-    branches: [ "main" ]
-
+    branches:
+      - main
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-
 jobs:
   build-and-test:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+        os:
+          - x86-64
+          - aarch64
+    runs-on: ubuntu22.04
     steps:
       - uses: actions/checkout@v3
-
-      # refer to https://vulkan.lunarg.com/doc/view/latest/linux/getting_started_ubuntu.html
       - name: (linux) install vulkan sdk
         if: runner.os == 'Linux'
         shell: bash
-        run: |
+        run: >
           set -e
 
-          wget -qO- https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo tee /etc/apt/trusted.gpg.d/lunarg.asc
-          sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-jammy.list http://packages.lunarg.com/vulkan/lunarg-vulkan-jammy.list
-          sudo apt update
-          sudo apt install vulkan-sdk
-         
-          # Install OpenGL drivers
-          sudo apt install mesa-vulkan-drivers
-         
-          # Refer to https://github.com/gfx-rs/wgpu/issues/5086
-          sudo apt install vulkan-validationlayers
-      
-      - name: Setup environment (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          flags="-C target-feature=+neon"
-          echo "RUSTFLAGS=${flags}" >> $GITHUB_ENV
 
+          wget -qO- https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo tee /etc/apt/trusted.gpg.d/lunarg.asc
+
+          sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-jammy.list http://packages.lunarg.com/vulkan/lunarg-vulkan-jammy.list
+
+          sudo apt update
+
+          sudo apt install vulkan-sdk
+
+
+          # Install OpenGL drivers
+
+          sudo apt install mesa-vulkan-drivers
+
+
+          # Refer to https://github.com/gfx-rs/wgpu/issues/5086
+
+          sudo apt install vulkan-validationlayers
+      - uses: uraimo/run-on-arch-action@v2
+        name: Run commands
+        if: matrix.os == 'aarch64'
+        with:
+          arch: aarch64
+          distro: ubuntu22.04
+          githubToken: ${{ github.token }}
+          run: |
+            flags="-C target-feature=+neon"
+            echo "RUSTFLAGS=${flags}" >> $GITHUB_ENV
       - name: Format
         run: cargo fmt --all -- --check
-      
       - name: Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
-      
       - name: Run tests
         run: cargo test --workspace

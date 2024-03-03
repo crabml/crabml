@@ -71,9 +71,9 @@ impl<'a> QuantBufQ8_1<'_> {
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub struct BlockQ8_1 {
-    d: f32,       // delta
-    s: f32,       // d * sum(qs[i])
-    qs: [i8; 32], // quants
+    pub d: f32,       // delta
+    pub s: f32,       // d * sum(qs[i])
+    pub qs: [i8; 32], // quants
 }
 
 impl BlockQ8_1 {

@@ -177,7 +177,7 @@ mod tests {
             -8.0, -7.0, -6.0, -5.0, -4.0, -3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0,
             -8.0, -7.0, -6.0, -5.0, -4.0, -3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0,
         ];
-        let bs = QuantBufQ4_1::quantize(&*data);
+        let bs = QuantBufQ4_1::quantize(&data);
 
         assert_eq!(bs.blocks.len(), 1);
         assert_eq!(bs.blocks[0].d.to_f32(), 1.0);

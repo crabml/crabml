@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use super::buf_f32::f32_buf_from_bytes;
 use super::buf_f32::vec_dot_f32_f32;
 use crate::backends::cpu::buf::QuantBufQ4_0;
+use crate::backends::cpu::buf::QuantBufQ4_1;
 use crate::backends::cpu::buf::QuantBufQ8_0;
 use crate::backends::cpu::buf::QuantBufQ8_1;
 use crate::error::ErrorKind;
@@ -17,6 +18,7 @@ pub enum CpuTensorBuf<'a> {
     Q8_0(QuantBufQ8_0<'a>),
     Q8_1(QuantBufQ8_1<'a>),
     Q4_0(QuantBufQ4_0<'a>),
+    Q4_1(QuantBufQ4_1<'a>),
 }
 
 impl<'a> CpuTensorBuf<'a> {
@@ -26,6 +28,7 @@ impl<'a> CpuTensorBuf<'a> {
             GGMLType::Q8_0 => Ok(CpuTensorBuf::Q8_0(QuantBufQ8_0::from_bytes(buf))),
             GGMLType::Q8_1 => Ok(CpuTensorBuf::Q8_1(QuantBufQ8_1::from_bytes(buf))),
             GGMLType::Q4_0 => Ok(CpuTensorBuf::Q4_0(QuantBufQ4_0::from_bytes(buf))),
+            GGMLType::Q4_1 => Ok(CpuTensorBuf::Q4_1(QuantBufQ4_1::from_bytes(buf))),
             _ => unimplemented!(),
         }
     }
@@ -44,6 +47,7 @@ impl<'a> CpuTensorBuf<'a> {
             CpuTensorBuf::Q8_0(buf) => buf.len(),
             CpuTensorBuf::Q8_1(buf) => buf.len(),
             CpuTensorBuf::Q4_0(buf) => buf.len(),
+            CpuTensorBuf::Q4_1(buf) => buf.len(),
         }
     }
 
@@ -57,6 +61,7 @@ impl<'a> CpuTensorBuf<'a> {
             CpuTensorBuf::Q8_0(_) => GGMLType::Q8_0,
             CpuTensorBuf::Q8_1(_) => GGMLType::Q8_1,
             CpuTensorBuf::Q4_0(_) => GGMLType::Q4_0,
+            CpuTensorBuf::Q4_1(_) => GGMLType::Q4_1,
         }
     }
 
@@ -86,6 +91,10 @@ impl<'a> CpuTensorBuf<'a> {
                 GGMLType::F32 => Ok(CpuTensorBuf::F32(buf.dequantize(0).collect())),
                 _ => unimplemented!(),
             },
+            CpuTensorBuf::Q4_1(buf) => match dtype {
+                GGMLType::F32 => Ok(CpuTensorBuf::F32(buf.dequantize(0).collect())),
+                _ => unimplemented!(),
+            },
         }
     }
 
@@ -99,6 +108,9 @@ impl<'a> CpuTensorBuf<'a> {
                 self.as_f32_ref(),
             ))),
             GGMLType::Q4_0 => Ok(CpuTensorBuf::Q8_0(QuantBufQ8_0::quantize(
+                self.as_f32_ref(),
+            ))),
+            GGMLType::Q4_1 => Ok(CpuTensorBuf::Q4_1(QuantBufQ4_1::quantize(
                 self.as_f32_ref(),
             ))),
             _ => Err((
@@ -116,6 +128,7 @@ impl<'a> CpuTensorBuf<'a> {
             (Q8_0(a), Q8_0(b)) => a.vec_dot(a_offset, b, b_offset, len),
             (Q8_1(a), Q8_1(b)) => a.vec_dot(a_offset, b, b_offset, len),
             (Q4_0(a), Q8_0(b)) => a.vec_dot(a_offset, b, b_offset, len),
+            (Q4_1(a), Q8_1(b)) => a.vec_dot(a_offset, b, b_offset, len),
             _ => unreachable!(),
         }
     }
@@ -182,6 +195,7 @@ impl Clone for CpuTensorBuf<'_> {
             CpuTensorBuf::Q8_0(buf) => Self::Q8_0(buf.clone()),
             CpuTensorBuf::Q8_1(buf) => Self::Q8_1(buf.clone()),
             CpuTensorBuf::Q4_0(buf) => Self::Q4_0(buf.clone()),
+            CpuTensorBuf::Q4_1(buf) => Self::Q4_1(buf.clone()),
         }
     }
 }

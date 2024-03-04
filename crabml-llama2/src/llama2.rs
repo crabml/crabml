@@ -139,12 +139,13 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         };
 
         // classifier into logits
-        let logits = self
+        // TODO: it'd be make sense to reuse the same buffer for the logits
+        let output_weight = self
             .weights
             .output_weight
             .as_ref()
-            .unwrap_or_else(|| &self.weights.token_embed)
-            .matmul_vec(&x)?; // (vocab_size,
+            .unwrap_or_else(|| &self.weights.token_embed);
+        let logits = output_weight.matmul_vec(&x)?; // (vocab_size,
         logits.export(&mut self.logits)?;
         Ok(&mut self.logits)
     }
@@ -188,8 +189,8 @@ impl<'a, T: Tensor> Llama2Runner<T> {
                 let q = q.reshape(&[n_heads, head_dim])?;
                 let k = k.reshape(&[n_kv_heads, head_dim])?;
 
-                let q = q.rope_inplace(RopeMode::Neox, pos, rope_dim)?;
-                let k = k.rope_inplace(RopeMode::Neox, pos, rope_dim)?;
+                let q = q.rope_inplace(RopeMode::Llama, pos, rope_dim)?;
+                let k = k.rope_inplace(RopeMode::Llama, pos, rope_dim)?;
                 (
                     q.with_name(format!("q_roped:{}:{}", l, pos)),
                     k.with_name(format!("k_roped:{}:{}", l, pos)),

@@ -1,7 +1,5 @@
 use std::borrow::Cow;
 
-use rayon::prelude::*;
-
 use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::error::Result;
 use crate::tensor::RopeMode;

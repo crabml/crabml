@@ -14,8 +14,9 @@ use crabml::gguf::GGUFFile;
 use crabml::tensor::Tensor;
 use crabml::tokenizer::BpeTokenizer;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 pub struct Llama2Config {
+    pub architecture: String,
     pub embedding_dim: usize, // the dim of embedding
     pub hidden_dim: usize,
     pub n_layers: usize,
@@ -67,7 +68,7 @@ pub struct CpuLlama2Model<'a> {
 
 impl<'a> CpuLlama2Model<'a> {
     pub fn load(gf: &'a GGUFFile<'a>, device: CpuTensorDeviceRef<'a>) -> Result<Self> {
-        let conf = Self::load_config(gf);
+        let conf = Self::load_config(gf)?;
         let weights = Self::load_weights(gf, conf.n_layers, device.clone())?;
         let tokenizer = Self::load_tokenizer(gf);
         Ok(Self {
@@ -226,31 +227,66 @@ impl<'a> CpuLlama2Model<'a> {
         BpeTokenizer::new(vocab, vocab_scores, bos_token, eos_token)
     }
 
-    fn load_config(gf: &GGUFFile) -> Llama2Config {
+    fn load_config(gf: &GGUFFile) -> Result<Llama2Config> {
         // let rope_dims = gf.metadata().get_u32("llama.rope.dimension_count").unwrap();
-        let n_heads = gf.metadata().get_u32("gemma.attention.head_count").unwrap() as usize;
-        let n_layers = gf.metadata().get_u32("gemma.block_count").unwrap() as usize;
-        let hidden_dim = gf.metadata().get_u32("gemma.feed_forward_length").unwrap() as usize;
+        let architecture = gf
+            .metadata()
+            .get_string("general.architecture")
+            .unwrap()
+            .to_string();
+
+        let prefix = match architecture.as_str() {
+            "llama" => "llama",
+            "gemma" => "gemma",
+            _ => {
+                return Err(Error {
+                    kind: ErrorKind::ModelError,
+                    message: format!("unsupported architecture {}", architecture),
+                    cause: None,
+                });
+            }
+        };
+
+        let n_heads = gf
+            .metadata()
+            .get_u32(&format!("{}.attention.head_count", prefix))
+            .unwrap() as usize;
+        let n_layers = gf
+            .metadata()
+            .get_u32(&format!("{}.block_count", prefix))
+            .unwrap() as usize;
+        let hidden_dim = gf
+            .metadata()
+            .get_u32(&format!("{}.feed_forward_length", prefix))
+            .unwrap() as usize;
         let n_kv_heads = gf
             .metadata()
-            .get_u32("gemma.attention.head_count_kv")
+            .get_u32(&format!("{}.attention.head_count_kv", prefix))
             .unwrap() as usize;
-        let seq_len = gf.metadata().get_u32("gemma.context_length").unwrap() as usize;
+        let seq_len = gf
+            .metadata()
+            .get_u32(&format!("{}.context_length", prefix))
+            .unwrap() as usize;
         let vocab_size = gf
             .metadata()
             .get_string_array("tokenizer.ggml.tokens")
             .unwrap()
             .len();
-        let embedding_dim = gf.metadata().get_u32("gemma.embedding_length").unwrap() as usize;
+        let embedding_dim = gf
+            .metadata()
+            .get_u32(&format!("{}.embedding_length", prefix))
+            .unwrap() as usize;
         let rms_norm_eps = gf
             .metadata()
-            .get_f32("gemma.attention.layer_norm_rms_epsilon")
+            .get_f32(&format!("{}.attention.layer_norm_rms_epsilon", prefix))
             .unwrap();
         let n_rot = gf
             .metadata()
-            .get_u32("gemma.rope.dimension_count")
+            .get_u32(&format!("{}.rope.dimension_count", prefix))
             .map(|v| v as usize);
-        Llama2Config {
+
+        Ok(Llama2Config {
+            architecture,
             n_heads,
             n_kv_heads,
             n_layers,
@@ -260,7 +296,7 @@ impl<'a> CpuLlama2Model<'a> {
             vocab_size,
             rms_norm_eps,
             rope_dim: n_rot,
-        }
+        })
     }
 }
 
@@ -276,7 +312,7 @@ impl WgpuLlama2Model {
     pub fn from_cpu(cpu_model: &CpuLlama2Model, device: WgpuTensorDeviceRef) -> Result<Self> {
         let weights = Self::convert_cpu_weights(&cpu_model.weights, device.clone())?;
         Ok(Self {
-            conf: cpu_model.conf,
+            conf: cpu_model.conf.clone(),
             weights: Rc::new(weights),
             tokenizer: cpu_model.tokenizer.clone(),
             device,

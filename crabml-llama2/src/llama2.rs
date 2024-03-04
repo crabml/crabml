@@ -68,7 +68,7 @@ impl<'a> TryFrom<&'a CpuLlama2Model<'a>> for Llama2Runner<CpuTensor<'a>> {
             .collect::<Result<Vec<_>>>()?;
 
         Ok(Self {
-            conf: *conf,
+            conf: conf.clone(),
             logits,
             key_cache,
             value_cache,
@@ -110,7 +110,7 @@ impl TryFrom<&WgpuLlama2Model> for Llama2Runner<WgpuTensor> {
             })
             .collect::<Result<Vec<_>>>()?;
         Ok(Self {
-            conf: *conf,
+            conf: conf.clone(),
             logits,
             key_cache,
             value_cache,

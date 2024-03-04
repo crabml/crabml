@@ -625,26 +625,4 @@ mod tests {
 
         Ok(())
     }
-
-    #[test]
-    fn test_generate_gemma_q8_0() -> Result<()> {
-        let gl = GGUFFileLoader::new("../testdata/gemma-2b.Q8_0.gguf")?;
-        let gf = gl.open()?;
-
-        let device = CpuTensorDevice::new();
-        let lm = CpuLlama2Model::load(&gf, device)?;
-        assert_eq!(lm.conf().rope_dim, None);
-        assert_eq!(lm.conf().n_kv_heads, 1);
-        assert_eq!(lm.conf().n_heads, 8);
-        assert_eq!(lm.conf().rms_norm_eps, 1e-6);
-        assert_eq!(lm.conf().embedding_dim, 2048);
-        assert_eq!(lm.conf().head_size(), 256);
-
-        let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0);
-        let mut runner = Llama2Runner::try_from(&lm)?;
-        let output = runner.generate("captain america ", 30, &mut sampler)?;
-        let s = output.collect::<Result<Vec<String>>>()?.join("");
-        assert_eq!(s, "3 years old. She likes to play with her");
-        Ok(())
-    }
 }

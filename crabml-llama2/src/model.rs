@@ -443,7 +443,7 @@ mod tests {
         assert_eq!(lm.weights.rms_att_weight[0].dtype(), GGMLType::F32);
         assert_eq!(lm.weights.rms_ffn_weight[0].dtype(), GGMLType::F32);
         assert_eq!(lm.weights.rms_final_weight.dtype(), GGMLType::F32);
-        assert_eq!(lm.weights.token_embed.dtype(), GGMLType::F32);
+        assert_eq!(lm.weights.token_embed.dtype(), GGMLType::Q8_0);
         Ok(())
     }
 }

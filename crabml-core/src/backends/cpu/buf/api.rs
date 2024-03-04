@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::os::fd::OwnedFd;
 
 use super::buf_f32::f32_buf_from_bytes;
 use super::buf_f32::vec_dot_f32_f32;
@@ -88,25 +87,16 @@ impl<'a> CpuTensorBuf<'a> {
                 .into());
         }
 
-        match self {
-            CpuTensorBuf::F32(buf) => Ok(CpuTensorBuf::F32(Cow::Owned(buf.to_owned().to_vec()))),
-            CpuTensorBuf::Q8_0(buf) => match dtype {
-                GGMLType::F32 => Ok(CpuTensorBuf::F32(buf.dequantize(0).collect())),
-                // TODO: add f16
-                _ => unimplemented!(),
-            },
-            CpuTensorBuf::Q8_1(buf) => match dtype {
-                GGMLType::F32 => Ok(CpuTensorBuf::F32(buf.dequantize(0).collect())),
-                _ => unimplemented!(),
-            },
-            CpuTensorBuf::Q4_0(buf) => match dtype {
-                GGMLType::F32 => Ok(CpuTensorBuf::F32(buf.dequantize(0).collect())),
-                _ => unimplemented!(),
-            },
-            CpuTensorBuf::Q4_1(buf) => match dtype {
-                GGMLType::F32 => Ok(CpuTensorBuf::F32(buf.dequantize(0).collect())),
-                _ => unimplemented!(),
-            },
+        match dtype {
+            GGMLType::F32 => Ok(CpuTensorBuf::F32(match self {
+                CpuTensorBuf::F32(buf) => buf,
+                CpuTensorBuf::Q8_0(buf) => buf.dequantize(0).collect(),
+                CpuTensorBuf::Q8_1(buf) => buf.dequantize(0).collect(),
+                CpuTensorBuf::Q4_0(buf) => buf.dequantize(0).collect(),
+                CpuTensorBuf::Q4_1(buf) => buf.dequantize(0).collect(),
+            })),
+            GGMLType::F16 => unimplemented!(),
+            _ => unreachable!(),
         }
     }
 

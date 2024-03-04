@@ -109,7 +109,7 @@ impl Llama2Sampler {
             .map(|(i, _)| i)
             .ok_or_else(|| Error {
                 kind: ErrorKind::Unexpected,
-                message: format!("failed to sample from logits"),
+                message: "failed to sample from logits".to_string(),
                 cause: None,
             })
     }

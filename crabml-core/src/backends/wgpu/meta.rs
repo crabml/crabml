@@ -3,8 +3,8 @@ use bytemuck;
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C, align(16))]
 pub struct RmsNormMeta {
-    pub M: u32,
-    pub N: u32,
+    pub m: u32,
+    pub n: u32,
     pub eps: f32,
     pub _padding: f32,
 }
@@ -13,9 +13,9 @@ pub struct RmsNormMeta {
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C, align(16))]
 pub struct MatmulMeta {
-    pub M: u32,
-    pub K: u32,
-    pub N: u32,
+    pub m: u32,
+    pub k: u32,
+    pub n: u32,
     pub _padding: u32,
 }
 
@@ -23,9 +23,9 @@ pub struct MatmulMeta {
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Default)]
 #[repr(C, align(16))]
 pub struct BatchMatmulMeta {
-    pub M: u32,
-    pub N: u32,
-    pub K: u32,
+    pub m: u32,
+    pub n: u32,
+    pub k: u32,
     pub _padding_0: u32,
     pub strides_0: [u32; 3],
     pub _padding_1: u32,
@@ -34,8 +34,8 @@ pub struct BatchMatmulMeta {
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C, align(16))]
 pub struct RopeMeta {
-    pub M: u32,
-    pub N: u32,
+    pub m: u32,
+    pub n: u32,
     pub pos: u32,
     pub n_heads: u32,
     pub rope_dims: u32,

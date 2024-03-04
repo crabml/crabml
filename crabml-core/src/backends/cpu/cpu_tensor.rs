@@ -81,6 +81,10 @@ impl<'a> CpuTensor<'a> {
         self.strider.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.strider.is_empty()
+    }
+
     pub fn is_owned(&self) -> bool {
         self.buf.is_owned()
     }
@@ -412,8 +416,8 @@ mod tests {
             let ss = x.iter().fold(0.0, |s, n| s + n * n);
             let rms = ((ss / x.len() as f32) + 1e-5).sqrt();
             // normalize and scale
-            for i in 0..x.len() {
-                x[i] = x[i] / rms;
+            for i in x {
+                *i /= rms;
             }
         }
 

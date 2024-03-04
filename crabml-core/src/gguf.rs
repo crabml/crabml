@@ -386,7 +386,7 @@ impl<'a, 'b> GGUFMetadataReader<'a, 'b> {
         let buf = self.buf.read(len)?;
         let s = std::str::from_utf8(buf).map_err(|e| Error {
             kind: ErrorKind::FormatError,
-            message: format!("Invalid UTF-8 string"),
+            message: "Invalid UTF-8 string".to_string(),
             cause: Some(Box::new(e)),
         });
         s
@@ -558,7 +558,7 @@ impl<'a> GGUFHeader<'a> {
             _ => {
                 return Err(Error {
                     kind: ErrorKind::FormatError,
-                    message: format!("Missing string metadata general.architecture"),
+                    message: "Missing string metadata general.architecture".to_string(),
                     cause: None,
                 });
             }
@@ -715,7 +715,7 @@ impl<'a> GGUFFile<'a> {
         let header = GGUFHeader::decode(buf)?;
 
         // load on disk tensor infos
-        let mut on_disk_tensor_infos = Vec::with_capacity(header.tensor_count as usize);
+        let mut on_disk_tensor_infos = Vec::with_capacity(header.tensor_count);
         for _ in 0..header.tensor_count {
             let tensor_info = GGUFOnDiskTensorInfo::decode(buf, header.version)?;
             on_disk_tensor_infos.push(tensor_info);
@@ -755,7 +755,7 @@ impl<'a> GGUFFile<'a> {
                 tensor_info.name.clone(),
                 tensor_info.dimensions.clone(),
                 tensor_info.typ,
-                &data,
+                data,
             );
             result.push(item);
         }
@@ -813,7 +813,7 @@ impl GGUFFileLoader {
         Ok(Self { mmap })
     }
 
-    pub fn open<'a>(&'a self) -> Result<GGUFFile<'a>> {
+    pub fn open(&self) -> Result<GGUFFile<'_>> {
         let buf = &mut GGUFBufReader::new(&self.mmap[..]);
         GGUFFile::decode(buf)
     }
@@ -912,7 +912,6 @@ mod tests {
             .metadata
             .as_hashmap()
             .keys()
-            .into_iter()
             .map(|i| i.to_string())
             .collect::<Vec<_>>();
         keys.sort();

@@ -46,7 +46,7 @@ impl<'a> TryFrom<&'a CpuLlama2Model<'a>> for Llama2Runner<CpuTensor<'a>> {
                     Some(seq_len * conf.embedding_dim),
                     device.clone(),
                 )
-                .map(|t| Some(t))
+                .map(Some)
             })
             .collect::<Result<Vec<_>>>()?;
         let value_cache = (0..conf.n_layers)
@@ -56,7 +56,7 @@ impl<'a> TryFrom<&'a CpuLlama2Model<'a>> for Llama2Runner<CpuTensor<'a>> {
                     Some(seq_len * conf.embedding_dim),
                     device.clone(),
                 )
-                .map(|t| Some(t))
+                .map(Some)
             })
             .collect::<Result<Vec<_>>>()?;
 
@@ -89,7 +89,7 @@ impl TryFrom<&WgpuLlama2Model> for Llama2Runner<WgpuTensor> {
                     Some(seq_len * conf.embedding_dim),
                     device.clone(),
                 )
-                .map(|t| Some(t))
+                .map(Some)
             })
             .collect::<Result<Vec<_>>>()?;
         let value_cache = (0..conf.n_layers)
@@ -99,7 +99,7 @@ impl TryFrom<&WgpuLlama2Model> for Llama2Runner<WgpuTensor> {
                     Some(seq_len * conf.embedding_dim),
                     device.clone(),
                 )
-                .map(|t| Some(t))
+                .map(Some)
             })
             .collect::<Result<Vec<_>>>()?;
         Ok(Self {
@@ -392,6 +392,8 @@ impl<'a, T: Tensor> Iterator for Llama2RunnerOutputGenerator<'a, T> {
 }
 
 #[cfg(test)]
+// Only run tests on aarch64
+#[cfg(target_arch = "aarch64")]
 mod tests {
     use approx::assert_relative_eq;
     use crabml::backends::cpu::CpuTensorDevice;

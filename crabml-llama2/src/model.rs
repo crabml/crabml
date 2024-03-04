@@ -196,12 +196,7 @@ impl<'a> CpuLlama2Model<'a> {
         };
 
         // the dimensions stored in GGUF seems in a reverse order of numpy's shape
-        let dims = info
-            .dimensions()
-            .iter()
-            .rev()
-            .map(|v| *v)
-            .collect::<Vec<_>>();
+        let dims = info.dimensions().iter().rev().copied().collect::<Vec<_>>();
 
         let tensor = CpuTensor::from_bytes(info.data(), info.typ(), &dims, device.clone())?;
         Ok(tensor)
@@ -219,9 +214,7 @@ impl<'a> CpuLlama2Model<'a> {
             .metadata()
             .get_f32_array("tokenizer.ggml.scores")
             .unwrap()
-            .iter()
-            .cloned()
-            .collect::<Vec<_>>();
+            .to_vec();
         let eos_token = gf
             .metadata()
             .get_u32("tokenizer.ggml.eos_token_id")
@@ -283,7 +276,7 @@ impl WgpuLlama2Model {
     pub fn from_cpu(cpu_model: &CpuLlama2Model, device: WgpuTensorDeviceRef) -> Result<Self> {
         let weights = Self::convert_cpu_weights(&cpu_model.weights, device.clone())?;
         Ok(Self {
-            conf: cpu_model.conf.clone(),
+            conf: cpu_model.conf,
             weights: Rc::new(weights),
             tokenizer: cpu_model.tokenizer.clone(),
             device,
@@ -298,47 +291,47 @@ impl WgpuLlama2Model {
         let wq = weights
             .wq
             .iter()
-            .map(|t| Self::convert_cpu_tensor(&t, device.clone()))
+            .map(|t| Self::convert_cpu_tensor(t, device.clone()))
             .collect::<Result<Vec<_>>>()?;
         let wk = weights
             .wk
             .iter()
-            .map(|t| Self::convert_cpu_tensor(&t, device.clone()))
+            .map(|t| Self::convert_cpu_tensor(t, device.clone()))
             .collect::<Result<Vec<_>>>()?;
         let wv = weights
             .wv
             .iter()
-            .map(|t| Self::convert_cpu_tensor(&t, device.clone()))
+            .map(|t| Self::convert_cpu_tensor(t, device.clone()))
             .collect::<Result<Vec<_>>>()?;
         let wo = weights
             .wo
             .iter()
-            .map(|t| Self::convert_cpu_tensor(&t, device.clone()))
+            .map(|t| Self::convert_cpu_tensor(t, device.clone()))
             .collect::<Result<Vec<_>>>()?;
         let w1 = weights
             .ffn_gate_weight
             .iter()
-            .map(|t| Self::convert_cpu_tensor(&t, device.clone()))
+            .map(|t| Self::convert_cpu_tensor(t, device.clone()))
             .collect::<Result<Vec<_>>>()?;
         let w2 = weights
             .ffn_down_weight
             .iter()
-            .map(|t| Self::convert_cpu_tensor(&t, device.clone()))
+            .map(|t| Self::convert_cpu_tensor(t, device.clone()))
             .collect::<Result<Vec<_>>>()?;
         let w3 = weights
             .ffn_up_weight
             .iter()
-            .map(|t| Self::convert_cpu_tensor(&t, device.clone()))
+            .map(|t| Self::convert_cpu_tensor(t, device.clone()))
             .collect::<Result<Vec<_>>>()?;
         let rms_att_weight = weights
             .rms_att_weight
             .iter()
-            .map(|t| Self::convert_cpu_tensor(&t, device.clone()))
+            .map(|t| Self::convert_cpu_tensor(t, device.clone()))
             .collect::<Result<Vec<_>>>()?;
         let rms_ffn_weight = weights
             .rms_ffn_weight
             .iter()
-            .map(|t| Self::convert_cpu_tensor(&t, device.clone()))
+            .map(|t| Self::convert_cpu_tensor(t, device.clone()))
             .collect::<Result<Vec<_>>>()?;
         let rms_final_weight = Self::convert_cpu_tensor(&weights.rms_final_weight, device.clone())?;
         let wcls = weights

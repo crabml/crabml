@@ -7,7 +7,7 @@ pub fn silu_inplace<'a>(device: CpuTensorDeviceRef<'a>, buf: &mut CpuTensorBuf<'
     let exp_cache = &device.exp_cache;
     buf.iter_f32_mut().for_each(|n| {
         let nexp = exp_f32_cached(-*n, exp_cache);
-        *n = *n / (1.0 + nexp)
+        *n /= 1.0 + nexp
     });
     Ok(())
 }

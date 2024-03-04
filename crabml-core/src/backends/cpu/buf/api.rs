@@ -2,16 +2,23 @@ use std::borrow::Cow;
 
 use super::buf_f32::f32_buf_from_bytes;
 use super::buf_f32::vec_dot_f32_f32;
+use crate::backends::cpu::buf::QuantBufQ4_0;
+use crate::backends::cpu::buf::QuantBufQ4_1;
 use crate::backends::cpu::buf::QuantBufQ8_0;
+use crate::backends::cpu::buf::QuantBufQ8_1;
 use crate::error::ErrorKind;
 use crate::error::Result;
 use crate::gguf::GGMLType;
 
 /// All the quantized tensor are read-only.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum CpuTensorBuf<'a> {
     F32(Cow<'a, [f32]>),
     Q8_0(QuantBufQ8_0<'a>),
+    Q8_1(QuantBufQ8_1<'a>),
+    Q4_0(QuantBufQ4_0<'a>),
+    Q4_1(QuantBufQ4_1<'a>),
 }
 
 impl<'a> CpuTensorBuf<'a> {
@@ -19,35 +26,52 @@ impl<'a> CpuTensorBuf<'a> {
         match typ {
             GGMLType::F32 => Ok(CpuTensorBuf::F32(f32_buf_from_bytes(buf))),
             GGMLType::Q8_0 => Ok(CpuTensorBuf::Q8_0(QuantBufQ8_0::from_bytes(buf))),
+            GGMLType::Q8_1 => Ok(CpuTensorBuf::Q8_1(QuantBufQ8_1::from_bytes(buf))),
+            GGMLType::Q4_0 => Ok(CpuTensorBuf::Q4_0(QuantBufQ4_0::from_bytes(buf))),
+            GGMLType::Q4_1 => Ok(CpuTensorBuf::Q4_1(QuantBufQ4_1::from_bytes(buf))),
             _ => unimplemented!(),
         }
     }
 
     pub fn is_owned(&self) -> bool {
-        match self {
-            CpuTensorBuf::F32(Cow::Owned(_)) => true,
-            _ => false,
-        }
+        matches!(self, CpuTensorBuf::F32(Cow::Owned(_)))
     }
 
     pub fn is_quantized(&self) -> bool {
-        match self {
-            CpuTensorBuf::F32(_) => true,
-            _ => false,
-        }
+        matches!(self, CpuTensorBuf::F32(_))
     }
 
     pub fn len(&self) -> usize {
         match self {
             CpuTensorBuf::F32(buf) => buf.len(),
             CpuTensorBuf::Q8_0(buf) => buf.len(),
+            CpuTensorBuf::Q8_1(buf) => buf.len(),
+            CpuTensorBuf::Q4_0(buf) => buf.len(),
+            CpuTensorBuf::Q4_1(buf) => buf.len(),
         }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     pub fn dtype(&self) -> GGMLType {
         match self {
             CpuTensorBuf::F32(_) => GGMLType::F32,
             CpuTensorBuf::Q8_0(_) => GGMLType::Q8_0,
+            CpuTensorBuf::Q8_1(_) => GGMLType::Q8_1,
+            CpuTensorBuf::Q4_0(_) => GGMLType::Q4_0,
+            CpuTensorBuf::Q4_1(_) => GGMLType::Q4_1,
+        }
+    }
+
+    pub fn vec_dot_rhs_dtype(&self) -> GGMLType {
+        match self {
+            CpuTensorBuf::F32(_) => GGMLType::F32,
+            CpuTensorBuf::Q8_0(_) => GGMLType::Q8_0,
+            CpuTensorBuf::Q8_1(_) => GGMLType::Q8_1,
+            CpuTensorBuf::Q4_0(_) => GGMLType::Q8_0,
+            CpuTensorBuf::Q4_1(_) => GGMLType::Q8_1,
         }
     }
 
@@ -63,26 +87,41 @@ impl<'a> CpuTensorBuf<'a> {
                 .into());
         }
 
-        let result = match self {
-            CpuTensorBuf::F32(buf) => CpuTensorBuf::F32(Cow::Owned(buf.to_owned().to_vec())),
+        match self {
+            CpuTensorBuf::F32(buf) => Ok(CpuTensorBuf::F32(Cow::Owned(buf.to_owned().to_vec()))),
             CpuTensorBuf::Q8_0(buf) => match dtype {
-                GGMLType::F32 => {
-                    let v: Vec<f32> = buf.dequantize(0).collect();
-                    let b = CpuTensorBuf::F32(Cow::Owned(v));
-                    b
-                }
+                GGMLType::F32 => Ok(CpuTensorBuf::F32(buf.dequantize(0).collect())),
+                // TODO: add f16
                 _ => unimplemented!(),
             },
-        };
-
-        assert!(result.is_owned());
-        Ok(result)
+            CpuTensorBuf::Q8_1(buf) => match dtype {
+                GGMLType::F32 => Ok(CpuTensorBuf::F32(buf.dequantize(0).collect())),
+                _ => unimplemented!(),
+            },
+            CpuTensorBuf::Q4_0(buf) => match dtype {
+                GGMLType::F32 => Ok(CpuTensorBuf::F32(buf.dequantize(0).collect())),
+                _ => unimplemented!(),
+            },
+            CpuTensorBuf::Q4_1(buf) => match dtype {
+                GGMLType::F32 => Ok(CpuTensorBuf::F32(buf.dequantize(0).collect())),
+                _ => unimplemented!(),
+            },
+        }
     }
 
     pub fn quantize(&self, dtype: GGMLType) -> Result<Self> {
         match dtype {
             GGMLType::F32 => Ok(CpuTensorBuf::F32(self.as_f32_ref().to_vec().into())),
             GGMLType::Q8_0 => Ok(CpuTensorBuf::Q8_0(QuantBufQ8_0::quantize(
+                self.as_f32_ref(),
+            ))),
+            GGMLType::Q8_1 => Ok(CpuTensorBuf::Q8_1(QuantBufQ8_1::quantize(
+                self.as_f32_ref(),
+            ))),
+            GGMLType::Q4_0 => Ok(CpuTensorBuf::Q4_0(QuantBufQ4_0::quantize(
+                self.as_f32_ref(),
+            ))),
+            GGMLType::Q4_1 => Ok(CpuTensorBuf::Q4_1(QuantBufQ4_1::quantize(
                 self.as_f32_ref(),
             ))),
             _ => Err((
@@ -94,17 +133,13 @@ impl<'a> CpuTensorBuf<'a> {
     }
 
     pub fn vec_dot(&self, a_offset: usize, b: &Self, b_offset: usize, len: usize) -> f32 {
-        assert!(
-            self.dtype() == b.dtype(),
-            "only same dtype can be dotted, but got {:?} and {:?}",
-            self.dtype(),
-            b.dtype()
-        );
-
         use CpuTensorBuf::*;
         match (self, b) {
             (F32(a), F32(b)) => vec_dot_f32_f32(a, a_offset, b, b_offset, len),
             (Q8_0(a), Q8_0(b)) => a.vec_dot(a_offset, b, b_offset, len),
+            (Q8_1(a), Q8_1(b)) => a.vec_dot(a_offset, b, b_offset, len),
+            (Q4_0(a), Q8_0(b)) => a.vec_dot(a_offset, b, b_offset, len),
+            (Q4_1(a), Q8_1(b)) => a.vec_dot(a_offset, b, b_offset, len),
             _ => unreachable!(),
         }
     }
@@ -183,6 +218,9 @@ impl Clone for CpuTensorBuf<'_> {
         match self {
             CpuTensorBuf::F32(buf) => Self::F32(buf.clone()),
             CpuTensorBuf::Q8_0(buf) => Self::Q8_0(buf.clone()),
+            CpuTensorBuf::Q8_1(buf) => Self::Q8_1(buf.clone()),
+            CpuTensorBuf::Q4_0(buf) => Self::Q4_0(buf.clone()),
+            CpuTensorBuf::Q4_1(buf) => Self::Q4_1(buf.clone()),
         }
     }
 }

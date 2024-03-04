@@ -33,6 +33,7 @@ pub fn mul_inplace<'a>(
     Ok(())
 }
 
+#[allow(unused)]
 fn mul_inplace_vec_f32(a: &mut [f32], b: &[f32]) {
     let ac = a.as_chunks_mut::<32>().0;
     let bc = b.as_chunks::<32>().0;

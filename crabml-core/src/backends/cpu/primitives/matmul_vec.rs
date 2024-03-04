@@ -1,5 +1,3 @@
-use std::time::Instant;
-
 use rayon::prelude::*;
 
 use crate::backends::cpu::buf::CpuTensorBuf;
@@ -30,7 +28,7 @@ pub fn matmul_vec<'a>(
 
     // fall back to the naive implementation if stride1 is not contiguous
     gemv_naive_f32(bufa, bufb, bufc, strider1);
-    return Ok(());
+    Ok(())
 }
 
 fn gemv_naive_f32<'a>(
@@ -68,7 +66,7 @@ fn gemv_simd<'a>(
     let bufc = bufc.as_f32_mut();
     let bufb = {
         let _t = metrics.matmul_quantize_walltime.track();
-        &bufb.quantize(bufa.dtype()).unwrap()
+        &bufb.quantize(bufa.vec_dot_rhs_dtype()).unwrap()
     };
 
     let _t = metrics.matmul_vec_dot_walltime.track();
@@ -78,7 +76,7 @@ fn gemv_simd<'a>(
         .enumerate()
         .for_each(|(cn, cp)| {
             let mi = cn * 4;
-            cp[0] = bufa.vec_dot((mi + 0) * k, bufb, 0, k);
+            cp[0] = bufa.vec_dot(mi * k, bufb, 0, k);
             cp[1] = bufa.vec_dot((mi + 1) * k, bufb, 0, k);
             cp[2] = bufa.vec_dot((mi + 2) * k, bufb, 0, k);
             cp[3] = bufa.vec_dot((mi + 3) * k, bufb, 0, k);

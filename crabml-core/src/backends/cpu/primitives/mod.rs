@@ -1,6 +1,7 @@
 mod add;
 mod batch_matmul_vec;
 mod div;
+mod gelu;
 mod matmul_vec;
 mod mul;
 mod rms_norm;

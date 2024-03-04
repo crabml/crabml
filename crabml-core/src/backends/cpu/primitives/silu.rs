@@ -3,20 +3,11 @@ use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::backends::cpu::CpuTensorDeviceRef;
 use crate::error::Result;
 
-// TODO: support f16
 pub fn silu_inplace<'a>(device: CpuTensorDeviceRef<'a>, buf: &mut CpuTensorBuf<'a>) -> Result<()> {
     let exp_cache = &device.exp_cache;
     buf.iter_f32_mut().for_each(|n| {
-        // let nexp = exp_f32_cached(-*n, exp_cache);
-        // *n = *n / (1.0 + nexp)
-        *n = gelu(*n);
+        let nexp = exp_f32_cached(-*n, exp_cache);
+        *n = *n / (1.0 + nexp)
     });
     Ok(())
-}
-
-fn gelu(x: f32) -> f32 {
-    let coef_a = 0.044715;
-    let sqrt_2_over_pi: f32 = 0.79788456080286535587989211986876;
-
-    0.5 * x * (1.0 + (sqrt_2_over_pi * x * (1.0 + coef_a * x * x)).tanh())
 }

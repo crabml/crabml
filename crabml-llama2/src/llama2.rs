@@ -135,7 +135,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
     pub fn forward(&mut self, token: usize, pos: usize) -> Result<&mut [f32]> {
         let x = match self.conf.architecture {
             ModelArchitecture::Llama => self.forward_llama(token, pos)?,
-            ModelArchitecture::Gemma => self.forward_llama(token, pos)?,
+            ModelArchitecture::Gemma => self.forward_gemma(token, pos)?,
         };
 
         // classifier into logits
@@ -150,6 +150,75 @@ impl<'a, T: Tensor> Llama2Runner<T> {
     }
 
     fn forward_llama(&mut self, token: usize, pos: usize) -> Result<T> {
+        let embed_dim = self.conf.embedding_dim;
+        let n_heads = self.conf.n_heads;
+        let n_kv_heads = self.conf.n_kv_heads;
+        let head_dim = self.conf.head_size();
+        let rope_dim = self.conf.rope_dim.unwrap_or(head_dim);
+
+        // copy the token embedding into x
+        let mut x = T::alloc(&[embed_dim], None, self.device.clone())?;
+        x.copy_from(&self.weights.token_embed, &[token, 0], embed_dim)?;
+
+        // forward all the layers
+        for l in 0..self.conf.n_layers {
+            let x_attn_orig = x.dup()?;
+
+            // attention rnsnorm
+            x = {
+                x = x.rms_norm_inplace(self.conf.rms_norm_eps)?;
+                x = x.mul_inplace(&self.weights.rms_att_weight[l])?;
+                x = x.with_name(format!("attn_rmsnorm:{}:{}", l, pos));
+                x
+            };
+
+            // matmul qkv for every head
+            let (q, k, v) = {
+                // wq: (embed_dim, embed_dim) @ x (embed_dim, ) => (embed_dim, )
+                // wk: (kv_dim, embed_dim) @ x (embed_dim, ) => (kv_dim, )
+                // wv: (kv_dim, embed_dim) @ x (embed_dim, ) => (kv_dim, )
+                let q = self.weights.wq[l].matmul_vec(&x)?;
+                let k = self.weights.wk[l].matmul_vec(&x)?;
+                let v = self.weights.wv[l].matmul_vec(&x)?;
+                (q, k, v)
+            };
+
+            // ROPE
+            let (q, k) = {
+                let q = q.reshape(&[n_heads, head_dim])?;
+                let k = k.reshape(&[n_kv_heads, head_dim])?;
+
+                let q = q.rope_inplace(RopeMode::Neox, pos, rope_dim)?;
+                let k = k.rope_inplace(RopeMode::Neox, pos, rope_dim)?;
+                (
+                    q.with_name(format!("q_roped:{}:{}", l, pos)),
+                    k.with_name(format!("k_roped:{}:{}", l, pos)),
+                )
+            };
+
+            x = self.forward_multi_query_attention(
+                q, k, v, l, pos, n_kv_heads, n_heads, embed_dim, head_dim,
+            )?;
+
+            // residual connection back into x
+            x = x.add_inplace(&x_attn_orig)?;
+
+            // ffn
+            x = self.forward_ffn(x, l, Activation::SiLU)?;
+            x = x.with_name(format!("ffn_out:{}:{}", l, pos));
+        }
+
+        // final rmsnorm
+        x = {
+            x = x.rms_norm_inplace(self.conf.rms_norm_eps)?;
+            x = x.mul_inplace(&self.weights.rms_final_weight)?;
+            x.with_name(format!("final_rmsnorm:{}", pos))
+        };
+
+        Ok(x)
+    }
+
+    fn forward_gemma(&mut self, token: usize, pos: usize) -> Result<T> {
         let embed_dim = self.conf.embedding_dim;
         let n_heads = self.conf.n_heads;
         let n_kv_heads = self.conf.n_kv_heads;

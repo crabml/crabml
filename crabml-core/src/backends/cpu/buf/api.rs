@@ -65,6 +65,16 @@ impl<'a> CpuTensorBuf<'a> {
         }
     }
 
+    pub fn vec_dot_rhs_dtype(&self) -> GGMLType {
+        match self {
+            CpuTensorBuf::F32(_) => GGMLType::F32,
+            CpuTensorBuf::Q8_0(_) => GGMLType::Q8_0,
+            CpuTensorBuf::Q8_1(_) => GGMLType::Q8_1,
+            CpuTensorBuf::Q4_0(_) => GGMLType::Q8_0,
+            CpuTensorBuf::Q4_1(_) => GGMLType::Q8_1,
+        }
+    }
+
     /// dequantize the quantized tensors to f32 or f16.
     /// f32 to f16 is not considered as dequantization, but it still will be supported to
     /// simplify the conversion on half-precision activation is enabled.
@@ -107,7 +117,7 @@ impl<'a> CpuTensorBuf<'a> {
             GGMLType::Q8_1 => Ok(CpuTensorBuf::Q8_1(QuantBufQ8_1::quantize(
                 self.as_f32_ref(),
             ))),
-            GGMLType::Q4_0 => Ok(CpuTensorBuf::Q8_0(QuantBufQ8_0::quantize(
+            GGMLType::Q4_0 => Ok(CpuTensorBuf::Q4_0(QuantBufQ4_0::quantize(
                 self.as_f32_ref(),
             ))),
             GGMLType::Q4_1 => Ok(CpuTensorBuf::Q4_1(QuantBufQ4_1::quantize(

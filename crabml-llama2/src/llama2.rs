@@ -19,6 +19,12 @@ use crate::model::Llama2Weights;
 use crate::model::WgpuLlama2Model;
 use crate::sampler::Llama2Sampler;
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum Activation {
+    SiLU,
+    GeLU,
+}
+
 pub struct Llama2Runner<T: Tensor> {
     conf: Llama2Config,
     weights: Rc<Llama2Weights<T>>,
@@ -159,12 +165,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
                 let q = self.weights.wq[l].matmul_vec(&x)?;
                 let k = self.weights.wk[l].matmul_vec(&x)?;
                 let v = self.weights.wv[l].matmul_vec(&x)?;
-
-                (
-                    q.with_name(format!("q:{}:{}", l, pos)),
-                    k.with_name(format!("k:{}:{}", l, pos)),
-                    v.with_name(format!("v:{}:{}", l, pos)),
-                )
+                (q, k, v)
             };
 
             // ROPE
@@ -237,7 +238,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             x = x.add_inplace(&x_attn_orig)?;
 
             // ffn
-            x = self.forward_ffn(x, l)?;
+            x = self.forward_ffn(x, l, Activation::GeLU)?;
             x = x.with_name(format!("ffn_out:{}:{}", l, pos));
         }
 
@@ -259,7 +260,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         Ok(&mut self.logits)
     }
 
-    fn forward_ffn(&self, mut x: T, l: usize) -> Result<T> {
+    fn forward_ffn(&self, mut x: T, l: usize, activation: Activation) -> Result<T> {
         // save for redidual connection
         let x_orig_ffn = x.dup()?;
 
@@ -278,7 +279,10 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         let h2 = self.weights.ffn_up_weight[l].matmul_vec(&x)?;
 
         // F.silu; silu(x)=x*σ(x),where σ(x) is the logistic sigmoid
-        h1 = h1.gelu_inplace()?;
+        h1 = match activation {
+            Activation::SiLU => h1.silu_inplace()?,
+            Activation::GeLU => h1.gelu_inplace()?,
+        };
 
         // elementwise multiply with w3(x)
         h1 = h1.mul_inplace(&h2)?;

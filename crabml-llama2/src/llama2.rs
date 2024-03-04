@@ -9,6 +9,7 @@ use crabml::backends::wgpu::WgpuTensor;
 use crabml::error::Error;
 use crabml::error::ErrorKind;
 use crabml::error::Result;
+use crabml::tensor::RopeMode;
 use crabml::tensor::Tensor;
 use crabml::tokenizer::BpeTokenizer;
 
@@ -133,7 +134,6 @@ impl<'a, T: Tensor> Llama2Runner<T> {
 
         // copy the token embedding into x
         let mut x = T::alloc(&[embed_dim], None, self.device.clone())?;
-        println!("tok: {}", token);
         x.copy_from(&self.weights.token_embed, &[token, 0], embed_dim)?;
 
         x = x.scale_inplace((embed_dim as f32).sqrt())?;
@@ -172,8 +172,8 @@ impl<'a, T: Tensor> Llama2Runner<T> {
                 let q = q.reshape(&[n_heads, head_dim])?;
                 let k = k.reshape(&[n_kv_heads, head_dim])?;
 
-                let q = q.rope_inplace(pos, rope_dim)?;
-                let k = k.rope_inplace(pos, rope_dim)?;
+                let q = q.rope_inplace(RopeMode::Neox, pos, rope_dim)?;
+                let k = k.rope_inplace(RopeMode::Neox, pos, rope_dim)?;
                 (
                     q.with_name(format!("q_roped:{}:{}", l, pos)),
                     k.with_name(format!("k_roped:{}:{}", l, pos)),
@@ -256,7 +256,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
                 let h2 = self.weights.ffn_up_weight[l].matmul_vec(&x)?;
 
                 // F.silu; silu(x)=x*σ(x),where σ(x) is the logistic sigmoid
-                h1 = h1.silu_inplace()?;
+                h1 = h1.gelu_inplace()?;
 
                 // elementwise multiply with w3(x)
                 h1 = h1.mul_inplace(&h2)?;

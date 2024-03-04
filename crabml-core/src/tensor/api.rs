@@ -2,6 +2,12 @@ use super::strider::TensorStrider;
 use crate::error::Result;
 use crate::gguf::GGMLType;
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum RopeMode {
+    Llama,
+    Neox,
+}
+
 pub trait Tensor: Sized + Clone {
     type Device: Clone;
 
@@ -34,7 +40,7 @@ pub trait Tensor: Sized + Clone {
     /// duplicate the tensor and the underlying storage
     fn dup(&self) -> Result<Self>;
 
-    fn rope_inplace(self, pos: usize, rope_dims: usize) -> Result<Self>;
+    fn rope_inplace(self, mode: RopeMode, pos: usize, rope_dims: usize) -> Result<Self>;
 
     fn rms_norm_inplace(self, eps: f32) -> Result<Self>;
 

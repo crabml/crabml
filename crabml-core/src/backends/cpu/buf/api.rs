@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::os::fd::OwnedFd;
 
 use super::buf_f32::f32_buf_from_bytes;
 use super::buf_f32::vec_dot_f32_f32;
@@ -158,24 +159,20 @@ impl<'a> CpuTensorBuf<'a> {
             "only f32/f16 can be copied to"
         );
 
-        match src {
-            CpuTensorBuf::F32(buf) => {
-                let src_iter = buf.iter().skip(offset).take(len);
-                self.iter_f32_mut().zip(src_iter).for_each(|(dst, src)| {
-                    *dst = *src;
+        let rhs_iter: Box<dyn Iterator<Item = f32>> = match src {
+            CpuTensorBuf::F32(buf) => Box::new(buf.iter().skip(offset).take(len).cloned()),
+            CpuTensorBuf::Q8_0(buf) => Box::new(buf.dequantize(offset).take(len)),
+            CpuTensorBuf::Q8_1(buf) => Box::new(buf.dequantize(offset).take(len)),
+            CpuTensorBuf::Q4_0(buf) => Box::new(buf.dequantize(offset).take(len)),
+            CpuTensorBuf::Q4_1(buf) => Box::new(buf.dequantize(offset).take(len)),
+        };
+
+        match self {
+            CpuTensorBuf::F32(Cow::Owned(buf)) => {
+                buf.iter_mut().zip(rhs_iter).for_each(|(dst, src)| {
+                    *dst = src;
                 });
             }
-            CpuTensorBuf::Q8_0(buf) => {
-                assert!(offset % 32 == 0, "offset must be multiple of 32");
-                let src_iter = buf.dequantize(offset);
-                self.iter_f32_mut()
-                    .zip(src_iter)
-                    .take(len)
-                    .for_each(|(dst, src)| {
-                        *dst = src;
-                    })
-            }
-
             // TODO: add f16 support
             _ => unreachable!("only f32/f16 buffers can be copied"),
         };

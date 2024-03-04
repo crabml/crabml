@@ -181,58 +181,9 @@ impl<'a, T: Tensor> Llama2Runner<T> {
                 )
             };
 
-            // save to kv cache
-            {
-                let v = v
-                    .reshape(&[n_kv_heads, head_dim])?
-                    .repeat_n(n_heads / n_kv_heads)?;
-                let k = k.repeat_n(n_heads / n_kv_heads)?;
-
-                if let Some(ref mut k_cache) = self.key_cache[l] {
-                    k_cache.extend(&k)?;
-                }
-                if let Some(ref mut v_cache) = self.value_cache[l] {
-                    v_cache.extend(&v)?;
-                }
-            };
-
-            // multi query attention
-            x = {
-                let q = q.reshape(&[n_heads, head_dim])?;
-
-                // - key_cache: [seq, n_head, head_size]
-                // - key_cache = key_cache.transpose(1, 0, 2) => [n_head, seq, head_size]
-                // - q: [n_head, head_size]
-                // - attn_score = batch_matmul(key_cache, q) => [n_head, seq]
-                // - softmax(attn_score, axis=1) => [n_head, seq]
-                // - val_cache: [seq, n_head, head_size]
-                // - val_cache = val_cache.transpose(1, 2, 0) => [n_head, head_size, seq]
-                // - out = batch_matmul(val_cache, atten_scores) => [n_head, head_size]
-
-                // get attention scores
-                let k_cache = self.key_cache[l].take().unwrap();
-                let k_cache_strider_orig = k_cache.strider().clone();
-                let k_cache = k_cache.transpose(&[1, 0, 2])?;
-                // (n_heads, n_seq, head_size) @ (n_head, head_size) => (n_heads, n_seq)
-                let q = q.div_scalar_inplace((head_dim as f32).sqrt())?;
-                let attn = k_cache.batch_matmul_vec(&q)?;
-                let attn = attn
-                    .softmax_inplace(1)?
-                    .with_name(format!("k_cache_attn:{}:{}", l, pos));
-                self.key_cache[l].replace(k_cache.with_strider(k_cache_strider_orig)?);
-
-                let v_cache = self.value_cache[l].take().unwrap();
-                let v_cache_strider_orig = v_cache.strider().clone();
-                // get the weighted sum of the values and attention scores
-                let v_cache = v_cache.transpose(&[1, 2, 0])?;
-                // (n_heads, head_size, n_seq) @ (n_heads, n_seq) => (n_heads, head_size)
-                let x_with_attn = v_cache.batch_matmul_vec(&attn)?; // (n_heads, head_size)
-                let x_with_attn = x_with_attn.reshape(&[embed_dim])?;
-                self.value_cache[l].replace(v_cache.with_strider(v_cache_strider_orig)?);
-
-                // final matmul to get the output of the attention
-                self.weights.wo[l].matmul_vec(&x_with_attn)?
-            };
+            x = self.forward_multi_query_attention(
+                q, k, v, l, pos, n_kv_heads, n_heads, embed_dim, head_dim,
+            )?;
 
             // residual connection back into x
             x = x.add_inplace(&x_attn_orig)?;
@@ -258,6 +209,73 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             .matmul_vec(&x)?; // (vocab_size,
         logits.export(&mut self.logits)?;
         Ok(&mut self.logits)
+    }
+
+    fn forward_multi_query_attention(
+        &mut self,
+        q: T,
+        k: T,
+        v: T,
+        l: usize,
+        pos: usize,
+        n_kv_heads: usize,
+        n_heads: usize,
+        embed_dim: usize,
+        head_dim: usize,
+    ) -> Result<T> {
+        // save to kv cache
+        {
+            let v = v
+                .reshape(&[n_kv_heads, head_dim])?
+                .repeat_n(n_heads / n_kv_heads)?;
+            let k = k.repeat_n(n_heads / n_kv_heads)?;
+
+            if let Some(ref mut k_cache) = self.key_cache[l] {
+                k_cache.extend(&k)?;
+            }
+            if let Some(ref mut v_cache) = self.value_cache[l] {
+                v_cache.extend(&v)?;
+            }
+        };
+
+        // multi query attention
+        let x = {
+            let q = q.reshape(&[n_heads, head_dim])?;
+
+            // - key_cache: [seq, n_head, head_size]
+            // - key_cache = key_cache.transpose(1, 0, 2) => [n_head, seq, head_size]
+            // - q: [n_head, head_size]
+            // - attn_score = batch_matmul(key_cache, q) => [n_head, seq]
+            // - softmax(attn_score, axis=1) => [n_head, seq]
+            // - val_cache: [seq, n_head, head_size]
+            // - val_cache = val_cache.transpose(1, 2, 0) => [n_head, head_size, seq]
+            // - out = batch_matmul(val_cache, atten_scores) => [n_head, head_size]
+
+            // get attention scores
+            let k_cache = self.key_cache[l].take().unwrap();
+            let k_cache_strider_orig = k_cache.strider().clone();
+            let k_cache = k_cache.transpose(&[1, 0, 2])?;
+            // (n_heads, n_seq, head_size) @ (n_head, head_size) => (n_heads, n_seq)
+            let q = q.div_scalar_inplace((head_dim as f32).sqrt())?;
+            let attn = k_cache.batch_matmul_vec(&q)?;
+            let attn = attn
+                .softmax_inplace(1)?
+                .with_name(format!("k_cache_attn:{}:{}", l, pos));
+            self.key_cache[l].replace(k_cache.with_strider(k_cache_strider_orig)?);
+
+            let v_cache = self.value_cache[l].take().unwrap();
+            let v_cache_strider_orig = v_cache.strider().clone();
+            // get the weighted sum of the values and attention scores
+            let v_cache = v_cache.transpose(&[1, 2, 0])?;
+            // (n_heads, head_size, n_seq) @ (n_heads, n_seq) => (n_heads, head_size)
+            let x_with_attn = v_cache.batch_matmul_vec(&attn)?; // (n_heads, head_size)
+            let x_with_attn = x_with_attn.reshape(&[embed_dim])?;
+            self.value_cache[l].replace(v_cache.with_strider(v_cache_strider_orig)?);
+
+            // final matmul to get the output of the attention
+            self.weights.wo[l].matmul_vec(&x_with_attn)?
+        };
+        Ok(x)
     }
 
     fn forward_ffn(&self, mut x: T, l: usize, activation: Activation) -> Result<T> {

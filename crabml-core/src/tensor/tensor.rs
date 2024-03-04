@@ -46,8 +46,6 @@ pub trait Tensor: Sized + Clone {
 
     fn add_inplace(self, rhs: &Self) -> Result<Self>;
 
-    fn add_scalar_inplace(self, rhs: f32) -> Result<Self>;
-
     fn div_scalar_inplace(self, rhs: f32) -> Result<Self>;
 
     fn scale_inplace(self, rhs: f32) -> Result<Self>;

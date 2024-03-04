@@ -292,14 +292,6 @@ impl<'a> Tensor for CpuTensor<'a> {
         Ok(self)
     }
 
-    fn add_scalar_inplace(mut self, rhs: f32) -> Result<Self> {
-        let rhs = CpuTensor::new(vec![rhs], &[1], self.device())?;
-        let strider1 = self.strider().clone();
-        let strider2 = rhs.strider();
-        primitives::add_inplace(self.buf_mut(), rhs.buf(), &strider1, strider2)?;
-        Ok(self)
-    }
-
     fn div_scalar_inplace(mut self, b: f32) -> Result<Self> {
         let rhs = CpuTensor::new(vec![b], &[1], self.device())?;
         let strider1 = self.strider().clone();

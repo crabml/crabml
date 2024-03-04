@@ -16,6 +16,7 @@ use crabml::tokenizer::BpeTokenizer;
 use crate::model::CpuLlama2Model;
 use crate::model::Llama2Config;
 use crate::model::Llama2Weights;
+use crate::model::ModelArchitecture;
 use crate::model::WgpuLlama2Model;
 use crate::sampler::Llama2Sampler;
 
@@ -132,6 +133,23 @@ impl<'a, T: Tensor> Llama2Runner<T> {
     }
 
     pub fn forward(&mut self, token: usize, pos: usize) -> Result<&mut [f32]> {
+        let x = match self.conf.architecture {
+            ModelArchitecture::Llama => self.forward_llama(token, pos)?,
+            ModelArchitecture::Gemma => self.forward_llama(token, pos)?,
+        };
+
+        // classifier into logits
+        let logits = self
+            .weights
+            .output_weight
+            .as_ref()
+            .unwrap_or_else(|| &self.weights.token_embed)
+            .matmul_vec(&x)?; // (vocab_size,
+        logits.export(&mut self.logits)?;
+        Ok(&mut self.logits)
+    }
+
+    fn forward_llama(&mut self, token: usize, pos: usize) -> Result<T> {
         let embed_dim = self.conf.embedding_dim;
         let n_heads = self.conf.n_heads;
         let n_kv_heads = self.conf.n_kv_heads;
@@ -200,15 +218,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             x.with_name(format!("final_rmsnorm:{}", pos))
         };
 
-        // classifier into logits
-        let logits = self
-            .weights
-            .output_weight
-            .as_ref()
-            .unwrap_or_else(|| &self.weights.token_embed)
-            .matmul_vec(&x)?; // (vocab_size,
-        logits.export(&mut self.logits)?;
-        Ok(&mut self.logits)
+        Ok(x)
     }
 
     fn forward_multi_query_attention(

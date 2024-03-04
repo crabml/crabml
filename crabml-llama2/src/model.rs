@@ -14,9 +14,15 @@ use crabml::gguf::GGUFFile;
 use crabml::tensor::Tensor;
 use crabml::tokenizer::BpeTokenizer;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ModelArchitecture {
+    Llama,
+    Gemma,
+}
+
 #[derive(Debug, Clone)]
 pub struct Llama2Config {
-    pub architecture: String,
+    pub architecture: ModelArchitecture,
     pub embedding_dim: usize, // the dim of embedding
     pub hidden_dim: usize,
     pub n_layers: usize,
@@ -229,19 +235,14 @@ impl<'a> CpuLlama2Model<'a> {
 
     fn load_config(gf: &GGUFFile) -> Result<Llama2Config> {
         // let rope_dims = gf.metadata().get_u32("llama.rope.dimension_count").unwrap();
-        let architecture = gf
-            .metadata()
-            .get_string("general.architecture")
-            .unwrap()
-            .to_string();
-
-        let prefix = match architecture.as_str() {
-            "llama" => "llama",
-            "gemma" => "gemma",
-            _ => {
+        let (architecture, prefix) = match gf.metadata().get_string("general.architecture").unwrap()
+        {
+            "llama" => (ModelArchitecture::Llama, "llama"),
+            "gemma" => (ModelArchitecture::Gemma, "gemma"),
+            arch => {
                 return Err(Error {
                     kind: ErrorKind::ModelError,
-                    message: format!("unsupported architecture {}", architecture),
+                    message: format!("unsupported architecture {}", arch),
                     cause: None,
                 });
             }

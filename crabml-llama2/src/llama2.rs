@@ -237,37 +237,8 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             x = x.add_inplace(&x_attn_orig)?;
 
             // ffn
-            x = {
-                // save for redidual connection
-                let x_orig_ffn = x.dup()?;
-
-                // ffn rmsnorm
-                x = {
-                    x = x.rms_norm_inplace(1e-5)?;
-                    x = x.mul_inplace(&self.weights.rms_ffn_weight[l])?;
-                    x
-                };
-
-                // Now for FFN in PyTorch we have: self.down_proj(F.silu(self.gate_proj(x)) * self.up_proj(x))
-                // first calculate self.w1(x) and self.w3(x)
-                // w1: (hidden_dim, embed_dim) @ x (embed_dim, ) => (hidden_dim, )
-                // w3: (hidden_dim, embed_dim) @ x (embed_dim, ) => (hidden_dim, )
-                let mut h1 = self.weights.ffn_gate_weight[l].matmul_vec(&x)?;
-                let h2 = self.weights.ffn_up_weight[l].matmul_vec(&x)?;
-
-                // F.silu; silu(x)=x*σ(x),where σ(x) is the logistic sigmoid
-                h1 = h1.gelu_inplace()?;
-
-                // elementwise multiply with w3(x)
-                h1 = h1.mul_inplace(&h2)?;
-
-                // final matmul to get the output of the ffn
-                x = self.weights.ffn_down_weight[l].matmul_vec(&h1)?;
-
-                // residual connection
-                x = x.add_inplace(&x_orig_ffn)?;
-                x.with_name(format!("ffn_out:{}:{}", l, pos))
-            }
+            x = self.forward_ffn(x, l)?;
+            x = x.with_name(format!("ffn_out:{}:{}", l, pos));
         }
 
         // final rmsnorm
@@ -286,6 +257,38 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             .matmul_vec(&x)?; // (vocab_size,
         logits.export(&mut self.logits)?;
         Ok(&mut self.logits)
+    }
+
+    fn forward_ffn(&self, mut x: T, l: usize) -> Result<T> {
+        // save for redidual connection
+        let x_orig_ffn = x.dup()?;
+
+        // ffn rmsnorm
+        x = {
+            x = x.rms_norm_inplace(1e-5)?;
+            x = x.mul_inplace(&self.weights.rms_ffn_weight[l])?;
+            x
+        };
+
+        // Now for FFN in PyTorch we have: self.down_proj(F.silu(self.gate_proj(x)) * self.up_proj(x))
+        // first calculate self.w1(x) and self.w3(x)
+        // w1: (hidden_dim, embed_dim) @ x (embed_dim, ) => (hidden_dim, )
+        // w3: (hidden_dim, embed_dim) @ x (embed_dim, ) => (hidden_dim, )
+        let mut h1 = self.weights.ffn_gate_weight[l].matmul_vec(&x)?;
+        let h2 = self.weights.ffn_up_weight[l].matmul_vec(&x)?;
+
+        // F.silu; silu(x)=x*σ(x),where σ(x) is the logistic sigmoid
+        h1 = h1.gelu_inplace()?;
+
+        // elementwise multiply with w3(x)
+        h1 = h1.mul_inplace(&h2)?;
+
+        // final matmul to get the output of the ffn
+        x = self.weights.ffn_down_weight[l].matmul_vec(&h1)?;
+
+        // residual connection
+        x = x.add_inplace(&x_orig_ffn)?;
+        Ok(x)
     }
 }
 

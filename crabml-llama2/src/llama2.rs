@@ -219,6 +219,13 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         Ok(x)
     }
 
+    // The differences between GEMMA and LLAMA are:
+    // 1. the way the ROPE is calculated.
+    // 2. it uses GELU instead of SiLU.
+    // 3. it scales the input embedding with sqrt(embed_dim).
+    // 4. it adds a 1.0 to every weights on rmsnorm (rms_att_weight, rms_ffn_weight,
+    //    rms_final_weight), this have been processed during GGUF format convert, so we
+    //    don't need to do it here.
     fn forward_gemma(&mut self, token: usize, pos: usize) -> Result<T> {
         let embed_dim = self.conf.embedding_dim;
         let n_heads = self.conf.n_heads;
@@ -230,6 +237,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         let mut x = T::alloc(&[embed_dim], None, self.device.clone())?;
         x.copy_from(&self.weights.token_embed, &[token, 0], embed_dim)?;
 
+        // GEMMA only: scale the embedding with sqrt(embed_dim)
         x = x.scale_inplace((embed_dim as f32).sqrt())?;
         x = x.with_name("scaled_embed".to_string());
 

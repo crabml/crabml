@@ -309,8 +309,14 @@ impl<'a> Tensor for CpuTensor<'a> {
     }
 
     fn silu_inplace(mut self) -> Result<Self> {
-        let _t = self.device.metrics.silu_walltime.track();
+        let _t = self.device.metrics.activate_walltime.track();
         primitives::silu_inplace(self.device(), self.buf_mut())?;
+        Ok(self)
+    }
+
+    fn gelu_inplace(mut self) -> Result<Self> {
+        let _t = self.device.metrics.activate_walltime.track();
+        primitives::gelu_inplace(self.device(), self.buf_mut())?;
         Ok(self)
     }
 

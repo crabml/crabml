@@ -397,6 +397,32 @@ impl Tensor for WgpuTensor {
         Ok(self)
     }
 
+    fn gelu_inplace(self) -> Result<Self> {
+        assert!(self.is_contiguous());
+        assert!(self.shape().len() == 1);
+
+        let m = 1;
+        let n = self.shape()[0] as u32;
+        let meta_buf = self
+            .device
+            .make_storage_buffer("meta", bytemuck::cast_slice(&[m, n]));
+        let entries = &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: self.buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: meta_buf.as_entire_binding(),
+            },
+        ];
+        let encoder = self
+            .device
+            .encode_pipeline_commnad("gelu_inplace", entries, (1, 1, 1));
+        self.device.queue.submit(Some(encoder.finish()));
+        Ok(self)
+    }
+
     fn mul_inplace(self, rhs: &Self) -> Result<Self> {
         let meta_buf = self.device.make_storage_buffer(
             "meta",

@@ -42,6 +42,8 @@ pub trait Tensor: Sized + Clone {
 
     fn silu_inplace(self) -> Result<Self>;
 
+    fn gelu_inplace(self) -> Result<Self>;
+
     fn mul_inplace(self, rhs: &Self) -> Result<Self>;
 
     fn add_inplace(self, rhs: &Self) -> Result<Self>;

@@ -66,7 +66,7 @@ fn gemv_simd<'a>(
     let bufc = bufc.as_f32_mut();
     let bufb = {
         let _t = metrics.matmul_quantize_walltime.track();
-        &bufb.quantize(bufa.dtype()).unwrap()
+        &bufb.quantize(bufa.vec_dot_rhs_dtype()).unwrap()
     };
 
     let _t = metrics.matmul_vec_dot_walltime.track();

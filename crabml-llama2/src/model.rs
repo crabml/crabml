@@ -169,7 +169,10 @@ impl<'a> CpuLlama2Model<'a> {
         }
         let rms_final_weight = Self::load_tensor(gf, "output_norm.weight", device.clone())?
             .dequantize(GGMLType::F32)?;
-        let output_weight = None;
+
+        // in Gemma, the output weight is None
+        let output_weight = Self::load_tensor_optional(gf, "output.weight", device)?;
+
         Ok(Llama2Weights {
             token_embed,
             wq,
@@ -186,27 +189,37 @@ impl<'a> CpuLlama2Model<'a> {
         })
     }
 
-    pub(crate) fn load_tensor(
+    pub(crate) fn load_tensor_optional(
         gf: &'a GGUFFile<'a>,
         name: &str,
         device: CpuTensorDeviceRef<'a>,
-    ) -> Result<CpuTensor<'a>> {
+    ) -> Result<Option<CpuTensor<'a>>> {
         let info = match gf.get_tensor_info(name) {
-            None => {
-                return Err(Error {
-                    kind: ErrorKind::TensorNotFound,
-                    message: format!("failed to find tensor {}", name),
-                    cause: None,
-                });
-            }
+            None => return Ok(None),
             Some(info) => info.clone(),
         };
 
         // the dimensions stored in GGUF seems in a reverse order of numpy's shape
         let dims = info.dimensions().iter().rev().copied().collect::<Vec<_>>();
-
         let tensor = CpuTensor::from_bytes(info.data(), info.typ(), &dims, device.clone())?;
-        Ok(tensor)
+        Ok(Some(tensor))
+    }
+
+    pub(crate) fn load_tensor(
+        gf: &'a GGUFFile<'a>,
+        name: &str,
+        device: CpuTensorDeviceRef<'a>,
+    ) -> Result<CpuTensor<'a>> {
+        Ok(
+            Self::load_tensor_optional(gf, name, device)?.unwrap_or_else(|| {
+                Err(Error {
+                    kind: ErrorKind::TensorNotFound,
+                    message: format!("failed to find tensor {}", name),
+                    cause: None,
+                })
+                .unwrap()
+            }),
+        )
     }
 
     fn load_tokenizer(gf: &GGUFFile) -> BpeTokenizer {

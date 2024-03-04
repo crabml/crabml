@@ -151,10 +151,6 @@ impl<'a> Tensor for CpuTensor<'a> {
     }
 
     fn with_name(mut self, name: String) -> Self {
-        if name.contains("q_roped:0") || name.contains("scaled_embed") {
-            println!("{}: {:?}", &name, &self.buf.as_f32_ref()[0..5]);
-        }
-
         self.name = Some(name);
 
         // only used in test
@@ -176,12 +172,6 @@ impl<'a> Tensor for CpuTensor<'a> {
             return Err((ErrorKind::TensorError, "not contiguous").into());
         }
         if !t.shape().eq(&self.shape()[1..]) {
-            assert!(
-                false,
-                "shape mismatch on extend, want {:?} but got {:?}",
-                &self.shape(),
-                &t.shape()
-            );
             return Err((
                 ErrorKind::TensorError,
                 format!(

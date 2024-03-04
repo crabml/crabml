@@ -210,16 +210,14 @@ impl<'a> CpuLlama2Model<'a> {
         name: &str,
         device: CpuTensorDeviceRef<'a>,
     ) -> Result<CpuTensor<'a>> {
-        Ok(
-            Self::load_tensor_optional(gf, name, device)?.unwrap_or_else(|| {
-                Err(Error {
-                    kind: ErrorKind::TensorNotFound,
-                    message: format!("failed to find tensor {}", name),
-                    cause: None,
-                })
-                .unwrap()
+        match Self::load_tensor_optional(gf, name, device)? {
+            None => Err(Error {
+                kind: ErrorKind::TensorNotFound,
+                message: format!("failed to find tensor {}", name),
+                cause: None,
             }),
-        )
+            Some(v) => Ok(v),
+        }
     }
 
     fn load_tokenizer(gf: &GGUFFile) -> BpeTokenizer {
@@ -387,7 +385,7 @@ impl WgpuLlama2Model {
         let wcls = weights
             .output_weight
             .as_ref()
-            .map(|wcls| Self::convert_cpu_tensor(&wcls, device.clone()).unwrap());
+            .map(|output_weight| Self::convert_cpu_tensor(output_weight, device.clone()).unwrap());
         let weights = Llama2Weights {
             token_embed: token_embedding_table,
             wq,

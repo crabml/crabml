@@ -291,6 +291,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         Ok(x)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn forward_multi_query_attention(
         &mut self,
         q: T,

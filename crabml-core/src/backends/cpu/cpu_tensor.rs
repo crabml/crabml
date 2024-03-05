@@ -5,6 +5,7 @@ use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::error::Result;
 use crate::gguf::GGMLType;
+use crate::tensor::RopeMode;
 use crate::tensor::Tensor;
 use crate::tensor::TensorStrider;
 
@@ -222,20 +223,10 @@ impl<'a> Tensor for CpuTensor<'a> {
         if !src.is_contiguous() {
             return Err((ErrorKind::TensorError, "src tensor is not contiguous").into());
         }
-        if self.dtype() != src.dtype() {
-            return Err((
-                ErrorKind::TensorError,
-                format!(
-                    "dtype mismatch on copy_from, want {:?} but got {:?}",
-                    self.dtype(),
-                    src.dtype()
-                ),
-            )
-                .into());
-        }
 
         let offset = src.strider().at(pos)?;
-        self.buf.copy_from(&src.buf, offset, len)
+        self.buf.copy_from(&src.buf, offset, len)?;
+        Ok(())
     }
 
     fn dup(&self) -> Result<Self> {
@@ -304,9 +295,23 @@ impl<'a> Tensor for CpuTensor<'a> {
         Ok(self)
     }
 
+    fn scale_inplace(mut self, rhs: f32) -> Result<Self> {
+        let rhs = CpuTensor::new(vec![rhs], &[1], self.device())?;
+        let strider1 = self.strider().clone();
+        let strider2 = rhs.strider();
+        primitives::mul_inplace(self.buf_mut(), rhs.buf(), &strider1, strider2)?;
+        Ok(self)
+    }
+
     fn silu_inplace(mut self) -> Result<Self> {
-        let _t = self.device.metrics.silu_walltime.track();
+        let _t = self.device.metrics.activate_walltime.track();
         primitives::silu_inplace(self.device(), self.buf_mut())?;
+        Ok(self)
+    }
+
+    fn gelu_inplace(mut self) -> Result<Self> {
+        let _t = self.device.metrics.activate_walltime.track();
+        primitives::gelu_inplace(self.device(), self.buf_mut())?;
         Ok(self)
     }
 
@@ -317,11 +322,11 @@ impl<'a> Tensor for CpuTensor<'a> {
         Ok(self)
     }
 
-    fn rope_inplace(mut self, pos: usize, rope_dims: usize) -> Result<Self> {
+    fn rope_inplace(mut self, mode: RopeMode, pos: usize, rope_dims: usize) -> Result<Self> {
         let _t = self.device.metrics.rope_walltime.track();
         let strider1 = self.strider().clone();
         let buf1 = self.buf_mut();
-        primitives::rope_inplace(buf1, &strider1, pos, rope_dims)?;
+        primitives::rope_inplace(buf1, &strider1, mode, pos, rope_dims)?;
         Ok(self)
     }
 
@@ -437,7 +442,7 @@ mod tests {
         let v1 = (0..32).map(|v| v as f32).collect::<Vec<_>>();
         let t1 = CpuTensor::new(v1, &[2, 16], device.clone())?;
 
-        let r1 = t1.rope_inplace(1, 2)?;
+        let r1 = t1.rope_inplace(RopeMode::Llama, 1, 2)?;
         let out = r1.to_vec();
         assert_relative_eq!(
             &out[..],

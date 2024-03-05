@@ -14,8 +14,15 @@ use crabml::gguf::GGUFFile;
 use crabml::tensor::Tensor;
 use crabml::tokenizer::BpeTokenizer;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ModelArchitecture {
+    Llama,
+    Gemma,
+}
+
+#[derive(Debug, Clone)]
 pub struct Llama2Config {
+    pub architecture: ModelArchitecture,
     pub embedding_dim: usize, // the dim of embedding
     pub hidden_dim: usize,
     pub n_layers: usize,
@@ -24,7 +31,7 @@ pub struct Llama2Config {
     pub vocab_size: usize,
     pub seq_len: usize,
     pub rms_norm_eps: f32,
-    pub rope_dim: usize,
+    pub rope_dim: Option<usize>,
 }
 
 impl Llama2Config {
@@ -39,7 +46,7 @@ impl Llama2Config {
 
 pub struct Llama2Weights<T: Tensor> {
     // token embedding table
-    pub token_embedding_table: T, // (vocab_size, dim)
+    pub token_embed: T, // (vocab_size, dim)
     // weights for rmsnorms
     pub rms_att_weight: Vec<T>, // (layer, dim) rmsnorm weights
     pub rms_ffn_weight: Vec<T>, // (layer, dim)
@@ -49,13 +56,13 @@ pub struct Llama2Weights<T: Tensor> {
     pub wv: Vec<T>, // (layer, kv_dim, embedding_dim)
     pub wo: Vec<T>, // (layer, embedding_dim, embedding_dim)
     // weights for ffn
-    pub w1: Vec<T>, // (layer, hidden_dim, embedding_dim)
-    pub w2: Vec<T>, // (layer, embedding_dim, hidden_dim)
-    pub w3: Vec<T>, // (layer, hidden_dim, embedding_dim)
+    pub ffn_gate_weight: Vec<T>, // (layer, hidden_dim, embedding_dim)
+    pub ffn_down_weight: Vec<T>, // (layer, embedding_dim, hidden_dim)
+    pub ffn_up_weight: Vec<T>,   // (layer, hidden_dim, embedding_dim)
     // final rmsnorm
     pub rms_final_weight: T, // (dim, )
     // (optional) classifier weights for the logits, on the last layer
-    pub wcls: T, // (vocab_size, dim)
+    pub output_weight: Option<T>, // (vocab_size, dim)
 }
 
 pub struct CpuLlama2Model<'a> {
@@ -67,7 +74,7 @@ pub struct CpuLlama2Model<'a> {
 
 impl<'a> CpuLlama2Model<'a> {
     pub fn load(gf: &'a GGUFFile<'a>, device: CpuTensorDeviceRef<'a>) -> Result<Self> {
-        let conf = Self::load_config(gf);
+        let conf = Self::load_config(gf)?;
         let weights = Self::load_weights(gf, conf.n_layers, device.clone())?;
         let tokenizer = Self::load_tokenizer(gf);
         Ok(Self {
@@ -96,15 +103,14 @@ impl<'a> CpuLlama2Model<'a> {
         device: CpuTensorDeviceRef<'a>,
     ) -> Result<Llama2Weights<CpuTensor<'a>>> {
         // [64 (dim), 512 (vocab_size)]
-        let token_embedding_table = Self::load_tensor(gf, "token_embd.weight", device.clone())?
-            .dequantize(GGMLType::F32)?;
+        let token_embed = Self::load_tensor(gf, "token_embd.weight", device.clone())?;
         let mut wq = vec![];
         let mut wk = vec![];
         let mut wv = vec![];
         let mut wo = vec![];
-        let mut w1 = vec![];
-        let mut w2 = vec![];
-        let mut w3 = vec![];
+        let mut ffn_gate_weight = vec![];
+        let mut ffn_down_weight = vec![];
+        let mut ffn_up_weight = vec![];
         let mut rms_att_weight = vec![];
         let mut rms_ffn_weight = vec![];
         for layer in 0..n_layers {
@@ -129,17 +135,17 @@ impl<'a> CpuLlama2Model<'a> {
                 device.clone(),
             )?);
             // (hidden_dim:172, embedding_dim:64)
-            w1.push(Self::load_tensor(
+            ffn_gate_weight.push(Self::load_tensor(
                 gf,
                 &format!("blk.{}.ffn_gate.weight", layer),
                 device.clone(),
             )?);
-            w2.push(Self::load_tensor(
+            ffn_down_weight.push(Self::load_tensor(
                 gf,
                 &format!("blk.{}.ffn_down.weight", layer),
                 device.clone(),
             )?);
-            w3.push(Self::load_tensor(
+            ffn_up_weight.push(Self::load_tensor(
                 gf,
                 &format!("blk.{}.ffn_up.weight", layer),
                 device.clone(),
@@ -163,21 +169,40 @@ impl<'a> CpuLlama2Model<'a> {
         }
         let rms_final_weight = Self::load_tensor(gf, "output_norm.weight", device.clone())?
             .dequantize(GGMLType::F32)?;
-        let wcls = Self::load_tensor(gf, "output.weight", device.clone())?;
+
+        // in Gemma, the output weight is None
+        let output_weight = Self::load_tensor_optional(gf, "output.weight", device)?;
+
         Ok(Llama2Weights {
-            token_embedding_table,
+            token_embed,
             wq,
             wk,
             wv,
             wo,
-            w1,
-            w2,
-            w3,
+            ffn_gate_weight,
+            ffn_down_weight,
+            ffn_up_weight,
             rms_att_weight,
             rms_ffn_weight,
             rms_final_weight,
-            wcls,
+            output_weight,
         })
+    }
+
+    pub(crate) fn load_tensor_optional(
+        gf: &'a GGUFFile<'a>,
+        name: &str,
+        device: CpuTensorDeviceRef<'a>,
+    ) -> Result<Option<CpuTensor<'a>>> {
+        let info = match gf.get_tensor_info(name) {
+            None => return Ok(None),
+            Some(info) => info.clone(),
+        };
+
+        // the dimensions stored in GGUF seems in a reverse order of numpy's shape
+        let dims = info.dimensions().iter().rev().copied().collect::<Vec<_>>();
+        let tensor = CpuTensor::from_bytes(info.data(), info.typ(), &dims, device.clone())?;
+        Ok(Some(tensor))
     }
 
     pub(crate) fn load_tensor(
@@ -185,22 +210,14 @@ impl<'a> CpuLlama2Model<'a> {
         name: &str,
         device: CpuTensorDeviceRef<'a>,
     ) -> Result<CpuTensor<'a>> {
-        let info = match gf.get_tensor_info(name) {
-            None => {
-                return Err(Error {
-                    kind: ErrorKind::IOError,
-                    message: format!("failed to find tensor {}", name),
-                    cause: None,
-                });
-            }
-            Some(info) => info.clone(),
-        };
-
-        // the dimensions stored in GGUF seems in a reverse order of numpy's shape
-        let dims = info.dimensions().iter().rev().copied().collect::<Vec<_>>();
-
-        let tensor = CpuTensor::from_bytes(info.data(), info.typ(), &dims, device.clone())?;
-        Ok(tensor)
+        match Self::load_tensor_optional(gf, name, device)? {
+            None => Err(Error {
+                kind: ErrorKind::TensorNotFound,
+                message: format!("failed to find tensor {}", name),
+                cause: None,
+            }),
+            Some(v) => Ok(v),
+        }
     }
 
     fn load_tokenizer(gf: &GGUFFile) -> BpeTokenizer {
@@ -227,28 +244,61 @@ impl<'a> CpuLlama2Model<'a> {
         BpeTokenizer::new(vocab, vocab_scores, bos_token, eos_token)
     }
 
-    fn load_config(gf: &GGUFFile) -> Llama2Config {
+    fn load_config(gf: &GGUFFile) -> Result<Llama2Config> {
         // let rope_dims = gf.metadata().get_u32("llama.rope.dimension_count").unwrap();
-        let n_heads = gf.metadata().get_u32("llama.attention.head_count").unwrap() as usize;
-        let n_layers = gf.metadata().get_u32("llama.block_count").unwrap() as usize;
-        let hidden_dim = gf.metadata().get_u32("llama.feed_forward_length").unwrap() as usize;
+        let (architecture, prefix) = match gf.metadata().get_string("general.architecture").unwrap()
+        {
+            "llama" => (ModelArchitecture::Llama, "llama"),
+            "gemma" => (ModelArchitecture::Gemma, "gemma"),
+            arch => {
+                return Err(Error {
+                    kind: ErrorKind::ModelError,
+                    message: format!("unsupported architecture {}", arch),
+                    cause: None,
+                });
+            }
+        };
+
+        let n_heads = gf
+            .metadata()
+            .get_u32(&format!("{}.attention.head_count", prefix))
+            .unwrap() as usize;
+        let n_layers = gf
+            .metadata()
+            .get_u32(&format!("{}.block_count", prefix))
+            .unwrap() as usize;
+        let hidden_dim = gf
+            .metadata()
+            .get_u32(&format!("{}.feed_forward_length", prefix))
+            .unwrap() as usize;
         let n_kv_heads = gf
             .metadata()
-            .get_u32("llama.attention.head_count_kv")
+            .get_u32(&format!("{}.attention.head_count_kv", prefix))
             .unwrap() as usize;
-        let seq_len = gf.metadata().get_u32("llama.context_length").unwrap() as usize;
+        let seq_len = gf
+            .metadata()
+            .get_u32(&format!("{}.context_length", prefix))
+            .unwrap() as usize;
         let vocab_size = gf
             .metadata()
             .get_string_array("tokenizer.ggml.tokens")
             .unwrap()
             .len();
-        let embedding_dim = gf.metadata().get_u32("llama.embedding_length").unwrap() as usize;
+        let embedding_dim = gf
+            .metadata()
+            .get_u32(&format!("{}.embedding_length", prefix))
+            .unwrap() as usize;
         let rms_norm_eps = gf
             .metadata()
-            .get_f32("llama.attention.layer_norm_rms_epsilon")
+            .get_f32(&format!("{}.attention.layer_norm_rms_epsilon", prefix))
             .unwrap();
-        let n_rot = gf.metadata().get_u32("llama.rope.dimension_count").unwrap() as usize;
-        Llama2Config {
+        let n_rot = gf
+            .metadata()
+            .get_u32(&format!("{}.rope.dimension_count", prefix))
+            .map(|v| v as usize);
+
+        Ok(Llama2Config {
+            architecture,
             n_heads,
             n_kv_heads,
             n_layers,
@@ -258,7 +308,7 @@ impl<'a> CpuLlama2Model<'a> {
             vocab_size,
             rms_norm_eps,
             rope_dim: n_rot,
-        }
+        })
     }
 }
 
@@ -274,7 +324,7 @@ impl WgpuLlama2Model {
     pub fn from_cpu(cpu_model: &CpuLlama2Model, device: WgpuTensorDeviceRef) -> Result<Self> {
         let weights = Self::convert_cpu_weights(&cpu_model.weights, device.clone())?;
         Ok(Self {
-            conf: cpu_model.conf,
+            conf: cpu_model.conf.clone(),
             weights: Rc::new(weights),
             tokenizer: cpu_model.tokenizer.clone(),
             device,
@@ -285,8 +335,7 @@ impl WgpuLlama2Model {
         weights: &Llama2Weights<CpuTensor>,
         device: WgpuTensorDeviceRef,
     ) -> Result<Llama2Weights<WgpuTensor>> {
-        let token_embedding_table =
-            Self::convert_cpu_tensor(&weights.token_embedding_table, device.clone())?;
+        let token_embedding_table = Self::convert_cpu_tensor(&weights.token_embed, device.clone())?;
         let wq = weights
             .wq
             .iter()
@@ -308,17 +357,17 @@ impl WgpuLlama2Model {
             .map(|t| Self::convert_cpu_tensor(t, device.clone()))
             .collect::<Result<Vec<_>>>()?;
         let w1 = weights
-            .w1
+            .ffn_gate_weight
             .iter()
             .map(|t| Self::convert_cpu_tensor(t, device.clone()))
             .collect::<Result<Vec<_>>>()?;
         let w2 = weights
-            .w2
+            .ffn_down_weight
             .iter()
             .map(|t| Self::convert_cpu_tensor(t, device.clone()))
             .collect::<Result<Vec<_>>>()?;
         let w3 = weights
-            .w3
+            .ffn_up_weight
             .iter()
             .map(|t| Self::convert_cpu_tensor(t, device.clone()))
             .collect::<Result<Vec<_>>>()?;
@@ -333,20 +382,23 @@ impl WgpuLlama2Model {
             .map(|t| Self::convert_cpu_tensor(t, device.clone()))
             .collect::<Result<Vec<_>>>()?;
         let rms_final_weight = Self::convert_cpu_tensor(&weights.rms_final_weight, device.clone())?;
-        let wcls = Self::convert_cpu_tensor(&weights.wcls, device.clone())?;
+        let wcls = weights
+            .output_weight
+            .as_ref()
+            .map(|output_weight| Self::convert_cpu_tensor(output_weight, device.clone()).unwrap());
         let weights = Llama2Weights {
-            token_embedding_table,
+            token_embed: token_embedding_table,
             wq,
             wk,
             wv,
             wo,
-            w1,
-            w2,
-            w3,
+            ffn_gate_weight: w1,
+            ffn_down_weight: w2,
+            ffn_up_weight: w3,
             rms_att_weight,
             rms_ffn_weight,
             rms_final_weight,
-            wcls,
+            output_weight: wcls,
         };
         Ok(weights)
     }
@@ -391,7 +443,7 @@ mod tests {
         assert_eq!(lm.weights.rms_att_weight[0].dtype(), GGMLType::F32);
         assert_eq!(lm.weights.rms_ffn_weight[0].dtype(), GGMLType::F32);
         assert_eq!(lm.weights.rms_final_weight.dtype(), GGMLType::F32);
-        assert_eq!(lm.weights.token_embedding_table.dtype(), GGMLType::F32);
+        assert_eq!(lm.weights.token_embed.dtype(), GGMLType::Q8_0);
         Ok(())
     }
 }

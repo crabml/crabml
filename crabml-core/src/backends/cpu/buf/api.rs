@@ -87,24 +87,16 @@ impl<'a> CpuTensorBuf<'a> {
                 .into());
         }
 
-        match self {
-            CpuTensorBuf::F32(buf) => Ok(CpuTensorBuf::F32(buf)),
-            CpuTensorBuf::Q8_0(buf) => match dtype {
-                GGMLType::F32 => Ok(CpuTensorBuf::F32(buf.dequantize(0).collect())),
-                _ => unimplemented!(),
-            },
-            CpuTensorBuf::Q8_1(buf) => match dtype {
-                GGMLType::F32 => Ok(CpuTensorBuf::F32(buf.dequantize(0).collect())),
-                _ => unimplemented!(),
-            },
-            CpuTensorBuf::Q4_0(buf) => match dtype {
-                GGMLType::F32 => Ok(CpuTensorBuf::F32(buf.dequantize(0).collect())),
-                _ => unimplemented!(),
-            },
-            CpuTensorBuf::Q4_1(buf) => match dtype {
-                GGMLType::F32 => Ok(CpuTensorBuf::F32(buf.dequantize(0).collect())),
-                _ => unimplemented!(),
-            },
+        match dtype {
+            GGMLType::F32 => Ok(CpuTensorBuf::F32(match self {
+                CpuTensorBuf::F32(buf) => buf,
+                CpuTensorBuf::Q8_0(buf) => buf.dequantize(0).collect(),
+                CpuTensorBuf::Q8_1(buf) => buf.dequantize(0).collect(),
+                CpuTensorBuf::Q4_0(buf) => buf.dequantize(0).collect(),
+                CpuTensorBuf::Q4_1(buf) => buf.dequantize(0).collect(),
+            })),
+            GGMLType::F16 => unimplemented!(),
+            _ => unreachable!(),
         }
     }
 
@@ -156,13 +148,19 @@ impl<'a> CpuTensorBuf<'a> {
             self.dtype() == GGMLType::F32 || self.dtype() == GGMLType::F16,
             "only f32/f16 can be copied to"
         );
-        assert!(self.dtype() == src.dtype(), "only same dtype can be copied");
 
-        match src {
-            CpuTensorBuf::F32(buf) => {
-                let src_iter = buf.iter().skip(offset).take(len);
-                self.iter_f32_mut().zip(src_iter).for_each(|(dst, src)| {
-                    *dst = *src;
+        let rhs_iter: Box<dyn Iterator<Item = f32>> = match src {
+            CpuTensorBuf::F32(buf) => Box::new(buf.iter().skip(offset).take(len).cloned()),
+            CpuTensorBuf::Q8_0(buf) => Box::new(buf.dequantize(offset).take(len)),
+            CpuTensorBuf::Q8_1(buf) => Box::new(buf.dequantize(offset).take(len)),
+            CpuTensorBuf::Q4_0(buf) => Box::new(buf.dequantize(offset).take(len)),
+            CpuTensorBuf::Q4_1(buf) => Box::new(buf.dequantize(offset).take(len)),
+        };
+
+        match self {
+            CpuTensorBuf::F32(Cow::Owned(buf)) => {
+                buf.iter_mut().zip(rhs_iter).for_each(|(dst, src)| {
+                    *dst = src;
                 });
             }
             // TODO: add f16 support
@@ -182,7 +180,11 @@ impl<'a> CpuTensorBuf<'a> {
     pub fn as_f32_mut(&mut self) -> &mut [f32] {
         match self {
             CpuTensorBuf::F32(Cow::Owned(buf)) => buf,
-            _ => panic!("not f32, but got {:?}", self.dtype()),
+            _ => panic!(
+                "not owned f32, but got {:?}, owned: {}",
+                self.dtype(),
+                self.is_owned()
+            ),
         }
     }
 

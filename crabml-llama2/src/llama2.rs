@@ -9,14 +9,22 @@ use crabml::backends::wgpu::WgpuTensor;
 use crabml::error::Error;
 use crabml::error::ErrorKind;
 use crabml::error::Result;
+use crabml::tensor::RopeMode;
 use crabml::tensor::Tensor;
 use crabml::tokenizer::BpeTokenizer;
 
 use crate::model::CpuLlama2Model;
 use crate::model::Llama2Config;
 use crate::model::Llama2Weights;
+use crate::model::ModelArchitecture;
 use crate::model::WgpuLlama2Model;
 use crate::sampler::Llama2Sampler;
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum Activation {
+    SiLU,
+    GeLU,
+}
 
 pub struct Llama2Runner<T: Tensor> {
     conf: Llama2Config,
@@ -42,7 +50,7 @@ impl<'a> TryFrom<&'a CpuLlama2Model<'a>> for Llama2Runner<CpuTensor<'a>> {
         let key_cache = (0..conf.n_layers)
             .map(|_| {
                 CpuTensor::alloc(
-                    &[0, conf.n_kv_heads, conf.head_size()],
+                    &[0, conf.n_heads, conf.head_size()],
                     Some(seq_len * conf.embedding_dim),
                     device.clone(),
                 )
@@ -52,7 +60,7 @@ impl<'a> TryFrom<&'a CpuLlama2Model<'a>> for Llama2Runner<CpuTensor<'a>> {
         let value_cache = (0..conf.n_layers)
             .map(|_| {
                 CpuTensor::alloc(
-                    &[0, conf.n_kv_heads, conf.head_size()],
+                    &[0, conf.n_heads, conf.head_size()],
                     Some(seq_len * conf.embedding_dim),
                     device.clone(),
                 )
@@ -61,7 +69,7 @@ impl<'a> TryFrom<&'a CpuLlama2Model<'a>> for Llama2Runner<CpuTensor<'a>> {
             .collect::<Result<Vec<_>>>()?;
 
         Ok(Self {
-            conf: *conf,
+            conf: conf.clone(),
             logits,
             key_cache,
             value_cache,
@@ -103,7 +111,7 @@ impl TryFrom<&WgpuLlama2Model> for Llama2Runner<WgpuTensor> {
             })
             .collect::<Result<Vec<_>>>()?;
         Ok(Self {
-            conf: *conf,
+            conf: conf.clone(),
             logits,
             key_cache,
             value_cache,
@@ -125,14 +133,33 @@ impl<'a, T: Tensor> Llama2Runner<T> {
     }
 
     pub fn forward(&mut self, token: usize, pos: usize) -> Result<&mut [f32]> {
+        let x = match self.conf.architecture {
+            ModelArchitecture::Llama => self.forward_llama(token, pos)?,
+            ModelArchitecture::Gemma => self.forward_gemma(token, pos)?,
+        };
+
+        // classifier into logits
+        // TODO: it'd be make sense to reuse the same buffer for the logits
+        let output_weight = self
+            .weights
+            .output_weight
+            .as_ref()
+            .unwrap_or_else(|| &self.weights.token_embed);
+        let logits = output_weight.matmul_vec(&x)?; // (vocab_size,
+        logits.export(&mut self.logits)?;
+        Ok(&mut self.logits)
+    }
+
+    fn forward_llama(&mut self, token: usize, pos: usize) -> Result<T> {
         let embed_dim = self.conf.embedding_dim;
         let n_heads = self.conf.n_heads;
         let n_kv_heads = self.conf.n_kv_heads;
-        let head_size = self.conf.head_size();
+        let head_dim = self.conf.head_size();
+        let rope_dim = self.conf.rope_dim.unwrap_or(head_dim);
 
         // copy the token embedding into x
         let mut x = T::alloc(&[embed_dim], None, self.device.clone())?;
-        x.copy_from(&self.weights.token_embedding_table, &[token, 0], embed_dim)?;
+        x.copy_from(&self.weights.token_embed, &[token, 0], embed_dim)?;
 
         // forward all the layers
         for l in 0..self.conf.n_layers {
@@ -154,115 +181,32 @@ impl<'a, T: Tensor> Llama2Runner<T> {
                 let q = self.weights.wq[l].matmul_vec(&x)?;
                 let k = self.weights.wk[l].matmul_vec(&x)?;
                 let v = self.weights.wv[l].matmul_vec(&x)?;
-
-                (
-                    q.with_name(format!("q:{}:{}", l, pos)),
-                    k.with_name(format!("k:{}:{}", l, pos)),
-                    v.with_name(format!("v:{}:{}", l, pos)),
-                )
+                (q, k, v)
             };
 
             // ROPE
             let (q, k) = {
-                let q = q.reshape(&[n_heads, head_size])?;
-                let k = k.reshape(&[n_kv_heads, head_size])?;
+                let q = q.reshape(&[n_heads, head_dim])?;
+                let k = k.reshape(&[n_kv_heads, head_dim])?;
 
-                let q = q.rope_inplace(pos, self.conf.rope_dim)?;
-                let k = k.rope_inplace(pos, self.conf.rope_dim)?;
+                let q = q.rope_inplace(RopeMode::Llama, pos, rope_dim)?;
+                let k = k.rope_inplace(RopeMode::Llama, pos, rope_dim)?;
                 (
                     q.with_name(format!("q_roped:{}:{}", l, pos)),
                     k.with_name(format!("k_roped:{}:{}", l, pos)),
                 )
             };
 
-            // save to kv cache
-            {
-                let v = v
-                    .reshape(&[n_kv_heads, head_size])?
-                    .repeat_n(n_heads / n_kv_heads)?;
-                let k = k.repeat_n(n_heads / n_kv_heads)?;
-
-                if let Some(ref mut k_cache) = self.key_cache[l] {
-                    k_cache.extend(&k)?;
-                }
-                if let Some(ref mut v_cache) = self.value_cache[l] {
-                    v_cache.extend(&v)?;
-                }
-            };
-
-            // multi query attention
-            x = {
-                let q = q.reshape(&[n_heads, head_size])?;
-
-                // - key_cache: [seq, n_head, head_size]
-                // - key_cache = key_cache.transpose(1, 0, 2) => [n_head, seq, head_size]
-                // - q: [n_head, head_size]
-                // - attn_score = batch_matmul(key_cache, q) => [n_head, seq]
-                // - softmax(attn_score, axis=1) => [n_head, seq]
-                // - val_cache: [seq, n_head, head_size]
-                // - val_cache = val_cache.transpose(1, 2, 0) => [n_head, head_size, seq]
-                // - out = batch_matmul(val_cache, atten_scores) => [n_head, head_size]
-
-                // get attention scores
-                let k_cache = self.key_cache[l].take().unwrap();
-                let k_cache_strider_orig = k_cache.strider().clone();
-                let k_cache = k_cache.transpose(&[1, 0, 2])?;
-                // (n_heads, n_seq, head_size) @ (n_head, head_size) => (n_heads, n_seq)
-                let attn = k_cache.batch_matmul_vec(&q)?;
-                let attn = attn.div_scalar_inplace((head_size as f32).sqrt())?;
-                let attn = attn
-                    .softmax_inplace(1)?
-                    .with_name(format!("k_cache_attn:{}:{}", l, pos));
-                self.key_cache[l].replace(k_cache.with_strider(k_cache_strider_orig)?);
-
-                let v_cache = self.value_cache[l].take().unwrap();
-                let v_cache_strider_orig = v_cache.strider().clone();
-                // get the weighted sum of the values and attention scores
-                let v_cache = v_cache.transpose(&[1, 2, 0])?;
-                // (n_heads, head_size, n_seq) @ (n_heads, n_seq) => (n_heads, head_size)
-                let x_with_attn = v_cache.batch_matmul_vec(&attn)?; // (n_heads, head_size)
-                let x_with_attn = x_with_attn.reshape(&[embed_dim])?;
-                self.value_cache[l].replace(v_cache.with_strider(v_cache_strider_orig)?);
-
-                // final matmul to get the output of the attention
-                self.weights.wo[l].matmul_vec(&x_with_attn)?
-            };
+            x = self.forward_multi_query_attention(
+                q, k, v, l, pos, n_kv_heads, n_heads, embed_dim, head_dim,
+            )?;
 
             // residual connection back into x
             x = x.add_inplace(&x_attn_orig)?;
 
             // ffn
-            x = {
-                // save for redidual connection
-                let x_orig_ffn = x.dup()?;
-
-                // ffn rmsnorm
-                x = {
-                    x = x.rms_norm_inplace(1e-5)?;
-                    x = x.mul_inplace(&self.weights.rms_ffn_weight[l])?;
-                    x
-                };
-
-                // Now for FFN in PyTorch we have: self.w2(F.silu(self.w1(x)) * self.w3(x))
-                // first calculate self.w1(x) and self.w3(x)
-                // w1: (hidden_dim, embed_dim) @ x (embed_dim, ) => (hidden_dim, )
-                // w3: (hidden_dim, embed_dim) @ x (embed_dim, ) => (hidden_dim, )
-                let mut h1 = self.weights.w1[l].matmul_vec(&x)?;
-                let h2 = self.weights.w3[l].matmul_vec(&x)?;
-
-                // F.silu; silu(x)=x*σ(x),where σ(x) is the logistic sigmoid
-                h1 = h1.silu_inplace()?;
-
-                // elementwise multiply with w3(x)
-                h1 = h1.mul_inplace(&h2)?;
-
-                // final matmul to get the output of the ffn
-                x = self.weights.w2[l].matmul_vec(&h1)?;
-
-                // residual connection
-                x = x.add_inplace(&x_orig_ffn)?;
-                x.with_name(format!("ffn_out:{}:{}", l, pos))
-            }
+            x = self.forward_ffn(x, l, Activation::SiLU)?;
+            x = x.with_name(format!("ffn_out:{}:{}", l, pos));
         }
 
         // final rmsnorm
@@ -272,10 +216,190 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             x.with_name(format!("final_rmsnorm:{}", pos))
         };
 
-        // classifier into logits
-        let logits = self.weights.wcls.matmul_vec(&x)?; // (vocab_size,
-        logits.export(&mut self.logits)?;
-        Ok(&mut self.logits)
+        Ok(x)
+    }
+
+    // The differences between GEMMA and LLAMA are:
+    // 1. the way the ROPE is calculated.
+    // 2. it uses GELU instead of SiLU.
+    // 3. it scales the input embedding with sqrt(embed_dim).
+    // 4. it adds a 1.0 to every weights on rmsnorm (rms_att_weight, rms_ffn_weight,
+    //    rms_final_weight), this have been processed during GGUF format convert, so we
+    //    don't need to do it here.
+    fn forward_gemma(&mut self, token: usize, pos: usize) -> Result<T> {
+        let embed_dim = self.conf.embedding_dim;
+        let n_heads = self.conf.n_heads;
+        let n_kv_heads = self.conf.n_kv_heads;
+        let head_dim = self.conf.head_size();
+        let rope_dim = self.conf.rope_dim.unwrap_or(head_dim);
+
+        // copy the token embedding into x
+        let mut x = T::alloc(&[embed_dim], None, self.device.clone())?;
+        x.copy_from(&self.weights.token_embed, &[token, 0], embed_dim)?;
+
+        // GEMMA only: scale the embedding with sqrt(embed_dim)
+        x = x.scale_inplace((embed_dim as f32).sqrt())?;
+        x = x.with_name("scaled_embed".to_string());
+
+        // forward all the layers
+        for l in 0..self.conf.n_layers {
+            let x_attn_orig = x.dup()?;
+
+            // attention rnsnorm
+            x = {
+                x = x.rms_norm_inplace(self.conf.rms_norm_eps)?;
+                x = x.mul_inplace(&self.weights.rms_att_weight[l])?;
+                x = x.with_name(format!("attn_rmsnorm:{}:{}", l, pos));
+                x
+            };
+
+            // matmul qkv for every head
+            let (q, k, v) = {
+                // wq: (embed_dim, embed_dim) @ x (embed_dim, ) => (embed_dim, )
+                // wk: (kv_dim, embed_dim) @ x (embed_dim, ) => (kv_dim, )
+                // wv: (kv_dim, embed_dim) @ x (embed_dim, ) => (kv_dim, )
+                let q = self.weights.wq[l].matmul_vec(&x)?;
+                let k = self.weights.wk[l].matmul_vec(&x)?;
+                let v = self.weights.wv[l].matmul_vec(&x)?;
+                (q, k, v)
+            };
+
+            // ROPE
+            let (q, k) = {
+                let q = q.reshape(&[n_heads, head_dim])?;
+                let k = k.reshape(&[n_kv_heads, head_dim])?;
+
+                let q = q.rope_inplace(RopeMode::Neox, pos, rope_dim)?;
+                let k = k.rope_inplace(RopeMode::Neox, pos, rope_dim)?;
+                (
+                    q.with_name(format!("q_roped:{}:{}", l, pos)),
+                    k.with_name(format!("k_roped:{}:{}", l, pos)),
+                )
+            };
+
+            x = self.forward_multi_query_attention(
+                q, k, v, l, pos, n_kv_heads, n_heads, embed_dim, head_dim,
+            )?;
+
+            // residual connection back into x
+            x = x.add_inplace(&x_attn_orig)?;
+
+            // ffn
+            x = self.forward_ffn(x, l, Activation::GeLU)?;
+            x = x.with_name(format!("ffn_out:{}:{}", l, pos));
+        }
+
+        // final rmsnorm
+        x = {
+            x = x.rms_norm_inplace(self.conf.rms_norm_eps)?;
+            x = x.mul_inplace(&self.weights.rms_final_weight)?;
+            x.with_name(format!("final_rmsnorm:{}", pos))
+        };
+
+        Ok(x)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn forward_multi_query_attention(
+        &mut self,
+        q: T,
+        k: T,
+        v: T,
+        l: usize,
+        pos: usize,
+        n_kv_heads: usize,
+        n_heads: usize,
+        embed_dim: usize,
+        head_dim: usize,
+    ) -> Result<T> {
+        // save to kv cache
+        {
+            let v = v
+                .reshape(&[n_kv_heads, head_dim])?
+                .repeat_n(n_heads / n_kv_heads)?;
+            let k = k.repeat_n(n_heads / n_kv_heads)?;
+
+            if let Some(ref mut k_cache) = self.key_cache[l] {
+                k_cache.extend(&k)?;
+            }
+            if let Some(ref mut v_cache) = self.value_cache[l] {
+                v_cache.extend(&v)?;
+            }
+        };
+
+        // multi query attention
+        let x = {
+            let q = q.reshape(&[n_heads, head_dim])?;
+
+            // - key_cache: [seq, n_head, head_size]
+            // - key_cache = key_cache.transpose(1, 0, 2) => [n_head, seq, head_size]
+            // - q: [n_head, head_size]
+            // - attn_score = batch_matmul(key_cache, q) => [n_head, seq]
+            // - softmax(attn_score, axis=1) => [n_head, seq]
+            // - val_cache: [seq, n_head, head_size]
+            // - val_cache = val_cache.transpose(1, 2, 0) => [n_head, head_size, seq]
+            // - out = batch_matmul(val_cache, atten_scores) => [n_head, head_size]
+
+            // get attention scores
+            let k_cache = self.key_cache[l].take().unwrap();
+            let k_cache_strider_orig = k_cache.strider().clone();
+            let k_cache = k_cache.transpose(&[1, 0, 2])?;
+            // (n_heads, n_seq, head_size) @ (n_head, head_size) => (n_heads, n_seq)
+            let q = q.div_scalar_inplace((head_dim as f32).sqrt())?;
+            let attn = k_cache.batch_matmul_vec(&q)?;
+            let attn = attn
+                .softmax_inplace(1)?
+                .with_name(format!("k_cache_attn:{}:{}", l, pos));
+            self.key_cache[l].replace(k_cache.with_strider(k_cache_strider_orig)?);
+
+            let v_cache = self.value_cache[l].take().unwrap();
+            let v_cache_strider_orig = v_cache.strider().clone();
+            // get the weighted sum of the values and attention scores
+            let v_cache = v_cache.transpose(&[1, 2, 0])?;
+            // (n_heads, head_size, n_seq) @ (n_heads, n_seq) => (n_heads, head_size)
+            let x_with_attn = v_cache.batch_matmul_vec(&attn)?; // (n_heads, head_size)
+            let x_with_attn = x_with_attn.reshape(&[embed_dim])?;
+            self.value_cache[l].replace(v_cache.with_strider(v_cache_strider_orig)?);
+
+            // final matmul to get the output of the attention
+            self.weights.wo[l].matmul_vec(&x_with_attn)?
+        };
+        Ok(x)
+    }
+
+    fn forward_ffn(&self, mut x: T, l: usize, activation: Activation) -> Result<T> {
+        // save for redidual connection
+        let x_orig_ffn = x.dup()?;
+
+        // ffn rmsnorm
+        x = {
+            x = x.rms_norm_inplace(1e-5)?;
+            x = x.mul_inplace(&self.weights.rms_ffn_weight[l])?;
+            x
+        };
+
+        // Now for FFN in PyTorch we have: self.down_proj(F.silu(self.gate_proj(x)) * self.up_proj(x))
+        // first calculate self.w1(x) and self.w3(x)
+        // w1: (hidden_dim, embed_dim) @ x (embed_dim, ) => (hidden_dim, )
+        // w3: (hidden_dim, embed_dim) @ x (embed_dim, ) => (hidden_dim, )
+        let mut h1 = self.weights.ffn_gate_weight[l].matmul_vec(&x)?;
+        let h2 = self.weights.ffn_up_weight[l].matmul_vec(&x)?;
+
+        // F.silu; silu(x)=x*σ(x),where σ(x) is the logistic sigmoid
+        h1 = match activation {
+            Activation::SiLU => h1.silu_inplace()?,
+            Activation::GeLU => h1.gelu_inplace()?,
+        };
+
+        // elementwise multiply with w3(x)
+        h1 = h1.mul_inplace(&h2)?;
+
+        // final matmul to get the output of the ffn
+        x = self.weights.ffn_down_weight[l].matmul_vec(&h1)?;
+
+        // residual connection
+        x = x.add_inplace(&x_orig_ffn)?;
+        Ok(x)
     }
 }
 
@@ -424,7 +548,7 @@ mod tests {
 
         let device = CpuTensorDevice::new();
         let lm = CpuLlama2Model::load(&gf, device)?;
-        assert_eq!(lm.conf().rope_dim, 48);
+        assert_eq!(lm.conf().rope_dim, Some(48));
         assert_eq!(lm.conf().head_size(), 48);
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0);

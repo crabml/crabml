@@ -2,6 +2,12 @@ use super::strider::TensorStrider;
 use crate::error::Result;
 use crate::gguf::GGMLType;
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum RopeMode {
+    Llama,
+    Neox,
+}
+
 pub trait Tensor: Sized + Clone {
     type Device: Clone;
 
@@ -27,7 +33,6 @@ pub trait Tensor: Sized + Clone {
     fn extend(&mut self, rhs: &Self) -> Result<()>;
 
     /// copy from another tensor. used on loading weights from vocab table.
-    /// the src and dst tensor must have the same dtype.
     fn copy_from(&mut self, rhs: &Self, pos: &[usize], len: usize) -> Result<()>;
 
     fn export(&self, buf: &mut [f32]) -> Result<()>;
@@ -35,7 +40,7 @@ pub trait Tensor: Sized + Clone {
     /// duplicate the tensor and the underlying storage
     fn dup(&self) -> Result<Self>;
 
-    fn rope_inplace(self, pos: usize, rope_dims: usize) -> Result<Self>;
+    fn rope_inplace(self, mode: RopeMode, pos: usize, rope_dims: usize) -> Result<Self>;
 
     fn rms_norm_inplace(self, eps: f32) -> Result<Self>;
 
@@ -43,11 +48,15 @@ pub trait Tensor: Sized + Clone {
 
     fn silu_inplace(self) -> Result<Self>;
 
+    fn gelu_inplace(self) -> Result<Self>;
+
     fn mul_inplace(self, rhs: &Self) -> Result<Self>;
 
     fn add_inplace(self, rhs: &Self) -> Result<Self>;
 
     fn div_scalar_inplace(self, rhs: f32) -> Result<Self>;
+
+    fn scale_inplace(self, rhs: f32) -> Result<Self>;
 
     fn matmul_vec(&self, y: &Self) -> Result<Self>;
 

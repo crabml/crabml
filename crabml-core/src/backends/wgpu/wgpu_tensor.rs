@@ -11,6 +11,7 @@ use crate::backends::wgpu::meta::RopeMeta;
 use crate::error::ErrorKind;
 use crate::error::Result;
 use crate::gguf::GGMLType;
+use crate::tensor::RopeMode;
 use crate::tensor::Tensor;
 use crate::tensor::TensorStrider;
 
@@ -282,9 +283,10 @@ impl Tensor for WgpuTensor {
         Ok(new_tensor)
     }
 
-    fn rope_inplace(self, pos: usize, rope_dims: usize) -> Result<Self> {
+    fn rope_inplace(self, mode: RopeMode, pos: usize, rope_dims: usize) -> Result<Self> {
         assert!(self.shape().len() == 2);
         assert!(self.is_contiguous());
+        assert!(mode == RopeMode::Llama, "TODO: only support Llama mode yet");
 
         let n_heads = self.shape()[0];
         let meta = RopeMeta {
@@ -397,6 +399,32 @@ impl Tensor for WgpuTensor {
         Ok(self)
     }
 
+    fn gelu_inplace(self) -> Result<Self> {
+        assert!(self.is_contiguous());
+        assert!(self.shape().len() == 1);
+
+        let m = 1;
+        let n = self.shape()[0] as u32;
+        let meta_buf = self
+            .device
+            .make_storage_buffer("meta", bytemuck::cast_slice(&[m, n]));
+        let entries = &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: self.buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: meta_buf.as_entire_binding(),
+            },
+        ];
+        let encoder = self
+            .device
+            .encode_pipeline_commnad("gelu_inplace", entries, (1, 1, 1));
+        self.device.queue.submit(Some(encoder.finish()));
+        Ok(self)
+    }
+
     fn mul_inplace(self, rhs: &Self) -> Result<Self> {
         let meta_buf = self.device.make_storage_buffer(
             "meta",
@@ -446,6 +474,36 @@ impl Tensor for WgpuTensor {
         let encoder = self
             .device
             .encode_pipeline_commnad("add_inplace", entries, (1, 1, 1));
+        self.device.queue.submit(Some(encoder.finish()));
+        Ok(self)
+    }
+
+    fn scale_inplace(self, rhs: f32) -> Result<Self> {
+        // assert!(self.strider().len() % 32 == 0);
+        let meta_buf = self.device.make_storage_buffer(
+            "meta",
+            bytemuck::cast_slice(&[1u32, self.strider.len() as u32]),
+        );
+        let rhs_buf = self
+            .device
+            .make_storage_buffer("rhs", bytemuck::cast_slice(&[rhs]));
+        let entries = &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: self.buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: rhs_buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: meta_buf.as_entire_binding(),
+            },
+        ];
+        let encoder = self
+            .device
+            .encode_pipeline_commnad("mul_inplace", entries, (1, 1, 1));
         self.device.queue.submit(Some(encoder.finish()));
         Ok(self)
     }
@@ -590,6 +648,7 @@ mod tests {
     use crate::backends::wgpu::WgpuTensorDeviceOptions;
     use crate::backends::wgpu::WgpuTensorDeviceRef;
     use crate::error::Result;
+    use crate::tensor::RopeMode;
     use crate::tensor::Tensor;
 
     #[thread_local]
@@ -778,7 +837,7 @@ mod tests {
     fn test_wgpu_rope() -> Result<()> {
         let v1 = (0..32).map(|i| i as f32).collect::<Vec<_>>();
         let t1 = WgpuTensor::new(&v1, &[2, 16], DEVICE.clone())?;
-        let t1 = t1.rope_inplace(1, 2)?;
+        let t1 = t1.rope_inplace(RopeMode::Llama, 1, 2)?;
 
         let mut dst1 = vec![0.0; 32];
         t1.export(&mut dst1)?;

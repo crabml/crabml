@@ -57,7 +57,7 @@ fn main() -> Result<()> {
     let metrics = TensorDeviceMetrics::default();
     let device_cpu = CpuTensorDevice::new().with_metrics(metrics.clone());
     let model_cpu = CpuLlama2Model::load(&gf, device_cpu)?;
-    let conf = model_cpu.conf();
+    let conf = model_cpu.conf.clone();
 
     // let device_wgpu = WgpuTensorDevice::new(
     //     WgpuTensorDeviceOptions::new().with_staging_buf_bytes(conf.vocab_size * 4),
@@ -65,7 +65,7 @@ fn main() -> Result<()> {
     // let model_wgpu = WgpuLlama2Model::from_cpu(&model_cpu, device_wgpu)?;
 
     let mut sampler = Llama2Sampler::new(conf.vocab_size, args.temperature, args.probability);
-    let mut runner = Llama2Runner::try_from(&model_cpu)?;
+    let mut runner = Llama2Runner::new(&model_cpu)?;
 
     if args.verbose {
         for tensor in gf.tensor_infos() {

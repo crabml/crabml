@@ -15,6 +15,8 @@ pub struct TensorDeviceMetrics {
     pub matmul_quantize_walltime: TimeMetric,
     pub matmul_vec_dot_walltime: TimeMetric,
     pub batch_matmul_walltime: TimeMetric,
+    pub alloc_walltime: TimeMetric,
+    pub sample_walltime: TimeMetric,
 }
 
 impl TensorDeviceMetrics {
@@ -30,6 +32,8 @@ impl TensorDeviceMetrics {
         self.matmul_quantize_walltime.reset();
         self.matmul_vec_dot_walltime.reset();
         self.batch_matmul_walltime.reset();
+        self.alloc_walltime.reset();
+        self.sample_walltime.reset();
     }
 
     pub fn as_vec(&self) -> Vec<(String, f64)> {
@@ -38,10 +42,18 @@ impl TensorDeviceMetrics {
                 "rms_norm_walltime".to_string(),
                 self.rms_norm_walltime.as_millis(),
             ),
+            (
+                "sample_walltime".to_string(),
+                self.sample_walltime.as_millis(),
+            ),
             ("add_walltime".to_string(), self.add_walltime.as_millis()),
             (
                 "activate_walltime".to_string(),
                 self.activate_walltime.as_millis(),
+            ),
+            (
+                "alloc_walltime".to_string(),
+                self.alloc_walltime.as_millis(),
             ),
             (
                 "total_walltime".to_string(),

@@ -118,6 +118,7 @@ impl<'a> Tensor for CpuTensor<'a> {
     type Device = CpuTensorDeviceRef<'a>;
 
     fn alloc(shape: &[usize], _capacity: Option<usize>, device: Self::Device) -> Result<Self> {
+        let _t = device.metrics.alloc_walltime.track();
         let buf = vec![0.0; shape.iter().product()];
         Self::new(buf, shape, device)
     }

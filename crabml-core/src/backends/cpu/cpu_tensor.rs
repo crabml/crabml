@@ -215,6 +215,7 @@ impl<'a> Tensor for CpuTensor<'a> {
 
     // TODO(2024-02-15): dequantize the tensor here, not dequantize the embedding table on loading
     fn copy_from(&mut self, src: &CpuTensor<'a>, pos: &[usize], len: usize) -> Result<()> {
+        let _t = self.device.metrics.copy_walltime.track();
         if !self.is_owned() {
             return Err((ErrorKind::TensorError, "not owned").into());
         }

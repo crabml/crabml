@@ -273,8 +273,10 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         embed_dim: usize,
         head_dim: usize,
     ) -> Result<T> {
+        let _t = self.metrics.mqa_walltime.track();
         // save to kv cache
         {
+            let _t = self.metrics.save_kvcache_walltime.track();
             let v = v
                 .reshape(&[n_kv_heads, head_dim])?
                 .repeat_n(n_heads / n_kv_heads)?;
@@ -329,6 +331,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
     }
 
     fn forward_ffn(&self, mut x: T, l: usize, activation: Activation) -> Result<T> {
+        let _t = self.metrics.ffn_walltime.track();
         // save for redidual connection
         let x_orig_ffn = x.dup()?;
 

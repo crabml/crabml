@@ -18,6 +18,10 @@ pub struct TensorMetrics {
     pub alloc_walltime: TimeMetric,
     pub sample_walltime: TimeMetric,
     pub forward_walltime: TimeMetric,
+    pub save_kvcache_walltime: TimeMetric,
+    pub mqa_walltime: TimeMetric,
+    pub ffn_walltime: TimeMetric,
+    pub copy_walltime: TimeMetric,
 }
 
 impl TensorMetrics {
@@ -36,6 +40,10 @@ impl TensorMetrics {
         self.alloc_walltime.reset();
         self.sample_walltime.reset();
         self.forward_walltime.reset();
+        self.save_kvcache_walltime.reset();
+        self.mqa_walltime.reset();
+        self.ffn_walltime.reset();
+        self.copy_walltime.reset();
     }
 
     pub fn as_vec(&self) -> Vec<(String, f64)> {
@@ -87,6 +95,13 @@ impl TensorMetrics {
                 "batch_matmul_walltime".to_string(),
                 self.batch_matmul_walltime.as_millis(),
             ),
+            (
+                "save_kv_cache_walltime".to_string(),
+                self.save_kvcache_walltime.as_millis(),
+            ),
+            ("mqa_walltime".to_string(), self.mqa_walltime.as_millis()),
+            ("ffn_walltime".to_string(), self.ffn_walltime.as_millis()),
+            ("copy_walltime".to_string(), self.copy_walltime.as_millis()),
         ]
     }
 }

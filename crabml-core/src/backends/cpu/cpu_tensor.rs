@@ -284,6 +284,7 @@ impl<'a> Tensor for CpuTensor<'a> {
     fn add_inplace(mut self, b: &Self) -> Result<Self> {
         let strider1 = self.strider().clone();
         let strider2 = b.strider();
+        let _t = self.device.metrics.add_walltime.track();
         primitives::add_inplace(self.buf_mut(), b.buf(), &strider1, strider2)?;
         Ok(self)
     }

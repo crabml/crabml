@@ -4,8 +4,6 @@ use std::time::Duration;
 use std::time::Instant;
 use std::vec;
 
-use crabml::backends::cpu::CpuTensor;
-use crabml::backends::wgpu::WgpuTensor;
 use crabml::error::Error;
 use crabml::error::ErrorKind;
 use crabml::error::Result;
@@ -13,12 +11,10 @@ use crabml::tensor::RopeMode;
 use crabml::tensor::Tensor;
 use crabml::tokenizer::BpeTokenizer;
 
-use crate::model::CpuLlama2Model;
 use crate::model::Llama2Config;
 use crate::model::Llama2Model;
 use crate::model::Llama2Weights;
 use crate::model::ModelArchitecture;
-use crate::model::WgpuLlama2Model;
 use crate::sampler::Llama2Sampler;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -470,6 +466,8 @@ mod tests {
     use crabml::gguf::GGUFFileLoader;
 
     use super::*;
+    use crate::CpuLlama2Model;
+    use crate::WgpuLlama2Model;
 
     #[test]
     fn test_generate_f32() -> Result<()> {

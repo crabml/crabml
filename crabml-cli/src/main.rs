@@ -65,7 +65,7 @@ fn main() -> Result<()> {
     // let model_wgpu = WgpuLlama2Model::from_cpu(&model_cpu, device_wgpu)?;
 
     let mut sampler = Llama2Sampler::new(conf.vocab_size, args.temperature, args.probability);
-    let mut runner = Llama2Runner::new(&model_cpu, metrics)?;
+    let mut runner = Llama2Runner::new(&model_cpu, metrics.clone())?;
 
     if args.verbose {
         for tensor in gf.tensor_infos() {

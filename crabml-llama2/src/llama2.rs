@@ -81,7 +81,14 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         steps: usize,
         sampler: &'a mut Llama2Sampler,
     ) -> Result<Llama2RunnerOutputGenerator<'a, T>> {
-        Llama2RunnerOutputGenerator::new(self, sampler, prompt, steps, self.conf.seq_len)
+        Llama2RunnerOutputGenerator::new(
+            self,
+            sampler,
+            self.metrics.clone(),
+            prompt,
+            steps,
+            self.conf.seq_len,
+        )
     }
 
     pub fn forward(&mut self, token: usize, pos: usize) -> Result<&mut [f32]> {
@@ -363,6 +370,7 @@ pub struct Llama2RunnerOutputGenerator<'a, T: Tensor> {
     token: usize,
     sampler: &'a mut Llama2Sampler,
     runner: &'a mut Llama2Runner<T>,
+    _metrics: TensorMetrics,
     total_time: Duration,
 }
 
@@ -370,6 +378,7 @@ impl<'a, T: Tensor> Llama2RunnerOutputGenerator<'a, T> {
     fn new(
         runner: &'a mut Llama2Runner<T>,
         sampler: &'a mut Llama2Sampler,
+        metrics: TensorMetrics,
         prompt: &str,
         steps: usize,
         seq_len: usize,
@@ -392,6 +401,7 @@ impl<'a, T: Tensor> Llama2RunnerOutputGenerator<'a, T> {
             sampler,
             runner,
             seq_len,
+            _metrics: metrics,
             total_time: Duration::new(0, 0),
         })
     }

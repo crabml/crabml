@@ -17,6 +17,7 @@ pub struct TensorMetrics {
     pub batch_matmul_walltime: TimeMetric,
     pub alloc_walltime: TimeMetric,
     pub sample_walltime: TimeMetric,
+    pub forward_walltime: TimeMetric,
 }
 
 impl TensorMetrics {
@@ -34,6 +35,7 @@ impl TensorMetrics {
         self.batch_matmul_walltime.reset();
         self.alloc_walltime.reset();
         self.sample_walltime.reset();
+        self.forward_walltime.reset();
     }
 
     pub fn as_vec(&self) -> Vec<(String, f64)> {
@@ -41,6 +43,10 @@ impl TensorMetrics {
             (
                 "rms_norm_walltime".to_string(),
                 self.rms_norm_walltime.as_millis(),
+            ),
+            (
+                "forward_walltime".to_string(),
+                self.forward_walltime.as_millis(),
             ),
             (
                 "sample_walltime".to_string(),

@@ -92,6 +92,8 @@ impl<'a, T: Tensor> Llama2Runner<T> {
     }
 
     pub fn forward(&mut self, token: usize, pos: usize) -> Result<&mut [f32]> {
+        let _t = self.metrics.forward_walltime.track();
+
         let x = match self.conf.architecture {
             ModelArchitecture::Llama => self.forward_llama(token, pos)?,
             ModelArchitecture::Gemma => self.forward_gemma(token, pos)?,

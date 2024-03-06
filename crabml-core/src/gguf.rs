@@ -809,6 +809,12 @@ impl GGUFFileLoader {
                 cause: Some(Box::new(err)),
             })?
         };
+        mmap.advise(memmap2::Advice::Sequential)
+            .map_err(|err| Error {
+                kind: ErrorKind::IOError,
+                message: format!("failed to advise the mmap: {}", path),
+                cause: Some(Box::new(err)),
+            })?; // hint the kernel that we will read the file sequentially
 
         Ok(Self { mmap })
     }

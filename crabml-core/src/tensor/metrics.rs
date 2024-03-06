@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 /// stores the metrics on the tensor's privimives
 #[derive(Debug, Default, Clone)]
-pub struct TensorDeviceMetrics {
+pub struct TensorMetrics {
     pub rms_norm_walltime: TimeMetric,
     pub add_walltime: TimeMetric,
     pub total_walltime: TimeMetric,
@@ -19,7 +19,7 @@ pub struct TensorDeviceMetrics {
     pub sample_walltime: TimeMetric,
 }
 
-impl TensorDeviceMetrics {
+impl TensorMetrics {
     pub fn reset(&self) {
         self.rms_norm_walltime.reset();
         self.add_walltime.reset();

@@ -9,6 +9,7 @@ use crabml::error::ErrorKind;
 use crabml::error::Result;
 use crabml::tensor::RopeMode;
 use crabml::tensor::Tensor;
+use crabml::tensor::TensorMetrics;
 use crabml::tokenizer::BpeTokenizer;
 
 use crate::model::Llama2Config;
@@ -31,10 +32,11 @@ pub struct Llama2Runner<T: Tensor> {
     logits: Vec<f32>,            // output logits (vocab_size, )
     key_cache: Vec<Option<T>>,   // (layer, seq_len, kv_dim)
     value_cache: Vec<Option<T>>, // (layer, seq_len, kv_dim)
+    metrics: TensorMetrics,
 }
 
 impl<'a, T: Tensor> Llama2Runner<T> {
-    pub fn new(model: impl Llama2Model<T = T>) -> Result<Self> {
+    pub fn new(model: impl Llama2Model<T = T>, metrics: TensorMetrics) -> Result<Self> {
         let conf = &model.conf();
         let device = model.device().clone();
         let weights = model.weights();
@@ -69,6 +71,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             weights,
             tokenizer,
             device,
+            metrics,
         })
     }
 
@@ -481,7 +484,7 @@ mod tests {
         let lm = CpuLlama2Model::load(&gf, device.clone())?;
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0);
-        let mut runner = Llama2Runner::new(&lm)?;
+        let mut runner = Llama2Runner::new(&lm, TensorMetrics::default())?;
         let output = runner.generate("Lily is a cat", 30, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
 
@@ -503,7 +506,7 @@ mod tests {
         assert_eq!(lm.conf.head_size(), 48);
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0);
-        let mut runner = Llama2Runner::new(&lm)?;
+        let mut runner = Llama2Runner::new(&lm, TensorMetrics::default())?;
         let output = runner.generate("Lily is a cute cat, ", 10, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
         assert_eq!(s, "3 years old. She likes to play with her");
@@ -529,8 +532,8 @@ mod tests {
         let model_wgpu = WgpuLlama2Model::from_cpu(&model_cpu, device_wgpu.clone())?;
 
         let mut sampler = Llama2Sampler::new(model_cpu.conf.vocab_size, 0.0, 0.0);
-        let mut runner_cpu = Llama2Runner::new(&model_cpu)?;
-        let mut runner_wgpu = Llama2Runner::new(&model_wgpu)?;
+        let mut runner_cpu = Llama2Runner::new(&model_cpu, TensorMetrics::default())?;
+        let mut runner_wgpu = Llama2Runner::new(&model_wgpu, TensorMetrics::default())?;
 
         let output_cpu = runner_cpu
             .generate("Lily is a cat", 30, &mut sampler)?

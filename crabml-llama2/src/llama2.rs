@@ -4,20 +4,18 @@ use std::time::Duration;
 use std::time::Instant;
 use std::vec;
 
-use crabml::backends::cpu::CpuTensor;
-use crabml::backends::wgpu::WgpuTensor;
 use crabml::error::Error;
 use crabml::error::ErrorKind;
 use crabml::error::Result;
 use crabml::tensor::RopeMode;
 use crabml::tensor::Tensor;
+use crabml::tensor::TensorMetrics;
 use crabml::tokenizer::BpeTokenizer;
 
-use crate::model::CpuLlama2Model;
 use crate::model::Llama2Config;
+use crate::model::Llama2Model;
 use crate::model::Llama2Weights;
 use crate::model::ModelArchitecture;
-use crate::model::WgpuLlama2Model;
 use crate::sampler::Llama2Sampler;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -34,105 +32,68 @@ pub struct Llama2Runner<T: Tensor> {
     logits: Vec<f32>,            // output logits (vocab_size, )
     key_cache: Vec<Option<T>>,   // (layer, seq_len, kv_dim)
     value_cache: Vec<Option<T>>, // (layer, seq_len, kv_dim)
-}
-
-impl<'a> TryFrom<&'a CpuLlama2Model<'a>> for Llama2Runner<CpuTensor<'a>> {
-    type Error = crabml::error::Error;
-
-    fn try_from(model: &'a CpuLlama2Model<'a>) -> Result<Self> {
-        let conf = &model.conf;
-        let device = model.device.clone();
-        let weights = model.weights.clone();
-        let tokenizer = model.tokenizer.clone();
-        let seq_len = conf.seq_len;
-
-        let logits = vec![0.0; conf.vocab_size];
-        let key_cache = (0..conf.n_layers)
-            .map(|_| {
-                CpuTensor::alloc(
-                    &[0, conf.n_heads, conf.head_size()],
-                    Some(seq_len * conf.embedding_dim),
-                    device.clone(),
-                )
-                .map(Some)
-            })
-            .collect::<Result<Vec<_>>>()?;
-        let value_cache = (0..conf.n_layers)
-            .map(|_| {
-                CpuTensor::alloc(
-                    &[0, conf.n_heads, conf.head_size()],
-                    Some(seq_len * conf.embedding_dim),
-                    device.clone(),
-                )
-                .map(Some)
-            })
-            .collect::<Result<Vec<_>>>()?;
-
-        Ok(Self {
-            conf: conf.clone(),
-            logits,
-            key_cache,
-            value_cache,
-            weights,
-            tokenizer,
-            device,
-        })
-    }
-}
-
-impl TryFrom<&WgpuLlama2Model> for Llama2Runner<WgpuTensor> {
-    type Error = crabml::error::Error;
-
-    fn try_from(model: &WgpuLlama2Model) -> Result<Self> {
-        let conf = &model.conf;
-        let device = model.device.clone();
-        let weights = model.weights.clone();
-        let tokenizer = model.tokenizer.clone();
-        let logits = vec![0.0; conf.vocab_size];
-        let seq_len = conf.seq_len;
-        let key_cache = (0..conf.n_layers)
-            .map(|_| {
-                WgpuTensor::alloc(
-                    &[0, conf.n_heads, conf.head_size()],
-                    Some(seq_len * conf.embedding_dim),
-                    device.clone(),
-                )
-                .map(Some)
-            })
-            .collect::<Result<Vec<_>>>()?;
-        let value_cache = (0..conf.n_layers)
-            .map(|_| {
-                WgpuTensor::alloc(
-                    &[0, conf.n_heads, conf.head_size()],
-                    Some(seq_len * conf.embedding_dim),
-                    device.clone(),
-                )
-                .map(Some)
-            })
-            .collect::<Result<Vec<_>>>()?;
-        Ok(Self {
-            conf: conf.clone(),
-            logits,
-            key_cache,
-            value_cache,
-            weights,
-            tokenizer,
-            device,
-        })
-    }
+    metrics: TensorMetrics,
 }
 
 impl<'a, T: Tensor> Llama2Runner<T> {
+    pub fn new(model: impl Llama2Model<T = T>, metrics: TensorMetrics) -> Result<Self> {
+        let conf = &model.conf();
+        let device = model.device().clone();
+        let weights = model.weights();
+        let tokenizer = model.tokenizer();
+        let logits = vec![0.0; conf.vocab_size];
+        let seq_len = conf.seq_len;
+        let key_cache = (0..conf.n_layers)
+            .map(|_| {
+                T::alloc(
+                    &[0, conf.n_heads, conf.head_size()],
+                    Some(seq_len * conf.embedding_dim),
+                    device.clone(),
+                )
+                .map(Some)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let value_cache = (0..conf.n_layers)
+            .map(|_| {
+                T::alloc(
+                    &[0, conf.n_heads, conf.head_size()],
+                    Some(seq_len * conf.embedding_dim),
+                    device.clone(),
+                )
+                .map(Some)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        Ok(Self {
+            conf: conf.clone(),
+            logits,
+            key_cache,
+            value_cache,
+            weights,
+            tokenizer,
+            device,
+            metrics,
+        })
+    }
+
     pub fn generate(
         &'a mut self,
         prompt: &str,
         steps: usize,
         sampler: &'a mut Llama2Sampler,
     ) -> Result<Llama2RunnerOutputGenerator<'a, T>> {
-        Llama2RunnerOutputGenerator::new(self, sampler, prompt, steps, self.conf.seq_len)
+        Llama2RunnerOutputGenerator::new(
+            self,
+            sampler,
+            self.metrics.clone(),
+            prompt,
+            steps,
+            self.conf.seq_len,
+        )
     }
 
     pub fn forward(&mut self, token: usize, pos: usize) -> Result<&mut [f32]> {
+        let _t = self.metrics.forward_walltime.track();
+
         let x = match self.conf.architecture {
             ModelArchitecture::Llama => self.forward_llama(token, pos)?,
             ModelArchitecture::Gemma => self.forward_gemma(token, pos)?,
@@ -312,8 +273,10 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         embed_dim: usize,
         head_dim: usize,
     ) -> Result<T> {
+        let _t = self.metrics.mqa_walltime.track();
         // save to kv cache
         {
+            let _t = self.metrics.save_kvcache_walltime.track();
             let v = v
                 .reshape(&[n_kv_heads, head_dim])?
                 .repeat_n(n_heads / n_kv_heads)?;
@@ -368,6 +331,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
     }
 
     fn forward_ffn(&self, mut x: T, l: usize, activation: Activation) -> Result<T> {
+        let _t = self.metrics.ffn_walltime.track();
         // save for redidual connection
         let x_orig_ffn = x.dup()?;
 
@@ -411,6 +375,7 @@ pub struct Llama2RunnerOutputGenerator<'a, T: Tensor> {
     token: usize,
     sampler: &'a mut Llama2Sampler,
     runner: &'a mut Llama2Runner<T>,
+    _metrics: TensorMetrics,
     total_time: Duration,
 }
 
@@ -418,6 +383,7 @@ impl<'a, T: Tensor> Llama2RunnerOutputGenerator<'a, T> {
     fn new(
         runner: &'a mut Llama2Runner<T>,
         sampler: &'a mut Llama2Sampler,
+        metrics: TensorMetrics,
         prompt: &str,
         steps: usize,
         seq_len: usize,
@@ -440,6 +406,7 @@ impl<'a, T: Tensor> Llama2RunnerOutputGenerator<'a, T> {
             sampler,
             runner,
             seq_len,
+            _metrics: metrics,
             total_time: Duration::new(0, 0),
         })
     }
@@ -517,6 +484,8 @@ mod tests {
     use crabml::gguf::GGUFFileLoader;
 
     use super::*;
+    use crate::CpuLlama2Model;
+    use crate::WgpuLlama2Model;
 
     #[test]
     fn test_generate_f32() -> Result<()> {
@@ -530,7 +499,7 @@ mod tests {
         let lm = CpuLlama2Model::load(&gf, device.clone())?;
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0);
-        let mut runner = Llama2Runner::try_from(&lm)?;
+        let mut runner = Llama2Runner::new(&lm, TensorMetrics::default())?;
         let output = runner.generate("Lily is a cat", 30, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
 
@@ -548,11 +517,11 @@ mod tests {
 
         let device = CpuTensorDevice::new();
         let lm = CpuLlama2Model::load(&gf, device)?;
-        assert_eq!(lm.conf().rope_dim, Some(48));
-        assert_eq!(lm.conf().head_size(), 48);
+        assert_eq!(lm.conf.rope_dim, Some(48));
+        assert_eq!(lm.conf.head_size(), 48);
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0);
-        let mut runner = Llama2Runner::try_from(&lm)?;
+        let mut runner = Llama2Runner::new(&lm, TensorMetrics::default())?;
         let output = runner.generate("Lily is a cute cat, ", 10, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
         assert_eq!(s, "3 years old. She likes to play with her");
@@ -578,8 +547,8 @@ mod tests {
         let model_wgpu = WgpuLlama2Model::from_cpu(&model_cpu, device_wgpu.clone())?;
 
         let mut sampler = Llama2Sampler::new(model_cpu.conf.vocab_size, 0.0, 0.0);
-        let mut runner_cpu = Llama2Runner::try_from(&model_cpu)?;
-        let mut runner_wgpu = Llama2Runner::try_from(&model_wgpu)?;
+        let mut runner_cpu = Llama2Runner::new(&model_cpu, TensorMetrics::default())?;
+        let mut runner_wgpu = Llama2Runner::new(&model_wgpu, TensorMetrics::default())?;
 
         let output_cpu = runner_cpu
             .generate("Lily is a cat", 30, &mut sampler)?

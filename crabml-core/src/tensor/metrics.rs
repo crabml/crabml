@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 /// stores the metrics on the tensor's privimives
 #[derive(Debug, Default, Clone)]
-pub struct TensorDeviceMetrics {
+pub struct TensorMetrics {
     pub rms_norm_walltime: TimeMetric,
     pub add_walltime: TimeMetric,
     pub total_walltime: TimeMetric,
@@ -15,9 +15,16 @@ pub struct TensorDeviceMetrics {
     pub matmul_quantize_walltime: TimeMetric,
     pub matmul_vec_dot_walltime: TimeMetric,
     pub batch_matmul_walltime: TimeMetric,
+    pub alloc_walltime: TimeMetric,
+    pub sample_walltime: TimeMetric,
+    pub forward_walltime: TimeMetric,
+    pub save_kvcache_walltime: TimeMetric,
+    pub mqa_walltime: TimeMetric,
+    pub ffn_walltime: TimeMetric,
+    pub copy_walltime: TimeMetric,
 }
 
-impl TensorDeviceMetrics {
+impl TensorMetrics {
     pub fn reset(&self) {
         self.rms_norm_walltime.reset();
         self.add_walltime.reset();
@@ -30,6 +37,13 @@ impl TensorDeviceMetrics {
         self.matmul_quantize_walltime.reset();
         self.matmul_vec_dot_walltime.reset();
         self.batch_matmul_walltime.reset();
+        self.alloc_walltime.reset();
+        self.sample_walltime.reset();
+        self.forward_walltime.reset();
+        self.save_kvcache_walltime.reset();
+        self.mqa_walltime.reset();
+        self.ffn_walltime.reset();
+        self.copy_walltime.reset();
     }
 
     pub fn as_vec(&self) -> Vec<(String, f64)> {
@@ -38,10 +52,22 @@ impl TensorDeviceMetrics {
                 "rms_norm_walltime".to_string(),
                 self.rms_norm_walltime.as_millis(),
             ),
+            (
+                "forward_walltime".to_string(),
+                self.forward_walltime.as_millis(),
+            ),
+            (
+                "sample_walltime".to_string(),
+                self.sample_walltime.as_millis(),
+            ),
             ("add_walltime".to_string(), self.add_walltime.as_millis()),
             (
                 "activate_walltime".to_string(),
                 self.activate_walltime.as_millis(),
+            ),
+            (
+                "alloc_walltime".to_string(),
+                self.alloc_walltime.as_millis(),
             ),
             (
                 "total_walltime".to_string(),
@@ -69,6 +95,13 @@ impl TensorDeviceMetrics {
                 "batch_matmul_walltime".to_string(),
                 self.batch_matmul_walltime.as_millis(),
             ),
+            (
+                "save_kv_cache_walltime".to_string(),
+                self.save_kvcache_walltime.as_millis(),
+            ),
+            ("mqa_walltime".to_string(), self.mqa_walltime.as_millis()),
+            ("ffn_walltime".to_string(), self.ffn_walltime.as_millis()),
+            ("copy_walltime".to_string(), self.copy_walltime.as_millis()),
         ]
     }
 }

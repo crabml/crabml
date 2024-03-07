@@ -118,6 +118,7 @@ impl<'a> Tensor for CpuTensor<'a> {
     type Device = CpuTensorDeviceRef<'a>;
 
     fn alloc(shape: &[usize], _capacity: Option<usize>, device: Self::Device) -> Result<Self> {
+        let _t = device.metrics.alloc_walltime.track();
         let buf = vec![0.0; shape.iter().product()];
         Self::new(buf, shape, device)
     }
@@ -214,6 +215,7 @@ impl<'a> Tensor for CpuTensor<'a> {
 
     // TODO(2024-02-15): dequantize the tensor here, not dequantize the embedding table on loading
     fn copy_from(&mut self, src: &CpuTensor<'a>, pos: &[usize], len: usize) -> Result<()> {
+        let _t = self.device.metrics.copy_walltime.track();
         if !self.is_owned() {
             return Err((ErrorKind::TensorError, "not owned").into());
         }

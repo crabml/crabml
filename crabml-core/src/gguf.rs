@@ -809,7 +809,6 @@ impl GGUFFileLoader {
                 cause: Some(Box::new(err)),
             })?
         };
-
         Ok(Self { mmap })
     }
 

@@ -124,7 +124,14 @@ impl<'a> Tensor for CpuTensor<'a> {
         device: Self::Device,
     ) -> Result<Self> {
         let _t = device.metrics.alloc_walltime.track();
-        let buf = vec![0.0; shape.iter().product()];
+        let buf = match _capacity {
+            Some(cap) => {
+                let mut vec = Vec::with_capacity(cap);
+                vec.extend(vec![0.0; shape.iter().product()]);
+                vec
+            }
+            None => vec![0.0; shape.iter().product()],
+        };
         Self::new(buf, shape, device)
     }
 

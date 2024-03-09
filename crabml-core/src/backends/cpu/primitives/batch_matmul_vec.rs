@@ -2,6 +2,7 @@ use rayon::prelude::*;
 
 use crate::backends::cpu::buf::buf_f32::vec_dot_f32_f32_strided;
 use crate::backends::cpu::buf::CpuTensorBuf;
+use crate::error::ErrorKind;
 use crate::error::Result;
 use crate::tensor::TensorStrider;
 
@@ -20,8 +21,6 @@ pub fn batch_matmul_vec<'a>(
     assert!(strider1.shape()[2] == strider2.shape()[1]);
     assert!(strider2.is_contiguous());
 
-    let bufa = a.as_f32_ref();
-    let bufb = b.as_f32_ref();
     let bufc = c.as_f32_mut();
 
     let m = strider1.shape()[1];
@@ -30,17 +29,35 @@ pub fn batch_matmul_vec<'a>(
     let mi_stride = strider1.strides()[1];
     let ki_stride = strider1.strides()[2];
 
-    bufc.par_iter_mut().enumerate().for_each(|(i, bufcp)| {
+    match a {
+        CpuTensorBuf::F32(bufa) => {
+            let bufb = b.as_f32_ref();
+            batch_matmul_vec_f32(bufa, bufb, bufc, m, k, bi_stride, mi_stride, ki_stride);
+        }
+        _ => return Err((ErrorKind::TensorError, "a must be f32 or 16").into()),
+    };
+    Ok(())
+}
+
+fn batch_matmul_vec_f32(
+    a: &[f32],
+    b: &[f32],
+    c: &mut [f32],
+    m: usize,
+    k: usize,
+    bi_stride: usize,
+    mi_stride: usize,
+    ki_stride: usize,
+) {
+    c.par_iter_mut().enumerate().for_each(|(i, bufcp)| {
         let mi = i % m;
         let bi = (i - mi) / m;
         *bufcp = vec_dot_f32_f32_strided(
-            bufa,
+            a,
             bi * bi_stride + mi * mi_stride,
             ki_stride,
             k,
-            &bufb[bi * k..(bi + 1) * k],
+            &b[bi * k..(bi + 1) * k],
         );
     });
-
-    Ok(())
 }

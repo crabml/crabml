@@ -64,18 +64,7 @@ pub fn vec_dot_f16_f16_strided_simd(
     k: usize,
     b: &[f16],
 ) -> f32 {
-    let mut sum: f16 = f16::ZERO;
-    let k_rounded = k - k % 4;
-    for ki in (0..k_rounded).step_by(4) {
-        sum += a[a_base + ki * a_stride] * b[ki];
-        sum += a[a_base + (ki + 1) * a_stride] * b[ki + 1];
-        sum += a[a_base + (ki + 2) * a_stride] * b[ki + 2];
-        sum += a[a_base + (ki + 3) * a_stride] * b[ki + 3];
-    }
-    for ki in (k_rounded..k).step_by(1) {
-        sum += a[a_base + ki * a_stride] * b[ki];
-    }
-    sum.to_f32()
+    todo!()
 }
 
 #[cfg(not(any(target_arch = "aarch64",)))]

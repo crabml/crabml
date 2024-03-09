@@ -94,15 +94,14 @@ fn main() -> Result<()> {
     let (tx, rx) = std::sync::mpsc::sync_channel(32);
     let print_thread = std::thread::spawn(move || {
         let mut step = 0;
-        let mut w = BufWriter::with_capacity(16, std::io::stdout().lock());
         while let Ok(Some(token)) = rx.recv() {
-            write!(w, "{}", token).unwrap();
+            print!("{}", token);
             step += 1;
             if step % 2 == 0 {
-                w.flush().unwrap();
+                std::io::stdout().flush().unwrap();
             }
         }
-        w.flush().unwrap();
+        std::io::stdout().flush().unwrap();
     });
 
     let mut output = runner.generate(&args.prompt, args.steps, &mut sampler)?;
@@ -115,6 +114,12 @@ fn main() -> Result<()> {
             None => {
                 tx.send(None).unwrap();
                 break;
+            }
+        }
+
+        if args.verbose {
+            for (k, v) in metrics.as_vec().iter() {
+                println!("{}: {}", k, v);
             }
         }
         metrics.reset();

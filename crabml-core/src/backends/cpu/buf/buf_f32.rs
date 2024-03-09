@@ -34,6 +34,9 @@ pub fn exp_f32_cached(x: f32, cache: &[f16]) -> f32 {
     unsafe { (*cache_ptr.add(x16n as usize)).to_f32() }
 }
 
+/// vec_dot_f32_f32_strided is called in batch_matmul_vec, which is used in the computation of the
+/// scaled dot product attention in the transformer model. the lhs are allowed to be not contiguous,
+/// while the rhs are required to be contiguous.
 pub fn vec_dot_f32_f32_strided(
     a: &[f32],
     a_base: usize,

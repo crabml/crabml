@@ -1,3 +1,6 @@
+extern crate jemallocator;
+
+use std::io::BufWriter;
 use std::io::Write;
 use std::time::Instant;
 
@@ -9,6 +12,9 @@ use crabml::tensor::TensorMetrics;
 use crabml_llama2::llama2::Llama2Runner;
 use crabml_llama2::sampler::Llama2Sampler;
 use crabml_llama2::CpuLlama2Model;
+
+#[global_allocator]
+static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
 #[derive(Parser, Debug)]
 struct CommandArgs {
@@ -56,7 +62,7 @@ fn main() -> Result<()> {
 
     let metrics = TensorMetrics::default();
     let device_cpu = CpuTensorDevice::new().with_metrics(metrics.clone());
-    let model_cpu = CpuLlama2Model::load(&gf, device_cpu)?;
+    let model_cpu = CpuLlama2Model::load(&gf, device_cpu.clone())?;
     let conf = model_cpu.conf.clone();
 
     // let device_wgpu = WgpuTensorDevice::new(
@@ -64,7 +70,12 @@ fn main() -> Result<()> {
     // );
     // let model_wgpu = WgpuLlama2Model::from_cpu(&model_cpu, device_wgpu)?;
 
-    let mut sampler = Llama2Sampler::new(conf.vocab_size, args.temperature, args.probability);
+    let mut sampler = Llama2Sampler::new(
+        conf.vocab_size,
+        args.temperature,
+        args.probability,
+        device_cpu.exp_cache(),
+    );
     let mut runner = Llama2Runner::new(&model_cpu, metrics.clone())?;
 
     if args.verbose {
@@ -79,31 +90,37 @@ fn main() -> Result<()> {
         println!("loaded model: {}ms", start_time.elapsed().as_millis());
     }
 
+    // it seems printing to stdout is not that fast, so we use a separate thread to keep the generation not blocked by the printing
+    let (tx, rx) = std::sync::mpsc::sync_channel(32);
+    let print_thread = std::thread::spawn(move || {
+        let mut step = 0;
+        let mut w = BufWriter::with_capacity(16, std::io::stdout().lock());
+        while let Ok(Some(token)) = rx.recv() {
+            write!(w, "{}", token).unwrap();
+            step += 1;
+            if step % 2 == 0 {
+                w.flush().unwrap();
+            }
+        }
+        w.flush().unwrap();
+    });
+
     let mut output = runner.generate(&args.prompt, args.steps, &mut sampler)?;
     print!("{}", &args.prompt);
 
     loop {
-        let token = {
-            let _t = metrics.total_walltime.track();
-            match output.next() {
-                Some(token) => token?,
-                None => break,
-            }
-        };
-
-        print!("{}", token);
-
-        if args.verbose {
-            print!("\nmetrics per token: ");
-            for (name, value) in metrics.as_vec().iter() {
-                println!("{}: {}ms", name, value);
+        let _t = metrics.total_walltime.track();
+        match output.next() {
+            Some(token) => tx.send(Some(token?)).unwrap(),
+            None => {
+                tx.send(None).unwrap();
+                break;
             }
         }
-
         metrics.reset();
-        std::io::stdout().flush().unwrap();
     }
 
+    print_thread.join().unwrap();
     println!();
     println!(
         "{} tokens/s, {} threads",

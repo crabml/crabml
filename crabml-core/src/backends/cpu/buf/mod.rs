@@ -1,6 +1,7 @@
 pub mod api;
 pub use api::CpuTensorBuf;
 
+pub mod buf_f16;
 pub mod buf_f32;
 
 pub mod buf_q4_0;

@@ -529,6 +529,24 @@ mod tests {
     }
 
     #[test]
+    fn test_generate_f16() -> Result<()> {
+        let gl = GGUFFileLoader::new("../testdata/TinyLLama-v0-5M-F16.gguf")?;
+        let gf = gl.open()?;
+
+        let device = CpuTensorDevice::new();
+        let lm = CpuLlama2Model::load(&gf, device.clone())?;
+        assert_eq!(lm.conf.rope_dim, Some(4));
+        assert_eq!(lm.conf.head_size(), 4);
+
+        let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0, device.exp_cache());
+        let mut runner = Llama2Runner::new(&lm, TensorMetrics::default())?;
+        let output = runner.generate("Lily is a cute cat, ", 10, &mut sampler)?;
+        let s = output.collect::<Result<Vec<String>>>()?.join("");
+        assert_eq!(s, "3 year old. She likes to play with her friends");
+        Ok(())
+    }
+
+    #[test]
     fn test_generate_f32_gpu() -> Result<()> {
         let gl: GGUFFileLoader =
             GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-f32.gguf")?;

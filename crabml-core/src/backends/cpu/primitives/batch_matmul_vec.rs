@@ -6,6 +6,7 @@ use crate::backends::cpu::buf::buf_f16::vec_dot_f16_f16;
 use crate::backends::cpu::buf::buf_f16::vec_dot_f16_f16_strided;
 use crate::backends::cpu::buf::buf_f32::vec_dot_f32_f32_strided;
 use crate::backends::cpu::buf::CpuTensorBuf;
+use crate::backends::cpu::CpuTensorDeviceRef;
 use crate::error::ErrorKind;
 use crate::error::Result;
 use crate::tensor::TensorStrider;
@@ -13,6 +14,7 @@ use crate::tensor::TensorStrider;
 // (b, m, k) @ (b, k, ) -> (b, m, )
 // a is allowed to be not contiguous, but not quantized
 pub fn batch_matmul_vec<'a>(
+    _device: &CpuTensorDeviceRef<'a>,
     a: &CpuTensorBuf<'a>,
     b: &CpuTensorBuf<'a>,
     c: &mut CpuTensorBuf<'a>,
@@ -84,10 +86,10 @@ fn batch_matmul_vec_f16(
     mi_stride: usize,
     ki_stride: usize,
 ) {
-    c.par_iter_mut().enumerate().for_each(|(i, bufcp)| {
-        let mi = i % m;
-        let bi = (i - mi) / m;
-        if ki_stride == 1 {
+    if ki_stride == 1 {
+        c.par_iter_mut().enumerate().for_each(|(i, bufcp)| {
+            let mi = i % m;
+            let bi = (i - mi) / m;
             *bufcp = vec_dot_f16_f16(
                 a,
                 bi * bi_stride + mi * mi_stride,
@@ -95,7 +97,11 @@ fn batch_matmul_vec_f16(
                 0,
                 k,
             );
-        } else {
+        });
+    } else {
+        c.par_iter_mut().enumerate().for_each(|(i, bufcp)| {
+            let mi = i % m;
+            let bi = (i - mi) / m;
             *bufcp = vec_dot_f16_f16_strided(
                 a,
                 bi * bi_stride + mi * mi_stride,
@@ -103,6 +109,6 @@ fn batch_matmul_vec_f16(
                 k,
                 &b[bi * k..(bi + 1) * k],
             );
-        }
-    });
+        })
+    }
 }

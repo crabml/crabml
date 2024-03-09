@@ -63,7 +63,7 @@ pub fn vec_dot_f16_f16_simd(
 
         let mut sum = myaarch64::vaddvq_f16(sumv0) + myaarch64::vaddvq_f16(sumv1);
         for ki in k_rounded..k {
-            sum += (a[a_offset + ki] * b[b_offset + ki]).to_f32();
+            sum += (a.get_unchecked(a_offset + ki) * b.get_unchecked(b_offset + ki)).to_f32();
         }
         sum
     }
@@ -147,13 +147,12 @@ pub fn vec_dot_f16_f16_strided_simd(
 
         let mut sum = myaarch64::vaddvq_f16(sumv0) + myaarch64::vaddvq_f16(sumv1);
         for ki in k_rounded..k {
-            sum += (a[a_base + ki * a_stride] * b[ki]).to_f32();
+            sum += (a.get_unchecked(a_base + ki * a_stride) * b.get_unchecked(ki)).to_f32();
         }
         sum
     }
 }
 
-#[cfg(not(any(target_arch = "aarch64",)))]
 pub fn vec_dot_f16_f16_strided_fallback(
     a: &[f16],
     a_base: usize,

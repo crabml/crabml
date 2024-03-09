@@ -306,7 +306,7 @@ impl<'a> Tensor for CpuTensor<'a> {
         let bufc = c.buf_mut();
         let strider1 = self.strider();
         let strider2 = b.strider();
-        primitives::batch_matmul_vec(bufa, bufb, bufc, strider1, strider2)?;
+        primitives::batch_matmul_vec(&self.device(), bufa, bufb, bufc, strider1, strider2)?;
         Ok(c)
     }
 

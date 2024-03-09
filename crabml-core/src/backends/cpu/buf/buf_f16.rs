@@ -64,7 +64,38 @@ pub fn vec_dot_f16_f16_strided_simd(
     k: usize,
     b: &[f16],
 ) -> f32 {
-    todo!()
+    use crate::backends::cpu::arch::aarch64 as myaarch64;
+    unsafe {
+        let a_ptr = a.as_ptr().add(a_base);
+
+        let mut sumv0 = myaarch64::vdupq_n_f16(f16::ZERO.to_bits());
+        let mut sumv1 = myaarch64::vdupq_n_f16(f16::ZERO.to_bits());
+        let k_rounded = k - k % 16;
+        for ki in (0..k_rounded).step_by(16) {
+            let av_tmp = [
+                *a_ptr.add(ki * a_stride),
+                *a_ptr.add((ki + 1) * a_stride),
+                *a_ptr.add((ki + 2) * a_stride),
+                *a_ptr.add((ki + 3) * a_stride),
+                *a_ptr.add((ki + 4) * a_stride),
+                *a_ptr.add((ki + 5) * a_stride),
+                *a_ptr.add((ki + 6) * a_stride),
+                *a_ptr.add((ki + 7) * a_stride),
+            ];
+            let av0 = myaarch64::vld1q_f16(av_tmp.as_ptr());
+            let bv0 = myaarch64::vld1q_f16(b.as_ptr().add(ki));
+            let av1 = myaarch64::vld1q_f16(av_tmp.as_ptr().add(8));
+            let bv1 = myaarch64::vld1q_f16(b.as_ptr().add(ki + 8));
+            sumv0 = myaarch64::vfmaq_f16(sumv0, av0, bv0);
+            sumv1 = myaarch64::vfmaq_f16(sumv1, av1, bv1);
+        }
+
+        let mut sum = myaarch64::vaddvq_f16(sumv0) + myaarch64::vaddvq_f16(sumv1);
+        for ki in k_rounded..k {
+            sum += (a[a_base + ki * a_stride] * b[ki]).to_f32();
+        }
+        sum
+    }
 }
 
 #[cfg(not(any(target_arch = "aarch64",)))]

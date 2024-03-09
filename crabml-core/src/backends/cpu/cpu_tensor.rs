@@ -133,12 +133,12 @@ impl<'a> Tensor for CpuTensor<'a> {
         let buf = match dtype {
             GGMLType::F32 => {
                 let mut vec = Vec::with_capacity(capacity.unwrap_or(shape.iter().product()));
-                vec.extend(vec![0.0; shape.iter().product()]);
+                vec.resize(shape.iter().product(), 0.0);
                 CpuTensorBuf::F32(vec.into())
             }
             GGMLType::F16 => {
                 let mut vec = Vec::with_capacity(capacity.unwrap_or(shape.iter().product()));
-                vec.extend(vec![f16::ZERO; shape.iter().product()]);
+                vec.resize(shape.iter().product(), f16::ZERO);
                 CpuTensorBuf::F16(vec.into())
             }
             _ => unreachable!(),

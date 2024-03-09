@@ -13,14 +13,13 @@ pub struct TensorMetrics {
     pub activate_walltime: TimeMetric,
     pub matmul_walltime: TimeMetric,
     pub matmul_quantize_walltime: TimeMetric,
+    pub batch_matmul_quantize_walltime: TimeMetric,
     pub matmul_vec_dot_walltime: TimeMetric,
     pub batch_matmul_walltime: TimeMetric,
     pub alloc_walltime: TimeMetric,
     pub sample_walltime: TimeMetric,
     pub forward_walltime: TimeMetric,
     pub save_kvcache_walltime: TimeMetric,
-    pub mqa_walltime: TimeMetric,
-    pub ffn_walltime: TimeMetric,
     pub copy_walltime: TimeMetric,
 }
 
@@ -35,14 +34,13 @@ impl TensorMetrics {
         self.activate_walltime.reset();
         self.total_walltime.reset();
         self.matmul_quantize_walltime.reset();
+        self.batch_matmul_quantize_walltime.reset();
         self.matmul_vec_dot_walltime.reset();
         self.batch_matmul_walltime.reset();
         self.alloc_walltime.reset();
         self.sample_walltime.reset();
         self.forward_walltime.reset();
         self.save_kvcache_walltime.reset();
-        self.mqa_walltime.reset();
-        self.ffn_walltime.reset();
         self.copy_walltime.reset();
     }
 
@@ -92,6 +90,10 @@ impl TensorMetrics {
                 self.matmul_quantize_walltime.as_millis(),
             ),
             (
+                "batch_matmul_quantize_walltime".to_string(),
+                self.batch_matmul_quantize_walltime.as_millis(),
+            ),
+            (
                 "batch_matmul_walltime".to_string(),
                 self.batch_matmul_walltime.as_millis(),
             ),
@@ -99,8 +101,6 @@ impl TensorMetrics {
                 "save_kv_cache_walltime".to_string(),
                 self.save_kvcache_walltime.as_millis(),
             ),
-            ("mqa_walltime".to_string(), self.mqa_walltime.as_millis()),
-            ("ffn_walltime".to_string(), self.ffn_walltime.as_millis()),
             ("copy_walltime".to_string(), self.copy_walltime.as_millis()),
         ]
     }

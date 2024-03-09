@@ -7,6 +7,7 @@ use std::vec;
 use crabml::error::Error;
 use crabml::error::ErrorKind;
 use crabml::error::Result;
+use crabml::gguf::GGMLType;
 use crabml::tensor::RopeMode;
 use crabml::tensor::Tensor;
 use crabml::tensor::TensorMetrics;
@@ -36,7 +37,17 @@ pub struct Llama2Runner<T: Tensor> {
 }
 
 impl<'a, T: Tensor> Llama2Runner<T> {
-    pub fn new(model: impl Llama2Model<T = T>, metrics: TensorMetrics) -> Result<Self> {
+    pub fn new(
+        model: impl Llama2Model<T = T>,
+        metrics: TensorMetrics,
+        use_f16_kv_cache: bool,
+    ) -> Result<Self> {
+        let kv_cache_dtype = if use_f16_kv_cache {
+            GGMLType::F16
+        } else {
+            GGMLType::F32
+        };
+
         let conf = &model.conf();
         let device = model.device().clone();
         let weights = model.weights();
@@ -47,6 +58,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             .map(|_| {
                 T::alloc(
                     &[0, conf.n_heads, conf.head_size()],
+                    kv_cache_dtype,
                     Some(seq_len * conf.embedding_dim),
                     device.clone(),
                 )
@@ -57,6 +69,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             .map(|_| {
                 T::alloc(
                     &[0, conf.n_heads, conf.head_size()],
+                    kv_cache_dtype,
                     Some(seq_len * conf.embedding_dim),
                     device.clone(),
                 )
@@ -119,7 +132,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         let rope_dim = self.conf.rope_dim.unwrap_or(head_dim);
 
         // copy the token embedding into x
-        let mut x = T::alloc(&[embed_dim], None, self.device.clone())?;
+        let mut x = T::alloc(&[embed_dim], GGMLType::F32, None, self.device.clone())?;
         x.copy_from(&self.weights.token_embed, &[token, 0], embed_dim)?;
 
         // forward all the layers
@@ -195,7 +208,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         let rope_dim = self.conf.rope_dim.unwrap_or(head_dim);
 
         // copy the token embedding into x
-        let mut x = T::alloc(&[embed_dim], None, self.device.clone())?;
+        let mut x = T::alloc(&[embed_dim], GGMLType::F32, None, self.device.clone())?;
         x.copy_from(&self.weights.token_embed, &[token, 0], embed_dim)?;
 
         // GEMMA only: scale the embedding with sqrt(embed_dim)
@@ -273,7 +286,6 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         embed_dim: usize,
         head_dim: usize,
     ) -> Result<T> {
-        let _t = self.metrics.mqa_walltime.track();
         // save to kv cache
         {
             let _t = self.metrics.save_kvcache_walltime.track();
@@ -331,7 +343,6 @@ impl<'a, T: Tensor> Llama2Runner<T> {
     }
 
     fn forward_ffn(&self, mut x: T, l: usize, activation: Activation) -> Result<T> {
-        let _t = self.metrics.ffn_walltime.track();
         // save for redidual connection
         let x_orig_ffn = x.dup()?;
 
@@ -500,7 +511,7 @@ mod tests {
         let lm = CpuLlama2Model::load(&gf, device.clone())?;
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0, device.exp_cache());
-        let mut runner = Llama2Runner::new(&lm, TensorMetrics::default())?;
+        let mut runner = Llama2Runner::new(&lm, TensorMetrics::default(), false)?;
         let output = runner.generate("Lily is a cat", 30, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
 
@@ -522,7 +533,25 @@ mod tests {
         assert_eq!(lm.conf.head_size(), 48);
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0, device.exp_cache());
-        let mut runner = Llama2Runner::new(&lm, TensorMetrics::default())?;
+        let mut runner = Llama2Runner::new(&lm, TensorMetrics::default(), false)?;
+        let output = runner.generate("Lily is a cute cat, ", 10, &mut sampler)?;
+        let s = output.collect::<Result<Vec<String>>>()?.join("");
+        assert_eq!(s, "3 years old. She likes to play with her");
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_q8_0_with_f16_kvcache() -> Result<()> {
+        let gl = GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-q8_0.gguf")?;
+        let gf = gl.open()?;
+
+        let device = CpuTensorDevice::new();
+        let lm = CpuLlama2Model::load(&gf, device.clone())?;
+        assert_eq!(lm.conf.rope_dim, Some(48));
+        assert_eq!(lm.conf.head_size(), 48);
+
+        let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0, device.exp_cache());
+        let mut runner = Llama2Runner::new(&lm, TensorMetrics::default(), true)?;
         let output = runner.generate("Lily is a cute cat, ", 10, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
         assert_eq!(s, "3 years old. She likes to play with her");
@@ -540,7 +569,7 @@ mod tests {
         assert_eq!(lm.conf.head_size(), 4);
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0, device.exp_cache());
-        let mut runner = Llama2Runner::new(&lm, TensorMetrics::default())?;
+        let mut runner = Llama2Runner::new(&lm, TensorMetrics::default(), false)?;
         let output = runner.generate("Lily is a cute cat, ", 10, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
         assert_eq!(s, "3 year old. She likes to play with her friends");
@@ -567,8 +596,8 @@ mod tests {
 
         let mut sampler =
             Llama2Sampler::new(model_cpu.conf.vocab_size, 0.0, 0.0, device_cpu.exp_cache());
-        let mut runner_cpu = Llama2Runner::new(&model_cpu, TensorMetrics::default())?;
-        let mut runner_wgpu = Llama2Runner::new(&model_wgpu, TensorMetrics::default())?;
+        let mut runner_cpu = Llama2Runner::new(&model_cpu, TensorMetrics::default(), false)?;
+        let mut runner_wgpu = Llama2Runner::new(&model_wgpu, TensorMetrics::default(), false)?;
 
         let output_cpu = runner_cpu
             .generate("Lily is a cat", 30, &mut sampler)?

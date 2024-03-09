@@ -1,3 +1,5 @@
+use half::f16;
+
 use super::CpuTensorDeviceRef;
 use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::backends::cpu::primitives;
@@ -117,10 +119,37 @@ impl<'a> CpuTensor<'a> {
 impl<'a> Tensor for CpuTensor<'a> {
     type Device = CpuTensorDeviceRef<'a>;
 
-    fn alloc(shape: &[usize], _capacity: Option<usize>, device: Self::Device) -> Result<Self> {
+    fn alloc(
+        shape: &[usize],
+        dtype: GGMLType,
+        capacity: Option<usize>,
+        device: Self::Device,
+    ) -> Result<Self> {
+        if dtype != GGMLType::F32 && dtype != GGMLType::F16 {
+            return Err((ErrorKind::TensorError, "only f32/f16 is supported").into());
+        }
+
         let _t = device.metrics.alloc_walltime.track();
-        let buf = vec![0.0; shape.iter().product()];
-        Self::new(buf, shape, device)
+        let buf = match dtype {
+            GGMLType::F32 => {
+                let mut vec = Vec::with_capacity(capacity.unwrap_or(shape.iter().product()));
+                vec.resize(shape.iter().product(), 0.0);
+                CpuTensorBuf::F32(vec.into())
+            }
+            GGMLType::F16 => {
+                let mut vec = Vec::with_capacity(capacity.unwrap_or(shape.iter().product()));
+                vec.resize(shape.iter().product(), f16::ZERO);
+                CpuTensorBuf::F16(vec.into())
+            }
+            _ => unreachable!(),
+        };
+
+        Ok(Self {
+            buf,
+            strider: TensorStrider::new(shape.to_vec()),
+            device: device.clone(),
+            name: None,
+        })
     }
 
     fn dtype(&self) -> GGMLType {
@@ -172,11 +201,26 @@ impl<'a> Tensor for CpuTensor<'a> {
 
     fn extend(&mut self, t: &CpuTensor<'a>) -> Result<()> {
         if !self.is_owned() {
-            return Err((ErrorKind::TensorError, "not owned").into());
+            return Err((ErrorKind::TensorError, "extend: tensor not owned").into());
         }
         if !self.is_contiguous() {
             return Err((ErrorKind::TensorError, "not contiguous").into());
         }
+        if self.dtype() != GGMLType::F32 && self.dtype() != GGMLType::F16 {
+            return Err((
+                ErrorKind::TensorError,
+                "only f32/f16 is supported on extend",
+            )
+                .into());
+        }
+        if t.dtype() != GGMLType::F32 {
+            return Err((
+                ErrorKind::TensorError,
+                "only f32 is supported on extend's rhs",
+            )
+                .into());
+        }
+
         if !t.shape().eq(&self.shape()[1..]) {
             return Err((
                 ErrorKind::TensorError,
@@ -189,6 +233,7 @@ impl<'a> Tensor for CpuTensor<'a> {
                 .into());
         }
 
+        // it's possible to pass a f32 to a f16 tensor
         self.buf.extend(t.buf.iter_f32());
         let new_shape = {
             let mut shape = self.shape().to_vec();
@@ -252,11 +297,16 @@ impl<'a> Tensor for CpuTensor<'a> {
         let bufa = self.buf();
         let bufb = b.buf();
         let _t = self.device.metrics.batch_matmul_walltime.track();
-        let mut c = CpuTensor::alloc(&[self.shape()[0], self.shape()[1]], None, self.device())?;
+        let mut c = CpuTensor::alloc(
+            &[self.shape()[0], self.shape()[1]],
+            GGMLType::F32,
+            None,
+            self.device(),
+        )?;
         let bufc = c.buf_mut();
         let strider1 = self.strider();
         let strider2 = b.strider();
-        primitives::batch_matmul_vec(bufa, bufb, bufc, strider1, strider2)?;
+        primitives::batch_matmul_vec(&self.device(), bufa, bufb, bufc, strider1, strider2)?;
         Ok(c)
     }
 
@@ -265,7 +315,7 @@ impl<'a> Tensor for CpuTensor<'a> {
     fn matmul_vec(&self, x: &CpuTensor<'a>) -> Result<Self> {
         let bufa = self.buf();
         let bufb = x.buf();
-        let mut c = CpuTensor::alloc(&[self.shape()[0]], None, x.device())?;
+        let mut c = CpuTensor::alloc(&[self.shape()[0]], GGMLType::F32, None, x.device())?;
         let bufc = c.buf_mut();
         let strider1 = self.strider();
         let strider2 = x.strider();

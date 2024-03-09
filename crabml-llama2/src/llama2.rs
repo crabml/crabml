@@ -37,7 +37,17 @@ pub struct Llama2Runner<T: Tensor> {
 }
 
 impl<'a, T: Tensor> Llama2Runner<T> {
-    pub fn new(model: impl Llama2Model<T = T>, metrics: TensorMetrics) -> Result<Self> {
+    pub fn new(
+        model: impl Llama2Model<T = T>,
+        metrics: TensorMetrics,
+        use_f16_kv_cache: bool,
+    ) -> Result<Self> {
+        let kv_cache_dtype = if use_f16_kv_cache {
+            GGMLType::F16
+        } else {
+            GGMLType::F32
+        };
+
         let conf = &model.conf();
         let device = model.device().clone();
         let weights = model.weights();
@@ -48,7 +58,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             .map(|_| {
                 T::alloc(
                     &[0, conf.n_heads, conf.head_size()],
-                    GGMLType::F32,
+                    kv_cache_dtype,
                     Some(seq_len * conf.embedding_dim),
                     device.clone(),
                 )
@@ -59,7 +69,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             .map(|_| {
                 T::alloc(
                     &[0, conf.n_heads, conf.head_size()],
-                    GGMLType::F32,
+                    kv_cache_dtype,
                     Some(seq_len * conf.embedding_dim),
                     device.clone(),
                 )
@@ -503,7 +513,7 @@ mod tests {
         let lm = CpuLlama2Model::load(&gf, device.clone())?;
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0, device.exp_cache());
-        let mut runner = Llama2Runner::new(&lm, TensorMetrics::default())?;
+        let mut runner = Llama2Runner::new(&lm, TensorMetrics::default(), false)?;
         let output = runner.generate("Lily is a cat", 30, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
 
@@ -525,7 +535,7 @@ mod tests {
         assert_eq!(lm.conf.head_size(), 48);
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0, device.exp_cache());
-        let mut runner = Llama2Runner::new(&lm, TensorMetrics::default())?;
+        let mut runner = Llama2Runner::new(&lm, TensorMetrics::default(), false)?;
         let output = runner.generate("Lily is a cute cat, ", 10, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
         assert_eq!(s, "3 years old. She likes to play with her");
@@ -543,7 +553,7 @@ mod tests {
         assert_eq!(lm.conf.head_size(), 4);
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0, device.exp_cache());
-        let mut runner = Llama2Runner::new(&lm, TensorMetrics::default())?;
+        let mut runner = Llama2Runner::new(&lm, TensorMetrics::default(), false)?;
         let output = runner.generate("Lily is a cute cat, ", 10, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
         assert_eq!(s, "3 year old. She likes to play with her friends");
@@ -570,8 +580,8 @@ mod tests {
 
         let mut sampler =
             Llama2Sampler::new(model_cpu.conf.vocab_size, 0.0, 0.0, device_cpu.exp_cache());
-        let mut runner_cpu = Llama2Runner::new(&model_cpu, TensorMetrics::default())?;
-        let mut runner_wgpu = Llama2Runner::new(&model_wgpu, TensorMetrics::default())?;
+        let mut runner_cpu = Llama2Runner::new(&model_cpu, TensorMetrics::default(), false)?;
+        let mut runner_wgpu = Llama2Runner::new(&model_wgpu, TensorMetrics::default(), false)?;
 
         let output_cpu = runner_cpu
             .generate("Lily is a cat", 30, &mut sampler)?

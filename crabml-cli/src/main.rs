@@ -1,3 +1,5 @@
+extern crate jemallocator;
+
 use std::io::Write;
 use std::time::Instant;
 
@@ -9,6 +11,9 @@ use crabml::tensor::TensorMetrics;
 use crabml_llama2::llama2::Llama2Runner;
 use crabml_llama2::sampler::Llama2Sampler;
 use crabml_llama2::CpuLlama2Model;
+
+#[global_allocator]
+static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
 #[derive(Parser, Debug)]
 struct CommandArgs {

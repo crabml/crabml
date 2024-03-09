@@ -120,11 +120,15 @@ impl<'a> Tensor for CpuTensor<'a> {
     fn alloc(
         shape: &[usize],
         dtype: GGMLType,
-        _capacity: Option<usize>,
+        capacity: Option<usize>,
         device: Self::Device,
     ) -> Result<Self> {
+        if dtype != GGMLType::F32 && dtype != GGMLType::F16 {
+            return Err((ErrorKind::TensorError, "only f32/f16 is supported").into());
+        }
+
         let _t = device.metrics.alloc_walltime.track();
-        let buf = match _capacity {
+        let buf = match capacity {
             Some(cap) => {
                 let mut vec = Vec::with_capacity(cap);
                 vec.extend(vec![0.0; shape.iter().product()]);
@@ -132,7 +136,13 @@ impl<'a> Tensor for CpuTensor<'a> {
             }
             None => vec![0.0; shape.iter().product()],
         };
-        Self::new(buf, shape, device)
+
+        Ok(Self {
+            buf: buf.into(),
+            strider: TensorStrider::new(shape.to_vec()),
+            device: device.clone(),
+            name: None,
+        })
     }
 
     fn dtype(&self) -> GGMLType {

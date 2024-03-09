@@ -145,7 +145,7 @@ impl<'a> Tensor for CpuTensor<'a> {
         };
 
         Ok(Self {
-            buf: buf.into(),
+            buf,
             strider: TensorStrider::new(shape.to_vec()),
             device: device.clone(),
             name: None,

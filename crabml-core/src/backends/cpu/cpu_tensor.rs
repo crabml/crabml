@@ -1,3 +1,5 @@
+use half::f16;
+
 use super::CpuTensorDeviceRef;
 use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::backends::cpu::primitives;
@@ -128,13 +130,18 @@ impl<'a> Tensor for CpuTensor<'a> {
         }
 
         let _t = device.metrics.alloc_walltime.track();
-        let buf = match capacity {
-            Some(cap) => {
-                let mut vec = Vec::with_capacity(cap);
+        let buf = match dtype {
+            GGMLType::F32 => {
+                let mut vec = Vec::with_capacity(capacity.unwrap_or(shape.iter().product()));
                 vec.extend(vec![0.0; shape.iter().product()]);
-                vec
+                CpuTensorBuf::F32(vec.into())
             }
-            None => vec![0.0; shape.iter().product()],
+            GGMLType::F16 => {
+                let mut vec = Vec::with_capacity(capacity.unwrap_or(shape.iter().product()));
+                vec.extend(vec![f16::ZERO; shape.iter().product()]);
+                CpuTensorBuf::F16(vec.into())
+            }
+            _ => unreachable!(),
         };
 
         Ok(Self {

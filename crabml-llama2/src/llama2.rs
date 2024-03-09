@@ -375,7 +375,7 @@ pub struct Llama2RunnerOutputGenerator<'a, T: Tensor> {
     token: usize,
     sampler: &'a mut Llama2Sampler,
     runner: &'a mut Llama2Runner<T>,
-    _metrics: TensorMetrics,
+    metrics: TensorMetrics,
     total_time: Duration,
 }
 
@@ -406,7 +406,7 @@ impl<'a, T: Tensor> Llama2RunnerOutputGenerator<'a, T> {
             sampler,
             runner,
             seq_len,
-            _metrics: metrics,
+            metrics,
             total_time: Duration::new(0, 0),
         })
     }
@@ -433,6 +433,7 @@ impl<'a, T: Tensor> Llama2RunnerOutputGenerator<'a, T> {
             // if we are still processing the input prompt, force the next prompt token
             (self.prompt_tokens[self.pos + 1], true)
         } else {
+            let _t = self.metrics.sample_walltime.track();
             // otherwise sample the next token from the logits
             let token = self.sampler.sample(logits)?;
             (token, false)
@@ -498,7 +499,7 @@ mod tests {
         });
         let lm = CpuLlama2Model::load(&gf, device.clone())?;
 
-        let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0);
+        let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0, device.exp_cache());
         let mut runner = Llama2Runner::new(&lm, TensorMetrics::default())?;
         let output = runner.generate("Lily is a cat", 30, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
@@ -516,11 +517,11 @@ mod tests {
         let gf = gl.open()?;
 
         let device = CpuTensorDevice::new();
-        let lm = CpuLlama2Model::load(&gf, device)?;
+        let lm = CpuLlama2Model::load(&gf, device.clone())?;
         assert_eq!(lm.conf.rope_dim, Some(48));
         assert_eq!(lm.conf.head_size(), 48);
 
-        let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0);
+        let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0, device.exp_cache());
         let mut runner = Llama2Runner::new(&lm, TensorMetrics::default())?;
         let output = runner.generate("Lily is a cute cat, ", 10, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
@@ -564,7 +565,8 @@ mod tests {
         );
         let model_wgpu = WgpuLlama2Model::from_cpu(&model_cpu, device_wgpu.clone())?;
 
-        let mut sampler = Llama2Sampler::new(model_cpu.conf.vocab_size, 0.0, 0.0);
+        let mut sampler =
+            Llama2Sampler::new(model_cpu.conf.vocab_size, 0.0, 0.0, device_cpu.exp_cache());
         let mut runner_cpu = Llama2Runner::new(&model_cpu, TensorMetrics::default())?;
         let mut runner_wgpu = Llama2Runner::new(&model_wgpu, TensorMetrics::default())?;
 

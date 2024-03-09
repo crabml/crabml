@@ -1,6 +1,5 @@
 extern crate jemallocator;
 
-use std::io::BufWriter;
 use std::io::Write;
 use std::time::Instant;
 

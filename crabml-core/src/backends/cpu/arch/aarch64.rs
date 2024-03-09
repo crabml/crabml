@@ -3,7 +3,6 @@ use core::arch::aarch64::float32x4_t;
 use core::arch::aarch64::uint16x4_t;
 use core::arch::aarch64::uint16x8_t;
 use core::arch::asm;
-use core::ptr;
 
 use half::f16;
 

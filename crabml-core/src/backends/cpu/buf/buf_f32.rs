@@ -34,22 +34,28 @@ pub fn exp_f32_cached(x: f32, cache: &[f16]) -> f32 {
     unsafe { (*cache_ptr.add(x16n as usize)).to_f32() }
 }
 
-pub fn vec_dot_f32_strided(a: &[f32], a_base: usize, a_stride: usize, k: usize, b: &[f32]) -> f32 {
+pub fn vec_dot_f32_f32_strided(
+    a: &[f32],
+    a_base: usize,
+    a_stride: usize,
+    k: usize,
+    b: &[f32],
+) -> f32 {
     #[cfg(target_arch = "aarch64")]
     {
-        vec_dot_f32_strided_simd(a, a_base, a_stride, k, b)
+        vec_dot_f32_f32_strided_simd(a, a_base, a_stride, k, b)
     }
     #[cfg(target_arch = "x86_64")]
     #[cfg(target_feature = "avx2")]
     {
-        vec_dot_f32_strided_simd(a, a_base, a_stride, k, b)
+        vec_dot_f32_f32_strided_simd(a, a_base, a_stride, k, b)
     }
     #[cfg(not(any(
         target_arch = "aarch64",
         all(target_arch = "x86_64", target_feature = "avx2")
     )))]
     {
-        vec_dot_f32_strided_fallback(a, a_base, a_stride, k, b)
+        vec_dot_f32_f32_strided_fallback(a, a_base, a_stride, k, b)
     }
 }
 
@@ -57,7 +63,7 @@ pub fn vec_dot_f32_strided(a: &[f32], a_base: usize, a_stride: usize, k: usize, 
     target_arch = "aarch64",
     all(target_arch = "x86_64", target_feature = "avx2")
 )))]
-fn vec_dot_f32_strided_fallback(
+fn vec_dot_f32_f32_strided_fallback(
     a: &[f32],
     a_base: usize,
     a_stride: usize,
@@ -79,7 +85,13 @@ fn vec_dot_f32_strided_fallback(
 }
 
 #[cfg(target_arch = "aarch64")]
-fn vec_dot_f32_strided_simd(a: &[f32], a_base: usize, a_stride: usize, k: usize, b: &[f32]) -> f32 {
+fn vec_dot_f32_f32_strided_simd(
+    a: &[f32],
+    a_base: usize,
+    a_stride: usize,
+    k: usize,
+    b: &[f32],
+) -> f32 {
     use std::arch::aarch64;
 
     unsafe {

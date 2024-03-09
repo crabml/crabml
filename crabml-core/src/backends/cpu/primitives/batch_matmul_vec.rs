@@ -1,6 +1,6 @@
 use rayon::prelude::*;
 
-use crate::backends::cpu::buf::buf_f32::vec_dot_f32_strided;
+use crate::backends::cpu::buf::buf_f32::vec_dot_f32_f32_strided;
 use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::error::Result;
 use crate::tensor::TensorStrider;
@@ -33,7 +33,7 @@ pub fn batch_matmul_vec<'a>(
     bufc.par_iter_mut().enumerate().for_each(|(i, bufcp)| {
         let mi = i % m;
         let bi = (i - mi) / m;
-        *bufcp = vec_dot_f32_strided(
+        *bufcp = vec_dot_f32_f32_strided(
             bufa,
             bi * bi_stride + mi * mi_stride,
             ki_stride,

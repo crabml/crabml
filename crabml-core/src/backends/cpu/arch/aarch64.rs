@@ -85,69 +85,6 @@ pub unsafe fn vmulq_f16(a: float16x8_t, b: float16x8_t) -> float16x8_t {
     result
 }
 
-/// Floating point multiplication
-/// [doc](https://developer.arm.com/documentation/dui0801/g/A64-SIMD-Vector-Instructions/FADD--vector-)
-#[inline]
-pub unsafe fn vget_lane_f16<const LANE: i32>(a: float16x8_t) -> u16 {
-    todo!("lane!");
-    // let result: u16;
-    // match LANE {
-    //    0=> asm!(
-    //         "dup {0:h}, {1:v}.8h[0]",
-    //         out(vreg) result,
-    //         in(vreg) a,
-    //         options(pure, nomem, nostack, preserves_flags)),
-    //    1=> asm!(
-    //         "dup {0:v}, {1:v}.8h[1]",
-    //         out(vreg) result,
-    //         in(vreg) a,
-    //         options(nomem, nostack, preserves_flags)),
-    //    2=> asm!(
-    //         "dup {0:v}, {1:v}.8h[2]",
-    //         out(vreg) result,
-    //         in(vreg) a,
-    //         options(nomem, nostack, preserves_flags)),
-    //    3=> asm!(
-    //         "dup {0:v}, {1:v}.8h[3]",
-    //         out(vreg) result,
-    //         in(vreg) a,
-    //         options(nomem, nostack, preserves_flags)),
-    //    4=> asm!(
-    //         "dup {0:v}, {1:v}.8h[4]",
-    //         out(vreg) result,
-    //         in(vreg) a,
-    //         options(nomem, nostack, preserves_flags)),
-    //    5=> asm!(
-    //         "dup {0:v}, {1:v}.8h[5]",
-    //         out(vreg) result,
-    //         in(vreg) a,
-    //         options(nomem, nostack, preserves_flags)),
-    //    6=> asm!(
-    //         "dup {0:v}, {1:v}.8h[6]",
-    //         out(vreg) result,
-    //         in(vreg) a,
-    //         options(nomem, nostack, preserves_flags)),
-    //    7=> asm!(
-    //         "dup {0:v}, {1:v}.8h[7]",
-    //         out(vreg) result,
-    //         in(vreg) a,
-    //         options(nomem, nostack, preserves_flags)),
-    //     _ => unimplemented!("get_lane_f16 - {LANE}")
-    // }
-    // result
-}
-
-#[inline]
-pub unsafe fn vfmaq_laneq_f16<const LANE: i32>(
-    a: float16x8_t,
-    b: float16x8_t,
-    c: float16x8_t,
-) -> float16x8_t {
-    let c = vget_lane_f16::<LANE>(c);
-    let result = core::mem::transmute([c, c, c, c, c, c, c, c]);
-    vfmaq_f16(a, b, result)
-}
-
 /// Casts [`float16x8t`] to raw pointer.
 #[inline]
 pub unsafe fn vst1q_f16(ptr: *mut f16, val: float16x8_t) {

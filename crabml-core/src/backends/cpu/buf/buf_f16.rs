@@ -2,7 +2,6 @@ use std::borrow::Cow;
 use std::slice;
 
 use half::f16;
-use half::vec;
 
 pub fn f16_buf_from_bytes<'a>(buf: &[u8]) -> Cow<'a, [f16]> {
     let len = buf.len();

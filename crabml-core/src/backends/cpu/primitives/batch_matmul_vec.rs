@@ -48,6 +48,7 @@ pub fn batch_matmul_vec<'a>(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn batch_matmul_vec_f32(
     a: &[f32],
     b: &[f32],
@@ -71,6 +72,7 @@ fn batch_matmul_vec_f32(
     });
 }
 
+#[allow(clippy::too_many_arguments)]
 fn batch_matmul_vec_f16(
     a: &[f16],
     b: &[f16],

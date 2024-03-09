@@ -809,6 +809,12 @@ impl GGUFFileLoader {
                 cause: Some(Box::new(err)),
             })?
         };
+        mmap.advise(memmap2::Advice::WillNeed)
+            .map_err(|err| Error {
+                kind: ErrorKind::IOError,
+                message: format!("failed to advise the mmap: {}", path),
+                cause: Some(Box::new(err)),
+            })?;
         Ok(Self { mmap })
     }
 

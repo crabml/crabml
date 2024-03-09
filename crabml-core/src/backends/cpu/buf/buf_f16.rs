@@ -35,7 +35,7 @@ pub fn vec_dot_f16_f16(a: &[f16], a_offset: usize, b: &[f16], b_offset: usize, l
 
     #[cfg(not(any(target_arch = "aarch64",)))]
     {
-        vec_dot_f16_f16_simd_fallback(a, a_offset, b, b_offset, len)
+        vec_dot_f16_f16_fallback(a, a_offset, b, b_offset, len)
     }
 }
 

@@ -165,7 +165,7 @@ impl<'a> CpuTensorBuf<'a> {
 
         let rhs_iter: Box<dyn Iterator<Item = f32>> = match src {
             CpuTensorBuf::F32(buf) => Box::new(buf.iter().skip(offset).take(len).cloned()),
-            CpuTensorBuf::F16(buf) => Box::new(dequantize_f16_buf(&buf, offset).take(len)),
+            CpuTensorBuf::F16(buf) => Box::new(dequantize_f16_buf(buf, offset).take(len)),
             CpuTensorBuf::Q8_0(buf) => Box::new(buf.dequantize(offset).take(len)),
             CpuTensorBuf::Q8_1(buf) => Box::new(buf.dequantize(offset).take(len)),
             CpuTensorBuf::Q4_0(buf) => Box::new(buf.dequantize(offset).take(len)),

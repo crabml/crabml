@@ -201,7 +201,7 @@ impl<'a> Tensor for CpuTensor<'a> {
 
     fn extend(&mut self, t: &CpuTensor<'a>) -> Result<()> {
         if !self.is_owned() {
-            return Err((ErrorKind::TensorError, "not owned").into());
+            return Err((ErrorKind::TensorError, "extend: tensor not owned").into());
         }
         if !self.is_contiguous() {
             return Err((ErrorKind::TensorError, "not contiguous").into());

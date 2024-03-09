@@ -42,7 +42,10 @@ impl<'a> CpuTensorBuf<'a> {
     }
 
     pub fn is_owned(&self) -> bool {
-        matches!(self, CpuTensorBuf::F32(Cow::Owned(_)))
+        matches!(
+            self,
+            CpuTensorBuf::F32(Cow::Owned(_)) | CpuTensorBuf::F16(Cow::Owned(_))
+        )
     }
 
     pub fn is_quantized(&self) -> bool {

@@ -1,5 +1,8 @@
+use half::f16;
 use rayon::prelude::*;
 
+use crate::backends::cpu::buf::buf_f16::quantize_f32_f16;
+use crate::backends::cpu::buf::buf_f16::vec_dot_f16_f16_strided;
 use crate::backends::cpu::buf::buf_f32::vec_dot_f32_f32_strided;
 use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::error::ErrorKind;
@@ -34,6 +37,12 @@ pub fn batch_matmul_vec<'a>(
             let bufb = b.as_f32_ref();
             batch_matmul_vec_f32(bufa, bufb, bufc, m, k, bi_stride, mi_stride, ki_stride);
         }
+        CpuTensorBuf::F16(bufa) => {
+            let bufb = b.as_f32_ref();
+            let bufb = quantize_f32_f16(bufb);
+            batch_matmul_vec_f16(bufa, &bufb, bufc, m, k, bi_stride, mi_stride, ki_stride);
+        }
+
         _ => return Err((ErrorKind::TensorError, "a must be f32 or 16").into()),
     };
     Ok(())
@@ -53,6 +62,29 @@ fn batch_matmul_vec_f32(
         let mi = i % m;
         let bi = (i - mi) / m;
         *bufcp = vec_dot_f32_f32_strided(
+            a,
+            bi * bi_stride + mi * mi_stride,
+            ki_stride,
+            k,
+            &b[bi * k..(bi + 1) * k],
+        );
+    });
+}
+
+fn batch_matmul_vec_f16(
+    a: &[f16],
+    b: &[f16],
+    c: &mut [f32],
+    m: usize,
+    k: usize,
+    bi_stride: usize,
+    mi_stride: usize,
+    ki_stride: usize,
+) {
+    c.par_iter_mut().enumerate().for_each(|(i, bufcp)| {
+        let mi = i % m;
+        let bi = (i - mi) / m;
+        *bufcp = vec_dot_f16_f16_strided(
             a,
             bi * bi_stride + mi * mi_stride,
             ki_stride,

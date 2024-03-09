@@ -7,6 +7,7 @@ use std::vec;
 use crabml::error::Error;
 use crabml::error::ErrorKind;
 use crabml::error::Result;
+use crabml::gguf::GGMLType;
 use crabml::tensor::RopeMode;
 use crabml::tensor::Tensor;
 use crabml::tensor::TensorMetrics;
@@ -47,6 +48,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             .map(|_| {
                 T::alloc(
                     &[0, conf.n_heads, conf.head_size()],
+                    GGMLType::F32,
                     Some(seq_len * conf.embedding_dim),
                     device.clone(),
                 )
@@ -57,6 +59,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             .map(|_| {
                 T::alloc(
                     &[0, conf.n_heads, conf.head_size()],
+                    GGMLType::F32,
                     Some(seq_len * conf.embedding_dim),
                     device.clone(),
                 )
@@ -119,7 +122,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         let rope_dim = self.conf.rope_dim.unwrap_or(head_dim);
 
         // copy the token embedding into x
-        let mut x = T::alloc(&[embed_dim], None, self.device.clone())?;
+        let mut x = T::alloc(&[embed_dim], GGMLType::F32, None, self.device.clone())?;
         x.copy_from(&self.weights.token_embed, &[token, 0], embed_dim)?;
 
         // forward all the layers
@@ -195,7 +198,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         let rope_dim = self.conf.rope_dim.unwrap_or(head_dim);
 
         // copy the token embedding into x
-        let mut x = T::alloc(&[embed_dim], None, self.device.clone())?;
+        let mut x = T::alloc(&[embed_dim], GGMLType::F32, None, self.device.clone())?;
         x.copy_from(&self.weights.token_embed, &[token, 0], embed_dim)?;
 
         // GEMMA only: scale the embedding with sqrt(embed_dim)

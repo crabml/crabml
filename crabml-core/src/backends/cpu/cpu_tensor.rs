@@ -117,7 +117,12 @@ impl<'a> CpuTensor<'a> {
 impl<'a> Tensor for CpuTensor<'a> {
     type Device = CpuTensorDeviceRef<'a>;
 
-    fn alloc(shape: &[usize], _capacity: Option<usize>, device: Self::Device) -> Result<Self> {
+    fn alloc(
+        shape: &[usize],
+        dtype: GGMLType,
+        _capacity: Option<usize>,
+        device: Self::Device,
+    ) -> Result<Self> {
         let _t = device.metrics.alloc_walltime.track();
         let buf = vec![0.0; shape.iter().product()];
         Self::new(buf, shape, device)
@@ -252,7 +257,12 @@ impl<'a> Tensor for CpuTensor<'a> {
         let bufa = self.buf();
         let bufb = b.buf();
         let _t = self.device.metrics.batch_matmul_walltime.track();
-        let mut c = CpuTensor::alloc(&[self.shape()[0], self.shape()[1]], None, self.device())?;
+        let mut c = CpuTensor::alloc(
+            &[self.shape()[0], self.shape()[1]],
+            GGMLType::F32,
+            None,
+            self.device(),
+        )?;
         let bufc = c.buf_mut();
         let strider1 = self.strider();
         let strider2 = b.strider();
@@ -265,7 +275,7 @@ impl<'a> Tensor for CpuTensor<'a> {
     fn matmul_vec(&self, x: &CpuTensor<'a>) -> Result<Self> {
         let bufa = self.buf();
         let bufb = x.buf();
-        let mut c = CpuTensor::alloc(&[self.shape()[0]], None, x.device())?;
+        let mut c = CpuTensor::alloc(&[self.shape()[0]], GGMLType::F32, None, x.device())?;
         let bufc = c.buf_mut();
         let strider1 = self.strider();
         let strider2 = x.strider();

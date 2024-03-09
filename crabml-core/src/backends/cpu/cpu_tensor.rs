@@ -206,6 +206,21 @@ impl<'a> Tensor for CpuTensor<'a> {
         if !self.is_contiguous() {
             return Err((ErrorKind::TensorError, "not contiguous").into());
         }
+        if self.dtype() != GGMLType::F32 && self.dtype() != GGMLType::F16 {
+            return Err((
+                ErrorKind::TensorError,
+                "only f32/f16 is supported on extend",
+            )
+                .into());
+        }
+        if t.dtype() != GGMLType::F32 {
+            return Err((
+                ErrorKind::TensorError,
+                "only f32 is supported on extend's rhs",
+            )
+                .into());
+        }
+
         if !t.shape().eq(&self.shape()[1..]) {
             return Err((
                 ErrorKind::TensorError,
@@ -218,6 +233,7 @@ impl<'a> Tensor for CpuTensor<'a> {
                 .into());
         }
 
+        // it's possible to pass a f32 to a f16 tensor
         self.buf.extend(t.buf.iter_f32());
         let new_shape = {
             let mut shape = self.shape().to_vec();

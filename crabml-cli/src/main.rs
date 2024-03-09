@@ -76,7 +76,7 @@ fn main() -> Result<()> {
         args.probability,
         device_cpu.exp_cache(),
     );
-    let mut runner = Llama2Runner::new(&model_cpu, metrics.clone())?;
+    let mut runner = Llama2Runner::new(&model_cpu, metrics.clone(), false)?;
 
     if args.verbose {
         for tensor in gf.tensor_infos() {

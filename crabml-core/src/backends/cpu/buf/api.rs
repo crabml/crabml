@@ -152,6 +152,10 @@ impl<'a> CpuTensorBuf<'a> {
     pub fn extend(&mut self, iter: impl Iterator<Item = f32>) {
         match self {
             CpuTensorBuf::F32(Cow::Owned(buf)) => buf.extend(iter),
+            CpuTensorBuf::F16(Cow::Owned(buf)) => {
+                let iter = iter.map(f16::from_f32);
+                buf.extend(iter);
+            }
             _ => unreachable!("only owned buffers can be extended"),
         }
     }

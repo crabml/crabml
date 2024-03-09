@@ -81,6 +81,14 @@ pub fn vec_dot_f16_f16_strided_simd(
                 *a_ptr.add((ki + 5) * a_stride),
                 *a_ptr.add((ki + 6) * a_stride),
                 *a_ptr.add((ki + 7) * a_stride),
+                *a_ptr.add((ki + 8) * a_stride),
+                *a_ptr.add((ki + 9) * a_stride),
+                *a_ptr.add((ki + 10) * a_stride),
+                *a_ptr.add((ki + 11) * a_stride),
+                *a_ptr.add((ki + 12) * a_stride),
+                *a_ptr.add((ki + 13) * a_stride),
+                *a_ptr.add((ki + 14) * a_stride),
+                *a_ptr.add((ki + 15) * a_stride),
             ];
             let av0 = myaarch64::vld1q_f16(av_tmp.as_ptr());
             let bv0 = myaarch64::vld1q_f16(b.as_ptr().add(ki));

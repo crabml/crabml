@@ -95,9 +95,12 @@ impl<'a> CpuTensor<'a> {
 
     /// to_vec is only used for test.
     fn to_vec(&self) -> Vec<f32> {
-        assert!(self.is_contiguous());
-        // TODO: if it's f16, convert it to f32
-        return self.buf.iter_f32().collect();
+        assert!(self.dtype() == GGMLType::F32);
+        if self.is_contiguous() {
+            return self.buf.iter_f32().collect();
+        }
+        let buf = self.buf().as_f32_ref();
+        self.strider.iter().map(|pos| buf[pos]).collect()
     }
 
     pub fn is_contiguous(&self) -> bool {
@@ -261,7 +264,8 @@ impl<'a> Tensor for CpuTensor<'a> {
         CpuTensor::new(v, &new_shape, self.device.clone())
     }
 
-    fn contiguous(self) -> Result<Self> {
+    fn contiguous(&self) -> Result<Self> {
+        let _t = self.device.metrics.contiguous_walltime.track();
         assert!(self.dtype() == GGMLType::F32 || self.dtype() == GGMLType::F16);
 
         let mut out = CpuTensor::alloc(self.shape(), self.dtype(), None, self.device())?;
@@ -593,6 +597,7 @@ mod tests {
             device.clone(),
         )?;
         let t1 = t1.transpose(&[2, 1, 0])?; // 3 x 2 x 1
+        let v1 = t1.to_vec();
         let t2 = t1.contiguous()?;
 
         // 1 4
@@ -600,6 +605,7 @@ mod tests {
         // 3 6
         assert_eq!(t2.to_vec(), vec![1.0, 4.0, 2.0, 5.0, 3.0, 6.0]);
         assert_eq!(t2.shape(), &[3, 2, 1]);
+        assert_eq!(v1, t2.to_vec());
         Ok(())
     }
 }

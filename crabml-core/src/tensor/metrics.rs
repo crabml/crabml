@@ -25,6 +25,7 @@ pub struct TensorMetrics {
     pub extend_walltime: TimeMetric,
     pub repeat_n_walltime: TimeMetric,
     pub dup_walltime: TimeMetric,
+    pub contiguous_walltime: TimeMetric,
 }
 
 impl TensorMetrics {
@@ -50,6 +51,7 @@ impl TensorMetrics {
         self.extend_walltime.reset();
         self.repeat_n_walltime.reset();
         self.dup_walltime.reset();
+        self.contiguous_walltime.reset();
     }
 
     pub fn as_vec(&self) -> Vec<(String, f64)> {
@@ -126,6 +128,10 @@ impl TensorMetrics {
                 self.repeat_n_walltime.as_millis(),
             ),
             ("dup_walltime".to_string(), self.dup_walltime.as_millis()),
+            (
+                "contiguous_walltime".to_string(),
+                self.contiguous_walltime.as_millis(),
+            ),
         ]
     }
 }

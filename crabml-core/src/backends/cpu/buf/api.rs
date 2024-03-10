@@ -217,17 +217,20 @@ impl<'a> CpuTensorBuf<'a> {
             _ => panic!(
                 "not owned f32, but got {:?}, owned: {}",
                 self.dtype(),
+                // only used on debug
                 self.is_owned()
             ),
         }
     }
 
-    /// the quantized tensor can not be iterated directly. to iterate the quantized tensor,
-    /// use `dequantize` to convert it to f32/f16 tensor first.
-    pub fn iter_f32(&self) -> impl Iterator<Item = f32> + '_ {
-        // TODO: convert f16 to f32 here, to make debug easier.
-        self.as_f32_ref().iter().copied()
+    pub fn iter_f32(&self) -> Box<dyn Iterator<Item = f32> + '_> {
+        match self {
+            CpuTensorBuf::F32(buf) => Box::new(buf.iter().copied()),
+            CpuTensorBuf::F16(buf) => Box::new(buf.iter().map(|v| v.to_f32())),
+            _ => panic!("not f32 or f16, but got {:?}", self.dtype()),
+        }
     }
+    // only used on debug
 
     pub fn iter_f32_mut(&mut self) -> impl Iterator<Item = &mut f32> {
         self.as_f32_mut().iter_mut()

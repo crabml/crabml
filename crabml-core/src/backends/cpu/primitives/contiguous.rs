@@ -1,5 +1,7 @@
 use std::borrow::Cow;
 
+use rayon::prelude::*;
+
 use crate::backends::cpu::CpuTensorBuf;
 use crate::tensor::TensorStrider;
 
@@ -26,25 +28,39 @@ pub fn contiguous_buf<T: Copy>(a: &[T], b: &mut [T], shape: &[usize], stride: &[
 }
 
 pub fn contiguous_buf_2d<T: Copy>(a: &[T], b: &mut [T], shape: &[usize], stride: &[usize]) {
-    let mut offset = 0;
-    for i in 0..shape[0] {
-        for j in 0..shape[1] {
-            b[offset] = a[i * stride[0] + j * stride[1]];
-            offset += 1;
-        }
+    let vthreads = 8;
+    let mut chunk = b.len() / vthreads;
+    if chunk == 0 {
+        chunk = b.len();
     }
+    assert!(b.len() % chunk == 0);
+    b.chunks_exact_mut(chunk).enumerate().for_each(|(i, bp)| {
+        for j in 0..bp.len() {
+            let pos = i * chunk + j;
+            let idx1 = pos % shape[1];
+            let idx0 = (pos - idx1) / shape[1];
+            bp[j] = a[idx0 * stride[0] + idx1 * stride[1]];
+        }
+    });
 }
 
 pub fn contiguous_buf_3d<T: Copy>(a: &[T], b: &mut [T], shape: &[usize], stride: &[usize]) {
-    let mut offset = 0;
-    for i in 0..shape[0] {
-        for j in 0..shape[1] {
-            for k in 0..shape[2] {
-                b[offset] = a[i * stride[0] + j * stride[1] + k * stride[2]];
-                offset += 1;
-            }
-        }
+    let vthreads = 8;
+    let mut chunk = b.len() / vthreads;
+    if chunk == 0 {
+        chunk = b.len();
     }
+    assert!(b.len() % chunk == 0);
+
+    b.chunks_exact_mut(chunk).enumerate().for_each(|(i, bp)| {
+        for j in 0..bp.len() {
+            let pos = i * chunk + j;
+            let idx2 = pos % shape[2];
+            let idx1 = ((pos - idx2) / shape[2]) % shape[1];
+            let idx0 = (pos - idx2 - idx1) / (shape[2] * shape[1]);
+            bp[j] = a[idx0 * stride[0] + idx1 * stride[1] + idx2 * stride[2]];
+        }
+    });
 }
 
 #[cfg(test)]

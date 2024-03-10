@@ -654,7 +654,7 @@ impl Tensor for WgpuTensor {
         Ok(output)
     }
 
-    fn contiguous(self) -> Result<Self> {
+    fn contiguous(&self) -> Result<Self> {
         todo!()
     }
 }

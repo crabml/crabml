@@ -12,7 +12,7 @@ use crate::tensor::TensorStrider;
 // (b, m, k) @ (b, k, ) -> (b, m, )
 // a is allowed to be not contiguous, but not quantized
 pub fn batch_matmul_vec<'a>(
-    _device: &CpuTensorDeviceRef<'a>,
+    device: &CpuTensorDeviceRef<'a>,
     a: &CpuTensorBuf<'a>,
     b: &CpuTensorBuf<'a>,
     c: &mut CpuTensorBuf<'a>,
@@ -36,12 +36,16 @@ pub fn batch_matmul_vec<'a>(
     match a {
         CpuTensorBuf::F32(bufa) => {
             let bufb = b.as_f32_ref();
-            batch_matmul_vec_f32(bufa, bufb, bufc, m, k, bi_stride, mi_stride, ki_stride);
+            batch_matmul_vec_f32(
+                device, bufa, bufb, bufc, m, k, bi_stride, mi_stride, ki_stride,
+            );
         }
         CpuTensorBuf::F16(bufa) => {
             let bufb = b.as_f32_ref();
             let bufb = quantize_f32_f16(bufb);
-            batch_matmul_vec_f16(bufa, &bufb, bufc, m, k, bi_stride, mi_stride, ki_stride);
+            batch_matmul_vec_f16(
+                device, bufa, &bufb, bufc, m, k, bi_stride, mi_stride, ki_stride,
+            );
         }
 
         _ => return Err((ErrorKind::TensorError, "a must be f32 or 16").into()),
@@ -51,6 +55,7 @@ pub fn batch_matmul_vec<'a>(
 
 #[allow(clippy::too_many_arguments)]
 fn batch_matmul_vec_f32(
+    device: &CpuTensorDeviceRef,
     a: &[f32],
     b: &[f32],
     c: &mut [f32],
@@ -63,24 +68,29 @@ fn batch_matmul_vec_f32(
     let threads = 2;
     let chunk_size = c.len() / threads;
 
-    for (i, cp) in c.chunks_exact_mut(chunk_size).enumerate() {
-        for j in 0..chunk_size {
-            let cpos = i * chunk_size + j;
-            let mi = cpos % m;
-            let bi = (cpos - mi) / m;
-            cp[j] = vec_dot_f32_f32_strided(
-                a,
-                bi * bi_stride + mi * mi_stride,
-                ki_stride,
-                k,
-                &b[bi * k..(bi + 1) * k],
-            );
+    device.thread_pool.borrow_mut().scoped(|s| {
+        for (i, cp) in c.chunks_exact_mut(chunk_size).enumerate() {
+            s.execute(move || {
+                for j in 0..chunk_size {
+                    let cpos = i * chunk_size + j;
+                    let mi = cpos % m;
+                    let bi = (cpos - mi) / m;
+                    cp[j] = vec_dot_f32_f32_strided(
+                        a,
+                        bi * bi_stride + mi * mi_stride,
+                        ki_stride,
+                        k,
+                        &b[bi * k..(bi + 1) * k],
+                    );
+                }
+            })
         }
-    }
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
 fn batch_matmul_vec_f16(
+    device: &CpuTensorDeviceRef,
     a: &[f16],
     b: &[f16],
     c: &mut [f32],
@@ -93,18 +103,22 @@ fn batch_matmul_vec_f16(
     let threads = 2;
     let chunk_size = c.len() / threads;
 
-    for (i, cp) in c.chunks_exact_mut(chunk_size).enumerate() {
-        for j in 0..chunk_size {
-            let cpos = i * chunk_size + j;
-            let mi = cpos % m;
-            let bi = (cpos - mi) / m;
-            cp[j] = vec_dot_f16_f16_strided(
-                a,
-                bi * bi_stride + mi * mi_stride,
-                ki_stride,
-                k,
-                &b[bi * k..(bi + 1) * k],
-            );
+    device.thread_pool.borrow_mut().scoped(|s| {
+        for (i, cp) in c.chunks_exact_mut(chunk_size).enumerate() {
+            s.execute(move || {
+                for j in 0..chunk_size {
+                    let cpos = i * chunk_size + j;
+                    let mi = cpos % m;
+                    let bi = (cpos - mi) / m;
+                    cp[j] = vec_dot_f16_f16_strided(
+                        a,
+                        bi * bi_stride + mi * mi_stride,
+                        ki_stride,
+                        k,
+                        &b[bi * k..(bi + 1) * k],
+                    );
+                }
+            })
         }
-    }
+    })
 }

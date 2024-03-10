@@ -2,13 +2,7 @@ pub fn nearest_i32(fval: f32) -> i32 {
     fval.round() as i32
 }
 
-pub fn make_qx_quants(
-    n: usize,
-    nmax: i32,
-    x: &[f32],
-    ls: &mut [i8],
-    rmse_type: i32,
-) -> f32 {
+pub fn make_qx_quants(n: usize, nmax: i32, x: &[f32], ls: &mut [i8], rmse_type: i32) -> f32 {
     let mut max = 0.0;
     let mut amax = 0.0;
     for &x in x.iter() {
@@ -91,7 +85,7 @@ pub fn make_qx_quants(
                     if sl2 > 0. && slx * slx * suml2 > sumlx * sumlx * sl2 {
                         ls[i] = (nmax + new_l) as i8;
                         sumlx = slx;
-suml2 = sl2;
+                        suml2 = sl2;
                         scale = sumlx / suml2;
                         best = scale * sumlx;
                         n_changed += 1;

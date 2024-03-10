@@ -1,15 +1,22 @@
+use std::borrow::Borrow;
+use std::borrow::BorrowMut;
+use std::cell::RefCell;
+
 use half::f16;
 use rayon::prelude::*;
 
 use crate::backends::cpu::buf::buf_f16::quantize_f32_f16;
 use crate::backends::cpu::buf::buf_f16::vec_dot_f16_f16;
-use crate::backends::cpu::buf::buf_f16::vec_dot_f16_f16_strided;
 use crate::backends::cpu::buf::buf_f32::vec_dot_f32_f32_strided;
 use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::backends::cpu::CpuTensorDeviceRef;
 use crate::error::ErrorKind;
 use crate::error::Result;
 use crate::tensor::TensorStrider;
+
+thread_local! {
+    pub static DESTRIDE_BUF: RefCell<Vec<f16>> = RefCell::new(vec![f16::ZERO; 64000]);
+}
 
 // (b, m, k) @ (b, k, ) -> (b, m, )
 // a is allowed to be not contiguous, but not quantized
@@ -82,33 +89,52 @@ fn batch_matmul_vec_f16(
     c: &mut [f32],
     m: usize,
     k: usize,
-    bi_stride: usize,
-    mi_stride: usize,
-    ki_stride: usize,
+    a_stride0: usize,
+    a_stride1: usize,
+    a_stride2: usize,
 ) {
-    if ki_stride == 1 {
+    if a_stride2 == 1 {
         c.par_iter_mut().enumerate().for_each(|(i, bufcp)| {
             let mi = i % m;
             let bi = (i - mi) / m;
             *bufcp = vec_dot_f16_f16(
                 a,
-                bi * bi_stride + mi * mi_stride,
+                bi * a_stride0 + mi * a_stride1,
                 &b[bi * k..(bi + 1) * k],
                 0,
                 k,
             );
         });
     } else {
-        c.par_iter_mut().enumerate().for_each(|(i, bufcp)| {
-            let mi = i % m;
-            let bi = (i - mi) / m;
-            *bufcp = vec_dot_f16_f16_strided(
-                a,
-                bi * bi_stride + mi * mi_stride,
-                ki_stride,
-                k,
-                &b[bi * k..(bi + 1) * k],
-            );
-        })
+        let chunk = 8;
+        c.par_chunks_exact_mut(chunk)
+            .enumerate()
+            .for_each(|(i, bufcp)| {
+                let mi = i * chunk % m;
+                let bi = (i * chunk - mi) / m;
+                let mut tmp = DESTRIDE_BUF.take();
+                copy_strided_3d(
+                    &a[bi * a_stride0 + mi * a_stride1..],
+                    &[1, chunk, k],
+                    &[a_stride0, a_stride1, a_stride2],
+                    &mut tmp,
+                );
+                for j in 0..chunk {
+                    bufcp[j] = vec_dot_f16_f16(&tmp, j * k, &b[bi * k..(bi + 1) * k], 0, k);
+                }
+                DESTRIDE_BUF.replace(tmp);
+            })
+    }
+}
+
+fn copy_strided_3d<T: Copy>(a: &[T], a_shape: &[usize], a_strides: &[usize], b: &mut [T]) {
+    let mut pos = 0;
+    for i in 0..a_shape[0] {
+        for j in 0..a_shape[1] {
+            for k in 0..a_shape[2] {
+                b[pos] = a[i * a_strides[0] + j * a_strides[1] + k * a_strides[2]];
+                pos += 1;
+            }
+        }
     }
 }

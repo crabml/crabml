@@ -330,7 +330,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             let v_cache = self.value_cache[l].take().unwrap();
             let v_cache_strider_orig = v_cache.strider().clone();
             // get the weighted sum of the values and attention scores
-            let v_cache = v_cache.transpose(&[1, 2, 0])?;
+            let v_cache = v_cache.transpose(&[1, 2, 0])?.contiguous()?;
             // (n_heads, head_size, n_seq) @ (n_heads, n_seq) => (n_heads, head_size)
             let x_with_attn = v_cache.batch_matmul_vec(&attn)?; // (n_heads, head_size)
             let x_with_attn = x_with_attn.reshape(&[embed_dim])?;

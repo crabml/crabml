@@ -12,6 +12,7 @@ pub struct TensorMetrics {
     pub softmax_walltime: TimeMetric,
     pub activate_walltime: TimeMetric,
     pub matmul_walltime: TimeMetric,
+    pub dequantize_walltime: TimeMetric,
     pub matmul_quantize_walltime: TimeMetric,
     pub batch_matmul_quantize_walltime: TimeMetric,
     pub matmul_vec_dot_walltime: TimeMetric,
@@ -20,7 +21,10 @@ pub struct TensorMetrics {
     pub sample_walltime: TimeMetric,
     pub forward_walltime: TimeMetric,
     pub save_kvcache_walltime: TimeMetric,
-    pub copy_walltime: TimeMetric,
+    pub copy_from_walltime: TimeMetric,
+    pub extend_walltime: TimeMetric,
+    pub repeat_n_walltime: TimeMetric,
+    pub dup_walltime: TimeMetric,
 }
 
 impl TensorMetrics {
@@ -31,6 +35,7 @@ impl TensorMetrics {
         self.rope_walltime.reset();
         self.softmax_walltime.reset();
         self.matmul_walltime.reset();
+        self.dequantize_walltime.reset();
         self.activate_walltime.reset();
         self.total_walltime.reset();
         self.matmul_quantize_walltime.reset();
@@ -41,7 +46,10 @@ impl TensorMetrics {
         self.sample_walltime.reset();
         self.forward_walltime.reset();
         self.save_kvcache_walltime.reset();
-        self.copy_walltime.reset();
+        self.copy_from_walltime.reset();
+        self.extend_walltime.reset();
+        self.repeat_n_walltime.reset();
+        self.dup_walltime.reset();
     }
 
     pub fn as_vec(&self) -> Vec<(String, f64)> {
@@ -101,7 +109,23 @@ impl TensorMetrics {
                 "save_kv_cache_walltime".to_string(),
                 self.save_kvcache_walltime.as_millis(),
             ),
-            ("copy_walltime".to_string(), self.copy_walltime.as_millis()),
+            (
+                "copy_walltime".to_string(),
+                self.copy_from_walltime.as_millis(),
+            ),
+            (
+                "dequantize_walltime".to_string(),
+                self.dequantize_walltime.as_millis(),
+            ),
+            (
+                "extend_walltime".to_string(),
+                self.extend_walltime.as_millis(),
+            ),
+            (
+                "repeat_n_walltime".to_string(),
+                self.repeat_n_walltime.as_millis(),
+            ),
+            ("dup_walltime".to_string(), self.dup_walltime.as_millis()),
         ]
     }
 }

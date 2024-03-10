@@ -86,29 +86,15 @@ fn batch_matmul_vec_f16(
     mi_stride: usize,
     ki_stride: usize,
 ) {
-    if ki_stride == 1 {
-        c.par_iter_mut().enumerate().for_each(|(i, bufcp)| {
-            let mi = i % m;
-            let bi = (i - mi) / m;
-            *bufcp = vec_dot_f16_f16(
-                a,
-                bi * bi_stride + mi * mi_stride,
-                &b[bi * k..(bi + 1) * k],
-                0,
-                k,
-            );
-        });
-    } else {
-        c.par_iter_mut().enumerate().for_each(|(i, bufcp)| {
-            let mi = i % m;
-            let bi = (i - mi) / m;
-            *bufcp = vec_dot_f16_f16_strided(
-                a,
-                bi * bi_stride + mi * mi_stride,
-                ki_stride,
-                k,
-                &b[bi * k..(bi + 1) * k],
-            );
-        })
-    }
+    c.par_iter_mut().enumerate().for_each(|(i, bufcp)| {
+        let mi = i % m;
+        let bi = (i - mi) / m;
+        *bufcp = vec_dot_f16_f16_strided(
+            a,
+            bi * bi_stride + mi * mi_stride,
+            ki_stride,
+            k,
+            &b[bi * k..(bi + 1) * k],
+        );
+    })
 }

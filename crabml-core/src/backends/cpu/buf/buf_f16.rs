@@ -92,6 +92,10 @@ pub fn vec_dot_f16_f16_strided(
     k: usize,
     b: &[f16],
 ) -> f32 {
+    if a_stride == 1 {
+        return vec_dot_f16_f16(a, a_base, b, 0, k);
+    }
+
     #[cfg(target_arch = "aarch64")]
     {
         vec_dot_f16_f16_strided_simd(a, a_base, a_stride, k, b)

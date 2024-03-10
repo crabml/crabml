@@ -2,6 +2,7 @@ use std::borrow::Cow;
 
 use half::f16;
 
+use self::impl_fallback::quantize_f32_q2_k;
 use crate::backends::cpu::buf::qkk::*;
 
 /// A q2_k super block of 2-bit quantization
@@ -29,6 +30,42 @@ impl BlockQ2_K {
     pub fn new_zero() -> Self {
         Self::default()
     }
+
+    pub fn dequantize(&self, buf: &mut [f32]) {
+        let mut dl: f32;
+        let mut ml: f32;
+        let d = Into::<f32>::into(self.d);
+        let min = Into::<f32>::into(self.dmin);
+
+        let mut qs_i: usize = 0;
+        let mut buf_i: usize = 0;
+        let mut scale_is: usize = 0;
+        for _ in (0..QK_K).step_by(128) {
+            let qs = &self.qs[qs_i..qs_i + 32];
+            let mut shift = 0;
+            for _ in 0..4 {
+                let mut sc = self.scales[scale_is];
+                scale_is += 1;
+                dl = d * (sc & 0xF) as f32;
+                ml = min * (sc >> 4) as f32;
+                for q in qs.iter().take(16) {
+                    buf[buf_i] = dl * ((*q >> shift) & 3) as f32 - ml;
+                    buf_i += 1;
+                }
+
+                sc = self.scales[scale_is];
+                scale_is += 1;
+                dl = d * (sc & 0xF) as f32;
+                ml = min * (sc >> 4) as f32;
+                for q in qs[16..].iter().take(16) {
+                    buf[buf_i] = dl * ((q >> shift) & 3) as f32 - ml;
+                    buf_i += 1;
+                }
+                shift += 2;
+            }
+            qs_i += 32;
+        }
+    }
 }
 
 impl Default for BlockQ2_K {
@@ -54,7 +91,8 @@ impl<'a> QuantBufQ2_K<'a> {
     }
 
     pub fn quantize(data: &[f32]) -> Self {
-        todo!();
+        let bs = quantize_f32_q2_k(data);
+        Self { blocks: bs.into() }
     }
 
     fn blocks(&self) -> &[BlockQ2_K] {
@@ -70,10 +108,13 @@ impl<'a> QuantBufQ2_K<'a> {
     }
 
     pub fn dequantize(&'a self, start: usize) -> impl Iterator<Item = f32> + 'a {
-        todo!();
-        self.blocks.iter().flat_map(|blk| {
-            let mut buf = [0.; 32];
-            buf
+        assert!(start % QK_K == 0);
+        let block_start = start / QK_K;
+
+        self.blocks()[block_start..].iter().flat_map(|blk| {
+            let mut buf = [0.0f32; 256];
+            blk.dequantize(&mut buf);
+            buf.into_iter()
         })
     }
 
@@ -158,5 +199,40 @@ mod impl_fallback {
             }
         }
         bs
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::backends::cpu::buf::buf_q2_k::QuantBufQ2_K;
+
+    #[test]
+    fn test_q2_k_quantize() {
+        let data = vec![
+            -8.0, -7.0, -6.0, -5.0, -4.0, -3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0,
+            -8.0, -7.0, -6.0, -5.0, -4.0, -3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0,
+            -8.0, -7.0, -6.0, -5.0, -4.0, -3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0,
+            -8.0, -7.0, -6.0, -5.0, -4.0, -3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0,
+            -8.0, -7.0, -6.0, -5.0, -4.0, -3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0,
+            -8.0, -7.0, -6.0, -5.0, -4.0, -3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0,
+            -8.0, -7.0, -6.0, -5.0, -4.0, -3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0,
+            -8.0, -7.0, -6.0, -5.0, -4.0, -3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0,
+            -8.0, -7.0, -6.0, -5.0, -4.0, -3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0,
+            -8.0, -7.0, -6.0, -5.0, -4.0, -3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0,
+            -8.0, -7.0, -6.0, -5.0, -4.0, -3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0,
+            -8.0, -7.0, -6.0, -5.0, -4.0, -3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0,
+            -8.0, -7.0, -6.0, -5.0, -4.0, -3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0,
+            -8.0, -7.0, -6.0, -5.0, -4.0, -3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0,
+            -8.0, -7.0, -6.0, -5.0, -4.0, -3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0,
+            -8.0, -7.0, -6.0, -5.0, -4.0, -3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0,
+        ];
+        let bs = QuantBufQ2_K::quantize(&data);
+
+        assert_eq!(bs.blocks.len(), 1);
+        assert_eq!(bs.blocks[0].d, super::f16::from_f32(0.3137207));
+
+        let mut dequantize = [0.0f32; 256];
+        bs.blocks[0].dequantize(&mut dequantize);
+        assert_eq!(dequantize, *data);
     }
 }

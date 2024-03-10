@@ -1,5 +1,3 @@
-use rayon::prelude::*;
-
 use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::backends::cpu::CpuTensorDeviceRef;
 use crate::error::Result;
@@ -75,14 +73,10 @@ fn gemv_simd<'a>(
     let chunk_size = bufc.len() / threads;
     let k = bufb.len();
 
-    rayon::scope(|s| {
-        for (i, cp) in bufc.chunks_exact_mut(chunk_size).enumerate() {
-            s.spawn(move |_| {
-                for j in 0..chunk_size {
-                    let mi = i * chunk_size + j;
-                    cp[j] = bufa.vec_dot(mi * k, bufb, 0, k);
-                }
-            })
+    for (i, cp) in bufc.chunks_exact_mut(chunk_size).enumerate() {
+        for j in 0..chunk_size {
+            let mi = i * chunk_size + j;
+            cp[j] = bufa.vec_dot(mi * k, bufb, 0, k);
         }
-    });
+    }
 }

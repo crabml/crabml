@@ -51,10 +51,6 @@ fn main() -> Result<()> {
     if threads == 0 {
         threads = num_cpus::get();
     }
-    rayon::ThreadPoolBuilder::new()
-        .num_threads(threads)
-        .build_global()
-        .unwrap();
 
     let gl = GGUFFileLoader::new(&args.model)?;
     let gf = gl.open()?;

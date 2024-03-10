@@ -1,5 +1,3 @@
-use std::borrow::Borrow;
-use std::borrow::BorrowMut;
 use std::cell::RefCell;
 
 use half::f16;

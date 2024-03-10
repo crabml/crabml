@@ -111,7 +111,7 @@ mod impl_fallback {
                 }
             }
 
-            let d = (max_val / -16.0) as f32;
+            let d = max_val / -16.0;
             let id = if d != 0.0 { 1.0 / d } else { 0.0 };
 
             let mut qh = [0u8; 4];

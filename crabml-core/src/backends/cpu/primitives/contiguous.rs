@@ -1,8 +1,5 @@
 use std::borrow::Cow;
 
-use half::f16;
-use rayon::prelude::*;
-
 use crate::backends::cpu::CpuTensorBuf;
 use crate::tensor::TensorStrider;
 

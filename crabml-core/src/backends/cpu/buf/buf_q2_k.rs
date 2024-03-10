@@ -92,7 +92,7 @@ mod impl_fallback {
 
         const Q4SCALE: f32 = 15f32;
 
-        let mut L = [0u8; QK_K];
+        let mut _L = [0u8; QK_K];
         let mut mins = [0f32; QK_K / 16];
         let mut scales = [0f32; QK_K / 16];
 
@@ -106,8 +106,8 @@ mod impl_fallback {
             let mut max_scale = 0f32;
             let mut max_min = 0f32;
             // 16 elements in each block
-            for (j, (data_block, L)) in data_chunk.chunks(16).zip(L.chunks_mut(16)).enumerate() {
-                scales[j] = make_qkx1_quants(16, 3, data_block, L, &mut mins[j], 5);
+            for (j, (data_block, _L)) in data_chunk.chunks(16).zip(_L.chunks_mut(16)).enumerate() {
+                scales[j] = make_qkx1_quants(16, 3, data_block, _L, &mut mins[j], 5);
                 let scale = scales[j];
                 if scale > max_scale {
                     max_scale = scale;
@@ -144,16 +144,16 @@ mod impl_fallback {
                 for ii in 0..16 {
                     let l = nearest_i32((data[16 * j + ii] + dm) / d);
                     let l = 0.max(3.min(l));
-                    L[16 * j + ii] = l as u8;
+                    _L[16 * j + ii] = l as u8;
                 }
             }
 
             for j in (0..QK_K).step_by(128) {
                 for l in 0..32 {
-                    bs[i].qs[j / 4 + l] = L[j + l]
-                        | (L[j + l + 32] << 2)
-                        | (L[j + l + 64] << 4)
-                        | (L[j + l + 96] << 6);
+                    bs[i].qs[j / 4 + l] = _L[j + l]
+                        | (_L[j + l + 32] << 2)
+                        | (_L[j + l + 64] << 4)
+                        | (_L[j + l + 96] << 6);
                 }
             }
         }

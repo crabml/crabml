@@ -89,29 +89,17 @@ fn main() -> Result<()> {
         println!("loaded model: {}ms", start_time.elapsed().as_millis());
     }
 
-    // it seems printing to stdout is not that fast, so we use a separate thread to keep the generation not blocked by the printing
-    let (tx, rx) = std::sync::mpsc::sync_channel(32);
-    let print_thread = std::thread::spawn(move || {
-        let mut step = 0;
-        while let Ok(Some(token)) = rx.recv() {
-            print!("{}", token);
-            step += 1;
-            if step % 2 == 0 {
-                std::io::stdout().flush().unwrap();
-            }
-        }
-        std::io::stdout().flush().unwrap();
-    });
-
     let mut output = runner.generate(&args.prompt, args.steps, &mut sampler)?;
     print!("{}", &args.prompt);
 
     loop {
         let _t = metrics.total_walltime.track();
         match output.next() {
-            Some(token) => tx.send(Some(token?)).unwrap(),
+            Some(token) => {
+                print!("{}", token?);
+                std::io::stdout().flush().unwrap();
+            }
             None => {
-                tx.send(None).unwrap();
                 break;
             }
         }
@@ -124,7 +112,6 @@ fn main() -> Result<()> {
         metrics.reset();
     }
 
-    print_thread.join().unwrap();
     println!();
     println!(
         "{} tokens/s, {} threads",

@@ -60,6 +60,7 @@ impl<'a> CpuTensor<'a> {
     }
 
     pub fn dequantize(self, dtype: GGMLType) -> Result<Self> {
+        let _t = self.device.metrics.dequantize_walltime.track();
         let strider = self.strider.clone();
         let device = self.device.clone();
         let name = self.name.clone();
@@ -94,9 +95,12 @@ impl<'a> CpuTensor<'a> {
 
     /// to_vec is only used for test.
     fn to_vec(&self) -> Vec<f32> {
-        assert!(self.is_contiguous());
-        // TODO: if it's f16, convert it to f32
-        return self.buf.iter_f32().collect();
+        assert!(self.dtype() == GGMLType::F32);
+        if self.is_contiguous() {
+            return self.buf.iter_f32().collect();
+        }
+        let buf = self.buf().as_f32_ref();
+        self.strider.iter().map(|pos| buf[pos]).collect()
     }
 
     pub fn is_contiguous(&self) -> bool {
@@ -232,6 +236,7 @@ impl<'a> Tensor for CpuTensor<'a> {
             )
                 .into());
         }
+        let _t = self.device.metrics.extend_walltime.track();
 
         // it's possible to pass a f32 to a f16 tensor
         self.buf.extend(t.buf.iter_f32());
@@ -247,6 +252,7 @@ impl<'a> Tensor for CpuTensor<'a> {
     fn repeat_n(self, n: usize) -> Result<Self> {
         assert!(self.is_owned());
         assert!(self.is_contiguous());
+        let _t = self.device.metrics.repeat_n_walltime.track();
 
         let len = self.len();
         let mut v = self.to_vec();
@@ -258,9 +264,18 @@ impl<'a> Tensor for CpuTensor<'a> {
         CpuTensor::new(v, &new_shape, self.device.clone())
     }
 
+    fn contiguous(&self) -> Result<Self> {
+        let _t = self.device.metrics.contiguous_walltime.track();
+        assert!(self.dtype() == GGMLType::F32 || self.dtype() == GGMLType::F16);
+
+        let mut out = CpuTensor::alloc(self.shape(), self.dtype(), None, self.device())?;
+        primitives::contiguous(&self.buf, &self.strider, &mut out.buf);
+        Ok(out)
+    }
+
     // TODO(2024-02-15): dequantize the tensor here, not dequantize the embedding table on loading
     fn copy_from(&mut self, src: &CpuTensor<'a>, pos: &[usize], len: usize) -> Result<()> {
-        let _t = self.device.metrics.copy_walltime.track();
+        let _t = self.device.metrics.copy_from_walltime.track();
         if !self.is_owned() {
             return Err((ErrorKind::TensorError, "not owned").into());
         }
@@ -277,6 +292,7 @@ impl<'a> Tensor for CpuTensor<'a> {
     }
 
     fn dup(&self) -> Result<Self> {
+        let _t = self.device.metrics.dup_walltime.track();
         let buf = self.buf.iter_f32().collect::<Vec<_>>();
         Self::new(buf, self.shape(), self.device.clone())
     }
@@ -559,6 +575,37 @@ mod tests {
             ][..],
             epsilon = 1e-3
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_contigous() -> Result<()> {
+        let device = CpuTensorDevice::new();
+        let t1 = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], device.clone())?;
+        let t1 = t1.transpose(&[1, 0])?; // 3 x 2
+        let t2 = t1.contiguous()?;
+
+        // 1 4
+        // 2 5
+        // 3 6
+        assert_eq!(t2.to_vec(), vec![1.0, 4.0, 2.0, 5.0, 3.0, 6.0]);
+        assert_eq!(t2.shape(), &[3, 2]);
+
+        let t1 = CpuTensor::new(
+            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            &[1, 2, 3],
+            device.clone(),
+        )?;
+        let t1 = t1.transpose(&[2, 1, 0])?; // 3 x 2 x 1
+        let v1 = t1.to_vec();
+        let t2 = t1.contiguous()?;
+
+        // 1 4
+        // 2 5
+        // 3 6
+        assert_eq!(t2.to_vec(), vec![1.0, 4.0, 2.0, 5.0, 3.0, 6.0]);
+        assert_eq!(t2.shape(), &[3, 2, 1]);
+        assert_eq!(v1, t2.to_vec());
         Ok(())
     }
 }

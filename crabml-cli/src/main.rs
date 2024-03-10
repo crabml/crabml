@@ -117,8 +117,11 @@ fn main() -> Result<()> {
         }
 
         if args.verbose {
-            for (k, v) in metrics.as_vec().iter() {
-                println!("{}: {}", k, v);
+            println!();
+            let mut metric_values = metrics.as_vec();
+            metric_values.sort_by_key(|v| (v.1 * 1000.0) as u32);
+            for (k, v) in metric_values.iter() {
+                println!("{0: <40} | {1: <10}", k, v);
             }
         }
         metrics.reset();

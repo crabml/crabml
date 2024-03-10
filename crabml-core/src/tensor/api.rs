@@ -33,6 +33,8 @@ pub trait Tensor: Sized + Clone {
 
     fn transpose(self, shape: &[usize]) -> Result<Self>;
 
+    fn contiguous(&self) -> Result<Self>;
+
     fn strider(&self) -> &TensorStrider;
 
     fn extend(&mut self, rhs: &Self) -> Result<()>;

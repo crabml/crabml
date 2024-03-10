@@ -4,6 +4,7 @@ use rayon::prelude::*;
 use crate::backends::cpu::buf::buf_f16::quantize_f32_f16;
 use crate::backends::cpu::buf::buf_f16::vec_dot_f16_f16;
 use crate::backends::cpu::buf::buf_f16::vec_dot_f16_f16_strided;
+use crate::backends::cpu::buf::buf_f32::vec_dot_f32_f32;
 use crate::backends::cpu::buf::buf_f32::vec_dot_f32_f32_strided;
 use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::backends::cpu::CpuTensorDeviceRef;
@@ -62,15 +63,16 @@ fn batch_matmul_vec_f32(
     mi_stride: usize,
     ki_stride: usize,
 ) {
+    assert!(ki_stride == 1);
     c.par_iter_mut().enumerate().for_each(|(i, bufcp)| {
         let mi = i % m;
         let bi = (i - mi) / m;
-        *bufcp = vec_dot_f32_f32_strided(
+        *bufcp = vec_dot_f32_f32(
             a,
             bi * bi_stride + mi * mi_stride,
-            ki_stride,
-            k,
             &b[bi * k..(bi + 1) * k],
+            0,
+            k,
         );
     });
 }
@@ -86,29 +88,16 @@ fn batch_matmul_vec_f16(
     mi_stride: usize,
     ki_stride: usize,
 ) {
-    if ki_stride == 1 {
-        c.par_iter_mut().enumerate().for_each(|(i, bufcp)| {
-            let mi = i % m;
-            let bi = (i - mi) / m;
-            *bufcp = vec_dot_f16_f16(
-                a,
-                bi * bi_stride + mi * mi_stride,
-                &b[bi * k..(bi + 1) * k],
-                0,
-                k,
-            );
-        });
-    } else {
-        c.par_iter_mut().enumerate().for_each(|(i, bufcp)| {
-            let mi = i % m;
-            let bi = (i - mi) / m;
-            *bufcp = vec_dot_f16_f16_strided(
-                a,
-                bi * bi_stride + mi * mi_stride,
-                ki_stride,
-                k,
-                &b[bi * k..(bi + 1) * k],
-            );
-        })
-    }
+    assert!(ki_stride == 1);
+    c.par_iter_mut().enumerate().for_each(|(i, bufcp)| {
+        let mi = i % m;
+        let bi = (i - mi) / m;
+        *bufcp = vec_dot_f16_f16(
+            a,
+            bi * bi_stride + mi * mi_stride,
+            &b[bi * k..(bi + 1) * k],
+            0,
+            k,
+        );
+    });
 }

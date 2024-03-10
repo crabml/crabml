@@ -63,7 +63,7 @@ impl<'a> QuantBufQ6K<'_> {
     }
 
     pub fn len(&self) -> usize {
-        self.blocks.len() * 32
+        self.blocks.len() * 256
     }
 
     pub fn is_empty(&self) -> bool {
@@ -71,9 +71,9 @@ impl<'a> QuantBufQ6K<'_> {
     }
 
     pub fn dequantize(&'a self, start: usize) -> impl Iterator<Item = f32> + 'a {
-        assert!(start % 32 == 0);
+        assert!(start % 256 == 0);
 
-        let block_start = start / 32;
+        let block_start = start / 256;
         self.blocks()[block_start..].iter().flat_map(|blk| {
             let mut buf = [0f32; 256];
             blk.dequantize(&mut buf);
@@ -82,8 +82,8 @@ impl<'a> QuantBufQ6K<'_> {
     }
 
     pub fn vec_dot(&self, a_offset: usize, b: &QuantBufQ8K, b_offset: usize, len: usize) -> f32 {
-        let abs = &self.blocks[a_offset / 32..(a_offset + len) / 32];
-        let bbs = &b.blocks[b_offset / 32..(b_offset + len) / 32];
+        let abs = &self.blocks[a_offset / 256..(a_offset + len) / 256];
+        let bbs = &b.blocks[b_offset / 256..(b_offset + len) / 256];
 
         vec_dot_q6_k_q8_k(abs, bbs)
     }

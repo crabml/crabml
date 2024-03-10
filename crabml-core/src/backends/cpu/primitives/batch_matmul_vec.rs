@@ -86,15 +86,25 @@ fn batch_matmul_vec_f16(
     mi_stride: usize,
     ki_stride: usize,
 ) {
-    c.par_iter_mut().enumerate().for_each(|(i, bufcp)| {
-        let mi = i % m;
-        let bi = (i - mi) / m;
-        *bufcp = vec_dot_f16_f16_strided(
-            a,
-            bi * bi_stride + mi * mi_stride,
-            ki_stride,
-            k,
-            &b[bi * k..(bi + 1) * k],
-        );
-    })
+    let threads = 2;
+    let chunk_size = c.len() / threads;
+
+    rayon::scope(|s| {
+        for (i, cp) in c.chunks_exact_mut(chunk_size).enumerate() {
+            s.spawn(move |_| {
+                for j in 0..chunk_size {
+                    let cpos = i * chunk_size + j;
+                    let mi = cpos % m;
+                    let bi = (cpos - mi) / m;
+                    cp[j] = vec_dot_f16_f16_strided(
+                        a,
+                        bi * bi_stride + mi * mi_stride,
+                        ki_stride,
+                        k,
+                        &b[bi * k..(bi + 1) * k],
+                    );
+                }
+            })
+        }
+    });
 }

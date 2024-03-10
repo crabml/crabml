@@ -5,6 +5,8 @@ pub mod buf_f16;
 pub mod buf_f32;
 
 pub mod buf_q2_k;
+mod qkk;
+
 pub mod buf_q4_0;
 pub mod buf_q4_1;
 pub mod buf_q5_0;

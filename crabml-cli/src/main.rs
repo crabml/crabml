@@ -5,6 +5,7 @@ use std::time::Instant;
 
 use clap::Parser;
 use crabml::backends::cpu::CpuTensorDevice;
+use crabml::backends::cpu::CpuTensorDeviceOptions;
 use crabml::error::Result;
 use crabml::gguf::GGUFFileLoader;
 use crabml::tensor::TensorMetrics;
@@ -56,7 +57,12 @@ fn main() -> Result<()> {
     let gf = gl.open()?;
 
     let metrics = TensorMetrics::default();
-    let device_cpu = CpuTensorDevice::new().with_metrics(metrics.clone());
+    let device_cpu = CpuTensorDevice::new(CpuTensorDeviceOptions {
+        thread_pool_size: Some(threads),
+        metrics: Some(metrics.clone()),
+        ..Default::default()
+    });
+
     let model_cpu = CpuLlama2Model::load(&gf, device_cpu.clone())?;
     let conf = model_cpu.conf.clone();
 

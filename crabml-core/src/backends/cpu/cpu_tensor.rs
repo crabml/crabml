@@ -398,10 +398,11 @@ mod tests {
 
     use super::*;
     use crate::backends::cpu::CpuTensorDevice;
+    use crate::backends::cpu::CpuTensorDeviceOptions;
 
     #[test]
     fn test_tensor_view() -> Result<()> {
-        let device = CpuTensorDevice::new();
+        let device = CpuTensorDevice::new(CpuTensorDeviceOptions::default());
         let t = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], device.clone())?;
         let t = t.reshape(&[3, 2])?;
 
@@ -414,7 +415,7 @@ mod tests {
     fn test_copy_from() -> Result<()> {
         // 1 2
         // 3 4
-        let device = CpuTensorDevice::new();
+        let device = CpuTensorDevice::new(CpuTensorDeviceOptions::default());
         let t1 = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0], &[2, 2], device.clone())?;
         let mut t2 = CpuTensor::new(vec![0.0; 2], &[2], device.clone())?;
 
@@ -429,7 +430,7 @@ mod tests {
 
     #[test]
     fn test_extend() -> Result<()> {
-        let device = CpuTensorDevice::new();
+        let device = CpuTensorDevice::new(CpuTensorDeviceOptions::default());
         let mut t1 = CpuTensor::new(
             vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
             &[1, 2, 3],
@@ -447,7 +448,7 @@ mod tests {
 
     #[test]
     fn test_repeat() -> Result<()> {
-        let device = CpuTensorDevice::new();
+        let device = CpuTensorDevice::new(CpuTensorDeviceOptions::default());
         let t1 = CpuTensor::new(
             vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
             &[1, 2, 3],
@@ -491,7 +492,7 @@ mod tests {
 
     #[test]
     fn test_rope() -> Result<()> {
-        let device = CpuTensorDevice::new();
+        let device = CpuTensorDevice::new(CpuTensorDeviceOptions::default());
         let v1 = (0..32).map(|v| v as f32).collect::<Vec<_>>();
         let t1 = CpuTensor::new(v1, &[2, 16], device.clone())?;
 
@@ -514,7 +515,7 @@ mod tests {
     fn test_matmul() -> Result<()> {
         // 1, 2, 3
         // 4, 5, 6
-        let device = CpuTensorDevice::new();
+        let device = CpuTensorDevice::new(CpuTensorDeviceOptions::default());
         let w = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], device.clone())?;
         // 1
         // 2
@@ -532,7 +533,7 @@ mod tests {
 
     #[test]
     fn test_softmax() -> Result<()> {
-        let device = CpuTensorDevice::new();
+        let device = CpuTensorDevice::new(CpuTensorDeviceOptions::default());
         let t1 = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], device.clone())?;
         let t1 = t1.softmax_inplace(1)?;
 
@@ -548,7 +549,7 @@ mod tests {
 
     #[test]
     fn test_silu() -> Result<()> {
-        let device = CpuTensorDevice::new();
+        let device = CpuTensorDevice::new(CpuTensorDeviceOptions::default());
         let t1 = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[6], device.clone())?;
         let t1 = t1.silu_inplace()?;
 

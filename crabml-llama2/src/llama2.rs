@@ -505,8 +505,9 @@ mod tests {
             GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-f32.gguf")?;
         let gf = gl.open()?;
 
-        let device = CpuTensorDevice::with_options(CpuTensorDeviceOptions {
+        let device = CpuTensorDevice::new(CpuTensorDeviceOptions {
             debug_named_tensors: false,
+            ..Default::default()
         });
         let lm = CpuLlama2Model::load(&gf, device.clone())?;
 
@@ -527,7 +528,7 @@ mod tests {
         let gl = GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-q8_0.gguf")?;
         let gf = gl.open()?;
 
-        let device = CpuTensorDevice::new();
+        let device = CpuTensorDevice::new(CpuTensorDeviceOptions::default());
         let lm = CpuLlama2Model::load(&gf, device.clone())?;
         assert_eq!(lm.conf.rope_dim, Some(48));
         assert_eq!(lm.conf.head_size(), 48);
@@ -545,7 +546,7 @@ mod tests {
         let gl = GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-q8_0.gguf")?;
         let gf = gl.open()?;
 
-        let device = CpuTensorDevice::new();
+        let device = CpuTensorDevice::new(CpuTensorDeviceOptions::default());
         let lm = CpuLlama2Model::load(&gf, device.clone())?;
         assert_eq!(lm.conf.rope_dim, Some(48));
         assert_eq!(lm.conf.head_size(), 48);
@@ -563,7 +564,7 @@ mod tests {
         let gl = GGUFFileLoader::new("../testdata/TinyLLama-v0-5M-F16.gguf")?;
         let gf = gl.open()?;
 
-        let device = CpuTensorDevice::new();
+        let device = CpuTensorDevice::new(CpuTensorDeviceOptions::default());
         let lm = CpuLlama2Model::load(&gf, device.clone())?;
         assert_eq!(lm.conf.rope_dim, Some(4));
         assert_eq!(lm.conf.head_size(), 4);
@@ -582,8 +583,9 @@ mod tests {
             GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-f32.gguf")?;
         let gf = gl.open()?;
 
-        let device_cpu = CpuTensorDevice::with_options(CpuTensorDeviceOptions {
+        let device_cpu = CpuTensorDevice::new(CpuTensorDeviceOptions {
             debug_named_tensors: true,
+            ..Default::default()
         });
         let model_cpu = CpuLlama2Model::load(&gf, device_cpu.clone())?;
 

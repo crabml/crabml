@@ -12,6 +12,12 @@ pub struct CpuTensorDeviceOptions {
     /// when enabled, whenever tensor called with `with_name`, the name and the
     /// tensor will be recorded in the device. only used in test.
     pub debug_named_tensors: bool,
+
+    /// thread pool size for parallel computation
+    pub thread_pool_size: Option<usize>,
+
+    /// the metrics collector
+    pub metrics: Option<TensorMetrics>,
 }
 
 #[derive(Debug)]
@@ -19,45 +25,22 @@ pub struct CpuTensorDevice<'a> {
     pub(crate) opts: CpuTensorDeviceOptions,
     pub(crate) metrics: TensorMetrics,
     pub(crate) debug_tensors: RefCell<HashMap<String, Vec<f32>>>,
-    pub(crate) wbuf: RefCell<Option<Vec<f32>>>,
     pub(crate) exp_cache: Rc<Vec<f16>>,
+    /// not used yet, maybe can be used for storing logits
+    pub(crate) _wbuf: RefCell<Option<Vec<f32>>>,
     _phantom: std::marker::PhantomData<&'a ()>,
 }
 
 pub type CpuTensorDeviceRef<'a> = Rc<CpuTensorDevice<'a>>;
 
 impl<'a> CpuTensorDevice<'a> {
-    pub fn new() -> CpuTensorDeviceRef<'a> {
+    pub fn new(opts: CpuTensorDeviceOptions) -> CpuTensorDeviceRef<'a> {
         let device = Self {
-            opts: CpuTensorDeviceOptions::default(),
+            opts: opts.clone(),
             debug_tensors: RefCell::new(HashMap::new()),
-            metrics: TensorMetrics::default(),
-            wbuf: RefCell::new(Some(vec![0.0; 32000])),
+            metrics: opts.metrics.unwrap_or_default(),
+            _wbuf: RefCell::new(Some(vec![0.0; 32000])),
             exp_cache: Rc::new(Self::init_exp_cache()),
-            _phantom: std::marker::PhantomData,
-        };
-        Rc::new(device)
-    }
-
-    pub fn with_options(opts: CpuTensorDeviceOptions) -> CpuTensorDeviceRef<'a> {
-        let device = Self {
-            opts,
-            debug_tensors: RefCell::new(HashMap::new()),
-            metrics: TensorMetrics::default(),
-            wbuf: RefCell::new(Some(vec![0.0; 32000])),
-            exp_cache: Rc::new(Self::init_exp_cache()),
-            _phantom: std::marker::PhantomData,
-        };
-        Rc::new(device)
-    }
-
-    pub fn with_metrics(self: Rc<Self>, metrics: TensorMetrics) -> CpuTensorDeviceRef<'a> {
-        let device = Self {
-            opts: self.opts.clone(),
-            debug_tensors: self.debug_tensors.clone(),
-            wbuf: self.wbuf.clone(),
-            exp_cache: self.exp_cache.clone(),
-            metrics,
             _phantom: std::marker::PhantomData,
         };
         Rc::new(device)

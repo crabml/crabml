@@ -464,6 +464,7 @@ impl WgpuLlama2Model {
 #[cfg(test)]
 mod tests {
     use crabml::backends::cpu::CpuTensorDevice;
+    use crabml::backends::cpu::CpuTensorDeviceOptions;
     use crabml::error::Result;
     use crabml::gguf::GGMLType;
     use crabml::gguf::GGUFFileLoader;
@@ -476,7 +477,7 @@ mod tests {
         let gl = GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-q8_0.gguf")?;
         let gf = gl.open()?;
 
-        let device = CpuTensorDevice::new();
+        let device = CpuTensorDevice::new(CpuTensorDeviceOptions::default());
         let lm = CpuLlama2Model::load(&gf, device)?;
         assert_eq!(lm.conf.vocab_size, 32000);
         assert_eq!(lm.weights.wk[0].dtype(), GGMLType::Q8_0);

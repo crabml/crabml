@@ -9,12 +9,12 @@ description = "crabml core package"
 [dependencies]
 int-enum = "0.5.0"
 memmap2 = "0.7.1"
-rayon = "1.8.0"
 half = { version = "2.3.1" }
 matrixmultiply = { version = "0.3", default-features = false }
 wgpu = "0.19.1"
 env_logger = "0.10"
 pollster = "0.2.4"
+scoped_threadpool = "0.1.9"
 bytemuck = { version = "1.14.0", features = ["derive"] }
 byteorder = "1.5.0"
 

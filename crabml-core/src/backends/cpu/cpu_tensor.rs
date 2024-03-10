@@ -11,12 +11,21 @@ use crate::tensor::RopeMode;
 use crate::tensor::Tensor;
 use crate::tensor::TensorStrider;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct CpuTensor<'a> {
     buf: CpuTensorBuf<'a>,
     strider: TensorStrider,
     device: CpuTensorDeviceRef<'a>,
     pub(crate) name: Option<String>,
+}
+
+impl std::fmt::Debug for CpuTensor<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CpuTensor")
+            .field("shape", &self.shape())
+            .field("dtype", &self.dtype())
+            .finish()
+    }
 }
 
 // A tensor contains a buffer of f32, a shape and a strides. We may refer to

@@ -73,10 +73,14 @@ fn gemv_simd<'a>(
     let chunk_size = bufc.len() / threads;
     let k = bufb.len();
 
-    for (i, cp) in bufc.chunks_exact_mut(chunk_size).enumerate() {
-        for j in 0..chunk_size {
-            let mi = i * chunk_size + j;
-            cp[j] = bufa.vec_dot(mi * k, bufb, 0, k);
+    device.thread_pool.borrow_mut().scoped(|s| {
+        for (i, cp) in bufc.chunks_exact_mut(chunk_size).enumerate() {
+            s.execute(move || {
+                for j in 0..chunk_size {
+                    let mi = i * chunk_size + j;
+                    cp[j] = bufa.vec_dot(mi * k, bufb, 0, k);
+                }
+            });
         }
-    }
+    });
 }

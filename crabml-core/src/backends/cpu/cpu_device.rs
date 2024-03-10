@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use half::f16;
+use scoped_threadpool::Pool;
 
 use super::CpuTensor;
 use crate::tensor::TensorMetrics;
@@ -20,12 +21,12 @@ pub struct CpuTensorDeviceOptions {
     pub metrics: Option<TensorMetrics>,
 }
 
-#[derive(Debug)]
 pub struct CpuTensorDevice<'a> {
     pub(crate) opts: CpuTensorDeviceOptions,
     pub(crate) metrics: TensorMetrics,
     pub(crate) debug_tensors: RefCell<HashMap<String, Vec<f32>>>,
     pub(crate) exp_cache: Rc<Vec<f16>>,
+    pub(crate) thread_pool: RefCell<Pool>,
     /// not used yet, maybe can be used for storing logits
     pub(crate) _wbuf: RefCell<Option<Vec<f32>>>,
     _phantom: std::marker::PhantomData<&'a ()>,
@@ -39,8 +40,9 @@ impl<'a> CpuTensorDevice<'a> {
             opts: opts.clone(),
             debug_tensors: RefCell::new(HashMap::new()),
             metrics: opts.metrics.unwrap_or_default(),
-            _wbuf: RefCell::new(Some(vec![0.0; 32000])),
+            thread_pool: RefCell::new(Pool::new(opts.thread_pool_size.unwrap_or(2) as u32)),
             exp_cache: Rc::new(Self::init_exp_cache()),
+            _wbuf: RefCell::new(Some(vec![0.0; 32000])),
             _phantom: std::marker::PhantomData,
         };
         Rc::new(device)

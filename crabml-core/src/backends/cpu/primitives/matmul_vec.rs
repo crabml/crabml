@@ -71,14 +71,18 @@ fn gemv_simd<'a>(
 
     let _t = metrics.matmul_vec_dot_walltime.track();
 
+    let threads = 2;
+    let chunk_size = bufc.len() / threads;
     let k = bufb.len();
-    bufc.par_chunks_exact_mut(4)
-        .enumerate()
-        .for_each(|(cn, cp)| {
-            let mi = cn * 4;
-            cp[0] = bufa.vec_dot(mi * k, bufb, 0, k);
-            cp[1] = bufa.vec_dot((mi + 1) * k, bufb, 0, k);
-            cp[2] = bufa.vec_dot((mi + 2) * k, bufb, 0, k);
-            cp[3] = bufa.vec_dot((mi + 3) * k, bufb, 0, k);
-        });
+
+    rayon::scope(|s| {
+        for (i, cp) in bufc.chunks_exact_mut(chunk_size).enumerate() {
+            s.spawn(move |_| {
+                for j in 0..chunk_size {
+                    let mi = i * chunk_size + j;
+                    cp[j] = bufa.vec_dot(mi * k, bufb, 0, k);
+                }
+            })
+        }
+    });
 }

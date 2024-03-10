@@ -10,6 +10,7 @@ use super::buf_f32::vec_dot_f32_f32;
 use crate::backends::cpu::buf::buf_f16::vec_dot_f16_f16;
 use crate::backends::cpu::buf::QuantBufQ4_0;
 use crate::backends::cpu::buf::QuantBufQ4_1;
+use crate::backends::cpu::buf::QuantBufQ5_0;
 use crate::backends::cpu::buf::QuantBufQ5_1;
 use crate::backends::cpu::buf::QuantBufQ8K;
 use crate::backends::cpu::buf::QuantBufQ8_0;
@@ -29,6 +30,7 @@ pub enum CpuTensorBuf<'a> {
     Q8K(QuantBufQ8K<'a>),
     Q4_0(QuantBufQ4_0<'a>),
     Q4_1(QuantBufQ4_1<'a>),
+    Q5_0(QuantBufQ5_0<'a>),
     Q5_1(QuantBufQ5_1<'a>),
 }
 
@@ -42,6 +44,7 @@ impl<'a> CpuTensorBuf<'a> {
             GGMLType::Q8K => Ok(CpuTensorBuf::Q8K(QuantBufQ8K::from_bytes(buf))),
             GGMLType::Q4_0 => Ok(CpuTensorBuf::Q4_0(QuantBufQ4_0::from_bytes(buf))),
             GGMLType::Q4_1 => Ok(CpuTensorBuf::Q4_1(QuantBufQ4_1::from_bytes(buf))),
+            GGMLType::Q5_0 => Ok(CpuTensorBuf::Q5_0(QuantBufQ5_0::from_bytes(buf))),
             GGMLType::Q5_1 => Ok(CpuTensorBuf::Q5_1(QuantBufQ5_1::from_bytes(buf))),
             _ => unimplemented!(),
         }
@@ -65,9 +68,10 @@ impl<'a> CpuTensorBuf<'a> {
             CpuTensorBuf::Q8_0(buf) => buf.len(),
             CpuTensorBuf::Q8_1(buf) => buf.len(),
             CpuTensorBuf::Q8K(buf) => buf.len(),
+            CpuTensorBuf::Q5_0(buf) => buf.len(),
+            CpuTensorBuf::Q5_1(buf) => buf.len(),
             CpuTensorBuf::Q4_0(buf) => buf.len(),
             CpuTensorBuf::Q4_1(buf) => buf.len(),
-            CpuTensorBuf::Q5_1(buf) => buf.len(),
         }
     }
 
@@ -84,6 +88,7 @@ impl<'a> CpuTensorBuf<'a> {
             CpuTensorBuf::Q8K(_) => GGMLType::Q8K,
             CpuTensorBuf::Q4_0(_) => GGMLType::Q4_0,
             CpuTensorBuf::Q4_1(_) => GGMLType::Q4_1,
+            CpuTensorBuf::Q5_0(_) => GGMLType::Q5_0,
             CpuTensorBuf::Q5_1(_) => GGMLType::Q5_1,
         }
     }
@@ -95,9 +100,10 @@ impl<'a> CpuTensorBuf<'a> {
             CpuTensorBuf::Q8_0(_) => GGMLType::Q8_0,
             CpuTensorBuf::Q8_1(_) => GGMLType::Q8_1,
             CpuTensorBuf::Q8K(_) => GGMLType::Q8K,
+            CpuTensorBuf::Q5_0(_) => GGMLType::Q8_0,
+            CpuTensorBuf::Q5_1(_) => GGMLType::Q8_1,
             CpuTensorBuf::Q4_0(_) => GGMLType::Q8_0,
             CpuTensorBuf::Q4_1(_) => GGMLType::Q8_1,
-            CpuTensorBuf::Q5_1(_) => GGMLType::Q8_1,
         }
     }
 
@@ -122,6 +128,7 @@ impl<'a> CpuTensorBuf<'a> {
                 CpuTensorBuf::Q8K(buf) => buf.dequantize(0).collect(),
                 CpuTensorBuf::Q4_0(buf) => buf.dequantize(0).collect(),
                 CpuTensorBuf::Q4_1(buf) => buf.dequantize(0).collect(),
+                CpuTensorBuf::Q5_0(buf) => buf.dequantize(0).collect(),
                 CpuTensorBuf::Q5_1(buf) => buf.dequantize(0).collect(),
             })),
             GGMLType::F16 => unimplemented!(),
@@ -149,6 +156,9 @@ impl<'a> CpuTensorBuf<'a> {
             GGMLType::Q5_1 => Ok(CpuTensorBuf::Q5_1(QuantBufQ5_1::quantize(
                 self.as_f32_ref(),
             ))),
+            GGMLType::Q5_0 => Ok(CpuTensorBuf::Q5_0(QuantBufQ5_0::quantize(
+                self.as_f32_ref(),
+            ))),
             _ => Err((
                 ErrorKind::TensorError,
                 format!("quantize to {:?} is not supported", dtype),
@@ -167,6 +177,7 @@ impl<'a> CpuTensorBuf<'a> {
             (Q8K(a), Q8K(b)) => a.vec_dot(a_offset, b, b_offset, len),
             (Q4_0(a), Q8_0(b)) => a.vec_dot(a_offset, b, b_offset, len),
             (Q4_1(a), Q8_1(b)) => a.vec_dot(a_offset, b, b_offset, len),
+            (Q5_0(a), Q8_0(b)) => a.vec_dot(a_offset, b, b_offset, len),
             (Q5_1(a), Q8_1(b)) => a.vec_dot(a_offset, b, b_offset, len),
             _ => unreachable!(),
         }
@@ -198,6 +209,7 @@ impl<'a> CpuTensorBuf<'a> {
             CpuTensorBuf::Q8K(buf) => Box::new(buf.dequantize(offset).take(len)),
             CpuTensorBuf::Q4_0(buf) => Box::new(buf.dequantize(offset).take(len)),
             CpuTensorBuf::Q4_1(buf) => Box::new(buf.dequantize(offset).take(len)),
+            CpuTensorBuf::Q5_0(buf) => Box::new(buf.dequantize(offset).take(len)),
             CpuTensorBuf::Q5_1(buf) => Box::new(buf.dequantize(offset).take(len)),
         };
 
@@ -252,9 +264,10 @@ impl Clone for CpuTensorBuf<'_> {
             CpuTensorBuf::Q8_0(buf) => Self::Q8_0(buf.clone()),
             CpuTensorBuf::Q8_1(buf) => Self::Q8_1(buf.clone()),
             CpuTensorBuf::Q8K(buf) => Self::Q8K(buf.clone()),
+            CpuTensorBuf::Q5_0(buf) => Self::Q5_0(buf.clone()),
+            CpuTensorBuf::Q5_1(buf) => Self::Q5_1(buf.clone()),
             CpuTensorBuf::Q4_0(buf) => Self::Q4_0(buf.clone()),
             CpuTensorBuf::Q4_1(buf) => Self::Q4_1(buf.clone()),
-            CpuTensorBuf::Q5_1(buf) => Self::Q5_1(buf.clone()),
         }
     }
 }

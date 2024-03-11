@@ -16,8 +16,7 @@ use crate::backends::cpu::buf::qkk::*;
 /// Effectively 2.5625 bits per weight
 #[repr(C)]
 #[derive(Debug, Clone)]
-#[allow(non_camel_case_types)]
-pub struct BlockQ2_K {
+pub struct BlockQ2K {
     /// scales and mins, quantized with 4 bits
     pub scales: [u8; QK_K / 16],
     /// quants
@@ -28,7 +27,7 @@ pub struct BlockQ2_K {
     pub dmin: f16,
 }
 
-impl BlockQ2_K {
+impl BlockQ2K {
     pub fn new_zero() -> Self {
         Self::default()
     }
@@ -70,9 +69,9 @@ impl BlockQ2_K {
     }
 }
 
-impl Default for BlockQ2_K {
+impl Default for BlockQ2K {
     fn default() -> Self {
-        BlockQ2_K {
+        BlockQ2K {
             scales: [0u8; QK_K / 16],
             qs: [0u8; QK_K / 4],
             d: f16::ZERO,
@@ -82,20 +81,19 @@ impl Default for BlockQ2_K {
 }
 
 #[derive(Debug, Clone)]
-#[allow(non_camel_case_types)]
-pub struct QuantBufQ2_K<'a> {
-    pub blocks: Cow<'a, [BlockQ2_K]>,
+pub struct QuantBufQ2K<'a> {
+    pub blocks: Cow<'a, [BlockQ2K]>,
 }
 
-impl<'a> QuantBufQ2_K<'a> {
+impl<'a> QuantBufQ2K<'a> {
     pub fn from_bytes(data: &'a [u8]) -> Self {
-        let blk_size = std::mem::size_of::<BlockQ2_K>();
+        let blk_size = std::mem::size_of::<BlockQ2K>();
         assert!(
             data.len() % blk_size == 0,
-            "data length must be a multiple of BlockQ2_K size"
+            "data length must be a multiple of BlockQ2K size"
         );
         let blocks = unsafe {
-            std::slice::from_raw_parts(data.as_ptr() as *const BlockQ2_K, data.len() / blk_size)
+            std::slice::from_raw_parts(data.as_ptr() as *const BlockQ2K, data.len() / blk_size)
         };
         Self {
             blocks: blocks.into(),
@@ -107,7 +105,7 @@ impl<'a> QuantBufQ2_K<'a> {
         Self { blocks: bs.into() }
     }
 
-    fn blocks(&self) -> &[BlockQ2_K] {
+    fn blocks(&self) -> &[BlockQ2K] {
         &self.blocks
     }
 
@@ -140,12 +138,11 @@ impl<'a> QuantBufQ2_K<'a> {
 
 mod impl_fallback {
     use half::f16;
-    use wgpu::naga::Block;
 
     use super::*;
     use crate::backends::cpu::buf::buf_q8_k::BlockQ8K;
 
-    pub fn quantize_f32_q2_k(data: &[f32]) -> Vec<BlockQ2_K> {
+    pub fn quantize_f32_q2_k(data: &[f32]) -> Vec<BlockQ2K> {
         assert!(data.len() % QK_K == 0);
 
         const Q4SCALE: f32 = 15f32;
@@ -159,7 +156,7 @@ mod impl_fallback {
 
         // super block
         for (i, data_chunk) in data.chunks(QK_K).enumerate() {
-            bs.push(BlockQ2_K::new_zero());
+            bs.push(BlockQ2K::new_zero());
 
             let mut max_scale = 0f32;
             let mut max_min = 0f32;
@@ -218,7 +215,7 @@ mod impl_fallback {
         bs
     }
 
-    pub fn vec_dot_q2_k_q8_k(q2k_bs: &[BlockQ2_K], q8k_bs: &[BlockQ8K]) -> f32 {
+    pub fn vec_dot_q2_k_q8_k(q2k_bs: &[BlockQ2K], q8k_bs: &[BlockQ8K]) -> f32 {
         let mut sumf = 0.0;
         for (q2k, q8k) in q2k_bs.iter().zip(q8k_bs.iter()) {
             let mut summs = 0;
@@ -275,7 +272,7 @@ mod tests {
     #[test]
     fn test_q2_k_quantize() {
         let data = generate_data(0.0, TEST_SIZE);
-        let bs = QuantBufQ2_K::quantize(&data);
+        let bs = QuantBufQ2K::quantize(&data);
         let mut dequantize = [0.0f32; TEST_SIZE];
         bs.blocks[0].dequantize(&mut dequantize);
 

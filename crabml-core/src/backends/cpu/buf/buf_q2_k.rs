@@ -3,6 +3,8 @@ use std::borrow::Cow;
 use half::f16;
 
 use self::impl_fallback::quantize_f32_q2_k;
+use self::impl_fallback::vec_dot_q2_k_q8_k;
+use super::QuantBufQ8K;
 use crate::backends::cpu::buf::qkk::*;
 
 /// A q2_k super block of 2-bit quantization
@@ -128,15 +130,20 @@ impl<'a> QuantBufQ2_K<'a> {
         })
     }
 
-    pub fn vec_dot(&self, a_offset: usize, b: &Self, b_offset: usize, len: usize) -> f32 {
-        todo!();
+    pub fn vec_dot(&self, a_offset: usize, b: &QuantBufQ8K, b_offset: usize, len: usize) -> f32 {
+        let q2k_bs = &self.blocks[a_offset / QK_K..(a_offset + len) / QK_K];
+        let q8k_bs = &b.blocks[b_offset / QK_K..(b_offset + len) / QK_K];
+
+        vec_dot_q2_k_q8_k(q2k_bs, q8k_bs)
     }
 }
 
 mod impl_fallback {
     use half::f16;
+    use wgpu::naga::Block;
 
     use super::*;
+    use crate::backends::cpu::buf::buf_q8_k::BlockQ8K;
 
     pub fn quantize_f32_q2_k(data: &[f32]) -> Vec<BlockQ2_K> {
         assert!(data.len() % QK_K == 0);
@@ -209,6 +216,51 @@ mod impl_fallback {
             }
         }
         bs
+    }
+
+    pub fn vec_dot_q2_k_q8_k(q2k_bs: &[BlockQ2_K], q8k_bs: &[BlockQ8K]) -> f32 {
+        let mut sumf = 0.0;
+        for (q2k, q8k) in q2k_bs.iter().zip(q8k_bs.iter()) {
+            let mut summs = 0;
+            for (sc, bsum) in q2k.scales.iter().zip(q8k.bsums.iter()) {
+                summs += *bsum * (sc >> 4) as i16;
+            }
+            let dall = q8k.d * Into::<f32>::into(q2k.d);
+            let dmin = q8k.d * Into::<f32>::into(q2k.dmin);
+
+            let mut isum: i32 = 0;
+            let mut is = 0;
+            let mut d: i32 = 0;
+
+            let mut q8_i = 0;
+            let mut q2_i = 0;
+
+            for _ in 0..QK_K / 128 {
+                let mut shift: usize = 0;
+                for _ in 0..4 {
+                    d = (q2k.scales[is] & 0xF) as i32;
+                    is += 1;
+                    let mut isuml: i32 = 0;
+                    for l in 0..16 {
+                        isuml += q8k.qs[q8_i + l] as i32 * ((q2k.qs[q2_i + l] >> shift) & 3) as i32;
+                    }
+                    isum += d * isuml;
+
+                    d = (q2k.scales[is] & 0xf) as i32;
+                    is += 1;
+                    isuml = 0;
+                    for l in 16..32 {
+                        isuml += q8k.qs[q8_i + l] as i32 * ((q2k.qs[q2_i + l] >> shift) & 3) as i32;
+                    }
+                    // isuml += d * isuml;
+                    shift += 2;
+                    q8_i += 32;
+                }
+                q2_i += 32;
+            }
+            sumf += dall * isum as f32 - dmin * summs as f32;
+        }
+        sumf
     }
 }
 

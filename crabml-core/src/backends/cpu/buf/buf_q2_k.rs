@@ -294,7 +294,7 @@ mod tests {
     #[test]
     fn test_q2_k_quantize() {
         let data = generate_data(0.0, TEST_SIZE);
-        let bs = QuantBufQ2_K::quantize(&data);
+        let bs = QuantBufQ2K::quantize(&data);
         let mut dequantize = [0.0f32; TEST_SIZE];
         bs.blocks[0].dequantize(&mut dequantize);
 

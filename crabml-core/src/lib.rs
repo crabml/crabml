@@ -1,6 +1,7 @@
 #![feature(portable_simd)]
 #![feature(slice_as_chunks)]
 #![cfg_attr(target_arch = "aarch64", feature(stdarch_neon_dotprod))]
+#![feature(thread_local)]
 #![feature(lazy_cell)]
 
 #[allow(unreachable_patterns)]

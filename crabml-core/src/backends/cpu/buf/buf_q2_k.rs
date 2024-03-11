@@ -137,7 +137,6 @@ impl<'a> QuantBufQ2K<'a> {
 }
 
 mod impl_fallback {
-    use half::f16;
 
     use super::*;
     use crate::backends::cpu::buf::buf_q8_k::BlockQ8K;

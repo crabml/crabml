@@ -15,7 +15,6 @@ pub mod buf_q6_k;
 pub mod buf_q8_0;
 pub mod buf_q8_1;
 pub mod buf_q8_k;
-pub mod qkk;
 
 pub use buf_q2_k::QuantBufQ2K;
 pub use buf_q4_0::QuantBufQ4_0;
@@ -26,4 +25,3 @@ pub use buf_q6_k::QuantBufQ6K;
 pub use buf_q8_0::QuantBufQ8_0;
 pub use buf_q8_1::QuantBufQ8_1;
 pub use buf_q8_k::QuantBufQ8K;
-pub use qkk::*;

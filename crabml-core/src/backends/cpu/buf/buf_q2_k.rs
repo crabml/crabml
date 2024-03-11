@@ -267,27 +267,6 @@ mod tests {
     use super::*;
     use crate::backends::cpu::buf::util::tests::*;
 
-    const _MAX_QUANTIZATION_TOTAL_ERROR_2BITS: f32 = 0.0075;
-    const TEST_SIZE: usize = 256;
-
-    #[test]
-    fn test_q2_k_quantize() {
-        let data = generate_data(0.0, TEST_SIZE);
-        let bs = QuantBufQ2K::quantize(&data);
-        let mut dequantize = [0.0f32; TEST_SIZE];
-        bs.blocks[0].dequantize(&mut dequantize);
-
-        let _diff = array_rmse(&dequantize, &data);
-        // temporarily pass the diff assertion at present.
-        // assert!(diff < MAX_QUANTIZATION_TOTAL_ERROR_2BITS);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::backends::cpu::buf::qkk::tests::*;
-
     const TEST_SIZE: usize = 256;
     const MAX_Q2K_PRODUCT_ERROR: f32 = 0.02;
     const _MAX_QUANTIZATION_TOTAL_ERROR_2BITS: f32 = 0.0075;

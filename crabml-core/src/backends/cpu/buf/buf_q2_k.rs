@@ -5,7 +5,7 @@ use half::f16;
 use self::impl_fallback::quantize_f32_q2_k;
 use self::impl_fallback::vec_dot_q2_k_q8_k;
 use super::QuantBufQ8K;
-use crate::backends::cpu::buf::qkk::*;
+use crate::backends::cpu::buf::util::*;
 
 /// A q2_k super block of 2-bit quantization
 ///
@@ -266,7 +266,7 @@ mod impl_fallback {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::backends::cpu::buf::qkk::tests::*;
+    use crate::backends::cpu::buf::util::tests::*;
 
     const _MAX_QUANTIZATION_TOTAL_ERROR_2BITS: f32 = 0.0075;
     const TEST_SIZE: usize = 256;

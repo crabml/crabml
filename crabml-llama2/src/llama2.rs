@@ -57,7 +57,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         let key_cache = (0..conf.n_layers)
             .map(|_| {
                 T::alloc(
-                    &[0, conf.n_heads, conf.head_size()],
+                    &[0, conf.n_kv_heads, conf.head_size()],
                     kv_cache_dtype,
                     Some(seq_len * conf.embedding_dim),
                     device.clone(),
@@ -68,7 +68,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         let value_cache = (0..conf.n_layers)
             .map(|_| {
                 T::alloc(
-                    &[0, conf.n_heads, conf.head_size()],
+                    &[0, conf.n_kv_heads, conf.head_size()],
                     kv_cache_dtype,
                     Some(seq_len * conf.embedding_dim),
                     device.clone(),
@@ -289,10 +289,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         // save to kv cache
         {
             let _t = self.metrics.save_kvcache_walltime.track();
-            let v = v
-                .reshape(&[n_kv_heads, head_dim])?
-                .repeat_n(n_heads / n_kv_heads)?;
-            let k = k.repeat_n(n_heads / n_kv_heads)?;
+            let v = v.reshape(&[n_kv_heads, head_dim])?;
 
             if let Some(ref mut k_cache) = self.key_cache[l] {
                 k_cache.extend(&k)?;
@@ -306,13 +303,13 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         let x = {
             let q = q.reshape(&[n_heads, head_dim])?;
 
-            // - key_cache: [seq, n_head, head_size]
-            // - key_cache = key_cache.transpose(1, 0, 2) => [n_head, seq, head_size]
+            // - key_cache: [seq, n_kv_head, head_size]
+            // - key_cache = key_cache.transpose(1, 0, 2) => [n_kv_head, seq, head_size]
             // - q: [n_head, head_size]
             // - attn_score = batch_matmul(key_cache, q) => [n_head, seq]
             // - softmax(attn_score, axis=1) => [n_head, seq]
-            // - val_cache: [seq, n_head, head_size]
-            // - val_cache = val_cache.transpose(1, 2, 0) => [n_head, head_size, seq]
+            // - val_cache: [seq, n_kv_head, head_size]
+            // - val_cache = val_cache.transpose(1, 2, 0) => [n_kv_head, head_size, seq]
             // - out = batch_matmul(val_cache, atten_scores) => [n_head, head_size]
 
             // get attention scores

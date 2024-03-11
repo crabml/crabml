@@ -77,22 +77,23 @@ fn batch_matmul_vec_f32(
 
 #[allow(clippy::too_many_arguments)]
 fn batch_matmul_vec_f16(
-    a: &[f16],
-    b: &[f16],
-    c: &mut [f32],
+    a: &[f16],     // Batch x M x K
+    b: &[f16],     // Batch x K
+    c: &mut [f32], // Batch x M
     m: usize,
     k: usize,
-    bi_stride: usize,
-    mi_stride: usize,
-    ki_stride: usize,
+    a_stride0: usize,
+    a_stride1: usize,
+    a_stride2: usize,
 ) {
-    if ki_stride == 1 {
+    let a_batch = a.len() / (m * k);
+    if a_stride2 == 1 {
         c.par_iter_mut().enumerate().for_each(|(i, bufcp)| {
             let mi = i % m;
             let bi = (i - mi) / m;
             *bufcp = vec_dot_f16_f16(
                 a,
-                bi * bi_stride + mi * mi_stride,
+                (bi % a_batch) * a_stride0 + mi * a_stride1,
                 &b[bi * k..(bi + 1) * k],
                 0,
                 k,
@@ -104,8 +105,8 @@ fn batch_matmul_vec_f16(
             let bi = (i - mi) / m;
             *bufcp = vec_dot_f16_f16_strided(
                 a,
-                bi * bi_stride + mi * mi_stride,
-                ki_stride,
+                (bi % a_batch) * a_stride0 + mi * a_stride1,
+                a_stride2,
                 k,
                 &b[bi * k..(bi + 1) * k],
             );

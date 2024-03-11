@@ -284,7 +284,7 @@ mod tests {
 
         let _diff = array_rmse(&dequantize, &data);
         // temporarily pass the diff assertion at present.
-        // assert_eq!(diff, _MAX_QUANTIZATION_TOTAL_ERROR_6BITS);
+        // assert!(_diff < _MAX_QUANTIZATION_TOTAL_ERROR_6BITS);
     }
 
     #[test]

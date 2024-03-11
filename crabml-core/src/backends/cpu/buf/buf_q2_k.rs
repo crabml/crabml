@@ -87,7 +87,17 @@ pub struct QuantBufQ2_K<'a> {
 
 impl<'a> QuantBufQ2_K<'a> {
     pub fn from_bytes(data: &'a [u8]) -> Self {
-        todo!();
+        let blk_size = std::mem::size_of::<BlockQ2_K>();
+        assert!(
+            data.len() % blk_size == 0,
+            "data length must be a multiple of BlockQ2_K size"
+        );
+        let blocks = unsafe {
+            std::slice::from_raw_parts(data.as_ptr() as *const BlockQ2_K, data.len() / blk_size)
+        };
+        Self {
+            blocks: blocks.into(),
+        }
     }
 
     pub fn quantize(data: &[f32]) -> Self {

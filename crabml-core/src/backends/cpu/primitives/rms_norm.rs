@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use std::simd::f32x32;
-use std::simd::SimdFloat;
+use std::simd::num::SimdFloat;
 
 use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::error::Result;

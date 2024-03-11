@@ -1,5 +1,3 @@
-use bytemuck;
-
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C, align(16))]
 pub struct RmsNormMeta {

@@ -5,7 +5,7 @@ pub mod buf_f16;
 pub mod buf_f32;
 
 pub mod buf_q2_k;
-mod qkk;
+mod util;
 
 pub mod buf_q4_0;
 pub mod buf_q4_1;

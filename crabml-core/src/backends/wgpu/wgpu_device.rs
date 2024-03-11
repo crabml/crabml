@@ -3,7 +3,6 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use wgpu;
 use wgpu::util::DeviceExt;
 
 use crate::tensor::Tensor;

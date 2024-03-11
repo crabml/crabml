@@ -1,6 +1,5 @@
 use std::rc::Rc;
 
-use wgpu;
 use wgpu::util::DeviceExt;
 
 use super::meta::MatmulMeta;

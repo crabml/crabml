@@ -53,62 +53,63 @@ pub fn batch_matmul_vec<'a>(
 
 #[allow(clippy::too_many_arguments)]
 fn batch_matmul_vec_f32(
-    a: &[f32],
-    b: &[f32],
-    c: &mut [f32],
+    abuf: &[f32],     // Batch x M x K
+    bbuf: &[f32],     // Batch x K
+    cbuf: &mut [f32], // Batch x M
     m: usize,
     k: usize,
     bi_stride: usize,
     mi_stride: usize,
     ki_stride: usize,
 ) {
-    c.par_iter_mut().enumerate().for_each(|(i, bufcp)| {
+    let a_batch = abuf.len() / (m * k);
+    cbuf.par_iter_mut().enumerate().for_each(|(i, bufcp)| {
         let mi = i % m;
         let bi = (i - mi) / m;
         *bufcp = vec_dot_f32_f32_strided(
-            a,
-            bi * bi_stride + mi * mi_stride,
+            abuf,
+            (bi % a_batch) * bi_stride + mi * mi_stride,
             ki_stride,
             k,
-            &b[bi * k..(bi + 1) * k],
+            &bbuf[bi * k..(bi + 1) * k],
         );
     });
 }
 
 #[allow(clippy::too_many_arguments)]
 fn batch_matmul_vec_f16(
-    a: &[f16],     // Batch x M x K
-    b: &[f16],     // Batch x K
-    c: &mut [f32], // Batch x M
+    abuf: &[f16],     // Batch x M x K
+    bbuf: &[f16],     // Batch x K
+    cbuf: &mut [f32], // Batch x M
     m: usize,
     k: usize,
     a_stride0: usize,
     a_stride1: usize,
     a_stride2: usize,
 ) {
-    let a_batch = a.len() / (m * k);
+    let a_batch = abuf.len() / (m * k);
     if a_stride2 == 1 {
-        c.par_iter_mut().enumerate().for_each(|(i, bufcp)| {
+        cbuf.par_iter_mut().enumerate().for_each(|(i, bufcp)| {
             let mi = i % m;
             let bi = (i - mi) / m;
             *bufcp = vec_dot_f16_f16(
-                a,
+                abuf,
                 (bi % a_batch) * a_stride0 + mi * a_stride1,
-                &b[bi * k..(bi + 1) * k],
+                &bbuf[bi * k..(bi + 1) * k],
                 0,
                 k,
             );
         });
     } else {
-        c.par_iter_mut().enumerate().for_each(|(i, bufcp)| {
+        cbuf.par_iter_mut().enumerate().for_each(|(i, bufcp)| {
             let mi = i % m;
             let bi = (i - mi) / m;
             *bufcp = vec_dot_f16_f16_strided(
-                a,
+                abuf,
                 (bi % a_batch) * a_stride0 + mi * a_stride1,
                 a_stride2,
                 k,
-                &b[bi * k..(bi + 1) * k],
+                &bbuf[bi * k..(bi + 1) * k],
             );
         })
     }

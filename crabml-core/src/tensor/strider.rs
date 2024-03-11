@@ -113,8 +113,9 @@ impl TensorStrider {
             return Err((
                 ErrorKind::TensorError,
                 format!(
-                    "invalid shape {:?} for a tensor has a length of {}",
-                    shape, len
+                    "invalid shape {:?} for a tensor's origin shape {:?}",
+                    shape,
+                    self.shape(),
                 ),
             )
                 .into());

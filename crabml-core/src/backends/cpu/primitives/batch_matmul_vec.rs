@@ -23,7 +23,7 @@ pub fn batch_matmul_vec<'a>(
 ) -> Result<()> {
     assert!(strider1.shape().len() == 3);
     assert!(strider2.shape().len() == 2);
-    assert!(strider1.shape()[0] == strider2.shape()[0]);
+    // assert!(strider1.shape()[0] == strider2.shape()[0]);
     assert!(strider1.shape()[2] == strider2.shape()[1]);
     assert!(strider2.is_contiguous());
 

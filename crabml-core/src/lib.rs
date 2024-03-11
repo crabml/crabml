@@ -1,6 +1,6 @@
 #![feature(portable_simd)]
 #![feature(slice_as_chunks)]
-#![feature(stdarch_neon_dotprod)]
+// #![feature(stdarch_neon_dotprod)]
 #![feature(thread_local)]
 #![feature(lazy_cell)]
 

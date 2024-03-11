@@ -190,7 +190,7 @@ impl TensorStrider {
         strides
     }
 
-    fn increment_pos(pos: &mut Vec<usize>, shape: &[usize]) {
+    fn increment_pos(pos: &mut [usize], shape: &[usize]) {
         for i in (0..pos.len()).rev() {
             if pos[i] < shape[i] - 1 {
                 pos[i] += 1;

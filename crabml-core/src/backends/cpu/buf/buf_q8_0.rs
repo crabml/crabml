@@ -221,18 +221,19 @@ mod impl_aarch64_neon {
         }
     }
 }
+
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 use impl_aarch64_neon::*;
 
 #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
 mod impl_x86_64_avx2 {
-    //! Inspired a lot by [ggml](https://github.com/ggerganov/ggml/blob/master/src/ggml-quants.c)
-
     use std::arch::x86_64::*;
 
     use half::f16;
 
     use super::BlockQ8_0;
+
+    /// Inspired a lot by ggml https://github.com/ggerganov/ggml/blob/master/src/ggml-quants.c
 
     pub fn quantize_f32_q8_0(data: &[f32]) -> Vec<BlockQ8_0> {
         let mut bs = Vec::with_capacity(data.len() / 32);

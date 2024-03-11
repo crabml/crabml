@@ -3,6 +3,8 @@ use core::arch::aarch64::float32x4_t;
 use core::arch::aarch64::uint16x4_t;
 use core::arch::aarch64::uint16x8_t;
 use core::arch::asm;
+use std::arch::aarch64::int32x4_t;
+use std::arch::aarch64::int8x16_t;
 
 use half::f16;
 
@@ -115,4 +117,16 @@ pub unsafe fn vaddvq_f16(a: float16x8_t) -> f32 {
     let vhigh = vget_high_f16_f32(a);
     let vlow = vget_low_f16_f32(a);
     aarch64::vaddvq_f32(vhigh) + aarch64::vaddvq_f32(vlow)
+}
+
+/// calling this is much slower than using the intrinsics.
+#[inline]
+pub unsafe fn vdotq_s32(mut a: int32x4_t, b: int8x16_t, c: int8x16_t) -> int32x4_t {
+    asm!(
+        "sdot {0:v}.4s, {1:v}.16b, {2:v}.16b",
+        inout(vreg) a,
+        in(vreg) b,
+        in(vreg) c,
+        options(nomem, nostack, preserves_flags));
+    a
 }

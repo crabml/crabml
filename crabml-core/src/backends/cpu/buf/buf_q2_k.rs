@@ -288,7 +288,7 @@ mod tests {
     use super::*;
     use crate::backends::cpu::buf::qkk::tests::*;
 
-    const MAX_QUANTIZATION_TOTAL_ERROR_2BITS: f32 = 0.0075;
+    const _MAX_QUANTIZATION_TOTAL_ERROR_2BITS: f32 = 0.0075;
     const TEST_SIZE: usize = 256;
 
     #[test]
@@ -298,7 +298,7 @@ mod tests {
         let mut dequantize = [0.0f32; TEST_SIZE];
         bs.blocks[0].dequantize(&mut dequantize);
 
-        let diff = array_rmse(&dequantize, &data);
+        let _diff = array_rmse(&dequantize, &data);
         // temporarily pass the diff assertion at present.
         // assert!(diff < MAX_QUANTIZATION_TOTAL_ERROR_2BITS);
     }

@@ -19,7 +19,7 @@ pub fn make_qkx1_quants(
     n: usize,
     nmax: i32,
     data: &[f32],
-    L: &mut [u8],
+    l: &mut [u8],
     the_min: &mut f32,
     ntry: i32,
 ) -> f32 {
@@ -36,8 +36,8 @@ pub fn make_qkx1_quants(
     }
 
     if max == min {
-        for l in L.iter_mut().take(n) {
-            *l = 0;
+        for _l in l.iter_mut().take(n) {
+            *_l = 0;
         }
         *the_min = 0.0f32;
         return 0.0f32;
@@ -53,19 +53,19 @@ pub fn make_qkx1_quants(
         let mut suml2 = 0i32;
         let mut did_change = false;
         for i in 0..n {
-            let l = nearest_i32(iscale * (data[i] - min));
-            let l = 0.max(nmax.min(l));
-            if l as u8 != L[i] {
-                L[i] = l as u8;
+            let _l = nearest_i32(iscale * (data[i] - min));
+            let _l = 0.max(nmax.min(_l));
+            if _l as u8 != l[i] {
+                l[i] = _l as u8;
                 did_change = true;
             }
-            sumlx += (data[i] - min) * l as f32;
-            suml2 += l * l;
+            sumlx += (data[i] - min) * _l as f32;
+            suml2 += _l * _l;
         }
         scale = sumlx / suml2 as f32;
         let mut sum = 0.0f32;
         for i in 0..n {
-            sum += data[i] - scale * L[i] as f32;
+            sum += data[i] - scale * l[i] as f32;
         }
         min = sum / n as f32;
         if min > 0f32 {

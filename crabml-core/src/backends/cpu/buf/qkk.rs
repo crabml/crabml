@@ -81,8 +81,36 @@ pub fn make_qkx1_quants(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
+
+    /// Generate synthetic test data
+    pub fn generate_data(offset: f32, n: usize) -> Vec<f32> {
+        let mut data = Vec::with_capacity(n);
+        for i in 0..n {
+            data.push(0.1 + 2.0 * f32::cos(i as f32 + offset));
+        }
+        data
+    }
+
+    /// Calculate RMSE between two f32 slices as the difference
+    pub fn array_rmse(s1: &[f32], s2: &[f32]) -> f32 {
+        if s1.len() != s2.len() {
+            panic!(
+                "s1 and s2 should have the same length: s1 length {}, s2 length {}",
+                s1.len(),
+                s2.len()
+            );
+        }
+
+        let n = s1.len();
+        let mut sum = 0.0;
+        for (s1_d, s2_d) in s1.iter().zip(s2.iter()) {
+            let diff = *s1_d - *s2_d;
+            sum += diff * diff;
+        }
+        f32::sqrt(sum) / n as f32
+    }
 
     #[test]
     fn test_nearest_i32() {

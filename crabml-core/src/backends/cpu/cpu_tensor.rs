@@ -314,7 +314,7 @@ impl<'a> Tensor for CpuTensor<'a> {
         let bufb = b.buf();
         let _t = self.device.metrics.batch_matmul_walltime.track();
         let mut c = CpuTensor::alloc(
-            &[self.shape()[0], self.shape()[1]],
+            &[b.shape()[0], self.shape()[1]],
             GGMLType::F32,
             None,
             self.device(),

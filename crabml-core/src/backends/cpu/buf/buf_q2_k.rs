@@ -49,8 +49,8 @@ impl BlockQ2K {
                 scale_is += 1;
                 dl = d * (sc & 0xF) as f32;
                 ml = min * (sc >> 4) as f32;
-                for q in qs.iter().take(16) {
-                    buf[buf_i] = dl * ((*q >> shift) & 3) as f32 - ml;
+                for &q in qs.iter().take(16) {
+                    buf[buf_i] = dl * ((q >> shift) & 3) as f32 - ml;
                     buf_i += 1;
                 }
 
@@ -58,7 +58,7 @@ impl BlockQ2K {
                 scale_is += 1;
                 dl = d * (sc & 0xF) as f32;
                 ml = min * (sc >> 4) as f32;
-                for q in qs[16..].iter().take(16) {
+                for &q in qs[16..].iter().take(16) {
                     buf[buf_i] = dl * ((q >> shift) & 3) as f32 - ml;
                     buf_i += 1;
                 }
@@ -214,8 +214,8 @@ mod impl_fallback {
         let mut sumf = 0.0;
         for (q2k, q8k) in q2k_bs.iter().zip(q8k_bs.iter()) {
             let mut summs = 0;
-            for (sc, bsum) in q2k.scales.iter().zip(q8k.bsums.iter()) {
-                summs += *bsum as i32 * (sc >> 4) as i32;
+            for (&sc, &bsum) in q2k.scales.iter().zip(q8k.bsums.iter()) {
+                summs += bsum * (sc >> 4) as i16;
             }
             let dall = q8k.d * Into::<f32>::into(q2k.d);
             let dmin = q8k.d * Into::<f32>::into(q2k.dmin);

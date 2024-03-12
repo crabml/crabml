@@ -161,8 +161,7 @@ pub fn make_qkx1_quants(
 ) -> f32 {
     let mut min = data[0];
     let mut max = data[0];
-    for d in data.iter().take(n) {
-        let d = *d;
+    for &d in data.iter().take(n) {
         if d < min {
             min = d;
         }
@@ -219,11 +218,11 @@ pub fn make_qkx1_quants(
 pub fn make_q3_quants(n: usize, nmax: i32, data: &[f32], l: &mut [i8], do_rmse: bool) -> f32 {
     let mut max = 0f32;
     let mut amax = 0f32;
-    for d in data.iter().take(n) {
+    for &d in data.iter().take(n) {
         let ax = d.abs();
         if ax > amax {
             amax = ax;
-            max = *d;
+            max = d;
         }
     }
     // all zero
@@ -309,8 +308,8 @@ pub(crate) mod tests {
 
         let n = s1.len();
         let mut sum = 0.0;
-        for (s1_d, s2_d) in s1.iter().zip(s2.iter()) {
-            let diff = *s1_d - *s2_d;
+        for (&s1_d, &s2_d) in s1.iter().zip(s2.iter()) {
+            let diff = s1_d - s2_d;
             sum += diff * diff;
         }
         f32::sqrt(sum) / n as f32

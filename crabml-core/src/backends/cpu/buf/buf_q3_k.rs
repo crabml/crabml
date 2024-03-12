@@ -131,7 +131,7 @@ mod impl_fallback {
 
             if max_scale != 0f32 {
                 let iscale = -32f32 / max_scale;
-                for (j, scale) in scales.iter().enumerate() {
+                for (j, &scale) in scales.iter().enumerate() {
                     let mut _l = nearest_i32(iscale * scale) as i8;
                     _l = _l.min(31).max(-32) + 32;
                     if j < 8 {
@@ -153,12 +153,12 @@ mod impl_fallback {
                     (bs[i].scales[j - 8] >> 4) as i8
                 };
                 sc = (sc | (((bs[i].scales[8 + j % 4] >> (2 * (j / 4))) & 3) << 4) as i8) - 32;
-                let d = Into::<f32>::into(bs[i].d) * sc as f32;
-                if d == 0f32 {
+                let _d = Into::<f32>::into(bs[i].d) * sc as f32;
+                if _d == 0f32 {
                     continue;
                 }
-                for (d, l) in data_block.iter().zip(l.iter_mut()) {
-                    let mut _l = nearest_i32(*d / d);
+                for (&d, l) in data_block.iter().zip(l.iter_mut()) {
+                    let mut _l = nearest_i32(d / _d);
                     _l = _l.min(3).max(-4);
                     *l = (_l + 4) as i8;
                 }
@@ -166,10 +166,10 @@ mod impl_fallback {
 
             let mut m = 0;
             let mut hm = 1u8;
-            for j in 0..QK_K {
-                if l[j] > 3 {
+            for l in l.iter_mut() {
+                if *l > 3 {
                     bs[i].hmask[m] |= hm;
-                    l[j] -= 4;
+                    *l -= 4;
                 }
                 m += 1;
                 if m == QK_K / 8 {

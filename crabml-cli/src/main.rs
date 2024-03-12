@@ -4,13 +4,18 @@ use std::io::Write;
 use std::time::Instant;
 
 use clap::Parser;
+use clap::ValueEnum;
 use crabml::backends::cpu::CpuTensorDevice;
+use crabml::backends::wgpu::WgpuTensorDevice;
+use crabml::backends::wgpu::WgpuTensorDeviceOptions;
 use crabml::error::Result;
 use crabml::gguf::GGUFFileLoader;
+use crabml::tensor::Tensor;
 use crabml::tensor::TensorMetrics;
 use crabml_llama2::llama2::Llama2Runner;
 use crabml_llama2::sampler::Llama2Sampler;
 use crabml_llama2::CpuLlama2Model;
+use crabml_llama2::WgpuLlama2Model;
 
 #[global_allocator]
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
@@ -40,55 +45,23 @@ struct CommandArgs {
 
     /// The prompt
     prompt: String,
+
+    #[arg(value_enum)]
+    device_type: DeviceType,
 }
 
-fn main() -> Result<()> {
-    let args = CommandArgs::parse();
-    let start_time = Instant::now();
+#[derive(Clone, Debug, ValueEnum)]
+enum DeviceType {
+    Cpu,
+    Wgpu,
+}
 
-    // configure rayon
-    let mut threads = args.threads;
-    if threads == 0 {
-        threads = num_cpus::get();
-    }
-    rayon::ThreadPoolBuilder::new()
-        .num_threads(threads)
-        .build_global()
-        .unwrap();
-
-    let gl = GGUFFileLoader::new(&args.model)?;
-    let gf = gl.open()?;
-
-    let metrics = TensorMetrics::default();
-    let device_cpu = CpuTensorDevice::new().with_metrics(metrics.clone());
-    let model_cpu = CpuLlama2Model::load(&gf, device_cpu.clone())?;
-    let conf = model_cpu.conf.clone();
-
-    // let device_wgpu = WgpuTensorDevice::new(
-    //     WgpuTensorDeviceOptions::new().with_staging_buf_bytes(conf.vocab_size * 4),
-    // );
-    // let model_wgpu = WgpuLlama2Model::from_cpu(&model_cpu, device_wgpu)?;
-
-    let mut sampler = Llama2Sampler::new(
-        conf.vocab_size,
-        args.temperature,
-        args.probability,
-        device_cpu.exp_cache(),
-    );
-    let mut runner = Llama2Runner::new(&model_cpu, metrics.clone(), true)?;
-
-    if args.verbose {
-        for tensor in gf.tensor_infos() {
-            println!(
-                "- {} \t\t\t {} \t {:?}",
-                tensor.name(),
-                tensor.typ(),
-                tensor.dimensions()
-            );
-        }
-        println!("loaded model: {}ms", start_time.elapsed().as_millis());
-    }
-
+fn run<U: Tensor>(
+    args: &CommandArgs,
+    runner: &mut Llama2Runner<U>,
+    sampler: &mut Llama2Sampler,
+    metrics: &TensorMetrics,
+) -> Result<()> {
     // it seems printing to stdout is not that fast, so we use a separate thread to keep the generation not blocked by the printing
     let (tx, rx) = std::sync::mpsc::sync_channel(32);
     let print_thread = std::thread::spawn(move || {
@@ -103,7 +76,7 @@ fn main() -> Result<()> {
         std::io::stdout().flush().unwrap();
     });
 
-    let mut output = runner.generate(&args.prompt, args.steps, &mut sampler)?;
+    let mut output = runner.generate(&args.prompt, args.steps, sampler)?;
     print!("{}", &args.prompt);
 
     loop {
@@ -132,8 +105,68 @@ fn main() -> Result<()> {
     println!(
         "{} tokens/s, {} threads",
         output.average_tokens_per_seconds(),
-        threads
+        args.threads
     );
+
+    Ok(())
+}
+
+fn main() -> Result<()> {
+    let args = CommandArgs::parse();
+    let start_time = Instant::now();
+
+    // configure rayon
+    let mut threads = args.threads;
+    if threads == 0 {
+        threads = num_cpus::get();
+    }
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(threads)
+        .build_global()
+        .unwrap();
+
+    let gl = GGUFFileLoader::new(&args.model)?;
+    let gf = gl.open()?;
+
+    let metrics = TensorMetrics::default();
+    let device_cpu = CpuTensorDevice::new().with_metrics(metrics.clone());
+    let model_cpu = CpuLlama2Model::load(&gf, device_cpu.clone())?;
+    let conf = model_cpu.conf.clone();
+
+    let mut sampler = Llama2Sampler::new(
+        conf.vocab_size,
+        args.temperature,
+        args.probability,
+        device_cpu.exp_cache(),
+    );
+
+    if args.verbose {
+        for tensor in gf.tensor_infos() {
+            println!(
+                "- {} \t\t\t {} \t {:?}",
+                tensor.name(),
+                tensor.typ(),
+                tensor.dimensions()
+            );
+        }
+        println!("loaded model: {}ms", start_time.elapsed().as_millis());
+    }
+
+    match args.device_type {
+        DeviceType::Cpu => {
+            let mut runner = Llama2Runner::new(&model_cpu, metrics.clone(), true)?;
+            run(&args, &mut runner, &mut sampler, &metrics)?;
+        }
+        DeviceType::Wgpu => {
+            let device_wgpu = WgpuTensorDevice::new(
+                WgpuTensorDeviceOptions::new().with_staging_buf_bytes(conf.vocab_size * 4),
+            );
+            let model_wgpu = WgpuLlama2Model::from_cpu(&model_cpu, device_wgpu)?;
+
+            let mut runner = Llama2Runner::new(&model_wgpu, metrics.clone(), true)?;
+            run(&args, &mut runner, &mut sampler, &metrics)?;
+        }
+    }
 
     Ok(())
 }

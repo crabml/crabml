@@ -237,6 +237,15 @@ pub(crate) mod tests {
         f32::sqrt(sum) / n as f32
     }
 
+    /// Calculate the dot product of original inputs for test reference
+    pub fn dot_product(s1: &[f32], s2: &[f32]) -> f32 {
+        let mut sum = 0.0;
+        for (f1, f2) in s1.iter().zip(s2.iter()) {
+            sum += *f1 * *f2;
+        }
+        sum
+    }
+
     #[test]
     fn test_nearest_i32() {
         let data_against = [

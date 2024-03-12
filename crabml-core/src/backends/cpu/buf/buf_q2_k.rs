@@ -219,7 +219,7 @@ mod impl_fallback {
         for (q2k, q8k) in q2k_bs.iter().zip(q8k_bs.iter()) {
             let mut summs = 0;
             for (sc, bsum) in q2k.scales.iter().zip(q8k.bsums.iter()) {
-                summs += *bsum * (sc >> 4) as i16;
+                summs += *bsum as i32 * (sc >> 4) as i32;
             }
             let dall = q8k.d * Into::<f32>::into(q2k.d);
             let dmin = q8k.d * Into::<f32>::into(q2k.dmin);
@@ -243,14 +243,14 @@ mod impl_fallback {
                     }
                     isum += d * isuml;
 
-                    // d = (q2k.scales[is] & 0xf) as i32;
+                    d = (q2k.scales[is] & 0xf) as i32;
                     is += 1;
                     isuml = 0;
                     for _l in 16..32 {
                         isuml +=
                             q8k.qs[q8_i + _l] as i32 * ((q2k.qs[q2_i + _l] >> shift) & 3) as i32;
                     }
-                    // isuml += d * isuml;
+                    isum += d * isuml;
                     shift += 2;
                     q8_i += 32;
                 }
@@ -267,8 +267,9 @@ mod tests {
     use super::*;
     use crate::backends::cpu::buf::util::tests::*;
 
-    const _MAX_QUANTIZATION_TOTAL_ERROR_2BITS: f32 = 0.0075;
     const TEST_SIZE: usize = 256;
+    const MAX_Q2K_PRODUCT_ERROR: f32 = 0.02;
+    const _MAX_QUANTIZATION_TOTAL_ERROR_2BITS: f32 = 0.0075;
 
     #[test]
     fn test_q2_k_quantize() {
@@ -280,5 +281,20 @@ mod tests {
         let _diff = array_rmse(&dequantize, &data);
         // temporarily pass the diff assertion at present.
         // assert!(diff < MAX_QUANTIZATION_TOTAL_ERROR_2BITS);
+    }
+
+    #[test]
+    fn test_q2_k_vec_dot_q8_k() {
+        let q2k_data = generate_data(0.0, TEST_SIZE);
+        let q8k_data = generate_data(1.0, TEST_SIZE);
+
+        let q2k = QuantBufQ2K::quantize(&q2k_data);
+        let q8k = QuantBufQ8K::quantize(&q8k_data);
+
+        let dot_result = vec_dot_q2_k_q8_k(&q2k.blocks, &q8k.blocks);
+        let dot_ref = dot_product(&q2k_data[..], &q8k_data[..]);
+        let diff = f32::abs(dot_ref - dot_result) / TEST_SIZE as f32;
+
+        assert!(diff < MAX_Q2K_PRODUCT_ERROR);
     }
 }

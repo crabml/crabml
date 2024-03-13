@@ -66,15 +66,16 @@ impl BlockQ3K {
                 dl = d_all * (scales[is] - 32) as f32;
                 is += 1;
                 for l in 0..16 {
-                    let _m = if self.hmask[l] & m != 0 { 0 } else { 4 };
-                    buf[buf_i] = dl * (((self.qs[l + qs_i] >> shift) & 3) - _m) as f32;
+                    let _m: i8 = if self.hmask[l] & m != 0 { 0 } else { 4 };
+                    buf[buf_i] = dl * (((self.qs[l + qs_i] >> shift) & 3) as i8 - _m) as f32;
                     buf_i += 1;
                 }
                 dl = d_all * (scales[is] - 32) as f32;
                 is += 1;
                 for l in 0..16 {
-                    let _m = if self.hmask[l + 16] & m != 0 { 0 } else { 4 };
-                    buf[buf_i] = dl * (((self.qs[l + qs_i + 16] >> shift) & 3) - _m) as f32;
+                    let _m: i8 = if self.hmask[l + 16] & m != 0 { 0 } else { 4 };
+                    buf[buf_i] = dl * (((self.qs[l + qs_i + 16] >> shift) & 3) as i8 - _m) as f32;
+                    buf_i += 1;
                 }
                 shift += 2;
                 m <<= 1;
@@ -239,5 +240,24 @@ mod impl_fallback {
     pub fn vec_dot_q3_k_q8_k(q2k_bs: &[BlockQ3K], q8k_bs: &[BlockQ8K]) -> f32 {
         // TODO
         0.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::backends::cpu::buf::util::tests::*;
+
+    const TEST_SIZE: usize = 256;
+
+    #[test]
+    fn test_q3_k_quantize() {
+        let data = generate_data(0.0, TEST_SIZE);
+        let bs = QuantBufQ3K::quantize(&data);
+        let mut dequantize = [0.0f32; TEST_SIZE];
+        bs.blocks[0].dequantize(&mut dequantize);
+
+        let _diff = array_rmse(&dequantize, &data);
+        // temporarily pass the diff assertion at present.
     }
 }

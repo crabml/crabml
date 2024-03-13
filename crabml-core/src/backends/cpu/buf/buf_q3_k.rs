@@ -1,4 +1,6 @@
 use std::borrow::Cow;
+use std::ptr;
+use std::ptr::slice_from_raw_parts;
 
 use half::f16;
 
@@ -34,7 +36,51 @@ impl BlockQ3K {
     }
 
     pub fn dequantize(&self, buf: &mut [f32]) {
-        // todo
+        const KMASK_1: u32 = 0x03030303;
+        const KMASK_2: u32 = 0x0f0f0f0f;
+
+        let d_all = Into::<f32>::into(self.d);
+        let mut m = 1u8;
+
+        let mut aux = [0u32; 4];
+        // memcpy self.scales into aux
+        unsafe {
+            let aux_u8 = &mut aux as *mut [u32] as *mut u8;
+            ptr::copy_nonoverlapping(&self.scales as *const u8, aux_u8, 12);
+        }
+        let tmp = aux[2];
+        aux[2] = ((aux[0] >> 4) & KMASK_2) | (((tmp >> 4) & KMASK_1) << 4);
+        aux[3] = ((aux[1] >> 4) & KMASK_2) | (((tmp >> 6) & KMASK_1) << 4);
+        aux[0] = (aux[0] & KMASK_2) | (((tmp) & KMASK_1) << 4);
+        aux[1] = (aux[1] & KMASK_2) | (((tmp >> 2) & KMASK_1) << 4);
+        let scales: &[i8] =
+            unsafe { std::slice::from_raw_parts(&aux as *const [u32] as *const i8, 16) };
+
+        let mut qs_i: usize = 0; // self.qs index
+        let mut buf_i = 0; // buf index
+        let mut is: usize = 0; // scales index
+        let mut dl: f32;
+        for _ in (0..QK_K).step_by(128) {
+            let mut shift = 0;
+            for _ in 0..4 {
+                dl = d_all * (scales[is] - 32) as f32;
+                is += 1;
+                for l in 0..16 {
+                    let _m = if self.hmask[l] & m != 0 { 0 } else { 4 };
+                    buf[buf_i] = dl * (((self.qs[l + qs_i] >> shift) & 3) - _m) as f32;
+                    buf_i += 1;
+                }
+                dl = d_all * (scales[is] - 32) as f32;
+                is += 1;
+                for l in 0..16 {
+                    let _m = if self.hmask[l + 16] & m != 0 { 0 } else { 4 };
+                    buf[buf_i] = dl * (((self.qs[l + qs_i + 16] >> shift) & 3) - _m) as f32;
+                }
+                shift += 2;
+                m <<= 1;
+            }
+            qs_i += 32;
+        }
     }
 }
 

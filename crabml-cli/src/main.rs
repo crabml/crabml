@@ -56,11 +56,11 @@ enum DeviceType {
     Wgpu,
 }
 
-impl ToString for DeviceType {
-    fn to_string(&self) -> String {
+impl Display for DeviceType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            DeviceType::Cpu => "cpu".to_string(),
-            DeviceType::Wgpu => "wgpu".to_string(),
+            DeviceType::Cpu => write!(f, "cpu"),
+            DeviceType::Wgpu => write!(f, "wgpu"),
         }
     }
 }

@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 use std::ptr;
-use std::ptr::slice_from_raw_parts;
 
 use half::f16;
 
@@ -154,6 +153,8 @@ impl<'a> QuantBufQ3K<'a> {
 }
 
 mod impl_fallback {
+    use std::sync::atomic::AtomicU32;
+
     use super::*;
 
     pub fn quantize_f32_q3_k(data: &[f32]) -> Vec<BlockQ3K> {
@@ -237,9 +238,94 @@ mod impl_fallback {
         bs
     }
 
-    pub fn vec_dot_q3_k_q8_k(q2k_bs: &[BlockQ3K], q8k_bs: &[BlockQ8K]) -> f32 {
-        // TODO
-        0.0
+    pub fn vec_dot_q3_k_q8_k(q3k_bs: &[BlockQ3K], q8k_bs: &[BlockQ8K]) -> f32 {
+        const KMASK_1: u32 = 0x03030303;
+        const KMASK_2: u32 = 0x0f0f0f0f;
+
+        let mut aux_8 = [0i8; QK_K];
+        let mut aux_16 = [0i16; 8];
+
+        let mut sums = [0f32; 8];
+        for (q3k, q8k) in q3k_bs.iter().zip(q8k_bs.iter()) {
+            let mut a8_i: usize = 0;
+            let mut q3_i: usize = 0;
+            let mut m: u8 = 1;
+            for _ in (0..QK_K).step_by(128) {
+                for l in 0..32 {
+                    aux_8[a8_i + l] = (q3k.qs[q3_i + l] & 3) as i8;
+                }
+                for l in 0..32 {
+                    aux_8[a8_i + l] -= if q3k.hmask[l] & m != 0 { 0 } else { 4 };
+                }
+                a8_i += 32;
+                m <<= 1;
+                for l in 0..32 {
+                    aux_8[a8_i + l] = ((q3k.qs[q3_i + l] >> 2) & 3) as i8;
+                }
+                for l in 0..32 {
+                    aux_8[a8_i + l] -= if q3k.hmask[l] & m != 0 { 0 } else { 4 };
+                }
+                a8_i += 32;
+                m <<= 1;
+                for l in 0..32 {
+                    aux_8[a8_i + l] = ((q3k.qs[q3_i + l] >> 4) & 3) as i8;
+                }
+                for l in 0..32 {
+                    aux_8[a8_i + l] -= if q3k.hmask[l] & m != 0 { 0 } else { 4 };
+                }
+                a8_i += 32;
+                m <<= 1;
+                for l in 0..32 {
+                    aux_8[a8_i + l] = ((q3k.qs[q3_i + l] >> 6) & 3) as i8;
+                }
+                for l in 0..32 {
+                    aux_8[a8_i + l] -= if q3k.hmask[l] & m != 0 { 0 } else { 4 };
+                }
+                a8_i += 32;
+                m <<= 1;
+                q3_i += 32;
+            }
+            a8_i = 0;
+
+            let mut aux_32 = [0i32; 8];
+            let mut auxs: [u32; 4] = [0; 4];
+            // memcpy q3k.scales into aux
+            unsafe {
+                let aux_u8 = &mut auxs as *mut [u32] as *mut u8;
+                ptr::copy_nonoverlapping(&q3k.scales as *const u8, aux_u8, 12);
+            }
+            let tmp = auxs[2];
+            auxs[2] = ((auxs[0] >> 4) & KMASK_2) | (((tmp >> 4) & KMASK_1) << 4);
+            auxs[3] = ((auxs[1] >> 4) & KMASK_2) | (((tmp >> 6) & KMASK_1) << 4);
+            auxs[0] = (auxs[0] & KMASK_2) | (((tmp) & KMASK_1) << 4);
+            auxs[1] = (auxs[1] & KMASK_2) | (((tmp >> 2) & KMASK_1) << 4);
+            let scales: &[i8] =
+                unsafe { &*ptr::slice_from_raw_parts(&mut auxs as *mut u32 as *mut i8, 16) };
+            let mut q8_i: usize = 0;
+            for &sc in scales.iter().take(QK_K / 16) {
+                for l in 0..8 {
+                    aux_16[l] = (q8k.qs[q8_i + l] * aux_8[a8_i + l]) as i16;
+                }
+                for l in 0..8 {
+                    aux_32[l] += (sc - 32) as i32 * aux_16[l] as i32;
+                }
+                q8_i += 8;
+                a8_i += 8;
+                for l in 0..8 {
+                    aux_16[l] = (q8k.qs[q8_i + l] * aux_8[a8_i + l]) as i16;
+                }
+                for l in 0..8 {
+                    aux_32[l] += (sc - 32) as i32 * aux_16[l] as i32;
+                }
+                q8_i += 8;
+                a8_i += 8;
+            }
+            let d = Into::<f32>::into(q3k.d) * q8k.d;
+            for (sum, &a32) in sums.iter_mut().zip(aux_32.iter()) {
+                *sum += d * a32 as f32
+            }
+        }
+        sums.into_iter().reduce(|sums, s| sums + s).unwrap()
     }
 }
 

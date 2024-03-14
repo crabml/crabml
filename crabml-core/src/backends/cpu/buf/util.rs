@@ -205,6 +205,17 @@ pub fn make_qkx1_quants(
     scale
 }
 
+#[inline]
+pub(crate) fn get_scale_min_k4(j: usize, q: &[u8], d: &mut u8, m: &mut u8) {
+    if j < 4 {
+        *d = q[j] & 63;
+        *m = q[j + 4] & 63;
+    } else {
+        *d = (q[j + 4] & 0xF) | ((q[j - 4] >> 6) << 4);
+        *m = (q[j + 4] >> 4) | ((q[j] >> 6) << 4);
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -268,5 +279,15 @@ pub(crate) mod tests {
                 i, expected, input, result
             );
         }
+    }
+
+    #[test]
+    fn test_get_scale_min_k4() {
+        let data = [255, 255, 255, 255, 255];
+        let mut sc: u8 = u8::default();
+        let mut m: u8 = u8::default();
+        get_scale_min_k4(0, &data, &mut sc, &mut m);
+        assert_eq!(sc, 63);
+        assert_eq!(m, 63);
     }
 }

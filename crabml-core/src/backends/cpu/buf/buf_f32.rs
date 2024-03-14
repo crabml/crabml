@@ -132,7 +132,13 @@ fn vec_dot_f32_f32_strided_simd(
 
 #[cfg(target_arch = "x86_64")]
 #[cfg(target_feature = "avx2")]
-fn vec_dot_f32_f32_strided_simd(a: &[f32], a_base: usize, a_stride: usize, k: usize, b: &[f32]) -> f32 {
+fn vec_dot_f32_f32_strided_simd(
+    a: &[f32],
+    a_base: usize,
+    a_stride: usize,
+    k: usize,
+    b: &[f32],
+) -> f32 {
     use std::arch::x86_64::*;
 
     unsafe {

@@ -46,14 +46,23 @@ struct CommandArgs {
     /// The prompt
     prompt: String,
 
-    #[arg(value_enum)]
-    device_type: DeviceType,
+    #[arg(short = 'D', long, default_value_t = DeviceType::Cpu)]
+    device: DeviceType,
 }
 
 #[derive(Clone, Debug, ValueEnum)]
 enum DeviceType {
     Cpu,
     Wgpu,
+}
+
+impl std::fmt::Display for DeviceType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DeviceType::Cpu => write!(f, "cpu"),
+            DeviceType::Wgpu => write!(f, "wgpu"),
+        }
+    }
 }
 
 fn run<U: Tensor>(
@@ -152,7 +161,7 @@ fn main() -> Result<()> {
         println!("loaded model: {}ms", start_time.elapsed().as_millis());
     }
 
-    match args.device_type {
+    match args.device {
         DeviceType::Cpu => {
             let mut runner = Llama2Runner::new(&model_cpu, metrics.clone(), true)?;
             run(&args, &mut runner, &mut sampler, &metrics)?;

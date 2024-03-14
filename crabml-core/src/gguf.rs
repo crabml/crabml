@@ -166,7 +166,6 @@ pub enum GGUFMetadataValueType {
     // The value is a UTF-8 non-null-terminated string, with length prepended.
     String = 8,
     // The value is an array of other values, with the length and type prepended.
-    ///
     // Arrays can be nested, and the length of the array is the number of elements in the array, not the number of bytes.
     Array = 9,
     // The value is a 64-bit unsigned little-endian integer.
@@ -809,7 +808,12 @@ impl GGUFFileLoader {
                 cause: Some(Box::new(err)),
             })?
         };
-
+        mmap.advise(memmap2::Advice::WillNeed)
+            .map_err(|err| Error {
+                kind: ErrorKind::IOError,
+                message: format!("failed to advise the mmap: {}", path),
+                cause: Some(Box::new(err)),
+            })?;
         Ok(Self { mmap })
     }
 

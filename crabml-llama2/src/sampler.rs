@@ -1,20 +1,26 @@
+use std::rc::Rc;
+
+use crabml::backends::cpu::buf::buf_f32::exp_f32_cached;
 use crabml::error::Error;
 use crabml::error::ErrorKind;
 use crabml::error::Result;
+use half::f16;
 use rand::Rng;
 
 pub struct Llama2Sampler {
     prob_index: Vec<(f32, usize)>,
     temperature: f32,
     topp: f32,
+    exp_cache: Rc<Vec<f16>>,
 }
 
 impl Llama2Sampler {
-    pub fn new(vocab_size: usize, temperature: f32, topp: f32) -> Self {
+    pub fn new(vocab_size: usize, temperature: f32, topp: f32, exp_cache: Rc<Vec<f16>>) -> Self {
         Self {
             prob_index: vec![(0.0, 0); vocab_size],
             temperature,
             topp,
+            exp_cache,
         }
     }
 
@@ -29,7 +35,7 @@ impl Llama2Sampler {
             *logit /= self.temperature;
         }
         // apply softmax to the logits to get the probabilities for next token
-        softmax(logits);
+        softmax(logits, self.exp_cache.as_ref());
 
         // flip a (float) coin (this is our source of entropy for sampling)
         let mut rng = rand::thread_rng();
@@ -115,11 +121,11 @@ impl Llama2Sampler {
     }
 }
 
-pub fn softmax(a: &mut [f32]) {
+pub fn softmax(a: &mut [f32], exp_cache: &[f16]) {
     let max = a.iter().fold(f32::NAN, |a, b| a.max(*b));
     let mut sum = 0.0;
     for a in a.iter_mut() {
-        *a = (*a - max).exp();
+        *a = exp_f32_cached(*a - max, exp_cache);
         sum += *a;
     }
     for a in a.iter_mut() {

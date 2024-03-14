@@ -5,7 +5,7 @@ use std::rc::Rc;
 use half::f16;
 
 use super::CpuTensor;
-use crate::tensor::TensorDeviceMetrics;
+use crate::tensor::TensorMetrics;
 
 #[derive(Debug, Clone, Default)]
 pub struct CpuTensorDeviceOptions {
@@ -17,10 +17,10 @@ pub struct CpuTensorDeviceOptions {
 #[derive(Debug)]
 pub struct CpuTensorDevice<'a> {
     pub(crate) opts: CpuTensorDeviceOptions,
-    pub(crate) metrics: TensorDeviceMetrics,
+    pub(crate) metrics: TensorMetrics,
     pub(crate) debug_tensors: RefCell<HashMap<String, Vec<f32>>>,
     pub(crate) wbuf: RefCell<Option<Vec<f32>>>,
-    pub(crate) exp_cache: Vec<f16>,
+    pub(crate) exp_cache: Rc<Vec<f16>>,
     _phantom: std::marker::PhantomData<&'a ()>,
 }
 
@@ -31,9 +31,9 @@ impl<'a> CpuTensorDevice<'a> {
         let device = Self {
             opts: CpuTensorDeviceOptions::default(),
             debug_tensors: RefCell::new(HashMap::new()),
-            metrics: TensorDeviceMetrics::default(),
+            metrics: TensorMetrics::default(),
             wbuf: RefCell::new(Some(vec![0.0; 32000])),
-            exp_cache: Self::init_exp_cache(),
+            exp_cache: Rc::new(Self::init_exp_cache()),
             _phantom: std::marker::PhantomData,
         };
         Rc::new(device)
@@ -43,15 +43,15 @@ impl<'a> CpuTensorDevice<'a> {
         let device = Self {
             opts,
             debug_tensors: RefCell::new(HashMap::new()),
-            metrics: TensorDeviceMetrics::default(),
+            metrics: TensorMetrics::default(),
             wbuf: RefCell::new(Some(vec![0.0; 32000])),
-            exp_cache: Self::init_exp_cache(),
+            exp_cache: Rc::new(Self::init_exp_cache()),
             _phantom: std::marker::PhantomData,
         };
         Rc::new(device)
     }
 
-    pub fn with_metrics(self: Rc<Self>, metrics: TensorDeviceMetrics) -> CpuTensorDeviceRef<'a> {
+    pub fn with_metrics(self: Rc<Self>, metrics: TensorMetrics) -> CpuTensorDeviceRef<'a> {
         let device = Self {
             opts: self.opts.clone(),
             debug_tensors: self.debug_tensors.clone(),
@@ -63,12 +63,16 @@ impl<'a> CpuTensorDevice<'a> {
         Rc::new(device)
     }
 
-    pub fn metrics(&self) -> &TensorDeviceMetrics {
+    pub fn metrics(&self) -> &TensorMetrics {
         &self.metrics
     }
 
     pub fn dump_debug_tensor(&self, name: &str) -> Option<Vec<f32>> {
         self.debug_tensors.borrow().get(name).cloned()
+    }
+
+    pub fn exp_cache(&self) -> Rc<Vec<f16>> {
+        self.exp_cache.clone()
     }
 
     fn init_exp_cache() -> Vec<f16> {

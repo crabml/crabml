@@ -12,6 +12,7 @@ rand = "0.8.5"
 rayon = "1.7.0"
 num_cpus = "1.16.0"
 crabml = { workspace = true }
+half = { version = "2.3.1" }
 
 [dev-dependencies]
 pretty_assertions = "1.2.1"

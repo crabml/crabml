@@ -1,3 +1,5 @@
+use half::f16;
+
 use super::CpuTensorDeviceRef;
 use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::backends::cpu::primitives;
@@ -58,6 +60,7 @@ impl<'a> CpuTensor<'a> {
     }
 
     pub fn dequantize(self, dtype: GGMLType) -> Result<Self> {
+        let _t = self.device.metrics.dequantize_walltime.track();
         let strider = self.strider.clone();
         let device = self.device.clone();
         let name = self.name.clone();
@@ -92,9 +95,12 @@ impl<'a> CpuTensor<'a> {
 
     /// to_vec is only used for test.
     fn to_vec(&self) -> Vec<f32> {
-        assert!(self.is_contiguous());
-        // TODO: if it's f16, convert it to f32
-        return self.buf.iter_f32().collect();
+        assert!(self.dtype() == GGMLType::F32);
+        if self.is_contiguous() {
+            return self.buf.iter_f32().collect();
+        }
+        let buf = self.buf().as_f32_ref();
+        self.strider.iter().map(|pos| buf[pos]).collect()
     }
 
     pub fn is_contiguous(&self) -> bool {
@@ -117,9 +123,37 @@ impl<'a> CpuTensor<'a> {
 impl<'a> Tensor for CpuTensor<'a> {
     type Device = CpuTensorDeviceRef<'a>;
 
-    fn alloc(shape: &[usize], _capacity: Option<usize>, device: Self::Device) -> Result<Self> {
-        let buf = vec![0.0; shape.iter().product()];
-        Self::new(buf, shape, device)
+    fn alloc(
+        shape: &[usize],
+        dtype: GGMLType,
+        capacity: Option<usize>,
+        device: Self::Device,
+    ) -> Result<Self> {
+        if dtype != GGMLType::F32 && dtype != GGMLType::F16 {
+            return Err((ErrorKind::TensorError, "only f32/f16 is supported").into());
+        }
+
+        let _t = device.metrics.alloc_walltime.track();
+        let buf = match dtype {
+            GGMLType::F32 => {
+                let mut vec = Vec::with_capacity(capacity.unwrap_or(shape.iter().product()));
+                vec.resize(shape.iter().product(), 0.0);
+                CpuTensorBuf::F32(vec.into())
+            }
+            GGMLType::F16 => {
+                let mut vec = Vec::with_capacity(capacity.unwrap_or(shape.iter().product()));
+                vec.resize(shape.iter().product(), f16::ZERO);
+                CpuTensorBuf::F16(vec.into())
+            }
+            _ => unreachable!(),
+        };
+
+        Ok(Self {
+            buf,
+            strider: TensorStrider::new(shape.to_vec()),
+            device: device.clone(),
+            name: None,
+        })
     }
 
     fn dtype(&self) -> GGMLType {
@@ -171,11 +205,26 @@ impl<'a> Tensor for CpuTensor<'a> {
 
     fn extend(&mut self, t: &CpuTensor<'a>) -> Result<()> {
         if !self.is_owned() {
-            return Err((ErrorKind::TensorError, "not owned").into());
+            return Err((ErrorKind::TensorError, "extend: tensor not owned").into());
         }
         if !self.is_contiguous() {
             return Err((ErrorKind::TensorError, "not contiguous").into());
         }
+        if self.dtype() != GGMLType::F32 && self.dtype() != GGMLType::F16 {
+            return Err((
+                ErrorKind::TensorError,
+                "only f32/f16 is supported on extend",
+            )
+                .into());
+        }
+        if t.dtype() != GGMLType::F32 {
+            return Err((
+                ErrorKind::TensorError,
+                "only f32 is supported on extend's rhs",
+            )
+                .into());
+        }
+
         if !t.shape().eq(&self.shape()[1..]) {
             return Err((
                 ErrorKind::TensorError,
@@ -187,7 +236,9 @@ impl<'a> Tensor for CpuTensor<'a> {
             )
                 .into());
         }
+        let _t = self.device.metrics.extend_walltime.track();
 
+        // it's possible to pass a f32 to a f16 tensor
         self.buf.extend(t.buf.iter_f32());
         let new_shape = {
             let mut shape = self.shape().to_vec();
@@ -201,6 +252,7 @@ impl<'a> Tensor for CpuTensor<'a> {
     fn repeat_n(self, n: usize) -> Result<Self> {
         assert!(self.is_owned());
         assert!(self.is_contiguous());
+        let _t = self.device.metrics.repeat_n_walltime.track();
 
         let len = self.len();
         let mut v = self.to_vec();
@@ -212,8 +264,18 @@ impl<'a> Tensor for CpuTensor<'a> {
         CpuTensor::new(v, &new_shape, self.device.clone())
     }
 
+    fn contiguous(&self) -> Result<Self> {
+        let _t = self.device.metrics.contiguous_walltime.track();
+        assert!(self.dtype() == GGMLType::F32 || self.dtype() == GGMLType::F16);
+
+        let mut out = CpuTensor::alloc(self.shape(), self.dtype(), None, self.device())?;
+        primitives::contiguous(&self.buf, &self.strider, &mut out.buf);
+        Ok(out)
+    }
+
     // TODO(2024-02-15): dequantize the tensor here, not dequantize the embedding table on loading
     fn copy_from(&mut self, src: &CpuTensor<'a>, pos: &[usize], len: usize) -> Result<()> {
+        let _t = self.device.metrics.copy_from_walltime.track();
         if !self.is_owned() {
             return Err((ErrorKind::TensorError, "not owned").into());
         }
@@ -230,6 +292,7 @@ impl<'a> Tensor for CpuTensor<'a> {
     }
 
     fn dup(&self) -> Result<Self> {
+        let _t = self.device.metrics.dup_walltime.track();
         let buf = self.buf.iter_f32().collect::<Vec<_>>();
         Self::new(buf, self.shape(), self.device.clone())
     }
@@ -250,11 +313,16 @@ impl<'a> Tensor for CpuTensor<'a> {
         let bufa = self.buf();
         let bufb = b.buf();
         let _t = self.device.metrics.batch_matmul_walltime.track();
-        let mut c = CpuTensor::alloc(&[self.shape()[0], self.shape()[1]], None, self.device())?;
+        let mut c = CpuTensor::alloc(
+            &[b.shape()[0], self.shape()[1]],
+            GGMLType::F32,
+            None,
+            self.device(),
+        )?;
         let bufc = c.buf_mut();
         let strider1 = self.strider();
         let strider2 = b.strider();
-        primitives::batch_matmul_vec(bufa, bufb, bufc, strider1, strider2)?;
+        primitives::batch_matmul_vec(&self.device(), bufa, bufb, bufc, strider1, strider2)?;
         Ok(c)
     }
 
@@ -263,7 +331,7 @@ impl<'a> Tensor for CpuTensor<'a> {
     fn matmul_vec(&self, x: &CpuTensor<'a>) -> Result<Self> {
         let bufa = self.buf();
         let bufb = x.buf();
-        let mut c = CpuTensor::alloc(&[self.shape()[0]], None, x.device())?;
+        let mut c = CpuTensor::alloc(&[self.shape()[0]], GGMLType::F32, None, x.device())?;
         let bufc = c.buf_mut();
         let strider1 = self.strider();
         let strider2 = x.strider();
@@ -283,6 +351,7 @@ impl<'a> Tensor for CpuTensor<'a> {
     fn add_inplace(mut self, b: &Self) -> Result<Self> {
         let strider1 = self.strider().clone();
         let strider2 = b.strider();
+        let _t = self.device.metrics.add_walltime.track();
         primitives::add_inplace(self.buf_mut(), b.buf(), &strider1, strider2)?;
         Ok(self)
     }
@@ -506,6 +575,37 @@ mod tests {
             ][..],
             epsilon = 1e-3
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_contigous() -> Result<()> {
+        let device = CpuTensorDevice::new();
+        let t1 = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], device.clone())?;
+        let t1 = t1.transpose(&[1, 0])?; // 3 x 2
+        let t2 = t1.contiguous()?;
+
+        // 1 4
+        // 2 5
+        // 3 6
+        assert_eq!(t2.to_vec(), vec![1.0, 4.0, 2.0, 5.0, 3.0, 6.0]);
+        assert_eq!(t2.shape(), &[3, 2]);
+
+        let t1 = CpuTensor::new(
+            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            &[1, 2, 3],
+            device.clone(),
+        )?;
+        let t1 = t1.transpose(&[2, 1, 0])?; // 3 x 2 x 1
+        let v1 = t1.to_vec();
+        let t2 = t1.contiguous()?;
+
+        // 1 4
+        // 2 5
+        // 3 6
+        assert_eq!(t2.to_vec(), vec![1.0, 4.0, 2.0, 5.0, 3.0, 6.0]);
+        assert_eq!(t2.shape(), &[3, 2, 1]);
+        assert_eq!(v1, t2.to_vec());
         Ok(())
     }
 }

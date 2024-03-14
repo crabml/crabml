@@ -14,7 +14,12 @@ pub trait Tensor: Sized + Clone {
     /// alloc an owned tensor, only used on storing activations and kv caches.
     /// only F32 and F16 (not yet implemented) are supported.
     /// TODO: add dtype parameter
-    fn alloc(shape: &[usize], capacity: Option<usize>, device: Self::Device) -> Result<Self>;
+    fn alloc(
+        shape: &[usize],
+        dtype: GGMLType,
+        capacity: Option<usize>,
+        device: Self::Device,
+    ) -> Result<Self>;
 
     fn dtype(&self) -> GGMLType;
 
@@ -27,6 +32,8 @@ pub trait Tensor: Sized + Clone {
     fn repeat_n(self, n: usize) -> Result<Self>;
 
     fn transpose(self, shape: &[usize]) -> Result<Self>;
+
+    fn contiguous(&self) -> Result<Self>;
 
     fn strider(&self) -> &TensorStrider;
 

@@ -12,6 +12,7 @@ num_cpus = "1.16.0"
 clap = { version = "4.0", features = ["derive"] }
 crabml-llama2 = { workspace = true }
 crabml = { workspace = true }
+jemallocator = "0.3"
 
 [dev-dependencies]
 pretty_assertions = "1.2.1"

@@ -65,11 +65,43 @@ pub struct Llama2Weights<T: Tensor> {
     pub output_weight: Option<T>, // (vocab_size, dim)
 }
 
+pub trait Llama2Model {
+    type T: Tensor;
+
+    fn conf(&self) -> Llama2Config;
+
+    fn device(&self) -> <Self::T as Tensor>::Device;
+
+    fn weights(&self) -> Rc<Llama2Weights<Self::T>>;
+
+    fn tokenizer(&self) -> Rc<BpeTokenizer>;
+}
+
 pub struct CpuLlama2Model<'a> {
     pub conf: Llama2Config,
     pub weights: Rc<Llama2Weights<CpuTensor<'a>>>,
     pub tokenizer: Rc<BpeTokenizer>,
     pub device: CpuTensorDeviceRef<'a>,
+}
+
+impl<'a> Llama2Model for &CpuLlama2Model<'a> {
+    type T = CpuTensor<'a>;
+
+    fn conf(&self) -> Llama2Config {
+        self.conf.clone()
+    }
+
+    fn device(&self) -> CpuTensorDeviceRef<'a> {
+        self.device.clone()
+    }
+
+    fn weights(&self) -> Rc<Llama2Weights<CpuTensor<'a>>> {
+        self.weights.clone()
+    }
+
+    fn tokenizer(&self) -> Rc<BpeTokenizer> {
+        self.tokenizer.clone()
+    }
 }
 
 impl<'a> CpuLlama2Model<'a> {
@@ -83,18 +115,6 @@ impl<'a> CpuLlama2Model<'a> {
             device,
             tokenizer: Rc::new(tokenizer),
         })
-    }
-
-    pub fn conf(&self) -> &Llama2Config {
-        &self.conf
-    }
-
-    pub fn weights(&self) -> Rc<Llama2Weights<CpuTensor<'a>>> {
-        self.weights.clone()
-    }
-
-    pub fn tokenizer(&self) -> Rc<BpeTokenizer> {
-        self.tokenizer.clone()
     }
 
     fn load_weights(
@@ -318,6 +338,26 @@ pub struct WgpuLlama2Model {
     pub weights: Rc<Llama2Weights<WgpuTensor>>,
     pub tokenizer: Rc<BpeTokenizer>,
     pub device: WgpuTensorDeviceRef,
+}
+
+impl Llama2Model for &WgpuLlama2Model {
+    type T = WgpuTensor;
+
+    fn conf(&self) -> Llama2Config {
+        self.conf.clone()
+    }
+
+    fn weights(&self) -> Rc<Llama2Weights<WgpuTensor>> {
+        self.weights.clone()
+    }
+
+    fn device(&self) -> WgpuTensorDeviceRef {
+        self.device.clone()
+    }
+
+    fn tokenizer(&self) -> Rc<BpeTokenizer> {
+        self.tokenizer.clone()
+    }
 }
 
 impl WgpuLlama2Model {

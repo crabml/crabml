@@ -26,3 +26,6 @@ testdata/*.gguf
 
 # Jetbrains IDE
 .idea
+
+# Vscode
+.vscode

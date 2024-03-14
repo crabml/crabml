@@ -241,15 +241,15 @@ mod impl_x86_64_avx2 {
         let mut bs = Vec::with_capacity(data.len() / 32);
 
         unsafe {
+            let mask = _mm256_set1_ps(-0.0);
+
             for chunk in data.chunks(32) {
                 let mut max_abs_values = _mm256_setzero_ps();
 
                 for values in chunk.chunks(8) {
                     let value_vec = _mm256_loadu_ps(values.as_ptr());
-                    max_abs_values = _mm256_max_ps(
-                        max_abs_values,
-                        _mm256_andnot_ps(_mm256_set1_ps(-0.0), value_vec),
-                    )
+                    max_abs_values =
+                        _mm256_max_ps(max_abs_values, _mm256_andnot_ps(mask, value_vec))
                 }
 
                 let max_abs_value = {
@@ -257,11 +257,7 @@ mod impl_x86_64_avx2 {
                     _mm256_storeu_ps(max_vals.as_mut_ptr(), max_abs_values);
                     *max_vals
                         .iter()
-                        .max_by(|x, y| {
-                            let res = x.partial_cmp(y);
-                            debug_assert!(res.is_some());
-                            res.unwrap_unchecked()
-                        })
+                        .max_by(|x, y| x.partial_cmp(y).unwrap_unchecked())
                         .unwrap_unchecked()
                 };
 

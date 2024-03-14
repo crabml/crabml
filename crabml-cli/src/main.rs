@@ -56,8 +56,8 @@ enum DeviceType {
     Wgpu,
 }
 
-impl Display for DeviceType {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+impl std::fmt::Display for DeviceType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             DeviceType::Cpu => write!(f, "cpu"),
             DeviceType::Wgpu => write!(f, "wgpu"),

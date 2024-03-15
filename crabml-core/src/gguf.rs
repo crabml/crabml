@@ -62,7 +62,7 @@ pub const KEY_TOKENIZER_HF_JSON: &str = "tokenizer.huggingface.json";
 pub const KEY_TOKENIZER_RWKV: &str = "tokenizer.rwkv.world";
 
 #[repr(u32)]
-#[derive(Debug, Clone, Copy, IntEnum)]
+#[derive(Debug, Clone, Copy, IntEnum, Eq, PartialEq)]
 pub enum GGUFVersion {
     V1 = 1,
     V2 = 2,
@@ -537,6 +537,14 @@ impl<'a> GGUFHeader<'a> {
             ),
             cause: Some(Box::new(err)),
         })?;
+        if version == GGUFVersion::V1 {
+            return Err(Error {
+                kind: ErrorKind::FormatError,
+                message: "GGUFv1 is no longer supported. please use a more up-to-date version"
+                    .to_string(),
+                cause: None,
+            });
+        }
         r.version = version;
 
         let tensor_count = r.read_len()?;

@@ -73,7 +73,7 @@ pub fn concatenate_inner<T: Copy>(
     }
 }
 
-pub fn concatenate_1d<'a, T: Copy>(
+pub fn concatenate_1d<T: Copy>(
     buf1: &mut [T],
     buf2: &[T],
     shape1: &[usize],

@@ -45,10 +45,10 @@ impl TensorStrider {
                 .into());
         }
 
-        return Ok(Self {
+        Ok(Self {
             shape: new_shape.to_vec(),
             strides: self.strides.clone(),
-        });
+        })
     }
 
     pub fn shape(&self) -> &[usize] {

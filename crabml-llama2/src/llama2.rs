@@ -297,12 +297,12 @@ impl<'a, T: Tensor> Llama2Runner<T> {
                 .reshape(&[1, n_kv_heads, head_dim])?
                 .transpose(&[1, 0, 2])?;
 
-            self.key_cache[l]
-                .as_mut()
-                .map(|kc| kc.concatenate(&k, 1).unwrap());
-            self.value_cache[l]
-                .as_mut()
-                .map(|vc| vc.concatenate(&v, 1).unwrap());
+            if let Some(k_cache) = self.key_cache[l].as_mut() {
+                k_cache.concatenate(&k, 1)?;
+            };
+            if let Some(v_cache) = self.value_cache[l].as_mut() {
+                v_cache.concatenate(&v, 1)?;
+            };
         };
 
         // multi query attention

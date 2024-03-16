@@ -280,7 +280,7 @@ impl Tensor for WgpuTensor {
     }
 
     fn export(&self, dst: &mut [f32]) -> Result<()> {
-        let buf_size = dst.len() * std::mem::size_of::<f32>();
+        let buf_size = std::mem::size_of_val(dst);
         if buf_size > self.device.opts.staging_buf_bytes {
             return Err((
                 ErrorKind::TensorError,

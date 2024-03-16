@@ -244,7 +244,6 @@ impl TensorStrider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tensor::Tensor;
 
     #[test]
     fn test_strider_reshape() -> Result<()> {

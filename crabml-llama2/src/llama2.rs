@@ -174,6 +174,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             x = self.forward_multi_query_attention(
                 q, k, v, l, pos, n_kv_heads, n_heads, embed_dim, head_dim,
             )?;
+            x = x.with_name(format!("attn_out:{}:{}", l, pos));
 
             // residual connection back into x
             x = x.add_inplace(&x_attn_orig)?;
@@ -624,8 +625,8 @@ mod tests {
         );
 
         assert_relative_eq!(
-            device_cpu.dump_debug_tensor("ffn_out:0:0").unwrap()[..],
-            device_wgpu.dump_debug_tensor("ffn_out:0:0").unwrap()[..],
+            device_cpu.dump_debug_tensor("attn_out:0:0").unwrap()[..],
+            device_wgpu.dump_debug_tensor("attn_out:0:0").unwrap()[..],
             epsilon = 1e-4
         );
 

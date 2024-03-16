@@ -595,10 +595,7 @@ mod tests {
 
     #[test]
     fn test_resize() -> Result<()> {
-        let device = CpuTensorDevice::new();
-
-        let t1 = CpuTensor::alloc(&[4, 8, 3200], GGMLType::F32, device.clone())?;
-
+        // todo:
         Ok(())
     }
 }

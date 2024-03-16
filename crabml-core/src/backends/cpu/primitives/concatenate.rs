@@ -189,8 +189,8 @@ pub fn concatenate_3d_f16_f32(
                         f16::from_f32(*buf2.get_unchecked(buf2_offset + stride2_2));
                     *buf1.get_unchecked_mut(buf1_offset + stride1_2 * 2) =
                         f16::from_f32(*buf2.get_unchecked(buf2_offset + stride2_2 * 2));
-                    *buf1.get_unchecked_mut(buf1_offset + stride1_2 * 2) =
-                        f16::from_f32(*buf2.get_unchecked(buf2_offset + stride2_2 * 2));
+                    *buf1.get_unchecked_mut(buf1_offset + stride1_2 * 3) =
+                        f16::from_f32(*buf2.get_unchecked(buf2_offset + stride2_2 * 3));
                 }
             }
         }

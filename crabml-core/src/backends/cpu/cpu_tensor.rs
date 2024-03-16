@@ -94,6 +94,7 @@ impl<'a> CpuTensor<'a> {
     }
 
     /// to_vec is only used for test.
+    #[allow(dead_code)]
     fn to_vec(&self) -> Vec<f32> {
         assert!(self.dtype() == GGMLType::F32);
         if self.is_contiguous() {

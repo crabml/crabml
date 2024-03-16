@@ -203,6 +203,38 @@ impl<'a> Tensor for CpuTensor<'a> {
         &self.strider
     }
 
+    // All tensors must either have the same shape (except in the concatenating dimension) or be empty.
+    fn concatenate(mut self, rhs: &Self, axis: usize) -> Result<Self> {
+        // (2, 1) + (2, 1) at axis 0 -> (4, 1)
+        // (2, 1) + (2, 3) at axis 1 -> (2, 4)
+        if !self.is_owned() || !self.is_contiguous() {
+            return Err((
+                ErrorKind::TensorError,
+                "tensor not owned or not contiguous on concatenate",
+            )
+                .into());
+        }
+        if self.dtype() != GGMLType::F32 && self.dtype() != GGMLType::F16 {
+            return Err((
+                ErrorKind::TensorError,
+                "only f32/f16 is supported on concatenate",
+            )
+                .into());
+        }
+        if rhs.dtype() != GGMLType::F32 && rhs.dtype() != GGMLType::F16 {
+            return Err((
+                ErrorKind::TensorError,
+                "only f32/f16 is supported on concatenate rhs",
+            )
+                .into());
+        }
+
+        let strider1 = self.strider().clone();
+        let strider2 = &rhs.strider();
+        primitives::concatenate_inplace(self.buf_mut(), rhs.buf(), &strider1, &strider2)?;
+        Ok(self)
+    }
+
     fn extend(&mut self, t: &CpuTensor<'a>) -> Result<()> {
         if !self.is_owned() {
             return Err((ErrorKind::TensorError, "extend: tensor not owned").into());

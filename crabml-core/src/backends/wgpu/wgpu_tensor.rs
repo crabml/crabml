@@ -152,6 +152,10 @@ impl Tensor for WgpuTensor {
         &self.strider
     }
 
+    fn concatenate(self, rhs: &Self, axis: usize) -> Result<Self> {
+        todo!();
+    }
+
     // extend the tensor with the rhs tensor's data.
     fn extend(&mut self, rhs: &Self) -> Result<()> {
         let new_len = self.strider.len() + rhs.strider.len();

@@ -1,5 +1,6 @@
 mod add;
 mod batch_matmul_vec;
+mod concatenate;
 mod contiguous;
 mod div;
 mod gelu;
@@ -12,6 +13,7 @@ mod softmax;
 
 pub use add::add_inplace;
 pub use batch_matmul_vec::batch_matmul_vec;
+pub use concatenate::concatenate_inplace;
 pub use contiguous::contiguous;
 pub use div::div_inplace;
 pub use gelu::gelu_inplace;

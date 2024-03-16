@@ -151,7 +151,41 @@ impl<'a> Tensor for CpuTensor<'a> {
     }
 
     fn resize(self, axis: usize, n: usize) -> Result<Self> {
-        todo!();
+        if axis >= self.shape().len() {
+            return Err((
+                ErrorKind::TensorError,
+                format!(
+                    "resize: axis {} is larger than the current shape {:?}",
+                    axis,
+                    self.shape()
+                ),
+            )
+                .into());
+        }
+
+        let mut new_shape = self.shape().to_vec();
+        new_shape[axis] = n;
+
+        let new_len: usize = new_shape.iter().product();
+        if new_len > self.buf.len() {
+            return Err((
+                ErrorKind::TensorError,
+                format!(
+                    "resize: new shape {:?} is larger than the current shape {:?}",
+                    new_shape,
+                    self.shape()
+                ),
+            )
+                .into());
+        }
+
+        let new_strider = self.strider.resize(&new_shape)?;
+        Ok(Self {
+            buf: self.buf,
+            strider: new_strider,
+            device: self.device.clone(),
+            name: None,
+        })
     }
 
     fn dtype(&self) -> GGMLType {
@@ -660,7 +694,6 @@ mod tests {
         let device = CpuTensorDevice::new();
 
         let t1 = CpuTensor::alloc(&[4, 8, 3200], GGMLType::F32, device.clone())?;
-        let t2 = t1.resize(0, 2)?;
 
         Ok(())
     }

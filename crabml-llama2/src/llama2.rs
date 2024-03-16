@@ -292,10 +292,10 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             let v = v.reshape(&[n_kv_heads, head_dim])?;
 
             if let Some(ref mut k_cache) = self.key_cache[l] {
-                k_cache.extend(&k)?;
+                k_cache.concatenate(&k, 0)?;
             }
             if let Some(ref mut v_cache) = self.value_cache[l] {
-                v_cache.extend(&v)?;
+                v_cache.concatenate(&v, 0)?;
             }
         };
 

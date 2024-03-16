@@ -235,7 +235,7 @@ impl<'a> Tensor for CpuTensor<'a> {
         &self.strider
     }
 
-    fn concatenate(mut self, rhs: &Self, axis: usize) -> Result<Self> {
+    fn concatenate(&mut self, rhs: &Self, axis: usize) -> Result<()> {
         // (2, 1) + (2, 1) at axis 0 -> (4, 1)
         // (2, 1) + (2, 3) at axis 1 -> (2, 4)
         if !self.is_owned() || !self.is_contiguous() {
@@ -282,7 +282,8 @@ impl<'a> Tensor for CpuTensor<'a> {
         let strider2 = &rhs.strider();
         let new_strider =
             primitives::concatenate_inplace(self.buf_mut(), rhs.buf(), &strider1, &strider2, axis)?;
-        self.with_strider(new_strider)
+        self.strider = new_strider;
+        Ok(())
     }
 
     fn extend(&mut self, t: &CpuTensor<'a>) -> Result<()> {

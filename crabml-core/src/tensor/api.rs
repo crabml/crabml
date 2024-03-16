@@ -38,7 +38,7 @@ pub trait Tensor: Sized + Clone {
 
     fn extend(&mut self, rhs: &Self) -> Result<()>;
 
-    fn concatenate(self, rhs: &Self, axis: usize) -> Result<Self>;
+    fn concatenate(&mut self, rhs: &Self, axis: usize) -> Result<()>;
 
     /// copy from another tensor. used on loading weights from vocab table.
     fn copy_from(&mut self, rhs: &Self, pos: &[usize], len: usize) -> Result<()>;

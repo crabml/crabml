@@ -149,7 +149,7 @@ impl Tensor for WgpuTensor {
         &self.strider
     }
 
-    fn concatenate(self, rhs: &Self, axis: usize) -> Result<Self> {
+    fn concatenate(&mut self, rhs: &Self, axis: usize) -> Result<()> {
         todo!();
     }
 

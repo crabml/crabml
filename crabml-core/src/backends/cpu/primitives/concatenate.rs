@@ -85,6 +85,40 @@ pub fn concatenate_3d<'a, T: Copy>(
 
 #[cfg(test)]
 mod test {
+    use super::concatenate_2d;
+    use super::Result;
+
     #[test]
-    fn test_concate_2d() {}
+    fn test_concate_2d() -> Result<()> {
+        // v1: layout: 2x3
+        // 1 0 0
+        // 4 0 0
+        let mut buf1 = vec![1, 0, 0, 4, 0, 0];
+        let shape1: Vec<usize> = vec![2, 1];
+        let strides1: Vec<usize> = vec![3, 1];
+        let buf2 = vec![2, 5];
+        let shape2: Vec<usize> = vec![2, 1];
+        let strides2: Vec<usize> = vec![1, 1];
+        let new_shape1 =
+            concatenate_2d(&mut buf1, &buf2, &shape1, &shape2, &strides1, &strides2, 1)?;
+        assert_eq!(buf1, vec![1, 2, 0, 4, 5, 0]);
+        assert_eq!(new_shape1, vec![2, 2]);
+
+        // v1: layout: 2x3
+        // 1 2 3
+        // 0 0 0
+        // v2: layout: 1x3
+        let mut buf1 = vec![1, 2, 3, 0, 0, 0];
+        let shape1: Vec<usize> = vec![1, 3];
+        let strides1: Vec<usize> = vec![3, 1];
+        let buf2 = vec![4, 5, 6];
+        let shape2: Vec<usize> = vec![1, 3];
+        let strides2: Vec<usize> = vec![3, 1];
+        let new_shape1 =
+            concatenate_2d(&mut buf1, &buf2, &shape1, &shape2, &strides1, &strides2, 0)?;
+        assert_eq!(buf1, vec![1, 2, 3, 4, 5, 6]);
+        assert_eq!(new_shape1, vec![2, 3]);
+
+        Ok(())
+    }
 }

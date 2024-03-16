@@ -280,8 +280,9 @@ impl<'a> Tensor for CpuTensor<'a> {
 
         let strider1 = self.strider().clone();
         let strider2 = &rhs.strider();
-        primitives::concatenate_inplace(self.buf_mut(), rhs.buf(), &strider1, &strider2)?;
-        Ok(self)
+        let new_strider =
+            primitives::concatenate_inplace(self.buf_mut(), rhs.buf(), &strider1, &strider2, axis)?;
+        self.with_strider(new_strider)
     }
 
     fn extend(&mut self, t: &CpuTensor<'a>) -> Result<()> {

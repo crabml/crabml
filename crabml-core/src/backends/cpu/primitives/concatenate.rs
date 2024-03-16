@@ -1,8 +1,7 @@
-use std::ops::MulAssign;
-
-use half::vec;
+use std::borrow::Cow;
 
 use crate::backends::cpu::CpuTensorBuf;
+use crate::error::ErrorKind;
 use crate::error::Result;
 use crate::tensor::TensorStrider;
 
@@ -11,8 +10,53 @@ pub fn concatenate_inplace<'a>(
     buf2: &CpuTensorBuf<'a>,
     strider1: &TensorStrider,
     strider2: &TensorStrider,
-) -> Result<()> {
-    todo!()
+    axis: usize,
+) -> Result<TensorStrider> {
+    let new_shape = match (buf1, buf2) {
+        (CpuTensorBuf::F32(Cow::Owned(buf1)), CpuTensorBuf::F32(buf2)) => concatenate_inner(
+            buf1,
+            buf2,
+            strider1.shape(),
+            strider2.shape(),
+            strider1.strides(),
+            strider2.strides(),
+            axis,
+        )?,
+        (CpuTensorBuf::F16(Cow::Owned(buf1)), CpuTensorBuf::F16(buf2)) => concatenate_inner(
+            buf1,
+            buf2,
+            strider1.shape(),
+            strider2.shape(),
+            strider1.strides(),
+            strider2.strides(),
+            axis,
+        )?,
+        (buf1, buf2) => {
+            return Err((
+                ErrorKind::TensorError,
+                format!("can not concatenate {} and {}", buf1.dtype(), buf2.dtype()),
+            )
+                .into());
+        }
+    };
+    strider1.resize(&new_shape)
+}
+
+pub fn concatenate_inner<T: Copy>(
+    buf1: &mut [T],
+    buf2: &[T],
+    shape1: &[usize],
+    shape2: &[usize],
+    strides1: &[usize],
+    strides2: &[usize],
+    axis: usize,
+) -> Result<Vec<usize>> {
+    match shape1.len() {
+        1 => concatenate_1d(buf1, buf2, shape1, shape2, strides1, strides2),
+        2 => concatenate_2d(buf1, buf2, shape1, shape2, strides1, strides2, axis),
+        3 => concatenate_3d(buf1, buf2, shape1, shape2, strides1, strides2, axis),
+        _ => unreachable!(),
+    }
 }
 
 pub fn concatenate_1d<'a, T: Copy>(
@@ -22,18 +66,17 @@ pub fn concatenate_1d<'a, T: Copy>(
     shape2: &[usize],
     strides1: &[usize],
     strides2: &[usize],
-) -> Result<()> {
-    let buf1_offset = shape1[0];
-
+) -> Result<Vec<usize>> {
+    let buf1_base = shape1[0] * strides1[0];
     for x in 0..shape2[0] {
-        let buf1_offset = x * strides1[0];
+        let buf1_offset = buf1_base + x * strides1[0];
         let buf2_offset = x * strides2[0];
         buf1[buf1_offset] = buf2[buf2_offset];
     }
-    Ok(())
+    Ok(vec![shape1[0] + shape2[0]])
 }
 
-pub fn concatenate_2d<'a, T: Copy + MulAssign>(
+pub fn concatenate_2d<'a, T: Copy>(
     buf1: &mut [T],
     buf2: &[T],
     shape1: &[usize],

@@ -35,16 +35,30 @@ pub fn concatenate_inplace<'a>(
             axis,
             |x| x,
         )?,
-        (CpuTensorBuf::F16(Cow::Owned(buf1)), CpuTensorBuf::F32(buf2)) => concatenate_inner(
-            buf1,
-            &buf2,
-            strider1.shape(),
-            strider2.shape(),
-            strider1.strides(),
-            strider2.strides(),
-            axis,
-            |x| f16::from_f32(x),
-        )?,
+        (CpuTensorBuf::F16(Cow::Owned(buf1)), CpuTensorBuf::F32(buf2)) => {
+            if strider2.shape().len() == 3 {
+                concatenate_3d_f16_f32(
+                    buf1,
+                    buf2,
+                    strider1.shape(),
+                    strider2.shape(),
+                    strider1.strides(),
+                    strider2.strides(),
+                    axis,
+                )?
+            } else {
+                concatenate_inner(
+                    buf1,
+                    &buf2,
+                    strider1.shape(),
+                    strider2.shape(),
+                    strider1.strides(),
+                    strider2.strides(),
+                    axis,
+                    |x| f16::from_f32(x),
+                )?
+            }
+        }
         (buf1, buf2) => {
             return Err((
                 ErrorKind::TensorError,
@@ -135,6 +149,33 @@ pub fn concatenate_3d<A, B: Copy>(
                 let buf1_offset = buf1_offset + x * strides1[0] + y * strides1[1] + z * strides1[2];
                 let buf2_offset = x * strides2[0] + y * strides2[1] + z * strides2[2];
                 buf1[buf1_offset] = f(buf2[buf2_offset]);
+            }
+        }
+    }
+
+    let mut new_shape = shape1.to_vec();
+    new_shape[axis] += shape2[axis];
+    Ok(new_shape)
+}
+
+// TODO: can be removed, just it's easier to make experiments on a specialized function
+pub fn concatenate_3d_f16_f32(
+    buf1: &mut [f16],
+    buf2: &[f32],
+    shape1: &[usize],
+    shape2: &[usize],
+    strides1: &[usize],
+    strides2: &[usize],
+    axis: usize,
+) -> Result<Vec<usize>> {
+    let buf1_offset = shape1[axis] * strides1[axis];
+
+    for x in 0..shape2[0] {
+        for y in 0..shape2[1] {
+            for z in 0..shape2[2] {
+                let buf1_offset = buf1_offset + x * strides1[0] + y * strides1[1] + z * strides1[2];
+                let buf2_offset = x * strides2[0] + y * strides2[1] + z * strides2[2];
+                buf1[buf1_offset] = f16::from_f32(buf2[buf2_offset]);
             }
         }
     }

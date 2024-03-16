@@ -79,8 +79,8 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         Ok(Self {
             conf: conf.clone(),
             logits,
-            key_cache: key_cache,
-            value_cache: value_cache,
+            key_cache,
+            value_cache,
             weights,
             tokenizer,
             device,

@@ -277,9 +277,9 @@ impl<'a> Tensor for CpuTensor<'a> {
         }
 
         let strider1 = self.strider().clone();
-        let strider2 = &rhs.strider();
+        let strider2 = rhs.strider();
         let new_strider =
-            primitives::concatenate_inplace(self.buf_mut(), rhs.buf(), &strider1, &strider2, axis)?;
+            primitives::concatenate_inplace(self.buf_mut(), rhs.buf(), &strider1, strider2, axis)?;
         self.strider = new_strider;
         Ok(())
     }

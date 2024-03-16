@@ -203,7 +203,6 @@ impl<'a> Tensor for CpuTensor<'a> {
         &self.strider
     }
 
-    // All tensors must either have the same shape (except in the concatenating dimension) or be empty.
     fn concatenate(mut self, rhs: &Self, axis: usize) -> Result<Self> {
         // (2, 1) + (2, 1) at axis 0 -> (4, 1)
         // (2, 1) + (2, 3) at axis 1 -> (2, 4)
@@ -227,6 +226,24 @@ impl<'a> Tensor for CpuTensor<'a> {
                 "only f32/f16 is supported on concatenate rhs",
             )
                 .into());
+        }
+
+        // both tensors must have the same shape (except in the concatenating dimension)
+        for i in 0..self.shape().len() {
+            if i == axis {
+                continue;
+            }
+            if self.shape()[i] != rhs.shape()[i] {
+                return Err((
+                    ErrorKind::TensorError,
+                    format!(
+                        "shape mismatch on concatenate, want {:?} but got {:?}",
+                        self.shape(),
+                        rhs.shape()
+                    ),
+                )
+                    .into());
+            }
         }
 
         let strider1 = self.strider().clone();

@@ -289,7 +289,8 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         // save to kv cache
         {
             let _t = self.metrics.save_kvcache_walltime.track();
-            let v = v.reshape(&[n_kv_heads, head_dim])?;
+            let k = k.reshape(&[1, n_kv_heads, head_dim])?;
+            let v = v.reshape(&[1, n_kv_heads, head_dim])?;
 
             if let Some(ref mut k_cache) = self.key_cache[l] {
                 k_cache.concatenate(&k, 0)?;

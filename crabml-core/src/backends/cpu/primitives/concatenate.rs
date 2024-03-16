@@ -1,5 +1,7 @@
 use std::borrow::Cow;
 
+use half::f16;
+
 use crate::backends::cpu::CpuTensorBuf;
 use crate::error::ErrorKind;
 use crate::error::Result;
@@ -31,6 +33,18 @@ pub fn concatenate_inplace<'a>(
             strider2.strides(),
             axis,
         )?,
+        (CpuTensorBuf::F16(Cow::Owned(buf1)), CpuTensorBuf::F32(buf2)) => {
+            let buf2 = buf2.iter().map(|x| f16::from_f32(*x)).collect::<Vec<_>>();
+            concatenate_inner(
+                buf1,
+                &buf2,
+                strider1.shape(),
+                strider2.shape(),
+                strider1.strides(),
+                strider2.strides(),
+                axis,
+            )?
+        }
         (buf1, buf2) => {
             return Err((
                 ErrorKind::TensorError,

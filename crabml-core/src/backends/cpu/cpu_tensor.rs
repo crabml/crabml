@@ -123,26 +123,20 @@ impl<'a> CpuTensor<'a> {
 impl<'a> Tensor for CpuTensor<'a> {
     type Device = CpuTensorDeviceRef<'a>;
 
-    fn alloc(
-        shape: &[usize],
-        dtype: GGMLType,
-        capacity: Option<usize>,
-        device: Self::Device,
-    ) -> Result<Self> {
+    fn alloc(shape: &[usize], dtype: GGMLType, device: Self::Device) -> Result<Self> {
         if dtype != GGMLType::F32 && dtype != GGMLType::F16 {
             return Err((ErrorKind::TensorError, "only f32/f16 is supported").into());
         }
 
+        let buf_size = shape.iter().product();
         let _t = device.metrics.alloc_walltime.track();
         let buf = match dtype {
             GGMLType::F32 => {
-                let mut vec = Vec::with_capacity(capacity.unwrap_or(shape.iter().product()));
-                vec.resize(shape.iter().product(), 0.0);
+                let vec = vec![0.0; buf_size];
                 CpuTensorBuf::F32(vec.into())
             }
             GGMLType::F16 => {
-                let mut vec = Vec::with_capacity(capacity.unwrap_or(shape.iter().product()));
-                vec.resize(shape.iter().product(), f16::ZERO);
+                let vec = vec![f16::ZERO; buf_size];
                 CpuTensorBuf::F16(vec.into())
             }
             _ => unreachable!(),
@@ -154,6 +148,10 @@ impl<'a> Tensor for CpuTensor<'a> {
             device: device.clone(),
             name: None,
         })
+    }
+
+    fn resize(self, axis: usize, n: usize) -> Result<Self> {
+        todo!();
     }
 
     fn dtype(&self) -> GGMLType {
@@ -317,7 +315,7 @@ impl<'a> Tensor for CpuTensor<'a> {
         let _t = self.device.metrics.contiguous_walltime.track();
         assert!(self.dtype() == GGMLType::F32 || self.dtype() == GGMLType::F16);
 
-        let mut out = CpuTensor::alloc(self.shape(), self.dtype(), None, self.device())?;
+        let mut out = CpuTensor::alloc(self.shape(), self.dtype(), self.device())?;
         primitives::contiguous(&self.buf, &self.strider, &mut out.buf);
         Ok(out)
     }
@@ -365,7 +363,6 @@ impl<'a> Tensor for CpuTensor<'a> {
         let mut c = CpuTensor::alloc(
             &[b.shape()[0], self.shape()[1]],
             GGMLType::F32,
-            None,
             self.device(),
         )?;
         let bufc = c.buf_mut();
@@ -380,7 +377,7 @@ impl<'a> Tensor for CpuTensor<'a> {
     fn matmul_vec(&self, x: &CpuTensor<'a>) -> Result<Self> {
         let bufa = self.buf();
         let bufb = x.buf();
-        let mut c = CpuTensor::alloc(&[self.shape()[0]], GGMLType::F32, None, x.device())?;
+        let mut c = CpuTensor::alloc(&[self.shape()[0]], GGMLType::F32, x.device())?;
         let bufc = c.buf_mut();
         let strider1 = self.strider();
         let strider2 = x.strider();

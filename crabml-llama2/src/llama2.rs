@@ -57,30 +57,30 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         let key_cache = (0..conf.n_layers)
             .map(|_| {
                 T::alloc(
-                    &[0, conf.n_kv_heads, conf.head_size()],
+                    &[seq_len, conf.n_kv_heads, conf.head_size()],
                     kv_cache_dtype,
-                    Some(seq_len * conf.embedding_dim),
                     device.clone(),
                 )
+                .map(|t| t.resize(0, 0).unwrap())
                 .map(Some)
             })
             .collect::<Result<Vec<_>>>()?;
         let value_cache = (0..conf.n_layers)
             .map(|_| {
                 T::alloc(
-                    &[0, conf.n_kv_heads, conf.head_size()],
+                    &[seq_len, conf.n_kv_heads, conf.head_size()],
                     kv_cache_dtype,
-                    Some(seq_len * conf.embedding_dim),
                     device.clone(),
                 )
+                .map(|t| t.resize(0, 0).unwrap())
                 .map(Some)
             })
             .collect::<Result<Vec<_>>>()?;
         Ok(Self {
             conf: conf.clone(),
             logits,
-            key_cache,
-            value_cache,
+            key_cache: key_cache,
+            value_cache: value_cache,
             weights,
             tokenizer,
             device,
@@ -132,7 +132,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         let rope_dim = self.conf.rope_dim.unwrap_or(head_dim);
 
         // copy the token embedding into x
-        let mut x = T::alloc(&[embed_dim], GGMLType::F32, None, self.device.clone())?;
+        let mut x = T::alloc(&[embed_dim], GGMLType::F32, self.device.clone())?;
         x.copy_from(&self.weights.token_embed, &[token, 0], embed_dim)?;
 
         // forward all the layers
@@ -208,7 +208,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         let rope_dim = self.conf.rope_dim.unwrap_or(head_dim);
 
         // copy the token embedding into x
-        let mut x = T::alloc(&[embed_dim], GGMLType::F32, None, self.device.clone())?;
+        let mut x = T::alloc(&[embed_dim], GGMLType::F32, self.device.clone())?;
         x.copy_from(&self.weights.token_embed, &[token, 0], embed_dim)?;
 
         // GEMMA only: scale the embedding with sqrt(embed_dim)

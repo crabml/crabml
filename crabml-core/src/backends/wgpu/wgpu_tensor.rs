@@ -83,18 +83,11 @@ impl WgpuTensor {
 impl Tensor for WgpuTensor {
     type Device = WgpuTensorDeviceRef;
 
-    fn alloc(
-        shape: &[usize],
-        dtype: GGMLType,
-        capacity: Option<usize>,
-        device: Self::Device,
-    ) -> Result<Self> {
+    fn alloc(shape: &[usize], dtype: GGMLType, device: Self::Device) -> Result<Self> {
         assert!(dtype == GGMLType::F32, "wgpu tensor only support F32 yet");
         let n_elms = shape.iter().product::<usize>();
-        let capacity = capacity.unwrap_or(n_elms);
-        assert!(capacity >= n_elms);
 
-        let buf_bytes = capacity * std::mem::size_of::<f32>();
+        let buf_bytes = n_elms * std::mem::size_of::<f32>();
         let buf = device.inner.create_buffer(&wgpu::BufferDescriptor {
             label: Some("tensor storage buffer"),
             size: buf_bytes as u64,
@@ -107,11 +100,15 @@ impl Tensor for WgpuTensor {
         Ok(Self {
             buf: Rc::new(buf),
             dtype: GGMLType::F32,
-            capacity,
+            capacity: n_elms,
             strider,
             device,
             name: None,
         })
+    }
+
+    fn resize(self, axis: usize, n: usize) -> Result<Self> {
+        todo!()
     }
 
     fn dtype(&self) -> GGMLType {
@@ -210,12 +207,8 @@ impl Tensor for WgpuTensor {
         let mut tmp_shape = self.shape().to_vec();
         tmp_shape.insert(0, 0);
         let capacity = self.strider.len() * n;
-        let mut new_tensor = Self::alloc(
-            &tmp_shape,
-            GGMLType::F32,
-            Some(capacity),
-            self.device.clone(),
-        )?;
+        // TODO: repeat_n could be removed
+        let mut new_tensor = Self::alloc(&tmp_shape, GGMLType::F32, self.device.clone())?;
         for _ in 0..n {
             new_tensor.extend(&self)?;
         }
@@ -290,8 +283,7 @@ impl Tensor for WgpuTensor {
     }
 
     fn dup(&self) -> Result<Self> {
-        let mut new_tensor =
-            Self::alloc(self.strider.shape(), self.dtype, None, self.device.clone())?;
+        let mut new_tensor = Self::alloc(self.strider.shape(), self.dtype, self.device.clone())?;
         new_tensor
             .copy_from(self, &vec![0; self.shape().len()], self.strider.len())
             .unwrap();
@@ -563,7 +555,6 @@ impl Tensor for WgpuTensor {
         let output = Self::alloc(
             &[self.strider.shape()[0]],
             GGMLType::F32,
-            None,
             self.device.clone(),
         )?;
         let meta = MatmulMeta {
@@ -613,7 +604,6 @@ impl Tensor for WgpuTensor {
         let output = Self::alloc(
             &[self.shape()[0], self.shape()[1]],
             GGMLType::F32,
-            None,
             self.device.clone(),
         )?;
 
@@ -742,7 +732,7 @@ mod tests {
 
     #[test]
     fn test_wgpu_tensor_alloc() -> Result<()> {
-        let t1 = WgpuTensor::alloc(&[512, 2], GGMLType::F32, None, DEVICE.clone())?;
+        let t1 = WgpuTensor::alloc(&[512, 2], GGMLType::F32, DEVICE.clone())?;
         let t2 = WgpuTensor::new(&[1.0; 1024], &[512, 2], DEVICE.clone())?;
         let t1 = t1.add_inplace(&t2)?;
 
@@ -755,7 +745,7 @@ mod tests {
 
     #[test]
     fn test_wgpu_tensor_with_name() -> Result<()> {
-        let t1 = WgpuTensor::alloc(&[512, 2], GGMLType::F32, None, DEVICE.clone())?;
+        let t1 = WgpuTensor::alloc(&[512, 2], GGMLType::F32, DEVICE.clone())?;
         let t2 = WgpuTensor::new(&[1.0; 1024], &[512, 2], DEVICE.clone())?;
         let t1 = t1.add_inplace(&t2)?;
         let _ = t1.with_name("t1".to_string());
@@ -767,7 +757,7 @@ mod tests {
 
     #[test]
     fn test_wgpu_copy_from() -> Result<()> {
-        let mut t1 = WgpuTensor::alloc(&[256, 4], GGMLType::F32, None, DEVICE.clone())?;
+        let mut t1 = WgpuTensor::alloc(&[256, 4], GGMLType::F32, DEVICE.clone())?;
         let t2 = WgpuTensor::new(
             &(0..1024).map(|d| d as f32).collect::<Vec<f32>>(),
             &[256, 4],
@@ -883,7 +873,8 @@ mod tests {
 
     #[test]
     fn test_wgpu_extend() -> Result<()> {
-        let mut t1 = WgpuTensor::alloc(&[0, 16], GGMLType::F32, Some(1024), DEVICE.clone())?;
+        // TODO: fix this test later
+        let mut t1 = WgpuTensor::alloc(&[0, 16], GGMLType::F32, DEVICE.clone())?;
 
         let v2 = (0..16).map(|i| i as f32).collect::<Vec<_>>();
         let t2 = WgpuTensor::new(&v2, &[16], DEVICE.clone())?;

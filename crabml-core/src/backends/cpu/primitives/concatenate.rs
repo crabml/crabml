@@ -49,13 +49,13 @@ pub fn concatenate_inplace<'a>(
             } else {
                 concatenate_inner(
                     buf1,
-                    &buf2,
+                    buf2,
                     strider1.shape(),
                     strider2.shape(),
                     strider1.strides(),
                     strider2.strides(),
                     axis,
-                    |x| f16::from_f32(x),
+                    f16::from_f32,
                 )?
             }
         }
@@ -70,6 +70,7 @@ pub fn concatenate_inplace<'a>(
     strider1.resize(&new_shape)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn concatenate_inner<A, B: Copy>(
     buf1: &mut [A],
     buf2: &[B],
@@ -106,6 +107,7 @@ pub fn concatenate_1d<A, B: Copy>(
     Ok(vec![shape1[0] + shape2[0]])
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn concatenate_2d<A, B: Copy>(
     buf1: &mut [A],
     buf2: &[B],
@@ -131,6 +133,7 @@ pub fn concatenate_2d<A, B: Copy>(
     Ok(new_shape)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn concatenate_3d<A, B: Copy>(
     buf1: &mut [A],
     buf2: &[B],
@@ -159,6 +162,7 @@ pub fn concatenate_3d<A, B: Copy>(
 }
 
 // TODO: can be removed, just it's easier to make experiments on a specialized function
+#[allow(clippy::too_many_arguments)]
 pub fn concatenate_3d_f16_f32(
     buf1: &mut [f16],
     buf2: &[f32],

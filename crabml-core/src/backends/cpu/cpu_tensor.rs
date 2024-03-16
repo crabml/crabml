@@ -654,4 +654,14 @@ mod tests {
         assert_eq!(v1, t2.to_vec());
         Ok(())
     }
+
+    #[test]
+    fn test_resize() -> Result<()> {
+        let device = CpuTensorDevice::new();
+
+        let t1 = CpuTensor::alloc(&[4, 8, 3200], GGMLType::F32, device.clone())?;
+        let t2 = t1.resize(0, 2)?;
+
+        Ok(())
+    }
 }

@@ -2,21 +2,6 @@ use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::error::Result;
 use crate::tensor::TensorStrider;
 
-#[inline]
-pub fn unary<'a, F>(buf1: &mut CpuTensorBuf<'a>, f: F) -> Result<()>
-where F: Fn(f32) -> f32 {
-    buf1.iter_f32_mut().for_each(|ia| *ia = f(*ia));
-    Ok(())
-}
-
-#[allow(dead_code)]
-#[inline]
-pub fn unary_inplace<'a, F>(buf1: &mut CpuTensorBuf<'a>, f: F) -> Result<()>
-where F: Fn(&mut f32) {
-    buf1.iter_f32_mut().for_each(|ia| f(ia));
-    Ok(())
-}
-
 #[allow(dead_code)]
 #[inline]
 pub fn binary<'a, F>(

@@ -1,4 +1,3 @@
-use super::scalar::unary;
 use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::backends::cpu::CpuTensorDeviceRef;
 use crate::error::Result;
@@ -7,7 +6,10 @@ const COEF_A: f32 = 0.044715;
 const SQRT_2_OVER_PI: f64 = 0.797_884_560_802_865_4;
 
 pub fn gelu_inplace<'a>(_device: CpuTensorDeviceRef<'a>, buf: &mut CpuTensorBuf<'a>) -> Result<()> {
-    unary::<_>(buf, gelu_single)
+    buf.iter_f32_mut().for_each(|x| {
+        *x = gelu_single(*x);
+    });
+    Ok(())
 }
 
 #[inline]

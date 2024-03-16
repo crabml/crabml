@@ -90,7 +90,7 @@ pub fn concatenate_1d<'a, T: Copy>(
     Ok(vec![shape1[0] + shape2[0]])
 }
 
-pub fn concatenate_2d<'a, T: Copy>(
+pub fn concatenate_2d<T: Copy>(
     buf1: &mut [T],
     buf2: &[T],
     shape1: &[usize],
@@ -114,7 +114,7 @@ pub fn concatenate_2d<'a, T: Copy>(
     Ok(new_shape)
 }
 
-pub fn concatenate_3d<'a, T: Copy>(
+pub fn concatenate_3d<T: Copy>(
     buf1: &mut [T],
     buf2: &[T],
     shape1: &[usize],

@@ -17,8 +17,8 @@ var<storage, read> buf2: array<f32>;
 var<storage, read> bufm: Meta;
 
 fn concatenate_2d(global_id: vec3<u32>) {
-    let y = global_id.x % bufm.shape1.y;
-    let x = (global_id.x - y) / bufm.shape1.y;
+    let y = global_id.x % bufm.shape2.y;
+    let x = (global_id.x - y) / bufm.shape2.y;
 
     let buf1_base = bufm.shape1[bufm.axis] * bufm.strides1[bufm.axis];
     let buf1_offset = x * bufm.strides1.x + y * bufm.strides1.y + buf1_base;
@@ -27,9 +27,9 @@ fn concatenate_2d(global_id: vec3<u32>) {
 }
 
 fn concatenate_3d(global_id: vec3<u32>) {
-    let z = global_id.x % bufm.shape1.z;
-    let y = (global_id.x - z) / bufm.shape1.z % bufm.shape1.y;
-    let x = (global_id.x - z - y) / (bufm.shape1.y * bufm.shape1.z);
+    let z = global_id.x % bufm.shape2.z;
+    let y = (global_id.x - z) / bufm.shape2.z % bufm.shape2.y;
+    let x = (global_id.x - z - y) / (bufm.shape2.y * bufm.shape2.z);
 
     let buf1_base = bufm.shape1[bufm.axis] * bufm.strides1[bufm.axis];
     let buf1_offset = x * bufm.strides1.x + y * bufm.strides1.y + z * bufm.strides1.z + buf1_base;
@@ -38,7 +38,7 @@ fn concatenate_3d(global_id: vec3<u32>) {
 }
 
 @compute
-@workgroup_size(32)
+@workgroup_size(16)
 fn main(
     @builtin(global_invocation_id) global_id: vec3<u32>,
 ) {

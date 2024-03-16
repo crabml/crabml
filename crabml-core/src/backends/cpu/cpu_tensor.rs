@@ -237,14 +237,11 @@ impl<'a> Tensor for CpuTensor<'a> {
     }
 
     fn concatenate(&mut self, rhs: &Self, axis: usize) -> Result<()> {
+        let _t = self.device.metrics.extend_walltime.track();
         // (2, 1) + (2, 1) at axis 0 -> (4, 1)
         // (2, 1) + (2, 3) at axis 1 -> (2, 4)
         if !self.is_owned() {
-            return Err((
-                ErrorKind::TensorError,
-                "tensor not owned on concatenate",
-            )
-                .into());
+            return Err((ErrorKind::TensorError, "tensor not owned on concatenate").into());
         }
         if self.dtype() != GGMLType::F32 && self.dtype() != GGMLType::F16 {
             return Err((

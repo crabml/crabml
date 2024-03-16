@@ -286,67 +286,6 @@ impl<'a> Tensor for CpuTensor<'a> {
         Ok(())
     }
 
-    fn extend(&mut self, t: &CpuTensor<'a>) -> Result<()> {
-        if !self.is_owned() {
-            return Err((ErrorKind::TensorError, "extend: tensor not owned").into());
-        }
-        if !self.is_contiguous() {
-            return Err((ErrorKind::TensorError, "not contiguous").into());
-        }
-        if self.dtype() != GGMLType::F32 && self.dtype() != GGMLType::F16 {
-            return Err((
-                ErrorKind::TensorError,
-                "only f32/f16 is supported on extend",
-            )
-                .into());
-        }
-        if t.dtype() != GGMLType::F32 {
-            return Err((
-                ErrorKind::TensorError,
-                "only f32 is supported on extend's rhs",
-            )
-                .into());
-        }
-
-        if !t.shape().eq(&self.shape()[1..]) {
-            return Err((
-                ErrorKind::TensorError,
-                format!(
-                    "shape mismatch on extend, want {:?} but got {:?}",
-                    &self.shape()[1..],
-                    &t.shape()
-                ),
-            )
-                .into());
-        }
-        let _t = self.device.metrics.extend_walltime.track();
-
-        // it's possible to pass a f32 to a f16 tensor
-        self.buf.extend(t.buf.iter_f32());
-        let new_shape = {
-            let mut shape = self.shape().to_vec();
-            shape[0] += 1;
-            shape
-        };
-        self.strider = TensorStrider::new(new_shape);
-        Ok(())
-    }
-
-    fn repeat_n(self, n: usize) -> Result<Self> {
-        assert!(self.is_owned());
-        assert!(self.is_contiguous());
-        let _t = self.device.metrics.repeat_n_walltime.track();
-
-        let len = self.len();
-        let mut v = self.to_vec();
-        v = v.into_iter().cycle().take(len * n).collect::<Vec<_>>();
-
-        let mut new_shape = self.shape().to_vec();
-        new_shape[0] *= n;
-
-        CpuTensor::new(v, &new_shape, self.device.clone())
-    }
-
     fn contiguous(&self) -> Result<Self> {
         let _t = self.device.metrics.contiguous_walltime.track();
         assert!(self.dtype() == GGMLType::F32 || self.dtype() == GGMLType::F16);
@@ -521,43 +460,6 @@ mod tests {
 
         t2.copy_from(&t1, &[0, 0], 2)?;
         assert_eq!(t2.to_vec(), vec![1.0, 2.0]);
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_extend() -> Result<()> {
-        let device = CpuTensorDevice::new();
-        let mut t1 = CpuTensor::new(
-            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-            &[1, 2, 3],
-            device.clone(),
-        )?;
-        let t2 = CpuTensor::new(vec![1.0; 6], &[2, 3], device)?;
-        t1.extend(&t2)?;
-
-        assert_eq!(t1.shape(), &[2, 2, 3]);
-        assert_eq!(t1.to_vec(), &[
-            1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0
-        ]);
-        Ok(())
-    }
-
-    #[test]
-    fn test_repeat() -> Result<()> {
-        let device = CpuTensorDevice::new();
-        let t1 = CpuTensor::new(
-            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-            &[1, 2, 3],
-            device.clone(),
-        )?;
-
-        let t1 = t1.repeat_n(2)?;
-        assert_eq!(t1.shape(), &[2, 2, 3]);
-
-        assert_eq!(t1.to_vec(), &[
-            1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0
-        ]);
 
         Ok(())
     }

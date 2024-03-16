@@ -28,15 +28,11 @@ pub trait Tensor: Sized + Clone {
 
     fn reshape(self, shape: &[usize]) -> Result<Self>;
 
-    fn repeat_n(self, n: usize) -> Result<Self>;
-
     fn transpose(self, shape: &[usize]) -> Result<Self>;
 
     fn contiguous(&self) -> Result<Self>;
 
     fn strider(&self) -> &TensorStrider;
-
-    fn extend(&mut self, rhs: &Self) -> Result<()>;
 
     fn concatenate(&mut self, rhs: &Self, axis: usize) -> Result<()>;
 

@@ -483,8 +483,6 @@ impl<'a, T: Tensor> Iterator for Llama2RunnerOutputGenerator<'a, T> {
 }
 
 #[cfg(test)]
-// Only run tests on aarch64
-#[cfg(target_arch = "aarch64")]
 mod tests {
     use approx::assert_relative_eq;
     use crabml::backends::cpu::CpuTensorDevice;

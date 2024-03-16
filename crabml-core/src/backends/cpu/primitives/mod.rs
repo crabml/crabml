@@ -1,5 +1,6 @@
 mod arithmetic;
 mod batch_matmul_vec;
+mod concatenate;
 mod contiguous;
 mod gelu;
 mod matmul_vec;
@@ -13,6 +14,7 @@ pub use arithmetic::add_inplace;
 pub use arithmetic::div_inplace;
 pub use arithmetic::mul_inplace;
 pub use batch_matmul_vec::batch_matmul_vec;
+pub use concatenate::concatenate_inplace;
 pub use contiguous::contiguous;
 pub use gelu::gelu_inplace;
 pub use matmul_vec::matmul_vec;

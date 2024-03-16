@@ -1,5 +1,5 @@
-use super::scalar::binary_inplace;
 use crate::backends::cpu::buf::CpuTensorBuf;
+use crate::backends::cpu::primitives::scalar::binary_inplace;
 use crate::error::Result;
 use crate::tensor::TensorStrider;
 

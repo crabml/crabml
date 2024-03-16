@@ -18,13 +18,16 @@ pub fn concatenate_inplace<'a>(
 pub fn concatenate_1d<'a, T: Copy>(
     buf1: &mut [T],
     buf2: &[T],
-    strider1: &TensorStrider,
-    strider2: &TensorStrider,
+    shape1: &[usize],
+    shape2: &[usize],
+    strides1: &[usize],
+    strides2: &[usize],
 ) -> Result<()> {
-    let buf1_offset = strider1.shape()[0];
-    for x in 0..strider2.shape()[0] {
-        let buf1_offset = strider1.at_unchecked(&[buf1_offset + x]);
-        let buf2_offset = strider2.at_unchecked(&[x]);
+    let buf1_offset = shape1[0];
+
+    for x in 0..shape2[0] {
+        let buf1_offset = x * strides1[0];
+        let buf2_offset = x * strides2[0];
         buf1[buf1_offset] = buf2[buf2_offset];
     }
     Ok(())
@@ -39,14 +42,13 @@ pub fn concatenate_2d<'a, T: Copy + MulAssign>(
     strides2: &[usize],
     axis: usize,
 ) -> Result<Vec<usize>> {
-    let mut buf1_offset = vec![0, 0];
-    buf1_offset[axis] = shape1[axis];
+    let buf1_base = shape1[axis] * strides1[axis];
 
     for x in 0..shape2[0] {
         for y in 0..shape2[1] {
-            let buf1_pos = (buf1_offset[0] + x) * strides1[0] + (buf1_offset[1] + y) * strides1[1];
-            let buf2_pos = x * strides2[0] + y * strides2[1];
-            buf1[buf1_pos] = buf2[buf2_pos];
+            let buf1_offset = buf1_base + x * strides1[0] + y * strides1[1];
+            let buf2_offset = x * strides2[0] + y * strides2[1];
+            buf1[buf1_offset] = buf2[buf2_offset];
         }
     }
 
@@ -58,25 +60,27 @@ pub fn concatenate_2d<'a, T: Copy + MulAssign>(
 pub fn concatenate_3d<'a, T: Copy>(
     buf1: &mut [T],
     buf2: &[T],
-    strider1: &TensorStrider,
-    strider2: &TensorStrider,
+    shape1: &[usize],
+    shape2: &[usize],
+    strides1: &[usize],
+    strides2: &[usize],
     axis: usize,
-) -> Result<()> {
-    let mut buf1_offset = vec![0, 0, 0];
-    buf1_offset[axis] = strider1.shape()[axis];
+) -> Result<Vec<usize>> {
+    let buf1_offset = shape1[axis] * strides1[axis];
 
-    for x in 0..strider2.shape()[0] {
-        for y in 0..strider2.shape()[1] {
-            for z in 0..strider2.shape()[1] {
-                let buf1_pos =
-                    strider1.at(&[buf1_offset[0] + x, buf1_offset[1] + y, buf1_offset[2] + z])?;
-                let buf2_pos = strider2.at(&[x, y, z])?;
-                buf1[buf1_pos] = buf2[buf2_pos];
+    for x in 0..shape2[0] {
+        for y in 0..shape2[1] {
+            for z in 0..shape2[2] {
+                let buf1_offset = buf1_offset + x * strides1[0] + y * strides1[1] + z * strides1[2];
+                let buf2_offset = x * strides2[0] + y * strides2[1] + z * strides2[2];
+                buf1[buf1_offset] = buf2[buf2_offset];
             }
         }
     }
 
-    Ok(())
+    let mut new_shape = shape1.to_vec();
+    new_shape[axis] += shape2[axis];
+    Ok(new_shape)
 }
 
 #[cfg(test)]

@@ -36,9 +36,12 @@ pub fn contiguous_buf_2d<T: Copy + Send + Sync>(
     shape: &[usize],
     stride: &[usize],
 ) {
+    let mut index = 0;
     for i in 0..shape[0] {
+        let offset = i * stride[0];
         for j in 0..shape[1] {
-            b[i * shape[1] + j] = a[i * stride[0] + j * stride[1]];
+            b[index] = a[offset + j * stride[1]];
+            index += 1;
         }
     }
 }
@@ -49,11 +52,14 @@ pub fn contiguous_buf_3d<T: Copy + Send + Sync>(
     shape: &[usize],
     stride: &[usize],
 ) {
+    let mut index = 0;
     for i in 0..shape[0] {
+        let offset_i = i * stride[0];
         for j in 0..shape[1] {
+            let offset_j = j * stride[1];
             for k in 0..shape[2] {
-                b[i * shape[1] * shape[2] + j * shape[2] + k] =
-                    a[i * stride[0] + j * stride[1] + k * stride[2]];
+                b[index] = a[offset_i + offset_j + k * stride[2]];
+                index += 1;
             }
         }
     }

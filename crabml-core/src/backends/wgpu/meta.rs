@@ -39,3 +39,15 @@ pub struct RopeMeta {
     pub rope_dims: u32,
     pub _padding: [u32; 7],
 }
+
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Default)]
+#[repr(C, align(16))]
+pub struct ConcatenateMeta {
+    pub shape1: [u32; 4],
+    pub shape2: [u32; 4],
+    pub strides1: [u32; 4],
+    pub strides2: [u32; 4],
+    pub axis: u32,
+    pub dims: u32,
+    pub _padding: [u32; 2],
+}

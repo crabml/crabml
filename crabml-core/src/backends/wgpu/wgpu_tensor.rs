@@ -2,6 +2,7 @@ use std::rc::Rc;
 
 use wgpu::util::DeviceExt;
 
+use super::meta::ConcatenateMeta;
 use super::meta::MatmulMeta;
 use super::meta::RmsNormMeta;
 use super::WgpuTensorDeviceRef;
@@ -186,7 +187,73 @@ impl Tensor for WgpuTensor {
     }
 
     fn concatenate(&mut self, rhs: &Self, axis: usize) -> Result<()> {
-        todo!();
+        if self.shape().len() != 3 {
+            return Err((
+                ErrorKind::TensorError,
+                "only support 3D tensor concatenation yet",
+            )
+                .into());
+        }
+        if self.dtype() != GGMLType::F32 || rhs.dtype() != GGMLType::F32 {
+            return Err((ErrorKind::TensorError, "concatenate: only support f32 yet").into());
+        }
+
+        let meta = ConcatenateMeta {
+            shape1: [
+                self.strider.shape()[0] as u32,
+                self.strider.shape()[1] as u32,
+                self.strider.shape()[2] as u32,
+                0,
+            ],
+            shape2: [
+                rhs.strider.shape()[0] as u32,
+                rhs.strider.shape()[1] as u32,
+                rhs.strider.shape()[2] as u32,
+                0,
+            ],
+            strides1: [
+                self.strider.strides()[0] as u32,
+                self.strider.strides()[1] as u32,
+                self.strider.strides()[2] as u32,
+                0,
+            ],
+            strides2: [
+                rhs.strider.strides()[0] as u32,
+                rhs.strider.strides()[1] as u32,
+                rhs.strider.strides()[2] as u32,
+                0,
+            ],
+            axis: axis as u32,
+            dims: 3,
+            _padding: [0; 2],
+        };
+
+        let meta_buf = self
+            .device
+            .make_storage_buffer("meta", bytemuck::bytes_of(&meta));
+        let entries = &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: self.buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: rhs.buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: meta_buf.as_entire_binding(),
+            },
+        ];
+        let encoder =
+            self.device
+                .encode_pipeline_commnad("concatenate_inplace", entries, (1, 1, 1));
+        self.device.queue.submit(Some(encoder.finish()));
+
+        let mut new_shape = self.strider.shape().to_vec();
+        new_shape[axis] += rhs.strider.shape()[axis];
+        self.strider = self.strider.resize(&new_shape)?;
+        Ok(())
     }
 
     fn copy_from(&mut self, rhs: &Self, pos: &[usize], len: usize) -> Result<()> {

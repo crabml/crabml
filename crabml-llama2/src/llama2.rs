@@ -57,22 +57,22 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         let key_cache = (0..conf.n_layers)
             .map(|_| {
                 T::alloc(
-                    &[seq_len, conf.n_kv_heads, conf.head_size()],
+                    &[conf.n_kv_heads, seq_len, conf.head_size()],
                     kv_cache_dtype,
                     device.clone(),
                 )
-                .map(|t| t.resize(0, 0).unwrap())
+                .map(|t| t.resize(1, 0).unwrap())
                 .map(Some)
             })
             .collect::<Result<Vec<_>>>()?;
         let value_cache = (0..conf.n_layers)
             .map(|_| {
                 T::alloc(
-                    &[seq_len, conf.n_kv_heads, conf.head_size()],
+                    &[conf.n_kv_heads, seq_len, conf.head_size()],
                     kv_cache_dtype,
                     device.clone(),
                 )
-                .map(|t| t.resize(0, 0).unwrap())
+                .map(|t| t.resize(1, 0).unwrap())
                 .map(Some)
             })
             .collect::<Result<Vec<_>>>()?;
@@ -287,37 +287,39 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         embed_dim: usize,
         head_dim: usize,
     ) -> Result<T> {
-        // save to kv cache
+        // save to kv cache in layout of (n_kv_heads, seq, head_dim)
         {
             let _t = self.metrics.save_kvcache_walltime.track();
-            let k = k.reshape(&[1, n_kv_heads, head_dim])?;
-            let v = v.reshape(&[1, n_kv_heads, head_dim])?;
+            let k = k
+                .reshape(&[1, n_kv_heads, head_dim])?
+                .transpose(&[1, 0, 2])?;
+            let v = v
+                .reshape(&[1, n_kv_heads, head_dim])?
+                .transpose(&[1, 0, 2])?;
 
-            if let Some(ref mut k_cache) = self.key_cache[l] {
-                k_cache.concatenate(&k, 0)?;
-            }
-            if let Some(ref mut v_cache) = self.value_cache[l] {
-                v_cache.concatenate(&v, 0)?;
-            }
+            self.key_cache[l]
+                .as_mut()
+                .map(|kc| kc.concatenate(&k, 1).unwrap());
+            self.value_cache[l]
+                .as_mut()
+                .map(|vc| vc.concatenate(&v, 1).unwrap());
         };
 
         // multi query attention
         let x = {
             let q = q.reshape(&[n_heads, head_dim])?;
 
-            // - key_cache: [seq, n_kv_head, head_size]
-            // - key_cache = key_cache.transpose(1, 0, 2) => [n_kv_head, seq, head_size]
+            // - key_cache: [n_kv_head, seq, head_size]
             // - q: [n_head, head_size]
             // - attn_score = batch_matmul(key_cache, q) => [n_head, seq]
             // - softmax(attn_score, axis=1) => [n_head, seq]
-            // - val_cache: [seq, n_kv_head, head_size]
-            // - val_cache = val_cache.transpose(1, 2, 0) => [n_kv_head, head_size, seq]
+            // - val_cache: [n_kv_head, seq, head_size]
+            // - val_cache = val_cache.transpose(0, 2, 1) => [n_kv_head, head_size, seq]
             // - out = batch_matmul(val_cache, atten_scores) => [n_head, head_size]
 
             // get attention scores
             let k_cache = self.key_cache[l].take().unwrap();
             let k_cache_strider_orig = k_cache.strider().clone();
-            let k_cache = k_cache.transpose(&[1, 0, 2])?;
             // (n_heads, n_seq, head_size) @ (n_head, head_size) => (n_heads, n_seq)
             let q = q.div_scalar_inplace((head_dim as f32).sqrt())?;
             let attn = k_cache.batch_matmul_vec(&q)?;
@@ -329,7 +331,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             let v_cache = self.value_cache[l].take().unwrap();
             let v_cache_strider_orig = v_cache.strider().clone();
             // get the weighted sum of the values and attention scores
-            let v_cache = v_cache.transpose(&[1, 2, 0])?;
+            let v_cache = v_cache.transpose(&[0, 2, 1])?;
             // (n_kv_heads, head_size, n_seq) @ (n_heads, n_seq) => (n_heads, head_size)
             let x_with_attn = v_cache.batch_matmul_vec(&attn)?; // (n_heads, head_size)
             let x_with_attn = x_with_attn.reshape(&[embed_dim])?;

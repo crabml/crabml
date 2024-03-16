@@ -239,10 +239,10 @@ impl<'a> Tensor for CpuTensor<'a> {
     fn concatenate(&mut self, rhs: &Self, axis: usize) -> Result<()> {
         // (2, 1) + (2, 1) at axis 0 -> (4, 1)
         // (2, 1) + (2, 3) at axis 1 -> (2, 4)
-        if !self.is_owned() || !self.is_contiguous() {
+        if !self.is_owned() {
             return Err((
                 ErrorKind::TensorError,
-                "tensor not owned or not contiguous on concatenate",
+                "tensor not owned on concatenate",
             )
                 .into());
         }

@@ -170,12 +170,28 @@ pub fn concatenate_3d_f16_f32(
 ) -> Result<Vec<usize>> {
     let buf1_offset = shape1[axis] * strides1[axis];
 
+    let stride1_0 = strides1[0];
+    let stride1_1 = strides1[1];
+    let stride1_2 = strides1[2];
+    let stride2_0 = strides2[0];
+    let stride2_1 = strides2[1];
+    let stride2_2 = strides2[2];
+
     for x in 0..shape2[0] {
         for y in 0..shape2[1] {
-            for z in 0..shape2[2] {
-                let buf1_offset = buf1_offset + x * strides1[0] + y * strides1[1] + z * strides1[2];
-                let buf2_offset = x * strides2[0] + y * strides2[1] + z * strides2[2];
-                buf1[buf1_offset] = f16::from_f32(buf2[buf2_offset]);
+            for z in (0..shape2[2]).step_by(4) {
+                let buf1_offset = buf1_offset + x * stride1_0 + y * stride1_1 + z * stride1_2;
+                let buf2_offset = x * stride2_0 + y * stride2_1 + z * stride2_2;
+                unsafe {
+                    *buf1.get_unchecked_mut(buf1_offset) =
+                        f16::from_f32(*buf2.get_unchecked(buf2_offset));
+                    *buf1.get_unchecked_mut(buf1_offset + stride1_2) =
+                        f16::from_f32(*buf2.get_unchecked(buf2_offset + stride2_2));
+                    *buf1.get_unchecked_mut(buf1_offset + stride1_2 * 2) =
+                        f16::from_f32(*buf2.get_unchecked(buf2_offset + stride2_2 * 2));
+                    *buf1.get_unchecked_mut(buf1_offset + stride1_2 * 2) =
+                        f16::from_f32(*buf2.get_unchecked(buf2_offset + stride2_2 * 2));
+                }
             }
         }
     }

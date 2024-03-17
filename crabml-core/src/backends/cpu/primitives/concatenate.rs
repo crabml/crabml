@@ -36,7 +36,10 @@ pub fn concatenate_inplace<'a>(
             |x| x,
         )?,
         (CpuTensorBuf::F16(Cow::Owned(buf1)), CpuTensorBuf::F32(buf2)) => {
-            if strider2.shape().len() == 3 {
+            if strider2.shape().len() == 3
+                && strider2.strides()[2] == 1
+                && strider1.strides()[2] == 1
+            {
                 concatenate_3d_f16_f32(
                     buf1,
                     buf2,
@@ -181,21 +184,22 @@ pub fn concatenate_3d_f16_f32(
     let stride2_1 = strides2[1];
     let stride2_2 = strides2[2];
 
+    let mut tmp = [f16::ZERO; 4];
     for x in 0..shape2[0] {
         for y in 0..shape2[1] {
-            for z in (0..shape2[2]).step_by(4) {
+            let z_rounded = shape2[2] - shape2[2] % 8;
+            for z in (0..z_rounded).step_by(8) {
                 let buf1_offset = buf1_offset + x * stride1_0 + y * stride1_1 + z * stride1_2;
                 let buf2_offset = x * stride2_0 + y * stride2_1 + z * stride2_2;
-                unsafe {
-                    *buf1.get_unchecked_mut(buf1_offset) =
-                        f16::from_f32(*buf2.get_unchecked(buf2_offset));
-                    *buf1.get_unchecked_mut(buf1_offset + stride1_2) =
-                        f16::from_f32(*buf2.get_unchecked(buf2_offset + stride2_2));
-                    *buf1.get_unchecked_mut(buf1_offset + stride1_2 * 2) =
-                        f16::from_f32(*buf2.get_unchecked(buf2_offset + stride2_2 * 2));
-                    *buf1.get_unchecked_mut(buf1_offset + stride1_2 * 3) =
-                        f16::from_f32(*buf2.get_unchecked(buf2_offset + stride2_2 * 3));
-                }
+                tmp.iter_mut()
+                    .zip(&buf2[buf2_offset..buf2_offset + 8])
+                    .for_each(|(x, y)| *x = f16::from_f32(*y));
+                buf1[buf1_offset..buf1_offset + 8].copy_from_slice(&tmp);
+            }
+            for z in z_rounded..shape2[2] {
+                let buf1_offset = buf1_offset + x * stride1_0 + y * stride1_1 + z * stride1_2;
+                let buf2_offset = x * stride2_0 + y * stride2_1 + z * stride2_2;
+                buf1[buf1_offset] = f16::from_f32(buf2[buf2_offset]);
             }
         }
     }

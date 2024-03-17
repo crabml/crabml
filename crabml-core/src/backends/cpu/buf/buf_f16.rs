@@ -104,6 +104,28 @@ pub fn vec_dot_f16_f16_strided(
 }
 
 #[cfg(target_arch = "aarch64")]
+pub fn vec_fma_f16_f16(a: &[f16], b: f16, c: &mut [f16], a_offset: usize, m: usize) {
+    use crate::backends::cpu::arch::aarch64 as myaarch64;
+    unsafe {
+        let m_rounded = m - m % 16;
+        let bv = myaarch64::vdupq_n_f16(b.to_bits());
+        for mi in (0..m_rounded).step_by(16) {
+            let av0 = myaarch64::vld1q_f16(a.as_ptr().add(a_offset + mi));
+            let av1 = myaarch64::vld1q_f16(a.as_ptr().add(a_offset + mi + 8));
+            let cv0 = myaarch64::vld1q_f16(c.as_ptr().add(mi));
+            let cv1 = myaarch64::vld1q_f16(c.as_ptr().add(mi + 8));
+            let cv0 = myaarch64::vfmaq_f16(cv0, av0, bv);
+            let cv1 = myaarch64::vfmaq_f16(cv1, av1, bv);
+            myaarch64::vst1q_f16(c.as_mut_ptr().add(mi), cv0);
+            myaarch64::vst1q_f16(c.as_mut_ptr().add(mi + 8), cv1);
+        }
+        for mi in m_rounded..m {
+            c[mi] += a[a_offset + mi] * b;
+        }
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
 pub fn vec_dot_f16_f16_strided_simd(
     a: &[f16],
     a_base: usize,

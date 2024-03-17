@@ -103,6 +103,54 @@ pub fn vec_dot_f16_f16_strided(
     }
 }
 
+pub fn vec_fma_f16_f16(a: &[f16], b: f16, c: &mut [f16], a_offset: usize, m: usize) {
+    #[cfg(target_arch = "aarch64")]
+    {
+        vec_fma_f16_f16_neon(a, b, c, a_offset, m)
+    }
+
+    #[cfg(not(any(target_arch = "aarch64",)))]
+    {
+        vec_fma_f16_f16_fallback(a, b, c, a_offset, m)
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+fn vec_fma_f16_f16_neon(a: &[f16], b: f16, c: &mut [f16], a_offset: usize, m: usize) {
+    use crate::backends::cpu::arch::aarch64 as myaarch64;
+    unsafe {
+        let m_rounded = m - m % 16;
+        let bv = myaarch64::vdupq_n_f16(b.to_bits());
+        for mi in (0..m_rounded).step_by(16) {
+            let av0 = myaarch64::vld1q_f16(a.as_ptr().add(a_offset + mi));
+            let av1 = myaarch64::vld1q_f16(a.as_ptr().add(a_offset + mi + 8));
+            let cv0 = myaarch64::vld1q_f16(c.as_ptr().add(mi));
+            let cv1 = myaarch64::vld1q_f16(c.as_ptr().add(mi + 8));
+            let cv0 = myaarch64::vfmaq_f16(cv0, av0, bv);
+            let cv1 = myaarch64::vfmaq_f16(cv1, av1, bv);
+            myaarch64::vst1q_f16(c.as_mut_ptr().add(mi), cv0);
+            myaarch64::vst1q_f16(c.as_mut_ptr().add(mi + 8), cv1);
+        }
+        for mi in m_rounded..m {
+            c[mi] += a[a_offset + mi] * b;
+        }
+    }
+}
+
+#[allow(dead_code)]
+fn vec_fma_f16_f16_fallback(a: &[f16], b: f16, c: &mut [f16], a_offset: usize, m: usize) {
+    let m_rounded = m - m % 4;
+    for mi in (0..m_rounded).step_by(4) {
+        c[mi] += a[a_offset + mi] * b;
+        c[mi + 1] += a[a_offset + mi + 1] * b;
+        c[mi + 2] += a[a_offset + mi + 2] * b;
+        c[mi + 3] += a[a_offset + mi + 3] * b;
+    }
+    for mi in m_rounded..m {
+        c[mi] += a[a_offset + mi] * b;
+    }
+}
+
 #[cfg(target_arch = "aarch64")]
 pub fn vec_dot_f16_f16_strided_simd(
     a: &[f16],
@@ -172,4 +220,23 @@ pub fn vec_dot_f16_f16_strided_fallback(
         sum += a[a_base + ki * a_stride] * b[ki];
     }
     sum.to_f32()
+}
+
+#[cfg(test)]
+mod tests {
+    use half::f16;
+
+    use crate::backends::cpu::buf::buf_f16::vec_fma_f16_f16;
+
+    #[test]
+    fn test_vec_fma_f16_f16() {
+        let a = vec![f16::from_f32(1.0); 16];
+        let mut c = vec![f16::from_f32(0.0); 16];
+        let b = f16::from_f32(2.0);
+        vec_fma_f16_f16(&a, b, &mut c, 0, 16);
+        assert_eq!(c, vec![f16::from_f32(2.0); 16]);
+
+        vec_fma_f16_f16(&a, b, &mut c, 0, 16);
+        assert_eq!(c, vec![f16::from_f32(4.0); 16]);
+    }
 }

@@ -230,32 +230,48 @@ impl<'a> CpuTensorBuf<'a> {
             "only f32/f16 can be copied to"
         );
 
-        let rhs_iter: Box<dyn Iterator<Item = f32>> = match src {
-            CpuTensorBuf::F32(buf) => Box::new(buf.iter().skip(offset).take(len).cloned()),
-            CpuTensorBuf::F16(buf) => Box::new(dequantize_f16_buf(buf, offset).take(len)),
-            CpuTensorBuf::Q2K(buf) => Box::new(buf.dequantize(offset).take(len)),
-            CpuTensorBuf::Q8_0(buf) => Box::new(buf.dequantize(offset).take(len)),
-            CpuTensorBuf::Q8_1(buf) => Box::new(buf.dequantize(offset).take(len)),
-            CpuTensorBuf::Q8K(buf) => Box::new(buf.dequantize(offset).take(len)),
-            CpuTensorBuf::Q4_0(buf) => Box::new(buf.dequantize(offset).take(len)),
-            CpuTensorBuf::Q4_1(buf) => Box::new(buf.dequantize(offset).take(len)),
-            CpuTensorBuf::Q4K(buf) => Box::new(buf.dequantize(offset).take(len)),
-            CpuTensorBuf::Q5_0(buf) => Box::new(buf.dequantize(offset).take(len)),
-            CpuTensorBuf::Q5_1(buf) => Box::new(buf.dequantize(offset).take(len)),
-            CpuTensorBuf::Q6K(buf) => Box::new(buf.dequantize(offset).take(len)),
-        };
-
-        match self {
-            CpuTensorBuf::F32(Cow::Owned(buf)) => {
-                buf.iter_mut().zip(rhs_iter).for_each(|(dst, src)| {
-                    *dst = src;
-                });
+        match src {
+            CpuTensorBuf::F32(buf) => {
+                self.copy_from_iter(buf.iter().skip(offset).take(len).cloned())
             }
-            // TODO: add f16 support
-            _ => unreachable!("only f32/f16 buffers can be copied"),
+            CpuTensorBuf::F16(buf) => {
+                self.copy_from_iter(dequantize_f16_buf(buf, offset).take(len))
+            }
+            CpuTensorBuf::Q2K(buf) => self.copy_from_iter(buf.dequantize(offset).take(len)),
+            CpuTensorBuf::Q8_0(buf) => self.copy_from_iter(buf.dequantize(offset).take(len)),
+            CpuTensorBuf::Q8_1(buf) => self.copy_from_iter(buf.dequantize(offset).take(len)),
+            CpuTensorBuf::Q8K(buf) => self.copy_from_iter(buf.dequantize(offset).take(len)),
+            CpuTensorBuf::Q4_0(buf) => self.copy_from_iter(buf.dequantize(offset).take(len)),
+            CpuTensorBuf::Q4_1(buf) => self.copy_from_iter(buf.dequantize(offset).take(len)),
+            CpuTensorBuf::Q4K(buf) => self.copy_from_iter(buf.dequantize(offset).take(len)),
+            CpuTensorBuf::Q5_0(buf) => self.copy_from_iter(buf.dequantize(offset).take(len)),
+            CpuTensorBuf::Q5_1(buf) => self.copy_from_iter(buf.dequantize(offset).take(len)),
+            CpuTensorBuf::Q6K(buf) => self.copy_from_iter(buf.dequantize(offset).take(len)),
         };
 
         Ok(())
+    }
+
+    pub fn copy_from_iter(&mut self, iter: impl Iterator<Item = f32>) {
+        assert!(self.is_owned(), "only owned buffers can be copied to");
+        assert!(
+            self.dtype() == GGMLType::F32 || self.dtype() == GGMLType::F16,
+            "only f32/f16 can be copied to"
+        );
+
+        match self {
+            CpuTensorBuf::F32(Cow::Owned(buf)) => {
+                buf.iter_mut().zip(iter).for_each(|(dst, src)| {
+                    *dst = src;
+                })
+            }
+            CpuTensorBuf::F16(Cow::Owned(buf)) => {
+                buf.iter_mut().zip(iter).for_each(|(dst, src)| {
+                    *dst = f16::from_f32(src);
+                })
+            }
+            _ => unreachable!("only f32/f16 buffers can be copied"),
+        }
     }
 
     pub fn as_f32_ref(&self) -> &[f32] {

@@ -92,6 +92,11 @@ pub unsafe fn vld1q_f16(ptr: *const f16) -> float16x8_t {
     core::arch::aarch64::vld1q_u16(ptr as *const u16) as float16x8_t
 }
 
+#[inline]
+pub unsafe fn vst1q_f16(ptr: *mut f16, a: float16x8_t) {
+    core::arch::aarch64::vst1q_u16(ptr as *mut u16, a as uint16x8_t);
+}
+
 /// Broadcast value into [`float16x8_t`]
 /// Fused multiply add [doc](https://developer.arm.com/documentation/dui0801/g/A64-SIMD-Vector-Instructions/FMLA--vector-)
 #[inline]

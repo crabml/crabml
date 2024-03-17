@@ -71,29 +71,17 @@ fn run<U: Tensor>(
     sampler: &mut Llama2Sampler,
     metrics: &TensorMetrics,
 ) -> Result<()> {
-    // it seems printing to stdout is not that fast, so we use a separate thread to keep the generation not blocked by the printing
-    let (tx, rx) = std::sync::mpsc::sync_channel(32);
-    let print_thread = std::thread::spawn(move || {
-        let mut step = 0;
-        while let Ok(Some(token)) = rx.recv() {
-            print!("{}", token);
-            step += 1;
-            if step % 2 == 0 {
-                std::io::stdout().flush().unwrap();
-            }
-        }
-        std::io::stdout().flush().unwrap();
-    });
-
     let mut output = runner.generate(&args.prompt, args.steps, sampler)?;
     print!("{}", &args.prompt);
 
     loop {
         let _t = metrics.total_walltime.track();
         match output.next() {
-            Some(token) => tx.send(Some(token?)).unwrap(),
+            Some(token) => {
+                print!("{}", token?);
+                std::io::stdout().flush().unwrap();
+            }
             None => {
-                tx.send(None).unwrap();
                 break;
             }
         }
@@ -109,7 +97,6 @@ fn run<U: Tensor>(
         metrics.reset();
     }
 
-    print_thread.join().unwrap();
     println!();
     println!(
         "{} tokens/s, {} threads",
@@ -158,12 +145,12 @@ fn main() -> Result<()> {
                 tensor.dimensions()
             );
         }
-        println!("loaded model: {}ms", start_time.elapsed().as_millis());
     }
 
     match args.device {
         DeviceType::Cpu => {
-            let mut runner = Llama2Runner::new(&model_cpu, metrics.clone(), true)?;
+            let mut runner = Llama2Runner::new(&model_cpu, metrics.clone(), conf.seq_len, true)?;
+            println!("loaded model: {}ms", start_time.elapsed().as_millis());
             run(&args, &mut runner, &mut sampler, &metrics)?;
         }
         DeviceType::Wgpu => {
@@ -172,7 +159,7 @@ fn main() -> Result<()> {
             );
             let model_wgpu = WgpuLlama2Model::from_cpu(&model_cpu, device_wgpu)?;
 
-            let mut runner = Llama2Runner::new(&model_wgpu, metrics.clone(), true)?;
+            let mut runner = Llama2Runner::new(&model_wgpu, metrics.clone(), conf.seq_len, false)?;
             run(&args, &mut runner, &mut sampler, &metrics)?;
         }
     }

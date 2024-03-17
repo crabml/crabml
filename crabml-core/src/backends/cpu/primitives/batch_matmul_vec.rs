@@ -123,8 +123,8 @@ fn batch_matmul_vec_f16(
             for ki in 0..k {
                 vec_fma_f16_f16(
                     abuf,
-                    bbuf[(bi % a_batch) * k + ki],
-                    &mut cbuf[(bi % a_batch) * m..],
+                    bbuf[bi * k + ki],
+                    &mut cbuf[bi * m..],
                     (bi % a_batch) * a_stride0 + ki * a_stride2,
                     m,
                 );

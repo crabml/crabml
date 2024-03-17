@@ -29,6 +29,7 @@ pub fn batch_matmul_vec<'a>(
 
     let bufc = c.as_f32_mut();
 
+    let seq = strider1.shape()[0];
     let m = strider1.shape()[1];
     let k = strider1.shape()[2];
     let bi_stride = strider1.strides()[0];
@@ -38,14 +39,15 @@ pub fn batch_matmul_vec<'a>(
     match a {
         CpuTensorBuf::F32(bufa) => {
             let bufb = b.as_f32_ref();
-            batch_matmul_vec_f32(bufa, bufb, bufc, m, k, bi_stride, mi_stride, ki_stride);
+            batch_matmul_vec_f32(bufa, bufb, bufc, seq, m, k, bi_stride, mi_stride, ki_stride);
         }
         CpuTensorBuf::F16(bufa) => {
             let bufb = b.as_f32_ref();
             let bufb = quantize_f32_f16(bufb);
-            batch_matmul_vec_f16(bufa, &bufb, bufc, m, k, bi_stride, mi_stride, ki_stride);
+            batch_matmul_vec_f16(
+                bufa, &bufb, bufc, seq, m, k, bi_stride, mi_stride, ki_stride,
+            );
         }
-
         _ => return Err((ErrorKind::TensorError, "a must be f32 or 16").into()),
     };
     Ok(())
@@ -56,19 +58,19 @@ fn batch_matmul_vec_f32(
     abuf: &[f32],     // Batch x M x K
     bbuf: &[f32],     // Batch x K
     cbuf: &mut [f32], // Batch x M
+    seq: usize,
     m: usize,
     k: usize,
     bi_stride: usize,
     mi_stride: usize,
     ki_stride: usize,
 ) {
-    let a_batch = abuf.len() / (m * k);
     cbuf.par_iter_mut().enumerate().for_each(|(i, bufcp)| {
         let mi = i % m;
         let bi = (i - mi) / m;
         *bufcp = vec_dot_f32_f32_strided(
             abuf,
-            (bi % a_batch) * bi_stride + mi * mi_stride,
+            (bi % seq) * bi_stride + mi * mi_stride,
             ki_stride,
             k,
             &bbuf[bi * k..(bi + 1) * k],
@@ -81,20 +83,20 @@ fn batch_matmul_vec_f16(
     abuf: &[f16],     // Batch x M x K
     bbuf: &[f16],     // Batch x K
     cbuf: &mut [f32], // Batch x M
+    seq: usize,
     m: usize,
     k: usize,
     a_stride0: usize,
     a_stride1: usize,
     a_stride2: usize,
 ) {
-    let a_batch = abuf.len() / (m * k);
     if a_stride2 == 1 {
         cbuf.par_iter_mut().enumerate().for_each(|(i, bufcp)| {
             let mi = i % m;
             let bi = (i - mi) / m;
             *bufcp = vec_dot_f16_f16(
                 abuf,
-                (bi % a_batch) * a_stride0 + mi * a_stride1,
+                (bi % seq) * a_stride0 + mi * a_stride1,
                 &bbuf[bi * k..(bi + 1) * k],
                 0,
                 k,
@@ -106,7 +108,7 @@ fn batch_matmul_vec_f16(
             let bi = (i - mi) / m;
             *bufcp = vec_dot_f16_f16_strided(
                 abuf,
-                (bi % a_batch) * a_stride0 + mi * a_stride1,
+                (bi % seq) * a_stride0 + mi * a_stride1,
                 a_stride2,
                 k,
                 &bbuf[bi * k..(bi + 1) * k],

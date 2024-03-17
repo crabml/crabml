@@ -46,7 +46,7 @@ pub fn batch_matmul_vec<'a>(
         CpuTensorBuf::F16(bufa) => {
             let bufb = b.as_f32_ref();
             let bufb = quantize_f32_f16(bufb);
-            let mut tmpc = vec![f16::ZERO; b_batch * m];
+            let mut tmpc = vec![f16::ZERO; b_batch * m]; // TODO: avoid allocation
             batch_matmul_vec_f16(
                 device, bufa, &bufb, &mut tmpc, a_batch, b_batch, m, k, bi_stride, mi_stride,
                 ki_stride,

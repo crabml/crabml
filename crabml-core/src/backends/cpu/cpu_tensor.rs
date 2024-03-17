@@ -159,7 +159,7 @@ impl<'a> Tensor for CpuTensor<'a> {
                 CpuTensorBuf::F32(vec)
             }
             GGMLType::F16 => {
-                // it's slow to initialize a vec![f16::ZERO; buf_size], nearly 200ms on preparing kv cache
+                // it's slow to initialize a vec![f16::ZERO; buf_size], nearly 80~200ms on preparing kv cache
                 let vec_u16 = vec![0 as u16; buf_size];
                 let vec_f16 = reinterpret_vec_f16(vec_u16);
                 let vec = Cow::Owned(vec_f16);

@@ -137,6 +137,7 @@ fn vec_fma_f16_f16_neon(a: &[f16], b: f16, c: &mut [f16], a_offset: usize, m: us
     }
 }
 
+#[allow(dead_code)]
 fn vec_fma_f16_f16_fallback(a: &[f16], b: f16, c: &mut [f16], a_offset: usize, m: usize) {
     let m_rounded = m - m % 4;
     for mi in (0..m_rounded).step_by(4) {

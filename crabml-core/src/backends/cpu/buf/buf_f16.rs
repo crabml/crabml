@@ -195,3 +195,22 @@ pub fn vec_dot_f16_f16_strided_fallback(
     }
     sum.to_f32()
 }
+
+#[cfg(test)]
+mod tests {
+    use half::f16;
+
+    use crate::backends::cpu::buf::buf_f16::vec_fma_f16_f16;
+
+    #[test]
+    fn test_vec_fma_f16_f16() {
+        let a = vec![f16::from_f32(1.0); 16];
+        let mut c = vec![f16::from_f32(0.0); 16];
+        let b = f16::from_f32(2.0);
+        vec_fma_f16_f16(&a, b, &mut c, 0, 16);
+        assert_eq!(c, vec![f16::from_f32(2.0); 16]);
+
+        vec_fma_f16_f16(&a, b, &mut c, 0, 16);
+        assert_eq!(c, vec![f16::from_f32(4.0); 16]);
+    }
+}

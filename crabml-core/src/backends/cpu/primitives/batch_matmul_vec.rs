@@ -105,7 +105,7 @@ fn batch_matmul_vec_f16(
     a_stride2: usize,
 ) {
     if a_stride2 == 1 {
-        let _t = device.metrics.batch_matmul1_walltime.track();
+        let _t = device.metrics.batch_matmul_rowwise_walltime.track();
         cbuf.par_iter_mut().enumerate().for_each(|(i, bufcp)| {
             let mi = i % m;
             let bi = (i - mi) / m;
@@ -118,7 +118,7 @@ fn batch_matmul_vec_f16(
             ));
         });
     } else {
-        let _t = device.metrics.batch_matmul2_walltime.track();
+        let _t = device.metrics.batch_matmul_colwise_walltime.track();
         for bi in 0..b_batch {
             for ki in 0..k {
                 vec_fma_f16_f16(

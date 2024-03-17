@@ -1,4 +1,7 @@
+use std::borrow::Cow;
+
 use half::f16;
+use half::vec::HalfFloatVecExt;
 
 use super::CpuTensorDeviceRef;
 use crate::backends::cpu::buf::CpuTensorBuf;
@@ -121,6 +124,25 @@ impl<'a> CpuTensor<'a> {
     }
 }
 
+fn reinterpret_vec_f16(mut vec_u16: Vec<u16>) -> Vec<f16> {
+    // An f16 array has same length and capacity as u16 array
+    let length = vec_u16.len();
+    let capacity = vec_u16.capacity();
+
+    // Actually reinterpret the contents of the Vec<f16> as u16,
+    // knowing that structs are represented as only their members in memory,
+    // which is the u16 part of `f16(u16)`
+    let pointer = vec_u16.as_mut_ptr() as *mut f16;
+
+    // Prevent running a destructor on the old Vec<u16>, so the pointer won't be deleted
+    std::mem::forget(vec_u16);
+
+    // Finally construct a new Vec<f16> from the raw pointer
+    // SAFETY: We are reconstructing full length and capacity of original vector,
+    // using its original pointer, and the size of elements are identical.
+    unsafe { Vec::from_raw_parts(pointer, length, capacity) }
+}
+
 impl<'a> Tensor for CpuTensor<'a> {
     type Device = CpuTensorDeviceRef<'a>;
 
@@ -133,12 +155,15 @@ impl<'a> Tensor for CpuTensor<'a> {
         let _t = device.metrics.alloc_walltime.track();
         let buf = match dtype {
             GGMLType::F32 => {
-                let vec = vec![0.0; buf_size];
-                CpuTensorBuf::F32(vec.into())
+                let vec = Cow::Owned(vec![0.0; buf_size]);
+                CpuTensorBuf::F32(vec)
             }
             GGMLType::F16 => {
-                let vec = vec![f16::ZERO; buf_size];
-                CpuTensorBuf::F16(vec.into())
+                // it's slow to initialize a vec![f16::ZERO; buf_size], nearly 200ms on preparing kv cache
+                let vec_u16 = vec![0 as u16; buf_size];
+                let vec_f16 = reinterpret_vec_f16(vec_u16);
+                let vec = Cow::Owned(vec_f16);
+                CpuTensorBuf::F16(vec)
             }
             _ => unreachable!(),
         };

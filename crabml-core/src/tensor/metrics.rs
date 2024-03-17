@@ -26,6 +26,8 @@ pub struct TensorMetrics {
     pub repeat_n_walltime: TimeMetric,
     pub dup_walltime: TimeMetric,
     pub contiguous_walltime: TimeMetric,
+    pub batch_matmul1_walltime: TimeMetric,
+    pub batch_matmul2_walltime: TimeMetric,
 }
 
 impl TensorMetrics {
@@ -52,6 +54,8 @@ impl TensorMetrics {
         self.repeat_n_walltime.reset();
         self.dup_walltime.reset();
         self.contiguous_walltime.reset();
+        self.batch_matmul1_walltime.reset();
+        self.batch_matmul2_walltime.reset();
     }
 
     pub fn as_vec(&self) -> Vec<(String, f64)> {
@@ -128,6 +132,14 @@ impl TensorMetrics {
                 self.repeat_n_walltime.as_millis(),
             ),
             ("dup_walltime".to_string(), self.dup_walltime.as_millis()),
+            (
+                "batch_matmul1_walltime".to_string(),
+                self.batch_matmul1_walltime.as_millis(),
+            ),
+            (
+                "batch_matmul2_walltime".to_string(),
+                self.batch_matmul2_walltime.as_millis(),
+            ),
             (
                 "contiguous_walltime".to_string(),
                 self.contiguous_walltime.as_millis(),

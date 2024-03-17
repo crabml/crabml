@@ -103,8 +103,20 @@ pub fn vec_dot_f16_f16_strided(
     }
 }
 
-#[cfg(target_arch = "aarch64")]
 pub fn vec_fma_f16_f16(a: &[f16], b: f16, c: &mut [f16], a_offset: usize, m: usize) {
+    #[cfg(target_arch = "aarch64")]
+    {
+        vec_fma_f16_f16_neon(a, b, c, a_offset, m)
+    }
+
+    #[cfg(not(any(target_arch = "aarch64",)))]
+    {
+        vec_fma_f16_f16_fallback(a, b, c, a_offset, m)
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+fn vec_fma_f16_f16_neon(a: &[f16], b: f16, c: &mut [f16], a_offset: usize, m: usize) {
     use crate::backends::cpu::arch::aarch64 as myaarch64;
     unsafe {
         let m_rounded = m - m % 16;
@@ -122,6 +134,19 @@ pub fn vec_fma_f16_f16(a: &[f16], b: f16, c: &mut [f16], a_offset: usize, m: usi
         for mi in m_rounded..m {
             c[mi] += a[a_offset + mi] * b;
         }
+    }
+}
+
+fn vec_fma_f16_f16_fallback(a: &[f16], b: f16, c: &mut [f16], a_offset: usize, m: usize) {
+    let m_rounded = m - m % 4;
+    for mi in (0..m_rounded).step_by(4) {
+        c[mi] += a[a_offset + mi] * b;
+        c[mi + 1] += a[a_offset + mi + 1] * b;
+        c[mi + 2] += a[a_offset + mi + 2] * b;
+        c[mi + 3] += a[a_offset + mi + 3] * b;
+    }
+    for mi in m_rounded..m {
+        c[mi] += a[a_offset + mi] * b;
     }
 }
 

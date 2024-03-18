@@ -19,9 +19,10 @@ pub fn matmul_vec<'a>(
     assert!(strider2.shape().len() == 1);
     assert!(strider1.shape()[1] == strider2.shape()[0]);
     assert!(strider2.is_contiguous());
+    assert!(strider1.is_contiguous());
 
     // if the input is contiguous, we can use SIMD to accelerate the computation
-    if strider1.is_contiguous() && bufa.len() % 32 == 0 {
+    if bufa.len() % 32 == 0 {
         gemv_simd(device, bufa, bufb, bufc);
         return Ok(());
     }

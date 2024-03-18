@@ -1,12 +1,9 @@
 use std::borrow::Cow;
 
-use half::f16;
-use half::vec::HalfFloatVecExt;
-
-use super::buf::buf_f16::alloc_f16_buf;
-use super::CpuTensorDeviceRef;
+use crate::backends::cpu::buf::buf_f16::alloc_f16_buf;
 use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::backends::cpu::primitives;
+use crate::backends::cpu::CpuTensorDeviceRef;
 use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::error::Result;

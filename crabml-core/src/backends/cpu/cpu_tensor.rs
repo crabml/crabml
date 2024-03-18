@@ -1,8 +1,9 @@
-use half::f16;
+use std::borrow::Cow;
 
-use super::CpuTensorDeviceRef;
+use crate::backends::cpu::buf::buf_f16::alloc_f16_buf;
 use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::backends::cpu::primitives;
+use crate::backends::cpu::CpuTensorDeviceRef;
 use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::error::Result;
@@ -133,12 +134,14 @@ impl<'a> Tensor for CpuTensor<'a> {
         let _t = device.metrics.alloc_walltime.track();
         let buf = match dtype {
             GGMLType::F32 => {
-                let vec = vec![0.0; buf_size];
-                CpuTensorBuf::F32(vec.into())
+                let vec = Cow::Owned(vec![0.0; buf_size]);
+                CpuTensorBuf::F32(vec)
             }
             GGMLType::F16 => {
-                let vec = vec![f16::ZERO; buf_size];
-                CpuTensorBuf::F16(vec.into())
+                // it's slow to initialize a vec![f16::ZERO; buf_size], nearly 80~200ms on preparing kv cache
+                let vec_f16 = alloc_f16_buf(buf_size);
+                let vec = Cow::Owned(vec_f16);
+                CpuTensorBuf::F16(vec)
             }
             _ => unreachable!(),
         };

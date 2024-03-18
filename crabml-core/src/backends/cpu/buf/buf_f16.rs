@@ -17,7 +17,7 @@ pub fn f16_buf_from_bytes<'a>(buf: &[u8]) -> Cow<'a, [f16]> {
 }
 
 // it's slow to initialize a vec![f16::ZERO; buf_size], nearly 80~200ms on preparing kv cache.
-// we can initialize a vec![0 as u16; buf_size] and reinterpret it into Vec<f16> to make it 
+// we can initialize a vec![0 as u16; buf_size] and reinterpret it into Vec<f16> to make it
 // faster, please note that the zerod f16 is not f16::ZERO, but f16(0x0000), do not read the
 // uninitialized data in this buf.
 // the code is modified from half's reinterpret_into function.

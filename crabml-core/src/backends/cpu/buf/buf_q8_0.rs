@@ -292,21 +292,35 @@ mod impl_x86_64_avx2 {
     }
 
     pub fn vec_dot_q8_0_q8_0(abs: &[BlockQ8_0], bbs: &[BlockQ8_0]) -> f32 {
+        assert_eq!(
+            bbs.len() % 2,
+            0,
+            "bbs.len() must be a multiple of 64, got: {}",
+            bbs.len()
+        );
+
         unsafe {
-            let mut acc = _mm256_setzero_ps();
+            let mut acc0 = _mm256_setzero_ps();
+            let mut acc1 = _mm256_setzero_ps();
 
-            for (abs, bbs) in abs.iter().zip(bbs) {
-                let d = _mm256_set1_ps(abs.d.to_f32() * bbs.d.to_f32());
+            for [(abs0, bbs0), (abs1, bbs1)] in abs.iter().zip(bbs).array_chunks::<2>() {
+                let d0 = _mm256_set1_ps(abs0.d.to_f32() * bbs0.d.to_f32());
+                let d1 = _mm256_set1_ps(abs1.d.to_f32() * bbs1.d.to_f32());
 
-                let qa = _mm256_loadu_si256(abs.qs.as_ptr() as *const __m256i);
-                let qb = _mm256_loadu_si256(bbs.qs.as_ptr() as *const __m256i);
+                let qa0 = _mm256_loadu_si256(abs0.qs.as_ptr() as *const __m256i);
+                let qb0 = _mm256_loadu_si256(bbs0.qs.as_ptr() as *const __m256i);
 
-                let q = mul_sum_i8_pairs_float(qa, qb);
+                let qa1 = _mm256_loadu_si256(abs1.qs.as_ptr() as *const __m256i);
+                let qb1 = _mm256_loadu_si256(bbs1.qs.as_ptr() as *const __m256i);
 
-                acc = _mm256_fmadd_ps(d, q, acc);
+                let q0 = mul_sum_i8_pairs_float(qa0, qb0);
+                let q1 = mul_sum_i8_pairs_float(qa1, qb1);
+
+                acc0 = _mm256_fmadd_ps(d0, q0, acc0);
+                acc1 = _mm256_fmadd_ps(d1, q1, acc1);
             }
 
-            hsum_float_8(acc)
+            hsum_float_8(_mm256_add_ps(acc0, acc1))
         }
     }
 

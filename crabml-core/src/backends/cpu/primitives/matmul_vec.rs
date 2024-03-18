@@ -72,14 +72,21 @@ fn gemv_simd<'a>(
 
     let _t = metrics.matmul_vec_dot_walltime.track();
 
+    let m = bufc.len();
     let k = bufb.len();
-    bufc.par_chunks_exact_mut(4)
+    let threads = 1;
+    let chunk_size = m / threads;
+    assert!(m % threads == 0);
+
+    bufc.chunks_exact_mut(chunk_size)
         .enumerate()
         .for_each(|(cn, cp)| {
-            let mi = cn * 4;
-            cp[0] = bufa.vec_dot(mi * k, bufb, 0, k);
-            cp[1] = bufa.vec_dot((mi + 1) * k, bufb, 0, k);
-            cp[2] = bufa.vec_dot((mi + 2) * k, bufb, 0, k);
-            cp[3] = bufa.vec_dot((mi + 3) * k, bufb, 0, k);
+            let mi = cn * chunk_size;
+            cp.chunks_exact_mut(4).enumerate().for_each(|(i, cpp)| {
+                cpp[0] = bufa.vec_dot((mi + i * 4) * k, bufb, 0, k);
+                cpp[1] = bufa.vec_dot((mi + i * 4 + 1) * k, bufb, 0, k);
+                cpp[2] = bufa.vec_dot((mi + i * 4 + 2) * k, bufb, 0, k);
+                cpp[3] = bufa.vec_dot((mi + i * 4 + 3) * k, bufb, 0, k);
+            });
         });
 }

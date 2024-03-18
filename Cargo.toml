@@ -15,6 +15,3 @@ repository = "https://github.com/crabml/crabml"
 [workspace.dependencies]
 crabml = { version = "0.1.0", path = "crabml-core" }
 crabml-llama2 = { version = "0.1.0", path = "crabml-llama2" }
-
-[profile.release]
-debug = "full"

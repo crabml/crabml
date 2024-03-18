@@ -76,7 +76,7 @@ fn gemv_simd<'a>(
     let k = bufb.len();
     let threads = 1;
     let chunk_size = m / threads;
-    assert!(m % threads == 0);
+    assert!(m % chunk_size == 0);
 
     bufc.chunks_exact_mut(chunk_size)
         .enumerate()

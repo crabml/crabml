@@ -6,6 +6,9 @@ members = [
     "crabml-cli",
 ]
 
+[profile.release]
+opt-level = 3
+
 [workspace.package]
 version = "0.1.0"
 license = "Apache-2.0"

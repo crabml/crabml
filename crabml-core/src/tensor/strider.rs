@@ -13,6 +13,44 @@ impl TensorStrider {
         Self { shape, strides }
     }
 
+    // resize is useful on pre-allocated tensors, such as kv caches, which is the only place
+    // where we use this function:
+    //
+    // 1. preallocate a tensor with a larger shape, and then resize it to a smaller shape.
+    // 2. concatenate a pre-allocated tensor with a smaller tensor on specific axis.
+    //
+    // the tensor need not to be contiguous, but we need to make sure the new shape is smaller than
+    // the preallocated shape.
+    //
+    // the underlying storage & strides is not changed during resize.
+    //
+    // sample 1:
+    // tensor1: shape [8, 1, 3200] with pre-allocated shape [8, 2, 3200], strides: [3200 * 2, 3200, 1]
+    // tensor2: shape [8, 1, 3200] densely
+    // concatenate at axis 1 => [8, 2, 3200], strides: [3200 * 2, 3200, 1]
+    // sample 2:
+    // tensor1: shape [8, 2, 3200] with pre-allocated shape [8, 2, 6400], strides: [6400 * 2, 6400, 1]
+    // tensor2: shape [8, 2, 3200] densely
+    // concatenate at axis 2 => [8, 2, 6400], strides: [6400 * 2, 6400, 1]
+    pub fn resize(&self, new_shape: &[usize]) -> Result<Self> {
+        // only allow resize to a smaller size
+        if new_shape.len() != self.shape.len() {
+            return Err((
+                ErrorKind::TensorError,
+                format!(
+                    "invalid new shape {:?} for a tensor of shape {:?}",
+                    new_shape, self.shape
+                ),
+            )
+                .into());
+        }
+
+        Ok(Self {
+            shape: new_shape.to_vec(),
+            strides: self.strides.clone(),
+        })
+    }
+
     pub fn shape(&self) -> &[usize] {
         &self.shape
     }
@@ -287,6 +325,21 @@ mod tests {
         TensorStrider::increment_pos(&mut pos, &shape);
         TensorStrider::increment_pos(&mut pos, &shape);
         assert_eq!(pos, vec![2, 1]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_strider_resize() -> Result<()> {
+        let strider1 = TensorStrider::new(vec![3, 3200]);
+        assert_eq!(strider1.strides(), &[3200, 1]);
+        let strider2 = strider1.resize(&[0, 3200])?;
+        assert_eq!(strider2.strides(), &[3200, 1]);
+
+        let strider3 = TensorStrider::new(vec![3, 8, 3200]);
+        assert_eq!(strider3.strides(), &[3200 * 8, 3200, 1]);
+        let strider4 = strider3.resize(&[3, 0, 3200])?;
+        assert_eq!(strider4.shape(), &[3, 0, 3200]);
+        assert_eq!(strider4.strides(), &[3200 * 8, 3200, 1]);
         Ok(())
     }
 }

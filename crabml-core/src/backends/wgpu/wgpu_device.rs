@@ -82,6 +82,10 @@ impl WgpuTensorDevice {
             ("softmax_inplace", include_str!("shaders/softmax.wgsl")),
             ("silu_inplace", include_str!("shaders/silu.wgsl")),
             ("batch_matmul", include_str!("shaders/batch_matmul.wgsl")),
+            (
+                "concatenate_inplace",
+                include_str!("shaders/concatenate.wgsl"),
+            ),
         ];
         let mut modules = HashMap::new();
         for (module_name, module_source) in module_sources {

@@ -15,6 +15,17 @@ pub fn nearest_i32(fval: f32) -> i32 {
     (i & 0x007fffff) - 0x00400000
 }
 
+#[inline]
+pub(crate) fn get_scale_min_k4(j: usize, q: &[u8], d: &mut u8, m: &mut u8) {
+    if j < 4 {
+        *d = q[j] & 63;
+        *m = q[j + 4] & 63;
+    } else {
+        *d = (q[j + 4] & 0xF) | ((q[j - 4] >> 6) << 4);
+        *m = (q[j + 4] >> 4) | ((q[j] >> 6) << 4);
+    }
+}
+
 pub fn make_qx_quants(n: usize, nmax: i32, data: &[f32], ls: &mut [i8], rmse_type: i32) -> f32 {
     let mut max = 0.0;
     let mut abs_max = 0.0;
@@ -150,8 +161,7 @@ pub fn make_qkx1_quants(
 ) -> f32 {
     let mut min = data[0];
     let mut max = data[0];
-    for d in data.iter().take(n) {
-        let d = *d;
+    for &d in data.iter().take(n) {
         if d < min {
             min = d;
         }
@@ -205,6 +215,74 @@ pub fn make_qkx1_quants(
     scale
 }
 
+pub fn make_q3_quants(n: usize, nmax: i32, data: &[f32], l: &mut [i8], do_rmse: bool) -> f32 {
+    let mut max = 0f32;
+    let mut amax = 0f32;
+    for &d in data.iter().take(n) {
+        let ax = d.abs();
+        if ax > amax {
+            amax = ax;
+            max = d;
+        }
+    }
+    // all zero
+    if amax == 0f32 {
+        for l in l.iter_mut().take(n) {
+            *l = 0;
+        }
+        return 0f32;
+    }
+    let iscale = -nmax as f32 / max;
+    if do_rmse {
+        let mut sumlx = 0f32;
+        let mut suml2 = 0f32;
+        for (&d, l) in data.iter().zip(l.iter_mut()).take(n) {
+            let mut _l = nearest_i32(iscale * d);
+            _l = _l.min(nmax - 1).max(-nmax);
+            *l = _l as i8;
+            let w = d * d;
+            sumlx += w * d * _l as f32;
+            suml2 += w * (_l * _l) as f32;
+        }
+        // try at most 5 times
+        for _ in 0..5 {
+            let mut n_changed = 0;
+            for (&d, l) in data.iter().zip(l.iter_mut()).take(n) {
+                let w = d * d;
+                let mut slx = sumlx - w * d * *l as f32;
+                if slx > 0f32 {
+                    let mut sl2 = suml2 - w * (*l as f32) * (*l as f32);
+                    let mut new_l = nearest_i32(d * sl2 / slx);
+                    new_l = new_l.min(nmax - 1).max(-nmax);
+                    if new_l != *l as i32 {
+                        slx += w * d * new_l as f32;
+                        sl2 += w * (new_l * new_l) as f32;
+                        if sl2 > 0f32 && slx * slx * suml2 > sumlx * sumlx * sl2 {
+                            *l = new_l as i8;
+                            sumlx = slx;
+                            suml2 = sl2;
+                            n_changed += 1;
+                        }
+                    }
+                }
+            }
+            if n_changed == 0 {
+                break;
+            }
+        }
+        for l in l.iter_mut().take(n) {
+            *l += nmax as i8;
+        }
+        return sumlx / suml2;
+    }
+    for (&d, l) in data.iter().zip(l.iter_mut()).take(n) {
+        let mut _l = nearest_i32(iscale * d);
+        _l = _l.min(nmax - 1).max(-nmax);
+        *l = (_l + nmax) as i8;
+    }
+    1f32 / iscale
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -230,8 +308,8 @@ pub(crate) mod tests {
 
         let n = s1.len();
         let mut sum = 0.0;
-        for (s1_d, s2_d) in s1.iter().zip(s2.iter()) {
-            let diff = *s1_d - *s2_d;
+        for (&s1_d, &s2_d) in s1.iter().zip(s2.iter()) {
+            let diff = s1_d - s2_d;
             sum += diff * diff;
         }
         f32::sqrt(sum) / n as f32
@@ -268,5 +346,15 @@ pub(crate) mod tests {
                 i, expected, input, result
             );
         }
+    }
+
+    #[test]
+    fn test_get_scale_min_k4() {
+        let data = [255, 255, 255, 255, 255];
+        let mut sc: u8 = u8::default();
+        let mut m: u8 = u8::default();
+        get_scale_min_k4(0, &data, &mut sc, &mut m);
+        assert_eq!(sc, 63);
+        assert_eq!(m, 63);
     }
 }

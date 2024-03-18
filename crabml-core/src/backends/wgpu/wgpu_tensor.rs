@@ -2,6 +2,7 @@ use std::rc::Rc;
 
 use wgpu::util::DeviceExt;
 
+use super::meta::ConcatenateMeta;
 use super::meta::MatmulMeta;
 use super::meta::RmsNormMeta;
 use super::WgpuTensorDeviceRef;
@@ -35,7 +36,7 @@ impl WgpuTensor {
             });
         let strider = TensorStrider::new(shape.to_vec());
         if strider.len() != src.len() {
-            return Err((ErrorKind::TensorError, "buffer size mismatch").into());
+            return Err((ErrorKind::TensorError, "new: buffer size mismatch").into());
         };
         Ok(Self {
             buf: Rc::new(buf),
@@ -83,18 +84,11 @@ impl WgpuTensor {
 impl Tensor for WgpuTensor {
     type Device = WgpuTensorDeviceRef;
 
-    fn alloc(
-        shape: &[usize],
-        dtype: GGMLType,
-        capacity: Option<usize>,
-        device: Self::Device,
-    ) -> Result<Self> {
+    fn alloc(shape: &[usize], dtype: GGMLType, device: Self::Device) -> Result<Self> {
         assert!(dtype == GGMLType::F32, "wgpu tensor only support F32 yet");
         let n_elms = shape.iter().product::<usize>();
-        let capacity = capacity.unwrap_or(n_elms);
-        assert!(capacity >= n_elms);
 
-        let buf_bytes = capacity * std::mem::size_of::<f32>();
+        let buf_bytes = n_elms * std::mem::size_of::<f32>();
         let buf = device.inner.create_buffer(&wgpu::BufferDescriptor {
             label: Some("tensor storage buffer"),
             size: buf_bytes as u64,
@@ -107,9 +101,49 @@ impl Tensor for WgpuTensor {
         Ok(Self {
             buf: Rc::new(buf),
             dtype: GGMLType::F32,
-            capacity,
+            capacity: n_elms,
             strider,
             device,
+            name: None,
+        })
+    }
+
+    fn resize(self, axis: usize, n: usize) -> Result<Self> {
+        if axis >= self.shape().len() {
+            return Err((
+                ErrorKind::TensorError,
+                format!(
+                    "resize: axis {} is larger than the current shape {:?}",
+                    axis,
+                    self.shape()
+                ),
+            )
+                .into());
+        }
+
+        let mut new_shape = self.shape().to_vec();
+        new_shape[axis] = n;
+
+        let new_len: usize = new_shape.iter().product();
+        if new_len > self.capacity {
+            return Err((
+                ErrorKind::TensorError,
+                format!(
+                    "resize: new shape {:?} is larger than the current shape {:?}",
+                    new_shape,
+                    self.shape()
+                ),
+            )
+                .into());
+        }
+
+        let new_strider = self.strider.resize(&new_shape)?;
+        Ok(Self {
+            buf: self.buf,
+            capacity: self.capacity,
+            dtype: self.dtype,
+            strider: new_strider,
+            device: self.device.clone(),
             name: None,
         })
     }
@@ -152,72 +186,76 @@ impl Tensor for WgpuTensor {
         &self.strider
     }
 
-    // extend the tensor with the rhs tensor's data.
-    fn extend(&mut self, rhs: &Self) -> Result<()> {
-        let new_len = self.strider.len() + rhs.strider.len();
-        if new_len > self.capacity {
+    fn concatenate(&mut self, rhs: &Self, axis: usize) -> Result<()> {
+        if self.shape().len() != 3 {
             return Err((
                 ErrorKind::TensorError,
-                format!("exceeded capacity at {}", self.capacity),
+                "only support 3D tensor concatenation yet",
             )
                 .into());
         }
-        if !rhs.shape().eq(&self.shape()[1..]) {
-            return Err((
-                ErrorKind::TensorError,
-                format!(
-                    "shape mismatch on extend, want {:?} but got {:?}",
-                    &self.shape()[1..],
-                    &rhs.shape()
-                ),
-            )
-                .into());
+        if self.dtype() != GGMLType::F32 || rhs.dtype() != GGMLType::F32 {
+            return Err((ErrorKind::TensorError, "concatenate: only support f32 yet").into());
         }
 
-        let f32_size = std::mem::size_of::<f32>();
-        let copy_offset = self.strider.len() * f32_size;
-        let copy_bytes_len = rhs.strider().len() * f32_size;
+        let meta = ConcatenateMeta {
+            shape1: [
+                self.strider.shape()[0] as u32,
+                self.strider.shape()[1] as u32,
+                self.strider.shape()[2] as u32,
+                0,
+            ],
+            shape2: [
+                rhs.strider.shape()[0] as u32,
+                rhs.strider.shape()[1] as u32,
+                rhs.strider.shape()[2] as u32,
+                0,
+            ],
+            strides1: [
+                self.strider.strides()[0] as u32,
+                self.strider.strides()[1] as u32,
+                self.strider.strides()[2] as u32,
+                0,
+            ],
+            strides2: [
+                rhs.strider.strides()[0] as u32,
+                rhs.strider.strides()[1] as u32,
+                rhs.strider.strides()[2] as u32,
+                0,
+            ],
+            axis: axis as u32,
+            dims: 3,
+            _padding: [0; 2],
+        };
 
-        // enqueue copy from rhs to self's buffer
-        let mut encoder = self
+        let meta_buf = self
             .device
-            .inner
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        encoder.copy_buffer_to_buffer(
-            &rhs.buf,
-            0_u64,
-            &self.buf,
-            copy_offset as u64,
-            copy_bytes_len as u64,
+            .make_storage_buffer("meta", bytemuck::bytes_of(&meta));
+        let entries = &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: self.buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: rhs.buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: meta_buf.as_entire_binding(),
+            },
+        ];
+        let encoder = self.device.encode_pipeline_commnad(
+            "concatenate_inplace",
+            entries,
+            (rhs.strider.len() as u32 / 16, 1, 1),
         );
         self.device.queue.submit(Some(encoder.finish()));
 
-        // update strider
-        let new_shape = {
-            let mut shape = self.shape().to_vec();
-            shape[0] += 1;
-            shape
-        };
-        self.strider = TensorStrider::new(new_shape);
+        let mut new_shape = self.strider.shape().to_vec();
+        new_shape[axis] += rhs.strider.shape()[axis];
+        self.strider = self.strider.resize(&new_shape)?;
         Ok(())
-    }
-
-    fn repeat_n(self, n: usize) -> Result<Self> {
-        let mut tmp_shape = self.shape().to_vec();
-        tmp_shape.insert(0, 0);
-        let capacity = self.strider.len() * n;
-        let mut new_tensor = Self::alloc(
-            &tmp_shape,
-            GGMLType::F32,
-            Some(capacity),
-            self.device.clone(),
-        )?;
-        for _ in 0..n {
-            new_tensor.extend(&self)?;
-        }
-        let mut new_shape = self.shape().to_vec();
-        new_shape[0] *= n;
-        new_tensor.reshape(&new_shape)
     }
 
     fn copy_from(&mut self, rhs: &Self, pos: &[usize], len: usize) -> Result<()> {
@@ -242,7 +280,7 @@ impl Tensor for WgpuTensor {
     }
 
     fn export(&self, dst: &mut [f32]) -> Result<()> {
-        let buf_size = self.strider.len() * std::mem::size_of::<f32>();
+        let buf_size = std::mem::size_of_val(dst);
         if buf_size > self.device.opts.staging_buf_bytes {
             return Err((
                 ErrorKind::TensorError,
@@ -272,7 +310,7 @@ impl Tensor for WgpuTensor {
             // Gets contents of buffer
             let data = staging_slice.get_mapped_range();
             // Since contents are got in bytes, this converts these bytes back to u32
-            dst.copy_from_slice(&bytemuck::cast_slice(&data)[0..self.strider.len()]);
+            dst.copy_from_slice(&bytemuck::cast_slice(&data)[0..dst.len()]);
 
             // With the current interface, we have to make sure all mapped views are
             // dropped before we unmap the buffer.
@@ -286,8 +324,7 @@ impl Tensor for WgpuTensor {
     }
 
     fn dup(&self) -> Result<Self> {
-        let mut new_tensor =
-            Self::alloc(self.strider.shape(), self.dtype, None, self.device.clone())?;
+        let mut new_tensor = Self::alloc(self.strider.shape(), self.dtype, self.device.clone())?;
         new_tensor
             .copy_from(self, &vec![0; self.shape().len()], self.strider.len())
             .unwrap();
@@ -559,7 +596,6 @@ impl Tensor for WgpuTensor {
         let output = Self::alloc(
             &[self.strider.shape()[0]],
             GGMLType::F32,
-            None,
             self.device.clone(),
         )?;
         let meta = MatmulMeta {
@@ -609,7 +645,6 @@ impl Tensor for WgpuTensor {
         let output = Self::alloc(
             &[self.shape()[0], self.shape()[1]],
             GGMLType::F32,
-            None,
             self.device.clone(),
         )?;
 
@@ -738,7 +773,7 @@ mod tests {
 
     #[test]
     fn test_wgpu_tensor_alloc() -> Result<()> {
-        let t1 = WgpuTensor::alloc(&[512, 2], GGMLType::F32, None, DEVICE.clone())?;
+        let t1 = WgpuTensor::alloc(&[512, 2], GGMLType::F32, DEVICE.clone())?;
         let t2 = WgpuTensor::new(&[1.0; 1024], &[512, 2], DEVICE.clone())?;
         let t1 = t1.add_inplace(&t2)?;
 
@@ -751,7 +786,7 @@ mod tests {
 
     #[test]
     fn test_wgpu_tensor_with_name() -> Result<()> {
-        let t1 = WgpuTensor::alloc(&[512, 2], GGMLType::F32, None, DEVICE.clone())?;
+        let t1 = WgpuTensor::alloc(&[512, 2], GGMLType::F32, DEVICE.clone())?;
         let t2 = WgpuTensor::new(&[1.0; 1024], &[512, 2], DEVICE.clone())?;
         let t1 = t1.add_inplace(&t2)?;
         let _ = t1.with_name("t1".to_string());
@@ -763,7 +798,7 @@ mod tests {
 
     #[test]
     fn test_wgpu_copy_from() -> Result<()> {
-        let mut t1 = WgpuTensor::alloc(&[256, 4], GGMLType::F32, None, DEVICE.clone())?;
+        let mut t1 = WgpuTensor::alloc(&[256, 4], GGMLType::F32, DEVICE.clone())?;
         let t2 = WgpuTensor::new(
             &(0..1024).map(|d| d as f32).collect::<Vec<f32>>(),
             &[256, 4],
@@ -878,28 +913,63 @@ mod tests {
     }
 
     #[test]
-    fn test_wgpu_extend() -> Result<()> {
-        let mut t1 = WgpuTensor::alloc(&[0, 16], GGMLType::F32, Some(1024), DEVICE.clone())?;
+    fn test_wgpu_concatenate() -> Result<()> {
+        // TODO: fix this test later
+        let mut t1 = WgpuTensor::alloc(&[2, 2, 16], GGMLType::F32, DEVICE.clone())?.resize(0, 0)?;
 
-        let v2 = (0..16).map(|i| i as f32).collect::<Vec<_>>();
-        let t2 = WgpuTensor::new(&v2, &[16], DEVICE.clone())?;
+        let v2 = (0..32).map(|i| i as f32).collect::<Vec<_>>();
+        let t2 = WgpuTensor::new(&v2, &[1, 2, 16], DEVICE.clone())?;
 
-        let v3 = (100..116).map(|i| i as f32).collect::<Vec<_>>();
-        let t3 = WgpuTensor::new(&v3, &[16], DEVICE.clone())?;
+        let v3 = (32..64).map(|i| i as f32).collect::<Vec<_>>();
+        let t3 = WgpuTensor::new(&v3, &[1, 2, 16], DEVICE.clone())?;
 
-        t1.extend(&t2)?;
-        t1.extend(&t3)?;
+        t1.concatenate(&t2, 0)?;
+        t1.concatenate(&t3, 0)?;
 
-        let mut dst1 = vec![0.0; 32];
+        let mut dst1 = vec![0.0; 64];
         t1.export(&mut dst1)?;
 
-        assert_eq!(t1.shape(), &[2, 16]);
+        assert_eq!(t1.shape(), &[2, 2, 16]);
         assert_relative_eq!(
             &dst1[..],
             &[
                 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0,
-                15.0, 100.0, 101.0, 102.0, 103.0, 104.0, 105.0, 106.0, 107.0, 108.0, 109.0, 110.0,
-                111.0, 112.0, 113.0, 114.0, 115.0
+                15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 27.0, 28.0,
+                29.0, 30.0, 31.0, 32.0, 33.0, 34.0, 35.0, 36.0, 37.0, 38.0, 39.0, 40.0, 41.0, 42.0,
+                43.0, 44.0, 45.0, 46.0, 47.0, 48.0, 49.0, 50.0, 51.0, 52.0, 53.0, 54.0, 55.0, 56.0,
+                57.0, 58.0, 59.0, 60.0, 61.0, 62.0, 63.0
+            ][..],
+            epsilon = 1e-5
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_wgpu_concatenate2() -> Result<()> {
+        // TODO: fix this test later
+        let mut t1 = WgpuTensor::alloc(&[2, 2, 16], GGMLType::F32, DEVICE.clone())?.resize(1, 0)?;
+
+        let v2 = (0..32).map(|i| i as f32).collect::<Vec<_>>();
+        let t2 = WgpuTensor::new(&v2, &[2, 1, 16], DEVICE.clone())?;
+
+        let v3 = (32..64).map(|i| i as f32).collect::<Vec<_>>();
+        let t3 = WgpuTensor::new(&v3, &[2, 1, 16], DEVICE.clone())?;
+
+        t1.concatenate(&t2, 1)?;
+        t1.concatenate(&t3, 1)?;
+
+        let mut dst1 = vec![0.0; 64];
+        t1.export(&mut dst1)?;
+
+        assert_eq!(t1.shape(), &[2, 2, 16]);
+        assert_relative_eq!(
+            &dst1[..],
+            &[
+                0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0,
+                15.0, 32.0, 33.0, 34.0, 35.0, 36.0, 37.0, 38.0, 39.0, 40.0, 41.0, 42.0, 43.0, 44.0,
+                45.0, 46.0, 47.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0,
+                27.0, 28.0, 29.0, 30.0, 31.0, 48.0, 49.0, 50.0, 51.0, 52.0, 53.0, 54.0, 55.0, 56.0,
+                57.0, 58.0, 59.0, 60.0, 61.0, 62.0, 63.0
             ][..],
             epsilon = 1e-5
         );

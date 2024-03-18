@@ -12,14 +12,13 @@ pub trait Tensor: Sized + Clone {
     type Device: Clone;
 
     /// alloc an owned tensor, only used on storing activations and kv caches.
-    /// only F32 and F16 (not yet implemented) are supported.
-    /// TODO: add dtype parameter
-    fn alloc(
-        shape: &[usize],
-        dtype: GGMLType,
-        capacity: Option<usize>,
-        device: Self::Device,
-    ) -> Result<Self>;
+    /// only F32 and F16 are supported.
+    fn alloc(shape: &[usize], dtype: GGMLType, device: Self::Device) -> Result<Self>;
+
+    /// resize the tensor to a smaller size, the underlying storage is not changed,
+    /// it's useful on pre-allocated tensors, such as kv caches, which is the only
+    /// place where we use this function.
+    fn resize(self, axis: usize, n: usize) -> Result<Self>;
 
     fn dtype(&self) -> GGMLType;
 
@@ -29,15 +28,13 @@ pub trait Tensor: Sized + Clone {
 
     fn reshape(self, shape: &[usize]) -> Result<Self>;
 
-    fn repeat_n(self, n: usize) -> Result<Self>;
-
     fn transpose(self, shape: &[usize]) -> Result<Self>;
 
     fn contiguous(&self) -> Result<Self>;
 
     fn strider(&self) -> &TensorStrider;
 
-    fn extend(&mut self, rhs: &Self) -> Result<()>;
+    fn concatenate(&mut self, rhs: &Self, axis: usize) -> Result<()>;
 
     /// copy from another tensor. used on loading weights from vocab table.
     fn copy_from(&mut self, rhs: &Self, pos: &[usize], len: usize) -> Result<()>;

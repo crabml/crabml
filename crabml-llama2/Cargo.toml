@@ -9,7 +9,7 @@ description = "crabml llama2 support"
 [dependencies]
 memmap2 = "0.7.1"
 rand = "0.8.5"
-rayon = "1.7.0"
+rayon = "1"
 num_cpus = "1.16.0"
 crabml = { workspace = true }
 half = { version = "2.3.1" }

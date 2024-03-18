@@ -22,10 +22,11 @@ pub struct TensorMetrics {
     pub forward_walltime: TimeMetric,
     pub save_kvcache_walltime: TimeMetric,
     pub copy_from_walltime: TimeMetric,
-    pub extend_walltime: TimeMetric,
-    pub repeat_n_walltime: TimeMetric,
+    pub concatenate_walltime: TimeMetric,
     pub dup_walltime: TimeMetric,
     pub contiguous_walltime: TimeMetric,
+    pub batch_matmul_rowwise_walltime: TimeMetric,
+    pub batch_matmul_colwise_walltime: TimeMetric,
 }
 
 impl TensorMetrics {
@@ -48,10 +49,11 @@ impl TensorMetrics {
         self.forward_walltime.reset();
         self.save_kvcache_walltime.reset();
         self.copy_from_walltime.reset();
-        self.extend_walltime.reset();
-        self.repeat_n_walltime.reset();
+        self.concatenate_walltime.reset();
         self.dup_walltime.reset();
         self.contiguous_walltime.reset();
+        self.batch_matmul_rowwise_walltime.reset();
+        self.batch_matmul_colwise_walltime.reset();
     }
 
     pub fn as_vec(&self) -> Vec<(String, f64)> {
@@ -120,12 +122,16 @@ impl TensorMetrics {
                 self.dequantize_walltime.as_millis(),
             ),
             (
-                "extend_walltime".to_string(),
-                self.extend_walltime.as_millis(),
+                "batch_matmul_rowwise_walltime".to_string(),
+                self.batch_matmul_rowwise_walltime.as_millis(),
             ),
             (
-                "repeat_n_walltime".to_string(),
-                self.repeat_n_walltime.as_millis(),
+                "batch_matmul_colwise_walltime".to_string(),
+                self.batch_matmul_colwise_walltime.as_millis(),
+            ),
+            (
+                "concatenate_walltime".to_string(),
+                self.concatenate_walltime.as_millis(),
             ),
             ("dup_walltime".to_string(), self.dup_walltime.as_millis()),
             (

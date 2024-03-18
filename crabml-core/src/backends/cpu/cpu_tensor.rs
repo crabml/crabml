@@ -94,6 +94,7 @@ impl<'a> CpuTensor<'a> {
     }
 
     /// to_vec is only used for test.
+    #[allow(dead_code)]
     fn to_vec(&self) -> Vec<f32> {
         assert!(self.dtype() == GGMLType::F32);
         if self.is_contiguous() {
@@ -123,26 +124,20 @@ impl<'a> CpuTensor<'a> {
 impl<'a> Tensor for CpuTensor<'a> {
     type Device = CpuTensorDeviceRef<'a>;
 
-    fn alloc(
-        shape: &[usize],
-        dtype: GGMLType,
-        capacity: Option<usize>,
-        device: Self::Device,
-    ) -> Result<Self> {
+    fn alloc(shape: &[usize], dtype: GGMLType, device: Self::Device) -> Result<Self> {
         if dtype != GGMLType::F32 && dtype != GGMLType::F16 {
             return Err((ErrorKind::TensorError, "only f32/f16 is supported").into());
         }
 
+        let buf_size = shape.iter().product();
         let _t = device.metrics.alloc_walltime.track();
         let buf = match dtype {
             GGMLType::F32 => {
-                let mut vec = Vec::with_capacity(capacity.unwrap_or(shape.iter().product()));
-                vec.resize(shape.iter().product(), 0.0);
+                let vec = vec![0.0; buf_size];
                 CpuTensorBuf::F32(vec.into())
             }
             GGMLType::F16 => {
-                let mut vec = Vec::with_capacity(capacity.unwrap_or(shape.iter().product()));
-                vec.resize(shape.iter().product(), f16::ZERO);
+                let vec = vec![f16::ZERO; buf_size];
                 CpuTensorBuf::F16(vec.into())
             }
             _ => unreachable!(),
@@ -152,6 +147,44 @@ impl<'a> Tensor for CpuTensor<'a> {
             buf,
             strider: TensorStrider::new(shape.to_vec()),
             device: device.clone(),
+            name: None,
+        })
+    }
+
+    fn resize(self, axis: usize, n: usize) -> Result<Self> {
+        if axis >= self.shape().len() {
+            return Err((
+                ErrorKind::TensorError,
+                format!(
+                    "resize: axis {} is larger than the current shape {:?}",
+                    axis,
+                    self.shape()
+                ),
+            )
+                .into());
+        }
+
+        let mut new_shape = self.shape().to_vec();
+        new_shape[axis] = n;
+
+        let new_len: usize = new_shape.iter().product();
+        if new_len > self.buf.len() {
+            return Err((
+                ErrorKind::TensorError,
+                format!(
+                    "resize: new shape {:?} is larger than the current shape {:?}",
+                    new_shape,
+                    self.shape()
+                ),
+            )
+                .into());
+        }
+
+        let new_strider = self.strider.resize(&new_shape)?;
+        Ok(Self {
+            buf: self.buf,
+            strider: new_strider,
+            device: self.device.clone(),
             name: None,
         })
     }
@@ -203,72 +236,59 @@ impl<'a> Tensor for CpuTensor<'a> {
         &self.strider
     }
 
-    fn extend(&mut self, t: &CpuTensor<'a>) -> Result<()> {
+    fn concatenate(&mut self, rhs: &Self, axis: usize) -> Result<()> {
+        let _t = self.device.metrics.concatenate_walltime.track();
+        // (2, 1) + (2, 1) at axis 0 -> (4, 1)
+        // (2, 1) + (2, 3) at axis 1 -> (2, 4)
         if !self.is_owned() {
-            return Err((ErrorKind::TensorError, "extend: tensor not owned").into());
-        }
-        if !self.is_contiguous() {
-            return Err((ErrorKind::TensorError, "not contiguous").into());
+            return Err((ErrorKind::TensorError, "tensor not owned on concatenate").into());
         }
         if self.dtype() != GGMLType::F32 && self.dtype() != GGMLType::F16 {
             return Err((
                 ErrorKind::TensorError,
-                "only f32/f16 is supported on extend",
+                "only f32/f16 is supported on concatenate",
             )
                 .into());
         }
-        if t.dtype() != GGMLType::F32 {
+        if rhs.dtype() != GGMLType::F32 && rhs.dtype() != GGMLType::F16 {
             return Err((
                 ErrorKind::TensorError,
-                "only f32 is supported on extend's rhs",
+                "only f32/f16 is supported on concatenate rhs",
             )
                 .into());
         }
 
-        if !t.shape().eq(&self.shape()[1..]) {
-            return Err((
-                ErrorKind::TensorError,
-                format!(
-                    "shape mismatch on extend, want {:?} but got {:?}",
-                    &self.shape()[1..],
-                    &t.shape()
-                ),
-            )
-                .into());
+        // both tensors must have the same shape (except in the concatenating dimension)
+        for i in 0..self.shape().len() {
+            if i == axis {
+                continue;
+            }
+            if self.shape()[i] != rhs.shape()[i] {
+                return Err((
+                    ErrorKind::TensorError,
+                    format!(
+                        "shape mismatch on concatenate, want {:?} but got {:?}",
+                        self.shape(),
+                        rhs.shape()
+                    ),
+                )
+                    .into());
+            }
         }
-        let _t = self.device.metrics.extend_walltime.track();
 
-        // it's possible to pass a f32 to a f16 tensor
-        self.buf.extend(t.buf.iter_f32());
-        let new_shape = {
-            let mut shape = self.shape().to_vec();
-            shape[0] += 1;
-            shape
-        };
-        self.strider = TensorStrider::new(new_shape);
+        let strider1 = self.strider().clone();
+        let strider2 = rhs.strider();
+        let new_strider =
+            primitives::concatenate_inplace(self.buf_mut(), rhs.buf(), &strider1, strider2, axis)?;
+        self.strider = new_strider;
         Ok(())
-    }
-
-    fn repeat_n(self, n: usize) -> Result<Self> {
-        assert!(self.is_owned());
-        assert!(self.is_contiguous());
-        let _t = self.device.metrics.repeat_n_walltime.track();
-
-        let len = self.len();
-        let mut v = self.to_vec();
-        v = v.into_iter().cycle().take(len * n).collect::<Vec<_>>();
-
-        let mut new_shape = self.shape().to_vec();
-        new_shape[0] *= n;
-
-        CpuTensor::new(v, &new_shape, self.device.clone())
     }
 
     fn contiguous(&self) -> Result<Self> {
         let _t = self.device.metrics.contiguous_walltime.track();
         assert!(self.dtype() == GGMLType::F32 || self.dtype() == GGMLType::F16);
 
-        let mut out = CpuTensor::alloc(self.shape(), self.dtype(), None, self.device())?;
+        let mut out = CpuTensor::alloc(self.shape(), self.dtype(), self.device())?;
         primitives::contiguous(&self.buf, &self.strider, &mut out.buf);
         Ok(out)
     }
@@ -316,7 +336,6 @@ impl<'a> Tensor for CpuTensor<'a> {
         let mut c = CpuTensor::alloc(
             &[b.shape()[0], self.shape()[1]],
             GGMLType::F32,
-            None,
             self.device(),
         )?;
         let bufc = c.buf_mut();
@@ -331,7 +350,7 @@ impl<'a> Tensor for CpuTensor<'a> {
     fn matmul_vec(&self, x: &CpuTensor<'a>) -> Result<Self> {
         let bufa = self.buf();
         let bufb = x.buf();
-        let mut c = CpuTensor::alloc(&[self.shape()[0]], GGMLType::F32, None, x.device())?;
+        let mut c = CpuTensor::alloc(&[self.shape()[0]], GGMLType::F32, x.device())?;
         let bufc = c.buf_mut();
         let strider1 = self.strider();
         let strider2 = x.strider();
@@ -439,43 +458,6 @@ mod tests {
 
         t2.copy_from(&t1, &[0, 0], 2)?;
         assert_eq!(t2.to_vec(), vec![1.0, 2.0]);
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_extend() -> Result<()> {
-        let device = CpuTensorDevice::new();
-        let mut t1 = CpuTensor::new(
-            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-            &[1, 2, 3],
-            device.clone(),
-        )?;
-        let t2 = CpuTensor::new(vec![1.0; 6], &[2, 3], device)?;
-        t1.extend(&t2)?;
-
-        assert_eq!(t1.shape(), &[2, 2, 3]);
-        assert_eq!(t1.to_vec(), &[
-            1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0
-        ]);
-        Ok(())
-    }
-
-    #[test]
-    fn test_repeat() -> Result<()> {
-        let device = CpuTensorDevice::new();
-        let t1 = CpuTensor::new(
-            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-            &[1, 2, 3],
-            device.clone(),
-        )?;
-
-        let t1 = t1.repeat_n(2)?;
-        assert_eq!(t1.shape(), &[2, 2, 3]);
-
-        assert_eq!(t1.to_vec(), &[
-            1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0
-        ]);
 
         Ok(())
     }
@@ -606,6 +588,12 @@ mod tests {
         assert_eq!(t2.to_vec(), vec![1.0, 4.0, 2.0, 5.0, 3.0, 6.0]);
         assert_eq!(t2.shape(), &[3, 2, 1]);
         assert_eq!(v1, t2.to_vec());
+        Ok(())
+    }
+
+    #[test]
+    fn test_resize() -> Result<()> {
+        // todo:
         Ok(())
     }
 }

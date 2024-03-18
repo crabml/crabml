@@ -26,3 +26,11 @@ testdata/*.gguf
 
 # Jetbrains IDE
 .idea
+
+# Vscode
+.vscode
+
+# perf
+perf.data
+perf.data.old
+flamegraph.svg

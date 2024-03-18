@@ -236,18 +236,20 @@ mod impl_x86_64_avx2 {
     /// Inspired a lot by ggml https://github.com/ggerganov/ggml/blob/master/src/ggml-quants.c
 
     pub fn quantize_f32_q8_0(data: &[f32]) -> Vec<BlockQ8_0> {
+        debug_assert_eq!(data.len() % 32, 0);
+
         let mut bs = Vec::with_capacity(data.len() / 32);
 
         unsafe {
+            let mask = _mm256_set1_ps(-0.0);
+
             for chunk in data.chunks(32) {
                 let mut max_abs_values = _mm256_setzero_ps();
 
-                for &value in chunk {
-                    let val_vec = _mm256_set1_ps(value);
-                    max_abs_values = _mm256_max_ps(
-                        max_abs_values,
-                        _mm256_andnot_ps(_mm256_set1_ps(-0.0), val_vec),
-                    );
+                for values in chunk.chunks(8) {
+                    let value_vec = _mm256_loadu_ps(values.as_ptr());
+                    max_abs_values =
+                        _mm256_max_ps(max_abs_values, _mm256_andnot_ps(mask, value_vec))
                 }
 
                 let max_abs_value = {
@@ -255,8 +257,8 @@ mod impl_x86_64_avx2 {
                     _mm256_storeu_ps(max_vals.as_mut_ptr(), max_abs_values);
                     *max_vals
                         .iter()
-                        .max_by(|x, y| x.partial_cmp(y).unwrap())
-                        .unwrap()
+                        .max_by(|x, y| x.partial_cmp(y).unwrap_unchecked())
+                        .unwrap_unchecked()
                 };
 
                 let d = max_abs_value / 127.0;
@@ -290,21 +292,35 @@ mod impl_x86_64_avx2 {
     }
 
     pub fn vec_dot_q8_0_q8_0(abs: &[BlockQ8_0], bbs: &[BlockQ8_0]) -> f32 {
+        assert_eq!(
+            bbs.len() % 2,
+            0,
+            "bbs.len() must be a multiple of 64, got: {}",
+            bbs.len()
+        );
+
         unsafe {
-            let mut acc = _mm256_setzero_ps();
+            let mut acc0 = _mm256_setzero_ps();
+            let mut acc1 = _mm256_setzero_ps();
 
-            for (abs, bbs) in abs.iter().zip(bbs) {
-                let d = _mm256_set1_ps(abs.d.to_f32() * bbs.d.to_f32());
+            for [(abs0, bbs0), (abs1, bbs1)] in abs.iter().zip(bbs).array_chunks::<2>() {
+                let d0 = _mm256_set1_ps(abs0.d.to_f32() * bbs0.d.to_f32());
+                let d1 = _mm256_set1_ps(abs1.d.to_f32() * bbs1.d.to_f32());
 
-                let qa = _mm256_loadu_si256(abs.qs.as_ptr() as *const __m256i);
-                let qb = _mm256_loadu_si256(bbs.qs.as_ptr() as *const __m256i);
+                let qa0 = _mm256_loadu_si256(abs0.qs.as_ptr() as *const __m256i);
+                let qb0 = _mm256_loadu_si256(bbs0.qs.as_ptr() as *const __m256i);
 
-                let q = mul_sum_i8_pairs_float(qa, qb);
+                let qa1 = _mm256_loadu_si256(abs1.qs.as_ptr() as *const __m256i);
+                let qb1 = _mm256_loadu_si256(bbs1.qs.as_ptr() as *const __m256i);
 
-                acc = _mm256_fmadd_ps(d, q, acc);
+                let q0 = mul_sum_i8_pairs_float(qa0, qb0);
+                let q1 = mul_sum_i8_pairs_float(qa1, qb1);
+
+                acc0 = _mm256_fmadd_ps(d0, q0, acc0);
+                acc1 = _mm256_fmadd_ps(d1, q1, acc1);
             }
 
-            hsum_float_8(acc)
+            hsum_float_8(_mm256_add_ps(acc0, acc1))
         }
     }
 

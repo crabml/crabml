@@ -49,8 +49,8 @@ impl BlockQ2K {
                 scale_is += 1;
                 dl = d * (sc & 0xF) as f32;
                 ml = min * (sc >> 4) as f32;
-                for q in qs.iter().take(16) {
-                    buf[buf_i] = dl * ((*q >> shift) & 3) as f32 - ml;
+                for &q in qs.iter().take(16) {
+                    buf[buf_i] = dl * ((q >> shift) & 3) as f32 - ml;
                     buf_i += 1;
                 }
 
@@ -58,7 +58,7 @@ impl BlockQ2K {
                 scale_is += 1;
                 dl = d * (sc & 0xF) as f32;
                 ml = min * (sc >> 4) as f32;
-                for q in qs[16..].iter().take(16) {
+                for &q in qs[16..].iter().take(16) {
                     buf[buf_i] = dl * ((q >> shift) & 3) as f32 - ml;
                     buf_i += 1;
                 }
@@ -101,6 +101,7 @@ impl<'a> QuantBufQ2K<'a> {
     }
 
     pub fn quantize(data: &[f32]) -> Self {
+        assert!(data.len() % QK_K == 0);
         let bs = quantize_f32_q2_k(data);
         Self { blocks: bs.into() }
     }
@@ -122,7 +123,7 @@ impl<'a> QuantBufQ2K<'a> {
         let block_start = start / QK_K;
 
         self.blocks()[block_start..].iter().flat_map(|blk| {
-            let mut buf = [0.0f32; 256];
+            let mut buf = [0.0f32; QK_K];
             blk.dequantize(&mut buf);
             buf.into_iter()
         })
@@ -142,17 +143,12 @@ mod impl_fallback {
     use crate::backends::cpu::buf::buf_q8_k::BlockQ8K;
 
     pub fn quantize_f32_q2_k(data: &[f32]) -> Vec<BlockQ2K> {
-        assert!(data.len() % QK_K == 0);
+        let mut bs = Vec::with_capacity(data.len() / QK_K);
 
         const Q4SCALE: f32 = 15f32;
-
         let mut l = [0u8; QK_K];
         let mut mins = [0f32; QK_K / 16];
         let mut scales = [0f32; QK_K / 16];
-
-        let nb = data.len() / QK_K; // super blocks vec length
-        let mut bs = Vec::with_capacity(nb);
-
         // super block
         for (i, data_chunk) in data.chunks(QK_K).enumerate() {
             bs.push(BlockQ2K::new_zero());
@@ -218,8 +214,8 @@ mod impl_fallback {
         let mut sumf = 0.0;
         for (q2k, q8k) in q2k_bs.iter().zip(q8k_bs.iter()) {
             let mut summs = 0;
-            for (sc, bsum) in q2k.scales.iter().zip(q8k.bsums.iter()) {
-                summs += *bsum as i32 * (sc >> 4) as i32;
+            for (&sc, &bsum) in q2k.scales.iter().zip(q8k.bsums.iter()) {
+                summs += bsum * (sc >> 4) as i16;
             }
             let dall = q8k.d * Into::<f32>::into(q2k.d);
             let dmin = q8k.d * Into::<f32>::into(q2k.dmin);

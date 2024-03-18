@@ -292,12 +292,7 @@ mod impl_x86_64_avx2 {
     }
 
     pub fn vec_dot_q8_0_q8_0(abs: &[BlockQ8_0], bbs: &[BlockQ8_0]) -> f32 {
-        assert_eq!(
-            bbs.len() % 2,
-            0,
-            "bbs.len() must be a multiple of 64, got: {}",
-            bbs.len()
-        );
+        debug_assert_eq!(abs.len(), bbs.len());
 
         unsafe {
             let mut acc0 = _mm256_setzero_ps();
@@ -318,6 +313,20 @@ mod impl_x86_64_avx2 {
 
                 acc0 = _mm256_fmadd_ps(d0, q0, acc0);
                 acc1 = _mm256_fmadd_ps(d1, q1, acc1);
+            }
+
+            if abs.len() % 2 == 1 {
+                let a = abs.last().unwrap_unchecked();
+                let b = abs.last().unwrap_unchecked();
+
+                let d = _mm256_set1_ps(a.d.to_f32() * b.d.to_f32());
+
+                let qa = _mm256_loadu_si256(a.qs.as_ptr() as *const __m256i);
+                let qb = _mm256_loadu_si256(b.qs.as_ptr() as *const __m256i);
+
+                let q = mul_sum_i8_pairs_float(qa, qb);
+
+                acc0 = _mm256_fmadd_ps(d, q, acc0);
             }
 
             hsum_float_8(_mm256_add_ps(acc0, acc1))

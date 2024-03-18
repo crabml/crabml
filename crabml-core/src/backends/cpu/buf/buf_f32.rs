@@ -150,8 +150,8 @@ fn vec_dot_f32_f32_strided_simd(
         for ki in (0..k_rounded_down).step_by(8) {
             let mut av_tmp = [0.0_f32; 8];
             // Load elements from 'a' with stride
-            for i in 0..8 {
-                av_tmp[i] = *a_ptr.add(ki * a_stride + i * a_stride);
+            for (i, av) in av_tmp.iter_mut().enumerate() {
+                *av = *a_ptr.add((ki + i) * a_stride);
             }
             let av = _mm256_loadu_ps(av_tmp.as_ptr());
             let bv = _mm256_loadu_ps(b.as_ptr().add(ki));

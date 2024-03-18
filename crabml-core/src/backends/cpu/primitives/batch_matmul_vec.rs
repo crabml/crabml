@@ -1,5 +1,4 @@
 use half::f16;
-use rayon::prelude::*;
 
 use crate::backends::cpu::buf::buf_f16::quantize_f32_f16;
 use crate::backends::cpu::buf::buf_f16::vec_dot_f16_f16;
@@ -77,7 +76,7 @@ fn batch_matmul_vec_f32(
     mi_stride: usize,
     ki_stride: usize,
 ) {
-    cbuf.par_iter_mut().enumerate().for_each(|(i, bufcp)| {
+    cbuf.iter_mut().enumerate().for_each(|(i, bufcp)| {
         let mi = i % m;
         let bi = (i - mi) / m;
         *bufcp = vec_dot_f32_f32_strided(
@@ -106,7 +105,7 @@ fn batch_matmul_vec_f16(
 ) {
     if a_stride2 == 1 {
         let _t = device.metrics.batch_matmul_rowwise_walltime.track();
-        cbuf.par_iter_mut().enumerate().for_each(|(i, bufcp)| {
+        cbuf.iter_mut().enumerate().for_each(|(i, bufcp)| {
             let mi = i % m;
             let bi = (i - mi) / m;
             *bufcp = f16::from_f32(vec_dot_f16_f16(

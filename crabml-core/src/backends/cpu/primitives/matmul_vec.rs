@@ -72,13 +72,23 @@ fn gemv_simd<'a>(
     let _t = metrics.matmul_vec_dot_walltime.track();
 
     let k = bufb.len();
-    bufc.par_chunks_exact_mut(4)
-        .enumerate()
-        .for_each(|(cn, cp)| {
-            let mi = cn * 4;
-            cp[0] = bufa.vec_dot(mi * k, bufb, 0, k);
-            cp[1] = bufa.vec_dot((mi + 1) * k, bufb, 0, k);
-            cp[2] = bufa.vec_dot((mi + 2) * k, bufb, 0, k);
-            cp[3] = bufa.vec_dot((mi + 3) * k, bufb, 0, k);
-        });
+    // Just a observation, if the buffer is small, it's faster to use single thread
+    // And most of the time, the small buffer is less than 1_000
+    if bufc.len() < 1_000 {
+        for (mi, c) in bufc.iter_mut().enumerate() {
+            *c = bufa.vec_dot(mi * k, bufb, 0, k);
+        }
+    } else {
+        let thread_num = rayon::current_num_threads();
+        let chunk_size = (bufc.len() + thread_num - 1) / thread_num;
+        bufc.par_chunks_exact_mut(chunk_size)
+            .enumerate()
+            .for_each(|(cn, cp)| {
+                let start = cn * chunk_size;
+                let end = (cn + 1) * chunk_size;
+                for mi in start..end {
+                    cp[mi - start] = bufa.vec_dot(mi * k, bufb, 0, k);
+                }
+            });
+    }
 }

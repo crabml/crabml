@@ -14,7 +14,7 @@ pub struct ThreadPool {
 impl ThreadPool {
     /// Construct a threadpool with the given number of threads.
     /// Minimum value is `1`.
-    pub fn new(n: u32) -> Self {
+    pub fn new(n: usize) -> Self {
         assert!(n >= 1);
 
         let mut senders = vec![];

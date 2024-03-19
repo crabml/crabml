@@ -1,4 +1,5 @@
 use std::mem;
+use std::sync::mpsc;
 
 type Thunk<'a> = Box<dyn FnOnce() + Send + 'a>;
 
@@ -7,7 +8,7 @@ type Work = (Thunk<'static>, crossbeam_utils::sync::WaitGroup);
 /// A threadpool that acts as a handle to a number
 /// of threads spawned at construction.
 pub struct ThreadPool {
-    tx: crossbeam_channel::Sender<Work>,
+    senders: Vec<mpsc::Sender<Work>>,
 }
 
 impl ThreadPool {
@@ -16,19 +17,19 @@ impl ThreadPool {
     pub fn new(n: u32) -> Self {
         assert!(n >= 1);
 
-        let (tx, rx) = crossbeam_channel::bounded(4);
-
+        let mut senders = vec![];
         for _ in 0..n {
-            let rx: crossbeam_channel::Receiver<Work> = rx.clone();
+            let (sender, receiver) = mpsc::channel::<Work>();
+            senders.push(sender);
             std::thread::spawn(move || {
-                while let Ok((thunk, wg)) = rx.recv() {
+                while let Ok((thunk, wg)) = receiver.recv() {
                     thunk();
                     drop(wg)
                 }
             });
         }
 
-        Self { tx }
+        Self { senders }
     }
 
     pub fn scoped<'scope, F>(&self, f: F)
@@ -41,9 +42,10 @@ impl ThreadPool {
         f(&mut scope);
 
         let wg = crossbeam_utils::sync::WaitGroup::new();
-        for thunk in scope.into_inner().into_iter() {
+        for (i, thunk) in scope.into_inner().into_iter().enumerate() {
             let work = (thunk, wg.clone());
-            self.tx.send(work).unwrap();
+            let thread_idx = i % self.senders.len();
+            self.senders[thread_idx].send(work).unwrap();
         }
 
         wg.wait();
@@ -57,9 +59,7 @@ pub struct Scope<'scope> {
 
 impl<'scope> Scope<'scope> {
     pub fn spawn<'a, F>(&mut self, f: F)
-    where
-        F: FnOnce() + Send + 'a,
-    {
+    where F: FnOnce() + Send + 'a {
         let b = unsafe { mem::transmute::<Thunk<'a>, Thunk<'static>>(Box::new(f)) };
         self.thunks.push(b)
     }

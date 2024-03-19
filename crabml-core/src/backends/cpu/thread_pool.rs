@@ -1,8 +1,8 @@
-use std::sync::Arc;
+type Thunk = Box<dyn FnOnce() + Send + 'static>;
 
 struct Work {
-    thunk: Option<Box<dyn FnOnce() + Send + 'static>>,
-    latch: Option<Arc<countdown_latch::CountDownLatch>>,
+    thunk: Option<Thunk>,
+    wg: Option<crossbeam_utils::sync::WaitGroup>,
 }
 
 /// A threadpool that acts as a handle to a number
@@ -26,13 +26,44 @@ impl Pool {
                     let thunk = work.thunk.take().unwrap();
                     thunk();
 
-                    if let Some(latch) = work.latch.take() {
-                        latch.count_down();
+                    if let Some(wg) = work.wg.take() {
+                        drop(wg)
                     }
                 }
             });
         }
 
         Pool { tx }
+    }
+
+    pub fn scoped<F>(&self, f: F)
+    where F: FnOnce(&mut Scope) + Send + 'static {
+        let mut scope = Scope { thunks: Vec::new() };
+        f(&mut scope);
+
+        let wg = crossbeam_utils::sync::WaitGroup::new();
+        for thunk in scope.into_inner().into_iter() {
+            let work = Work {
+                thunk: Some(thunk),
+                wg: Some(wg.clone()),
+            };
+            self.tx.send(work).unwrap();
+        }
+
+        wg.wait();
+    }
+}
+
+pub struct Scope {
+    thunks: Vec<Thunk>,
+}
+
+impl Scope {
+    pub fn spawn(&mut self, thunk: Thunk) {
+        self.thunks.push(thunk)
+    }
+
+    pub fn into_inner(self) -> Vec<Thunk> {
+        self.thunks
     }
 }

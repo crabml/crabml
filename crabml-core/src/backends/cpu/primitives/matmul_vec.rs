@@ -1,9 +1,15 @@
+use std::sync::LazyLock;
+use std::sync::Mutex;
+
 use rayon::prelude::*;
 
 use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::backends::cpu::CpuTensorDeviceRef;
 use crate::error::Result;
 use crate::tensor::TensorStrider;
+
+static POOL: LazyLock<Mutex<scoped_threadpool::Pool>> =
+    LazyLock::new(|| Mutex::new(scoped_threadpool::Pool::new(1 as u32)));
 
 // matmul_vec is an implementation of GEMV: A (m,k) @ B (k,) -> xout (m,).
 // A is allowed to be not contiguous and quantized
@@ -77,6 +83,8 @@ fn gemv_simd<'a>(
     let threads = 1;
     let chunk_size = m / threads;
     assert!(m % chunk_size == 0);
+
+    POOL.lock().unwrap().scoped(|s| {});
 
     bufc.chunks_exact_mut(chunk_size)
         .enumerate()

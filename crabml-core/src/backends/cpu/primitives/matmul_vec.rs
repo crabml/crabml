@@ -4,12 +4,12 @@ use std::sync::Mutex;
 use rayon::prelude::*;
 
 use crate::backends::cpu::buf::CpuTensorBuf;
+use crate::backends::cpu::thread_pool::ThreadPool;
 use crate::backends::cpu::CpuTensorDeviceRef;
 use crate::error::Result;
 use crate::tensor::TensorStrider;
 
-static POOL: LazyLock<Mutex<scoped_threadpool::Pool>> =
-    LazyLock::new(|| Mutex::new(scoped_threadpool::Pool::new(1 as u32)));
+static POOL: LazyLock<Mutex<ThreadPool>> = LazyLock::new(|| Mutex::new(ThreadPool::new(1 as u32)));
 
 // matmul_vec is an implementation of GEMV: A (m,k) @ B (k,) -> xout (m,).
 // A is allowed to be not contiguous and quantized
@@ -84,17 +84,19 @@ fn gemv_simd<'a>(
     let chunk_size = m / threads;
     assert!(m % chunk_size == 0);
 
-    POOL.lock().unwrap().scoped(|s| {});
-
-    bufc.chunks_exact_mut(chunk_size)
-        .enumerate()
-        .for_each(|(cn, cp)| {
-            let mi = cn * chunk_size;
-            cp.chunks_exact_mut(4).enumerate().for_each(|(i, cpp)| {
-                cpp[0] = bufa.vec_dot((mi + i * 4) * k, bufb, 0, k);
-                cpp[1] = bufa.vec_dot((mi + i * 4 + 1) * k, bufb, 0, k);
-                cpp[2] = bufa.vec_dot((mi + i * 4 + 2) * k, bufb, 0, k);
-                cpp[3] = bufa.vec_dot((mi + i * 4 + 3) * k, bufb, 0, k);
+    POOL.lock().unwrap().scoped(|s| {
+        bufc.chunks_exact_mut(chunk_size)
+            .enumerate()
+            .for_each(|(cn, cp)| {
+                let mi = cn * chunk_size;
+                s.spawn(move || {
+                    cp.chunks_exact_mut(4).enumerate().for_each(|(i, cpp)| {
+                        cpp[0] = bufa.vec_dot((mi + i * 4) * k, bufb, 0, k);
+                        cpp[1] = bufa.vec_dot((mi + i * 4 + 1) * k, bufb, 0, k);
+                        cpp[2] = bufa.vec_dot((mi + i * 4 + 2) * k, bufb, 0, k);
+                        cpp[3] = bufa.vec_dot((mi + i * 4 + 3) * k, bufb, 0, k);
+                    });
+                });
             });
-        });
+    });
 }

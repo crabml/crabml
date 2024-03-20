@@ -123,7 +123,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         let tokens_iter = (pos..pos + max_steps).scan(token, move |current_token, pos| {
             let logits = self.forward(*current_token, pos).unwrap();
             let new_token = sampler.sample(logits).unwrap();
-            if new_token == self.tokenizer.eos_token() as usize {
+            if new_token == self.tokenizer.eos_token() {
                 return None;
             }
             let r = self.tokenizer.decode(*current_token, new_token).unwrap();

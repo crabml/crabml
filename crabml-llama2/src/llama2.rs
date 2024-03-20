@@ -1,5 +1,6 @@
 use std::ops::AddAssign;
 use std::rc::Rc;
+use std::thread::current;
 use std::time::Duration;
 use std::time::Instant;
 use std::vec;
@@ -88,20 +89,60 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         })
     }
 
+    // prefill the model with the prompt, return the next position and the first generated token
+    pub fn prefill(
+        &mut self,
+        prompt: &str,
+        sampler: &'a mut Llama2Sampler,
+    ) -> Result<(usize, usize, usize)> {
+        let prompt_tokens = self.tokenizer.encode(prompt, true, false)?;
+        if prompt_tokens.is_empty() {
+            return Err(Error {
+                kind: ErrorKind::BadInput,
+                message: "something is wrong, expected at least 1 prompt token".to_string(),
+                cause: None,
+            });
+        }
+
+        let mut logits: &mut [f32] = &mut [];
+        for (pos, token) in prompt_tokens.iter().enumerate() {
+            logits = self.forward(*token, pos)?;
+        }
+        let token = sampler.sample(logits)?;
+        let last_token = *prompt_tokens.last().unwrap();
+
+        Ok((prompt_tokens.len(), last_token, token))
+    }
+
     pub fn generate(
+        &'a mut self,
+        pos: usize,
+        prev_token: usize,
+        token: usize,
+        steps: usize,
+        sampler: &'a mut Llama2Sampler,
+    ) -> impl Iterator<Item = Result<String>> + '_ {
+        let max_steps = (self.conf.seq_len - pos).min(steps);
+        let first_token = self.tokenizer.decode(prev_token, token);
+        let tokens_iter = (pos..pos + max_steps).scan(token, move |current_token, pos| {
+            let logits = self.forward(*current_token, pos).unwrap();
+            let new_token = sampler.sample(logits).unwrap();
+            let r = self.tokenizer.decode(*current_token, new_token).unwrap();
+            *current_token = new_token;
+            Some(Ok(r))
+        });
+        std::iter::once(first_token).chain(tokens_iter)
+    }
+
+    // simplify the test cases
+    pub fn prefill_and_generate(
         &'a mut self,
         prompt: &str,
         steps: usize,
         sampler: &'a mut Llama2Sampler,
-    ) -> Result<Llama2RunnerOutputGenerator<'a, T>> {
-        Llama2RunnerOutputGenerator::new(
-            self,
-            sampler,
-            self.metrics.clone(),
-            prompt,
-            steps,
-            self.conf.seq_len,
-        )
+    ) -> Result<impl Iterator<Item = Result<String>> + '_> {
+        let (pos, prev_token, token) = self.prefill(prompt, sampler)?;
+        Ok(self.generate(pos, prev_token, token, steps, sampler))
     }
 
     pub fn forward(&mut self, token: usize, pos: usize) -> Result<&mut [f32]> {
@@ -379,112 +420,6 @@ impl<'a, T: Tensor> Llama2Runner<T> {
     }
 }
 
-pub struct Llama2RunnerOutputGenerator<'a, T: Tensor> {
-    pos: usize,
-    steps: usize,
-    seq_len: usize,
-    prompt_tokens: Vec<usize>,
-    token: usize,
-    sampler: &'a mut Llama2Sampler,
-    runner: &'a mut Llama2Runner<T>,
-    metrics: TensorMetrics,
-    total_time: Duration,
-}
-
-impl<'a, T: Tensor> Llama2RunnerOutputGenerator<'a, T> {
-    fn new(
-        runner: &'a mut Llama2Runner<T>,
-        sampler: &'a mut Llama2Sampler,
-        metrics: TensorMetrics,
-        prompt: &str,
-        steps: usize,
-        seq_len: usize,
-    ) -> Result<Self> {
-        let prompt_tokens = runner.tokenizer.encode(prompt, true, false)?;
-        if prompt_tokens.is_empty() {
-            return Err(Error {
-                kind: ErrorKind::BadInput,
-                message: "something is wrong, expected at least 1 prompt token".to_string(),
-                cause: None,
-            });
-        }
-
-        let token = prompt_tokens[0];
-        Ok(Self {
-            pos: 0,
-            steps,
-            token,
-            prompt_tokens,
-            sampler,
-            runner,
-            seq_len,
-            metrics,
-            total_time: Duration::new(0, 0),
-        })
-    }
-
-    pub fn average_tokens_per_seconds(&self) -> f32 {
-        let total_time = self.total_time.as_secs_f32();
-        self.pos as f32 / total_time
-    }
-
-    fn forward_next(&mut self) -> Result<Option<String>> {
-        if self.pos >= self.steps + self.prompt_tokens.len() {
-            return Ok(None);
-        }
-        if self.pos >= self.seq_len {
-            return Ok(None);
-        }
-
-        // forward the transformer to get logits for the next token
-        let start_time = Instant::now();
-        let logits = self.runner.forward(self.token, self.pos)?;
-
-        // advance the state state machine
-        let (next_token, is_prompt) = if self.pos < self.prompt_tokens.len() - 1 {
-            // if we are still processing the input prompt, force the next prompt token
-            (self.prompt_tokens[self.pos + 1], true)
-        } else {
-            let _t = self.metrics.sample_walltime.track();
-            // otherwise sample the next token from the logits
-            let token = self.sampler.sample(logits)?;
-            (token, false)
-        };
-        self.total_time.add_assign(start_time.elapsed());
-
-        // data-dependent terminating condition: the BOS (=1) token delimits sequences
-        if next_token == 1 {
-            return Ok(None);
-        }
-
-        let prev_token = self.token;
-        self.pos += 1;
-        self.token = next_token;
-
-        if is_prompt {
-            return Ok(Some("".to_string()));
-        }
-
-        Ok(Some(self.runner.tokenizer.decode(prev_token, self.token)?))
-    }
-}
-
-impl<'a, T: Tensor> Iterator for Llama2RunnerOutputGenerator<'a, T> {
-    type Item = Result<String>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            let r = self.forward_next().transpose();
-            if let Some(Ok(s)) = &r {
-                if s.is_empty() {
-                    continue;
-                }
-            }
-            return r;
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use approx::assert_relative_eq;
@@ -511,7 +446,7 @@ mod tests {
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0, device.exp_cache());
         let mut runner = Llama2Runner::new(&lm, TensorMetrics::default(), 200, false)?;
-        let output = runner.generate("Lily is a cat", 30, &mut sampler)?;
+        let output = runner.prefill_and_generate("Lily is a cat", 30, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
 
         assert_eq!(
@@ -533,7 +468,7 @@ mod tests {
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0, device.exp_cache());
         let mut runner = Llama2Runner::new(&lm, TensorMetrics::default(), 200, false)?;
-        let output = runner.generate("Lily is a cute cat, ", 10, &mut sampler)?;
+        let output = runner.prefill_and_generate("Lily is a cute cat, ", 10, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
         assert_eq!(s, "3 years old. She likes to play with her");
         Ok(())
@@ -551,7 +486,7 @@ mod tests {
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0, device.exp_cache());
         let mut runner = Llama2Runner::new(&lm, TensorMetrics::default(), 200, true)?;
-        let output = runner.generate("Lily is a cute cat, ", 10, &mut sampler)?;
+        let output = runner.prefill_and_generate("Lily is a cute cat, ", 10, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
         assert_eq!(s, "3 years old. She likes to play with her");
         Ok(())
@@ -569,7 +504,7 @@ mod tests {
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0, device.exp_cache());
         let mut runner = Llama2Runner::new(&lm, TensorMetrics::default(), 200, false)?;
-        let output = runner.generate("Lily is a cute cat, ", 10, &mut sampler)?;
+        let output = runner.prefill_and_generate("Lily is a cute cat, ", 10, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
         assert_eq!(s, "3 year old. She likes to play with her friends");
         Ok(())
@@ -599,12 +534,12 @@ mod tests {
         let mut runner_wgpu = Llama2Runner::new(&model_wgpu, TensorMetrics::default(), 200, false)?;
 
         let output_cpu = runner_cpu
-            .generate("Lily is a cat", 30, &mut sampler)?
+            .prefill_and_generate("Lily is a cat", 30, &mut sampler)?
             .collect::<Result<Vec<String>>>()?
             .join("");
 
         let output_wgpu = runner_wgpu
-            .generate("Lily is a cat", 30, &mut sampler)?
+            .prefill_and_generate("Lily is a cat", 30, &mut sampler)?
             .collect::<Result<Vec<String>>>()?
             .join("");
 

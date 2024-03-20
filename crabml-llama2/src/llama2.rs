@@ -1,8 +1,4 @@
-use std::ops::AddAssign;
 use std::rc::Rc;
-use std::thread::current;
-use std::time::Duration;
-use std::time::Instant;
 use std::vec;
 
 use crabml::error::Error;
@@ -127,6 +123,9 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         let tokens_iter = (pos..pos + max_steps).scan(token, move |current_token, pos| {
             let logits = self.forward(*current_token, pos).unwrap();
             let new_token = sampler.sample(logits).unwrap();
+            if new_token == self.tokenizer.eos_token() as usize {
+                return None;
+            }
             let r = self.tokenizer.decode(*current_token, new_token).unwrap();
             *current_token = new_token;
             Some(Ok(r))

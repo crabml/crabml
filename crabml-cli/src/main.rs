@@ -71,7 +71,7 @@ fn run<U: Tensor>(
     sampler: &mut Llama2Sampler,
     metrics: &TensorMetrics,
 ) -> Result<()> {
-    let mut output = runner.generate(&args.prompt, args.steps, sampler)?;
+    let mut output = runner.prefill_and_generate(&args.prompt, args.steps, sampler)?;
     print!("{}", &args.prompt);
 
     loop {

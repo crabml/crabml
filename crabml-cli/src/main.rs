@@ -71,13 +71,20 @@ fn run<U: Tensor>(
     sampler: &mut Llama2Sampler,
     metrics: &TensorMetrics,
 ) -> Result<()> {
-    let mut output = runner.prefill_and_generate(&args.prompt, args.steps, sampler)?;
-    print!("{}", &args.prompt);
+    let prefill_started_at = Instant::now();
+    let (prefill_pos, prev_token, token) = runner.prefill(&args.prompt, sampler)?;
+    let prefill_elapsed = prefill_started_at.elapsed();
 
+    let mut output = runner.generate(prefill_pos, prev_token, token, args.steps, sampler);
+    let mut generated_tokens = 0;
+    let generation_started_at = Instant::now();
+
+    print!("{}", &args.prompt);
     loop {
         let _t = metrics.total_walltime.track();
         match output.next() {
             Some(token) => {
+                generated_tokens += 1;
                 print!("{}", token?);
                 std::io::stdout().flush().unwrap();
             }
@@ -97,11 +104,18 @@ fn run<U: Tensor>(
         metrics.reset();
     }
 
+    let generation_elapsed = generation_started_at.elapsed().as_secs_f64();
+    let generated_tokens_per_second = generated_tokens as f64 / generation_elapsed;
+
     println!();
     println!(
+        "prompt: {} tokens, {}ms",
+        prefill_pos,
+        prefill_elapsed.as_millis()
+    );
+    println!(
         "{} tokens/s, {} threads",
-        output.average_tokens_per_seconds(),
-        args.threads
+        generated_tokens_per_second, args.threads
     );
 
     Ok(())

@@ -146,9 +146,13 @@ mod impl_fallback {
         let mut bs = Vec::with_capacity(data.len() / QK_K);
 
         const Q4SCALE: f32 = 15f32;
+
         let mut l = [0u8; QK_K];
+        let mut l_aux = [0u8; QK_K / 16];
+        let mut weights = [0f32; QK_K / 16];
         let mut mins = [0f32; QK_K / 16];
         let mut scales = [0f32; QK_K / 16];
+
         // super block
         for (i, data_chunk) in data.chunks(QK_K).enumerate() {
             bs.push(BlockQ2K::new_zero());
@@ -156,8 +160,27 @@ mod impl_fallback {
             let mut max_scale = 0f32;
             let mut max_min = 0f32;
             // 16 elements in each block
-            for (j, (data_block, l)) in data_chunk.chunks(16).zip(l.chunks_mut(16)).enumerate() {
-                scales[j] = make_qkx1_quants(16, 3, data_block, l, &mut mins[j], 5);
+            for (j, (data_block, l)) in data_chunk
+                .chunks(QK_K / 16)
+                .zip(l.chunks_mut(QK_K / 16))
+                .enumerate()
+            {
+                for (w, &d) in weights.iter_mut().zip(data_block.iter()) {
+                    *w = d.abs();
+                }
+                scales[j] = make_qkx2_quants(
+                    16,
+                    3,
+                    data_block,
+                    &weights,
+                    l,
+                    &mut mins[j],
+                    &mut l_aux,
+                    -0.5f32,
+                    0.1f32,
+                    15,
+                    true,
+                );
                 let scale = scales[j];
                 if scale > max_scale {
                     max_scale = scale;

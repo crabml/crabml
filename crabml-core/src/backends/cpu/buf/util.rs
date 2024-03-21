@@ -215,6 +215,107 @@ pub fn make_qkx1_quants(
     scale
 }
 
+pub fn make_qkx2_quants(
+    n: usize,
+    nmax: i32,
+    data: &[f32],
+    weights: &[f32],
+    l: &mut [u8],
+    the_min: &mut f32,
+    l_aux: &mut [u8],
+    rmin: f32,
+    rdelta: f32,
+    nstep: i32,
+    use_mad: bool,
+) -> f32 {
+    let mut min = data[0];
+    let mut max = data[0];
+    let mut sum_w = weights[0];
+    let mut sum_x = sum_w * data[0];
+
+    for (&d, &w) in data[1..n].iter().zip(weights[1..n].iter()) {
+        if d < min {
+            min = d;
+        }
+        if d > max {
+            max = d
+        }
+        sum_w += w;
+        sum_x += w * d
+    }
+    if min > 0f32 {
+        min = 0f32;
+    }
+    if max == min {
+        for _l in l.iter_mut() {
+            *_l = 0;
+        }
+        *the_min = -min;
+        return 0f32;
+    }
+
+    let mut iscale = nmax as f32 / (max - min);
+    let mut scale = 1f32 / iscale;
+    let mut best_mad = 0f32;
+
+    for (&d, (_l, &w)) in data.iter().zip(l.iter_mut().zip(weights.iter())).take(n) {
+        let l = nearest_i32(iscale * (d - min));
+        *_l = (l.min(nmax) as u8).max(0u8);
+        let mut diff = scale * *_l as f32 + min - d;
+        diff = if use_mad { diff.abs() } else { diff * diff };
+        best_mad += w * diff;
+    }
+    if nstep < 1 {
+        *the_min = -min;
+        return scale;
+    }
+
+    for is in 0..=nstep {
+        iscale = (rmin + rdelta * is as f32 + nmax as f32) / (max - min);
+        let mut sum_l = 0f32;
+        let mut sum_l2 = 0f32;
+        let mut sum_xl = 0f32;
+        for (&d, (l_aux, &w)) in data
+            .iter()
+            .zip(l_aux.iter_mut().zip(weights.iter()))
+            .take(n)
+        {
+            let mut l = nearest_i32(iscale * (d - min));
+            l = l.min(nmax).max(0);
+            *l_aux = l as u8;
+            let l = l as f32;
+            sum_l += w * l;
+            sum_l2 += w * l * l;
+            sum_xl += w * l * d;
+        }
+        let d = sum_w * sum_xl - sum_l * sum_l;
+        if d > 0f32 {
+            let mut this_scale = (sum_w * sum_xl - sum_x * sum_l) / d;
+            let mut this_min = (sum_l2 * sum_x - sum_l * sum_xl) / d;
+            if (this_min > 0f32) {
+                this_min = 0f32;
+                this_scale = sum_xl / sum_l2;
+            }
+            let mut mad = 0f32;
+            for (&d, (&l_aux, &w)) in data.iter().zip(l_aux.iter().zip(weights.iter())).take(n) {
+                let mut diff = this_scale * l_aux as f32 + this_min - d;
+                diff = if use_mad { diff.abs() } else { diff * diff };
+                mad += w * diff;
+            }
+            if mad < best_mad {
+                for (l, &l_aux) in l.iter_mut().zip(l_aux.iter()).take(n) {
+                    *l = l_aux;
+                }
+                best_mad = mad;
+                scale = this_scale;
+                min = this_min;
+            }
+        }
+    }
+    *the_min = -min;
+    scale
+}
+
 pub fn make_q3_quants(n: usize, nmax: i32, data: &[f32], l: &mut [i8], do_rmse: bool) -> f32 {
     let mut max = 0f32;
     let mut amax = 0f32;

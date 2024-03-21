@@ -48,6 +48,10 @@ impl BpeTokenizer {
         &self.tokens
     }
 
+    pub fn eos_token(&self) -> TokenID {
+        self.eos_token
+    }
+
     pub fn token(&self, token_id: TokenID) -> Token {
         self.tokens[token_id].clone()
     }

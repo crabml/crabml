@@ -59,6 +59,10 @@ impl TensorStrider {
         &self.strides
     }
 
+    pub fn dims(&self) -> usize {
+        self.shape.len()
+    }
+
     pub fn at(&self, idx: &[usize]) -> Result<usize> {
         if idx.len() != self.shape.len() {
             return Err((

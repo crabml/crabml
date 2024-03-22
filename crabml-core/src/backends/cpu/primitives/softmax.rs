@@ -5,6 +5,7 @@ use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::backends::cpu::CpuTensorDeviceRef;
 use crate::error::ErrorKind;
 use crate::error::Result;
+use crate::gguf::GGMLType;
 use crate::tensor::TensorStrider;
 
 // TODO: support f16
@@ -14,11 +15,20 @@ pub fn softmax_inplace<'a>(
     strider: TensorStrider,
     axis: usize,
 ) -> Result<()> {
-    assert!(strider.shape().len() == 2);
+    assert!(strider.dims() == 2 || strider.dims() == 3);
     assert!(strider.is_contiguous());
+    assert!(buf.dtype() == GGMLType::F32);
 
-    if axis != 1 {
-        return Err((ErrorKind::TensorError, "only axis=1 is supported").into());
+    if axis != strider.dims() - 1 {
+        return Err((
+            ErrorKind::TensorError,
+            format!(
+                "only axis={} is supported on a {} dimensions tensor",
+                strider.dims() - 1,
+                strider.dims()
+            ),
+        )
+            .into());
     }
 
     let rows = strider.shape()[0];

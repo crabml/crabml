@@ -4,6 +4,7 @@
 #![feature(thread_local)]
 #![feature(lazy_cell)]
 #![feature(iter_array_chunks)]
+#![feature(lint_reasons)]
 
 #[allow(unreachable_patterns)]
 pub mod backends;

@@ -20,19 +20,11 @@ pub fn f16_buf_from_bytes<'a>(buf: &[u8]) -> Cow<'a, [f16]> {
 // we can initialize a vec![0 as u16; buf_size] and reinterpret it into Vec<f16> to make it
 // faster, please note that the zerod f16 is not f16::ZERO, but f16(0x0000), do not read the
 // uninitialized data in this buf.
-// the code is modified from half's reinterpret_into function.
+#[expect(clippy::uninit_vec)]
 pub fn alloc_f16_buf(len: usize) -> Vec<f16> {
-    let mut vec_u16 = vec![0; len];
-    let length = vec_u16.len();
-    let capacity = vec_u16.capacity();
-    let pointer = vec_u16.as_mut_ptr() as *mut f16;
-
-    // Prevent running a destructor on the old Vec<u16>, so the pointer won't be deleted
-    std::mem::forget(vec_u16);
-    // Finally construct a new Vec<f16> from the raw pointer
-    // SAFETY: We are reconstructing full length and capacity of original vector,
-    // using its original pointer, and the size of elements are identical.
-    unsafe { Vec::from_raw_parts(pointer, length, capacity) }
+    let mut buf = Vec::with_capacity(len);
+    unsafe { buf.set_len(len) };
+    buf
 }
 
 pub fn dequantize_f16_buf(buf: &[f16], start: usize) -> impl Iterator<Item = f32> + '_ {

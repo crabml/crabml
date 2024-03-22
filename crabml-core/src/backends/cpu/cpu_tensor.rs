@@ -296,8 +296,7 @@ impl<'a> Tensor for CpuTensor<'a> {
         Ok(out)
     }
 
-    // TODO(2024-02-15): dequantize the tensor here, not dequantize the embedding table on loading
-    fn copy_from(&mut self, src: &CpuTensor<'a>, pos: &[usize], len: usize) -> Result<()> {
+    fn copy_rows_from(&mut self, src: &CpuTensor<'a>, src_rows: &[usize]) -> Result<()> {
         let _t = self.device.metrics.copy_from_walltime.track();
         if !self.is_owned() {
             return Err((ErrorKind::TensorError, "not owned").into());
@@ -308,9 +307,20 @@ impl<'a> Tensor for CpuTensor<'a> {
         if !src.is_contiguous() {
             return Err((ErrorKind::TensorError, "src tensor is not contiguous").into());
         }
+        if src.strider.dims() != 2 && src.strider.dims() != 1 {
+            return Err((
+                ErrorKind::TensorError,
+                "copy_rows_from: src tensor is not 2d or 1d",
+            )
+                .into());
+        }
 
-        let offset = src.strider().at(pos)?;
-        self.buf.copy_from(&src.buf, offset, len)?;
+        let cols = self.shape().last().unwrap().clone();
+        for (dst_row, src_row) in src_rows.iter().enumerate() {
+            let src_offset = src_row * cols;
+            let dst_offset = dst_row * cols;
+            self.buf.copy_from(&src.buf, src_offset, dst_offset, cols)?;
+        }
         Ok(())
     }
 
@@ -456,10 +466,10 @@ mod tests {
         let t1 = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0], &[2, 2], device.clone())?;
         let mut t2 = CpuTensor::new(vec![0.0; 2], &[2], device.clone())?;
 
-        t2.copy_from(&t1, &[1, 0], 2)?;
+        t2.copy_rows_from(&t1, &[1])?;
         assert_eq!(t2.to_vec(), vec![3.0, 4.0]);
 
-        t2.copy_from(&t1, &[0, 0], 2)?;
+        t2.copy_rows_from(&t1, &[0])?;
         assert_eq!(t2.to_vec(), vec![1.0, 2.0]);
 
         Ok(())

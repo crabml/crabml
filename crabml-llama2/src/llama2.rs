@@ -173,7 +173,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
 
         // copy the token embedding into x
         let mut x = T::alloc(&[embed_dim], GGMLType::F32, self.device.clone())?;
-        x.copy_from(&self.weights.token_embed, &[token, 0], embed_dim)?;
+        x.copy_rows_from(&self.weights.token_embed, &[token])?;
 
         // forward all the layers
         for l in 0..self.conf.n_layers {
@@ -250,7 +250,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
 
         // copy the token embedding into x
         let mut x = T::alloc(&[embed_dim], GGMLType::F32, self.device.clone())?;
-        x.copy_from(&self.weights.token_embed, &[token, 0], embed_dim)?;
+        x.copy_rows_from(&self.weights.token_embed, &[token])?;
 
         // GEMMA only: scale the embedding with sqrt(embed_dim)
         x = x.scale_inplace((embed_dim as f32).sqrt())?;

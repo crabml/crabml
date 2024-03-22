@@ -1,9 +1,9 @@
-use std::borrow::Cow;
 use std::simd::f32x32;
 use std::simd::num::SimdFloat;
 
 use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::error::Result;
+use crate::gguf::GGMLType;
 use crate::tensor::TensorStrider;
 
 pub fn rms_norm_inplace(
@@ -12,17 +12,20 @@ pub fn rms_norm_inplace(
     eps: f32,
 ) -> Result<()> {
     assert!(strider.is_contiguous());
-    assert!(strider.shape().len() == 1);
+    assert!(strider.shape().len() == 1 || strider.shape().len() == 2);
+    assert!(buf.dtype() == GGMLType::F32);
 
-    if let CpuTensorBuf::F32(Cow::Owned(xb)) = buf {
-        rms_norm_inplace_vec_f32(xb, eps);
-        return Ok(());
+    let (rows, cols) = if strider.shape().len() == 1 {
+        (1, strider.shape()[0])
+    } else {
+        (strider.shape()[0], strider.shape()[1])
+    };
+
+    let buf = buf.as_f32_mut();
+    for row in 0..rows {
+        rms_norm_inplace_vec_f32(&mut buf[row * cols..(row + 1) * cols], eps)
     }
 
-    let len = strider.shape()[0];
-    let sum = buf.iter_f32().fold(0.0, |s, n| s + n * n);
-    let rms = ((sum / len as f32) + eps).sqrt();
-    buf.iter_f32_mut().for_each(|n| *n /= rms);
     Ok(())
 }
 

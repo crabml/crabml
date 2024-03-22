@@ -6,7 +6,6 @@ mod gelu;
 mod matmul_vec;
 mod rms_norm;
 mod rope;
-mod scalar;
 mod silu;
 mod softmax;
 

@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use crate::backends::cpu::buf::buf_f32::exp_f32_cached;
 use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::backends::cpu::CpuTensorDeviceRef;
@@ -31,24 +29,29 @@ pub fn softmax_inplace<'a>(
             .into());
     }
 
-    let rows = strider.shape()[0];
-    let cols = strider.shape()[1];
-    let buf = match buf {
-        CpuTensorBuf::F32(Cow::Owned(buf)) => buf,
-        _ => panic!("only support f32 yet"),
+    let (depths, rows, cols) = match strider.dims() {
+        2 => (1, strider.shape()[0], strider.shape()[1]),
+        3 => (strider.shape()[0], strider.shape()[1], strider.shape()[2]),
+        _ => unreachable!(),
     };
+    let (stride_0, stride_1, _) = (rows * cols, cols, 1);
 
-    for row in 0..rows {
-        let buf_row = &mut buf[row * cols..(row + 1) * cols];
-        let max = buf_row.iter().fold(0.0, |m, val| val.max(m));
-        let sum = buf_row.iter_mut().fold(0.0, |mut acc, val| {
-            *val = exp_f32_cached(*val - max, &device.exp_cache);
-            acc += *val;
-            acc
-        });
-        buf_row.iter_mut().for_each(|val| {
-            *val /= sum;
-        });
+    let buf = buf.as_f32_mut();
+
+    for depth in 0..depths {
+        for row in 0..rows {
+            let buf_offset = depth * stride_0 + row * stride_1;
+            let buf_row = &mut buf[buf_offset..buf_offset + cols];
+            let max = buf_row.iter().fold(0.0, |m, val| val.max(m));
+            let sum = buf_row.iter_mut().fold(0.0, |mut acc, val| {
+                *val = exp_f32_cached(*val - max, &device.exp_cache);
+                acc += *val;
+                acc
+            });
+            buf_row.iter_mut().for_each(|val| {
+                *val /= sum;
+            });
+        }
     }
 
     Ok(())

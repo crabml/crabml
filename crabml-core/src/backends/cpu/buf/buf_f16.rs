@@ -20,6 +20,7 @@ pub fn f16_buf_from_bytes<'a>(buf: &[u8]) -> Cow<'a, [f16]> {
 // we can initialize a vec![0 as u16; buf_size] and reinterpret it into Vec<f16> to make it
 // faster, please note that the zerod f16 is not f16::ZERO, but f16(0x0000), do not read the
 // uninitialized data in this buf.
+#[expect(clippy::uninit_vec)]
 pub fn alloc_f16_buf(len: usize) -> Vec<f16> {
     let mut buf = Vec::with_capacity(len);
     unsafe { buf.set_len(len) };

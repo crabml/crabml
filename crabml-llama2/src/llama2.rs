@@ -327,7 +327,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         embed_dim: usize,
         head_dim: usize,
     ) -> Result<T> {
-        // save to kv cache in layout of (n_kv_heads, seq, head_dim)
+        // save to kv cache in layout of (seq, n_kv_heads, head_dim)
         {
             let _t = self.metrics.save_kvcache_walltime.track();
             let k = k

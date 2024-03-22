@@ -336,7 +336,7 @@ impl Tensor for WgpuTensor {
 
     fn dup(&self) -> Result<Self> {
         let mut new_tensor = Self::alloc(self.strider.shape(), self.dtype, self.device.clone())?;
-        new_tensor.copy_rows_from(self, &vec![0]).unwrap();
+        new_tensor.copy_rows_from(self, &[0]).unwrap();
         Ok(new_tensor)
     }
 

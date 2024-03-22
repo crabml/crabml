@@ -315,7 +315,7 @@ impl<'a> Tensor for CpuTensor<'a> {
                 .into());
         }
 
-        let cols = self.shape().last().unwrap().clone();
+        let cols = *self.shape().last().unwrap();
         for (dst_row, src_row) in src_rows.iter().enumerate() {
             let src_offset = src_row * cols;
             let dst_offset = dst_row * cols;

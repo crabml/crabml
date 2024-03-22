@@ -258,19 +258,19 @@ impl Tensor for WgpuTensor {
         Ok(())
     }
 
-    fn copy_rows_from(&mut self, rhs: &Self, rows: &[usize]) -> Result<()> {
+    fn copy_rows_from(&mut self, src: &Self, src_rows: &[usize]) -> Result<()> {
         // TODO: check is_owned
         if !self.is_contiguous() {
             return Err((ErrorKind::TensorError, "not contiguous").into());
         }
 
-        let cols = rhs.shape().last().unwrap();
-        let f32_size = std::mem::size_of::<f32>();
+        let cols = src.shape().last().unwrap();
+        let f32_bytes = std::mem::size_of::<f32>();
 
-        for (i, row) in rows.iter().enumerate() {
-            let lhs_offset = rhs.strider.at(&[i, 0]).unwrap() * f32_size;
-            let rhs_offset = rhs.strider.at(&[*row, 0]).unwrap() * f32_size;
-            let row_bytes = cols * f32_size;
+        for (dst_row, src_row) in src_rows.iter().enumerate() {
+            let dst_offset = dst_row * cols * f32_bytes;
+            let src_offset = src_row * cols * f32_bytes;
+            let row_bytes = cols * f32_bytes;
 
             // enqueue copy from rhs to self's buffer
             let mut encoder = self
@@ -278,10 +278,10 @@ impl Tensor for WgpuTensor {
                 .inner
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
             encoder.copy_buffer_to_buffer(
-                &rhs.buf,
-                lhs_offset as u64,
+                &src.buf,
+                src_offset as u64,
                 &self.buf,
-                rhs_offset as u64,
+                dst_offset as u64,
                 row_bytes as u64,
             );
             self.device.queue.submit(Some(encoder.finish()));

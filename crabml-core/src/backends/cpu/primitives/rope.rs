@@ -23,15 +23,15 @@ pub fn rope_inplace(
         _ => panic!("only support f32 yet"),
     };
 
-    let (seq, seq_stride) = if strider1.dims() == 2 {
+    let (n_batch, bi_stride) = if strider1.dims() == 2 {
         (1, strider1.len())
     } else {
         (strider1.shape()[0], strider1.strides()[0])
     };
 
-    for seq_offset in 0..seq {
-        let seq_pos = pos + seq_offset;
-        let buf_row = &mut buf[seq_offset * seq_stride..(seq_offset + 1) * seq_stride];
+    for bi in 0..n_batch {
+        let seq_pos = pos + bi;
+        let buf_row = &mut buf[bi * bi_stride..(bi + 1) * bi_stride];
         match mode {
             RopeMode::Llama => rope_llama(buf_row, seq_pos, head_dim, rope_dim),
             RopeMode::Neox => rope_neox(buf_row, seq_pos, head_dim, rope_dim),

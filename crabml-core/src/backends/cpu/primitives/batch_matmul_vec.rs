@@ -57,15 +57,16 @@ fn batch_matmul_naive_f32(
     stride2: &TensorStrider,
 ) {
     let (a_batch, b_batch) = (stride1.shape()[0], stride2.shape()[0]);
+    assert!(a_batch >= b_batch);
     let (m, k, n) = (stride1.shape()[1], stride1.shape()[2], stride2.shape()[2]);
-    for bi in 0..b_batch {
+    for bi in 0..a_batch {
         for mi in 0..m {
             for ni in 0..n {
                 for ki in 0..k {
-                    bufc[bi * (m * n) + mi * n + ni] += bufa[(bi % a_batch) * stride1.strides()[0]
+                    bufc[bi * (m * n) + mi * n + ni] += bufa[bi * stride1.strides()[0]
                         + mi * stride1.strides()[1]
                         + ki * stride1.strides()[2]]
-                        * bufb[bi * stride2.strides()[0]
+                        * bufb[(bi % b_batch) * stride2.strides()[0]
                             + ki * stride2.strides()[1]
                             + ni * stride2.strides()[2]];
                 }
@@ -82,16 +83,16 @@ fn batch_matmul_naive_f16(
     stride2: &TensorStrider,
 ) {
     let (a_batch, b_batch) = (stride1.shape()[0], stride2.shape()[0]);
+    assert!(a_batch >= b_batch);
     let (m, k, n) = (stride1.shape()[1], stride1.shape()[2], stride2.shape()[2]);
-    for bi in 0..b_batch {
+    for bi in 0..a_batch {
         for mi in 0..m {
             for ni in 0..n {
                 for ki in 0..k {
-                    bufc[bi * (m * n) + mi * n + ni] += (bufa[(bi % a_batch)
-                        * stride1.strides()[0]
+                    bufc[bi * (m * n) + mi * n + ni] += (bufa[bi * stride1.strides()[0]
                         + mi * stride1.strides()[1]
                         + ki * stride1.strides()[2]]
-                        * bufb[bi * stride2.strides()[0]
+                        * bufb[(bi % b_batch) * stride2.strides()[0]
                             + ki * stride2.strides()[1]
                             + ni * stride2.strides()[2]])
                         .to_f32();

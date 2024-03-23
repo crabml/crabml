@@ -500,10 +500,18 @@ impl Tensor for WgpuTensor {
     }
 
     fn mul_inplace(self, rhs: &Self) -> Result<Self> {
-        let meta_buf = self.device.make_storage_buffer(
-            "meta",
-            bytemuck::cast_slice(&[1u32, self.strider.len() as u32]),
-        );
+        let (n_batch, m) = if self.strider.dims() == 2 {
+            (
+                self.strider.shape()[0] as u32,
+                self.strider.shape()[1] as u32,
+            )
+        } else {
+            (1, self.strider.shape()[0] as u32)
+        };
+
+        let meta_buf = self
+            .device
+            .make_storage_buffer("meta", bytemuck::cast_slice(&[n_batch, m as u32]));
         let entries = &[
             wgpu::BindGroupEntry {
                 binding: 0,
@@ -520,17 +528,24 @@ impl Tensor for WgpuTensor {
         ];
         let encoder = self
             .device
-            .encode_pipeline_commnad("mul_inplace", entries, (1, 1, 1));
+            .encode_pipeline_commnad("mul_inplace", entries, (n_batch, 1, 1));
         self.device.queue.submit(Some(encoder.finish()));
         Ok(self)
     }
 
     fn add_inplace(self, rhs: &Self) -> Result<Self> {
-        assert!(self.strider().len() % 32 == 0);
-        let meta_buf = self.device.make_storage_buffer(
-            "meta",
-            bytemuck::cast_slice(&[1u32, self.strider.len() as u32]),
-        );
+        let (n_batch, m) = if self.strider.dims() == 2 {
+            (
+                self.strider.shape()[0] as u32,
+                self.strider.shape()[1] as u32,
+            )
+        } else {
+            (1, self.strider.shape()[0] as u32)
+        };
+
+        let meta_buf = self
+            .device
+            .make_storage_buffer("meta", bytemuck::cast_slice(&[n_batch, m as u32]));
         let entries = &[
             wgpu::BindGroupEntry {
                 binding: 0,
@@ -547,7 +562,7 @@ impl Tensor for WgpuTensor {
         ];
         let encoder = self
             .device
-            .encode_pipeline_commnad("add_inplace", entries, (1, 1, 1));
+            .encode_pipeline_commnad("add_inplace", entries, (n_batch, 1, 1));
         self.device.queue.submit(Some(encoder.finish()));
         Ok(self)
     }

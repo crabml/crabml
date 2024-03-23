@@ -335,8 +335,20 @@ impl Tensor for WgpuTensor {
     }
 
     fn dup(&self) -> Result<Self> {
-        let mut new_tensor = Self::alloc(self.strider.shape(), self.dtype, self.device.clone())?;
-        new_tensor.copy_rows_from(self, &[0]).unwrap();
+        let new_tensor = Self::alloc(self.strider.shape(), self.dtype, self.device.clone())?;
+
+        let mut encoder = self
+            .device
+            .inner
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        encoder.copy_buffer_to_buffer(
+            &self.buf,
+            0 as u64,
+            &new_tensor.buf,
+            0 as u64,
+            self.buf.size(),
+        );
+        self.device.queue.submit(Some(encoder.finish()));
         Ok(new_tensor)
     }
 
@@ -1002,6 +1014,24 @@ mod tests {
             &[
                 0.7310586, 1.761594, 2.8577225, 3.928055, 4.9665356, 5.9851646
             ][..],
+            epsilon = 1e-5
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_dup() -> Result<()> {
+        let v1 = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let t1 = WgpuTensor::new(&v1, &[2, 3], DEVICE.clone())?;
+        let t2 = t1.dup()?;
+
+        let mut dst1 = vec![0.0; 6];
+        t2.export(&mut dst1)?;
+
+        assert_relative_eq!(
+            &dst1[..],
+            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0][..],
             epsilon = 1e-5
         );
 

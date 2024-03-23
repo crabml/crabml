@@ -92,6 +92,7 @@ pub fn gemv<'a>(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn gemv_dense_3d_2d(
     _device: &CpuTensorDeviceRef,
     bufa: &CpuTensorBuf,

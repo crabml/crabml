@@ -7,11 +7,11 @@ use crate::backends::cpu::buf::buf_f16::vec_fma_f16_f16;
 use crate::backends::cpu::buf::buf_f32::vec_dot_f32_f32_strided;
 use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::backends::cpu::CpuTensorDeviceRef;
-use crate::error::ErrorKind;
-use crate::error::Result;
 use crate::tensor::TensorStrider;
 
-// (b, m, k) @ (b, k, ) -> (b, m, )
+// (m, k) @ (k, ) -> (m, ) => gemv_2d_1d
+// (s, m, k) @ (s, k, ) -> (s, m, )  => bmm_3d_2d
+// (b, s, m, k) @ (b, s, k) -> (b, s, m) => bmm_4d_3d
 // a is allowed to be not contiguous, but not quantized
 pub fn batch_matmul_vec<'a>(
     device: &CpuTensorDeviceRef<'a>,
@@ -20,12 +20,60 @@ pub fn batch_matmul_vec<'a>(
     c: &mut CpuTensorBuf<'a>,
     strider1: &TensorStrider,
     strider2: &TensorStrider,
-) -> Result<()> {
-    assert!(strider1.shape().len() == 3);
-    assert!(strider2.shape().len() == 2);
-    // assert!(strider1.shape()[0] == strider2.shape()[0]);
-    assert!(strider1.shape()[2] == strider2.shape()[1]);
+) {
+    assert!(strider1.dims() == 3 || strider1.dims() == 2);
+    assert!(strider2.dims() == strider1.dims() - 1);
     assert!(strider2.is_contiguous());
+
+    match strider1.dims() {
+        2 => gemv_2d_1d(device, a, b, c, strider1, strider2),
+        3 => bmm_3d_2d(device, a, b, c, strider1, strider2),
+        _ => unreachable!(),
+    }
+}
+
+fn gemv_2d_1d<'a>(
+    device: &CpuTensorDeviceRef<'a>,
+    bufa: &CpuTensorBuf<'a>,
+    bufb: &CpuTensorBuf<'a>,
+    bufc: &mut CpuTensorBuf<'a>,
+    strider1: &TensorStrider,
+    strider2: &TensorStrider,
+) {
+    assert!(strider1.shape()[1] == strider2.shape()[0]);
+    assert!(bufc.len() % 4 == 0);
+
+    let metrics = device.metrics().clone();
+
+    let bufc = bufc.as_f32_mut();
+    let bufb = {
+        let _t = metrics.matmul_quantize_walltime.track();
+        &bufb.quantize(bufa.vec_dot_rhs_dtype()).unwrap()
+    };
+
+    let _t = metrics.matmul_vec_dot_walltime.track();
+
+    let k = bufb.len();
+    bufc.par_chunks_exact_mut(4)
+        .enumerate()
+        .for_each(|(cn, cp)| {
+            let mi = cn * 4;
+            cp[0] = bufa.vec_dot(mi * k, bufb, 0, k);
+            cp[1] = bufa.vec_dot((mi + 1) * k, bufb, 0, k);
+            cp[2] = bufa.vec_dot((mi + 2) * k, bufb, 0, k);
+            cp[3] = bufa.vec_dot((mi + 3) * k, bufb, 0, k);
+        });
+}
+
+fn bmm_3d_2d<'a>(
+    device: &CpuTensorDeviceRef<'a>,
+    a: &CpuTensorBuf<'a>,
+    b: &CpuTensorBuf<'a>,
+    c: &mut CpuTensorBuf<'a>,
+    strider1: &TensorStrider,
+    strider2: &TensorStrider,
+) {
+    assert!(strider1.shape()[2] == strider2.shape()[1]);
 
     let a_batch = strider1.shape()[0];
     let b_batch = strider2.shape()[0];
@@ -39,7 +87,7 @@ pub fn batch_matmul_vec<'a>(
         CpuTensorBuf::F32(bufa) => {
             let bufc = c.as_f32_mut();
             let bufb = b.as_f32_ref();
-            batch_matmul_vec_f32(
+            bmm_3d_2d_f32(
                 device, bufa, bufb, bufc, a_batch, b_batch, m, k, bi_stride, mi_stride, ki_stride,
             );
         }
@@ -47,7 +95,7 @@ pub fn batch_matmul_vec<'a>(
             let bufb = b.as_f32_ref();
             let bufb = quantize_f32_f16(bufb);
             let mut tmpc = vec![f16::ZERO; b_batch * m]; // TODO: avoid allocation
-            batch_matmul_vec_f16(
+            bmm_3d_2d_f16(
                 device, bufa, &bufb, &mut tmpc, a_batch, b_batch, m, k, bi_stride, mi_stride,
                 ki_stride,
             );
@@ -58,17 +106,16 @@ pub fn batch_matmul_vec<'a>(
                     *c = tmp.to_f32();
                 });
         }
-        _ => return Err((ErrorKind::TensorError, "a must be f32 or 16").into()),
+        _ => unreachable!(),
     };
-    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
-fn batch_matmul_vec_f32(
+fn bmm_3d_2d_f32(
     _device: &CpuTensorDeviceRef,
-    abuf: &[f32],     // Batch x M x K
-    bbuf: &[f32],     // Batch x K
-    cbuf: &mut [f32], // Batch x M
+    abuf: &[f32],     // a_batch x M x K
+    bbuf: &[f32],     // b_batch x K
+    cbuf: &mut [f32], // b_batch x M
     a_batch: usize,
     _b_batch: usize,
     m: usize,
@@ -91,13 +138,13 @@ fn batch_matmul_vec_f32(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn batch_matmul_vec_f16(
+fn bmm_3d_2d_f16(
     device: &CpuTensorDeviceRef,
     abuf: &[f16],     // Batch x M x K
     bbuf: &[f16],     // Batch x K
     cbuf: &mut [f16], // Batch x M
     a_batch: usize,
-    b_batch: usize,
+    b_batch: usize, // b_batch is multiple of a_batch
     m: usize,
     k: usize,
     a_stride0: usize,

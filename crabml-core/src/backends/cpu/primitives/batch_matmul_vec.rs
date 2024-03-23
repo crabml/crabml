@@ -101,6 +101,7 @@ fn batch_matmul_naive_f16(
     }
 }
 
+#[allow(dead_code)]
 #[allow(clippy::too_many_arguments)]
 fn gemv_strided_3d_2d_f32(
     _device: &CpuTensorDeviceRef,
@@ -128,6 +129,7 @@ fn gemv_strided_3d_2d_f32(
     });
 }
 
+#[allow(dead_code)]
 #[allow(clippy::too_many_arguments)]
 fn gemv_strided_3d_2d_f16(
     device: &CpuTensorDeviceRef,

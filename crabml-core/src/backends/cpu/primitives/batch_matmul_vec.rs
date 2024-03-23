@@ -70,7 +70,7 @@ pub fn gemv<'a>(
         CpuTensorBuf::F32(bufa) => {
             let bufc = bufc.as_f32_mut();
             let bufb = bufb.as_f32_ref();
-            gemv_3d_2d_f32(
+            gemv_strided_3d_2d_f32(
                 device, bufa, bufb, bufc, a_batch, b_batch, m, k, bi_stride, mi_stride, ki_stride,
             );
         }
@@ -78,7 +78,7 @@ pub fn gemv<'a>(
             let bufb = bufb.as_f32_ref();
             let bufc = bufc.as_f32_mut();
             let bufb = quantize_f32_f16(bufb);
-            gemv_3d_2d_f16(
+            gemv_strided_3d_2d_f16(
                 device, bufa, &bufb, bufc, a_batch, b_batch, m, k, bi_stride, mi_stride, ki_stride,
             );
         }
@@ -127,7 +127,7 @@ fn gemv_dense_3d_2d(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn gemv_3d_2d_f32(
+fn gemv_strided_3d_2d_f32(
     _device: &CpuTensorDeviceRef,
     abuf: &[f32],     // a_batch x M x K
     bbuf: &[f32],     // b_batch x K
@@ -154,7 +154,7 @@ fn gemv_3d_2d_f32(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn gemv_3d_2d_f16(
+fn gemv_strided_3d_2d_f16(
     device: &CpuTensorDeviceRef,
     abuf: &[f16],     // Batch x M x K
     bbuf: &[f16],     // Batch x K

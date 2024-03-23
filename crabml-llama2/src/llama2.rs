@@ -349,13 +349,15 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         let x = {
             let q = q.reshape(&[n_heads, head_dim])?;
 
-            // - key_cache: [n_kv_head, seq, head_size]
-            // - q: [n_head, head_size]
-            // - attn_score = batch_matmul(key_cache, q) => [n_head, seq]
-            // - softmax(attn_score, axis=1) => [n_head, seq]
+            // - q: [n_batch, n_head, head_size]
+            // - q = q.transpose(1, 0, 2).contiguous => [n_head, n_batch, head_size]
+            // - key_cache: [n_kv_head, seq, head_size].transpose(0, 2, 1) => [n_kv_head, head_size, seq]
+            // - attn_scores = batch_matmul(q, key_cache) => [n_head, n_batch, seq]
+            // - attn_scores = softmax(attn_score, axis=2) => [n_head, n_batch, seq]
             // - val_cache: [n_kv_head, seq, head_size]
-            // - val_cache = val_cache.transpose(0, 2, 1) => [n_kv_head, head_size, seq]
-            // - out = batch_matmul(val_cache, atten_scores) => [n_head, head_size]
+            // - out = batch_matmul(atten_scores, val_cache) => [n_head, n_batch, head_size]
+            // - out = out.transpose(1, 0, 2).contiguous => [n_batch, n_head, head_size]
+            // - out = out.reshape(n_batch, embed_dim)
 
             // get attention scores
             let k_cache = self.key_cache[l].take().unwrap();

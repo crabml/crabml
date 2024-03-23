@@ -341,7 +341,7 @@ impl Tensor for WgpuTensor {
     }
 
     fn rope_inplace(self, mode: RopeMode, pos: usize, rope_dims: usize) -> Result<Self> {
-        assert!(self.shape().len() == 2);
+        assert!(self.shape().len() == 3);
         assert!(self.is_contiguous());
         assert!(mode == RopeMode::Llama, "TODO: only support Llama mode yet");
 
@@ -583,22 +583,22 @@ impl Tensor for WgpuTensor {
         Ok(self)
     }
 
-    fn matmul_vec(&self, y: &Self) -> Result<Self> {
+    // (m, k) @ (b, k) => (b, m)
+    fn matmul_vec(&self, rhs: &Self) -> Result<Self> {
         assert!(self.shape().len() == 2);
-        assert!(self.shape()[1] == y.shape()[0]);
-        assert!(y.shape().len() == 1);
+        assert!(self.shape().last() == rhs.shape().last());
         assert!(self.is_contiguous());
-        assert!(y.is_contiguous());
+        assert!(rhs.is_contiguous());
 
         let output = Self::alloc(
-            &[self.strider.shape()[0]],
+            &[rhs.strider.shape()[0], self.strider.shape()[0]],
             GGMLType::F32,
             self.device.clone(),
         )?;
         let meta = MatmulMeta {
+            b: rhs.strider.shape()[0] as u32,
             m: self.strider.shape()[0] as u32,
             k: self.strider.shape()[1] as u32,
-            n: 1,
             _padding: 0,
         };
 
@@ -612,7 +612,7 @@ impl Tensor for WgpuTensor {
             },
             wgpu::BindGroupEntry {
                 binding: 1,
-                resource: y.buf.as_entire_binding(),
+                resource: rhs.buf.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
                 binding: 2,
@@ -623,9 +623,9 @@ impl Tensor for WgpuTensor {
                 resource: output.buf.as_entire_binding(),
             },
         ];
-        let encoder = self
-            .device
-            .encode_pipeline_commnad("sgemv", entries, (meta.m / 32, 1, 1));
+        let encoder =
+            self.device
+                .encode_pipeline_commnad("sgemv", entries, (meta.b * meta.m / 32, 1, 1));
         self.device.queue.submit(Some(encoder.finish()));
 
         Ok(output)

@@ -11,9 +11,9 @@ pub struct RmsNormMeta {
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C, align(16))]
 pub struct MatmulMeta {
+    pub b: u32,
     pub m: u32,
     pub k: u32,
-    pub n: u32,
     pub _padding: u32,
 }
 

@@ -13,7 +13,7 @@ use crate::tensor::TensorStrider;
 // (s, m, k) @ (s, k, ) -> (s, m, )  => bmm_3d_2d
 // (b, s, m, k) @ (b, s, k) -> (b, s, m) => bmm_4d_3d
 // a is allowed to be not contiguous, but not quantized
-pub fn batch_matmul_vec<'a>(
+pub fn gemv<'a>(
     device: &CpuTensorDeviceRef<'a>,
     a: &CpuTensorBuf<'a>,
     b: &CpuTensorBuf<'a>,
@@ -28,64 +28,51 @@ pub fn batch_matmul_vec<'a>(
     match strider1.dims() {
         2 => {
             assert!(strider1.is_contiguous());
+            assert!(strider1.shape()[1] == strider2.shape()[0]);
+
             let (m, k) = (strider1.shape()[0], strider1.shape()[1]);
             let (mi_stride, ki_stride) = (strider1.strides()[0], strider1.strides()[1]);
             gemv_3d_2d(device, a, b, c, 1, 1, m, k, 0, mi_stride, ki_stride);
         }
-        3 => bmm_3d_2d(device, a, b, c, strider1, strider2),
+
+        3 => {
+            assert!(strider1.shape()[2] == strider2.shape()[1]);
+
+            let (a_batch, b_batch) = (strider1.shape()[0], strider2.shape()[0]);
+            let (m, k) = (strider1.shape()[1], strider1.shape()[2]);
+            let (bi_stride, mi_stride, ki_stride) = (
+                strider1.strides()[0],
+                strider1.strides()[1],
+                strider1.strides()[2],
+            );
+            match a {
+                CpuTensorBuf::F32(bufa) => {
+                    let bufc = c.as_f32_mut();
+                    let bufb = b.as_f32_ref();
+                    gemv_3d_2d_f32(
+                        device, bufa, bufb, bufc, a_batch, b_batch, m, k, bi_stride, mi_stride,
+                        ki_stride,
+                    );
+                }
+                CpuTensorBuf::F16(bufa) => {
+                    let bufb = b.as_f32_ref();
+                    let bufc = c.as_f32_mut();
+                    let bufb = quantize_f32_f16(bufb);
+                    gemv_3d_2d_f16(
+                        device, bufa, &bufb, bufc, a_batch, b_batch, m, k, bi_stride, mi_stride,
+                        ki_stride,
+                    );
+                }
+                bufa => {
+                    assert!(strider1.is_contiguous());
+                    gemv_3d_2d(
+                        device, bufa, b, c, a_batch, b_batch, m, k, bi_stride, mi_stride, ki_stride,
+                    );
+                }
+            }
+        }
         _ => unreachable!(),
     }
-}
-
-fn bmm_3d_2d<'a>(
-    device: &CpuTensorDeviceRef<'a>,
-    a: &CpuTensorBuf<'a>,
-    b: &CpuTensorBuf<'a>,
-    c: &mut CpuTensorBuf<'a>,
-    strider1: &TensorStrider,
-    strider2: &TensorStrider,
-) {
-    assert!(strider1.shape()[2] == strider2.shape()[1]);
-
-    let a_batch = strider1.shape()[0];
-    let b_batch = strider2.shape()[0];
-    let m = strider1.shape()[1];
-    let k = strider1.shape()[2];
-    let bi_stride = strider1.strides()[0];
-    let mi_stride = strider1.strides()[1];
-    let ki_stride = strider1.strides()[2];
-
-    // specialize for f32 and f16, they are used in kv cache, which is allowed to be not contiguous
-    match a {
-        CpuTensorBuf::F32(bufa) => {
-            let bufc = c.as_f32_mut();
-            let bufb = b.as_f32_ref();
-            bmm_3d_2d_f32(
-                device, bufa, bufb, bufc, a_batch, b_batch, m, k, bi_stride, mi_stride, ki_stride,
-            );
-        }
-        CpuTensorBuf::F16(bufa) => {
-            let bufb = b.as_f32_ref();
-            let bufb = quantize_f32_f16(bufb);
-            let mut tmpc = vec![f16::ZERO; b_batch * m]; // TODO: avoid allocation
-            bmm_3d_2d_f16(
-                device, bufa, &bufb, &mut tmpc, a_batch, b_batch, m, k, bi_stride, mi_stride,
-                ki_stride,
-            );
-            c.as_f32_mut()
-                .iter_mut()
-                .zip(tmpc.iter())
-                .for_each(|(c, tmp)| {
-                    *c = tmp.to_f32();
-                });
-        }
-        bufa => {
-            assert!(strider1.is_contiguous());
-            gemv_3d_2d(
-                device, bufa, b, c, a_batch, b_batch, m, k, bi_stride, mi_stride, ki_stride,
-            );
-        }
-    };
 }
 
 fn gemv_3d_2d(
@@ -120,7 +107,7 @@ fn gemv_3d_2d(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn bmm_3d_2d_f32(
+fn gemv_3d_2d_f32(
     _device: &CpuTensorDeviceRef,
     abuf: &[f32],     // a_batch x M x K
     bbuf: &[f32],     // b_batch x K
@@ -147,11 +134,11 @@ fn bmm_3d_2d_f32(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn bmm_3d_2d_f16(
+fn gemv_3d_2d_f16(
     device: &CpuTensorDeviceRef,
     abuf: &[f16],     // Batch x M x K
     bbuf: &[f16],     // Batch x K
-    cbuf: &mut [f16], // Batch x M
+    cbuf: &mut [f32], // Batch x M
     a_batch: usize,
     b_batch: usize, // b_batch is multiple of a_batch
     m: usize,
@@ -160,9 +147,11 @@ fn bmm_3d_2d_f16(
     a_stride1: usize,
     a_stride2: usize,
 ) {
+    let mut tmpc = vec![f16::ZERO; b_batch * m]; // TODO: avoid allocation
+
     if a_stride2 == 1 {
         let _t = device.metrics.batch_matmul_rowwise_walltime.track();
-        cbuf.par_iter_mut().enumerate().for_each(|(i, bufcp)| {
+        tmpc.par_iter_mut().enumerate().for_each(|(i, bufcp)| {
             let mi = i % m;
             let bi = (i - mi) / m;
             *bufcp = f16::from_f32(vec_dot_f16_f16(
@@ -180,11 +169,15 @@ fn bmm_3d_2d_f16(
                 vec_fma_f16_f16(
                     abuf,
                     bbuf[bi * k + ki],
-                    &mut cbuf[bi * m..],
+                    &mut tmpc[bi * m..],
                     (bi % a_batch) * a_stride0 + ki * a_stride2,
                     m,
                 );
             }
         }
     }
+
+    cbuf.iter_mut().zip(tmpc.iter()).for_each(|(c, tmp)| {
+        *c = tmp.to_f32();
+    });
 }

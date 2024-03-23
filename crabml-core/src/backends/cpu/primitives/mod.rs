@@ -11,7 +11,7 @@ mod softmax;
 pub use arithmetic::add_inplace;
 pub use arithmetic::div_inplace;
 pub use arithmetic::mul_inplace;
-pub use batch_matmul_vec::batch_matmul_vec;
+pub use batch_matmul_vec::gemv;
 pub use concatenate::concatenate_inplace;
 pub use contiguous::contiguous;
 pub use gelu::gelu_inplace;

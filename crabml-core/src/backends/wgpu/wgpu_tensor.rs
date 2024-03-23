@@ -263,6 +263,7 @@ impl Tensor for WgpuTensor {
         if !self.is_contiguous() {
             return Err((ErrorKind::TensorError, "not contiguous").into());
         }
+        assert!(src.strider.dims() == 2);
 
         let cols = src.shape().last().unwrap();
         let f32_bytes = std::mem::size_of::<f32>();

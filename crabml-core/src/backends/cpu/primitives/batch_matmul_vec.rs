@@ -26,43 +26,15 @@ pub fn batch_matmul_vec<'a>(
     assert!(strider2.is_contiguous());
 
     match strider1.dims() {
-        2 => gemv_2d_1d(device, a, b, c, strider1, strider2),
+        2 => {
+            assert!(strider1.is_contiguous());
+            let (m, k) = (strider1.shape()[0], strider1.shape()[1]);
+            let (mi_stride, ki_stride) = (strider1.strides()[0], strider1.strides()[1]);
+            gemv_3d_2d(device, a, b, c, 1, 1, m, k, 0, mi_stride, ki_stride);
+        }
         3 => bmm_3d_2d(device, a, b, c, strider1, strider2),
         _ => unreachable!(),
     }
-}
-
-fn gemv_2d_1d<'a>(
-    device: &CpuTensorDeviceRef<'a>,
-    bufa: &CpuTensorBuf<'a>,
-    bufb: &CpuTensorBuf<'a>,
-    bufc: &mut CpuTensorBuf<'a>,
-    strider1: &TensorStrider,
-    strider2: &TensorStrider,
-) {
-    assert!(strider1.shape()[1] == strider2.shape()[0]);
-    assert!(bufc.len() % 4 == 0);
-
-    let metrics = device.metrics().clone();
-
-    let bufc = bufc.as_f32_mut();
-    let bufb = {
-        let _t = metrics.matmul_quantize_walltime.track();
-        &bufb.quantize(bufa.vec_dot_rhs_dtype()).unwrap()
-    };
-
-    let _t = metrics.matmul_vec_dot_walltime.track();
-
-    let k = bufb.len();
-    bufc.par_chunks_exact_mut(4)
-        .enumerate()
-        .for_each(|(cn, cp)| {
-            let mi = cn * 4;
-            cp[0] = bufa.vec_dot(mi * k, bufb, 0, k);
-            cp[1] = bufa.vec_dot((mi + 1) * k, bufb, 0, k);
-            cp[2] = bufa.vec_dot((mi + 2) * k, bufb, 0, k);
-            cp[3] = bufa.vec_dot((mi + 3) * k, bufb, 0, k);
-        });
 }
 
 fn bmm_3d_2d<'a>(

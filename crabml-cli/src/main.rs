@@ -163,7 +163,7 @@ fn main() -> Result<()> {
 
     match args.device {
         DeviceType::Cpu => {
-            let mut runner = Llama2Runner::new(&model_cpu, metrics.clone(), conf.seq_len, true)?;
+            let mut runner = Llama2Runner::new(&model_cpu, metrics.clone(), conf.seq_len, false)?;
             println!("loaded model: {}ms", start_time.elapsed().as_millis());
             run(&args, &mut runner, &mut sampler, &metrics)?;
         }

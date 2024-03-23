@@ -14,7 +14,7 @@ use crate::tensor::TensorStrider;
 ///
 /// A is expected to be contiguous, B is allowed to be strided.
 pub fn batch_matmul<'a>(
-    device: &CpuTensorDeviceRef<'a>,
+    _device: &CpuTensorDeviceRef<'a>,
     bufa: &CpuTensorBuf<'a>,
     bufb: &CpuTensorBuf<'a>,
     bufc: &mut CpuTensorBuf<'a>,
@@ -22,6 +22,7 @@ pub fn batch_matmul<'a>(
     strider2: &TensorStrider,
 ) {
     assert!(strider1.dims() == 3);
+    assert!(strider2.dims() == 3 || strider2.dims() == 2);
     assert!(strider1.is_contiguous());
 
     let strider2 = if strider2.dims() == 3 {
@@ -32,14 +33,18 @@ pub fn batch_matmul<'a>(
             .unwrap()
     };
 
-    match bufa {
-        CpuTensorBuf::F32(bufa) => batch_matmul_naive_f32(
-            bufa,
-            bufb.as_f32_ref(),
+    match bufb {
+        CpuTensorBuf::F32(bufb) => batch_matmul_naive_f32(
+            bufa.as_f32_ref(),
+            bufb,
             bufc.as_f32_mut(),
             strider1,
             &strider2,
         ),
+        CpuTensorBuf::F16(bufb) => {
+            let bufa = quantize_f32_f16(bufa.as_f32_ref());
+            batch_matmul_naive_f16(&bufa, bufb, bufc.as_f32_mut(), strider1, &strider2)
+        }
         _ => unreachable!(),
     }
 }
@@ -63,6 +68,33 @@ fn batch_matmul_naive_f32(
                         * bufb[bi * stride2.strides()[0]
                             + ki * stride2.strides()[1]
                             + ni * stride2.strides()[2]];
+                }
+            }
+        }
+    }
+}
+
+fn batch_matmul_naive_f16(
+    bufa: &[f16],     // b x m x k
+    bufb: &[f16],     // b x k x n
+    bufc: &mut [f32], // b x m x n
+    stride1: &TensorStrider,
+    stride2: &TensorStrider,
+) {
+    let (a_batch, b_batch) = (stride1.shape()[0], stride2.shape()[0]);
+    let (m, k, n) = (stride1.shape()[1], stride1.shape()[2], stride2.shape()[2]);
+    for bi in 0..b_batch {
+        for mi in 0..m {
+            for ni in 0..n {
+                for ki in 0..k {
+                    bufc[bi * (m * n) + mi * n + ni] += (bufa[(bi % a_batch)
+                        * stride1.strides()[0]
+                        + mi * stride1.strides()[1]
+                        + ki * stride1.strides()[2]]
+                        * bufb[bi * stride2.strides()[0]
+                            + ki * stride2.strides()[1]
+                            + ni * stride2.strides()[2]])
+                        .to_f32();
                 }
             }
         }

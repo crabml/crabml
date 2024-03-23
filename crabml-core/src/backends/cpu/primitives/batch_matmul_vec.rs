@@ -89,13 +89,13 @@ fn batch_matmul_naive_f16(
         for mi in 0..m {
             for ni in 0..n {
                 for ki in 0..k {
-                    bufc[bi * (m * n) + mi * n + ni] += (bufa[bi * stride1.strides()[0]
+                    let a_val = bufa[bi * stride1.strides()[0]
                         + mi * stride1.strides()[1]
-                        + ki * stride1.strides()[2]]
-                        * bufb[(bi % b_batch) * stride2.strides()[0]
-                            + ki * stride2.strides()[1]
-                            + ni * stride2.strides()[2]])
-                        .to_f32();
+                        + ki * stride1.strides()[2]];
+                    let b_val = bufb[(bi % b_batch) * stride2.strides()[0]
+                        + ki * stride2.strides()[1]
+                        + ni * stride2.strides()[2]];
+                    bufc[bi * (m * n) + mi * n + ni] += (a_val * b_val).to_f32();
                 }
             }
         }

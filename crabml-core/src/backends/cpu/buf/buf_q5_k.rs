@@ -132,7 +132,7 @@ mod impl_fallback {
             let mut block_scales = [0_u8; 12];
 
             for (ib, (data_block, l)) in chunk.chunks(32).zip(l.chunks_mut(32)).enumerate() {
-                scales[ib] = make_qkx1_quants(32, 31, data_block, l, &mut mins[ib], 5);
+                scales[ib] = make_qkx1_quants(32, 31, data_block, l, &mut mins[ib], 9);
                 let scale = scales[ib];
                 if scale > max_scale {
                     max_scale = scale;

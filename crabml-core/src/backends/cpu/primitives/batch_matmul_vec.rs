@@ -21,14 +21,14 @@ pub fn gemv<'a>(
     strider1: &TensorStrider,
     strider2: &TensorStrider,
 ) {
-    assert!(strider1.dims() == 3 || strider1.dims() == 2);
+    assert!(strider1.dims() == 4 || strider1.dims() == 3 || strider1.dims() == 2);
     assert!(strider2.dims() == strider1.dims() - 1);
     assert!(strider2.is_contiguous());
 
+    // a dense 2dx1d matmul is a special case of 3dx2d matmul
     if strider1.dims() == 2 {
         assert!(strider1.is_contiguous());
         assert!(strider1.shape()[1] == strider2.shape()[0]);
-
         let (m, k) = (strider1.shape()[0], strider1.shape()[1]);
         let (mi_stride, ki_stride) = (strider1.strides()[0], strider1.strides()[1]);
         gemv_dense_3d_2d(
@@ -37,34 +37,32 @@ pub fn gemv<'a>(
         return;
     }
 
-    let (a_batch, b_batch, m, k, bi_stride, mi_stride, ki_stride) = if strider1.dims() == 3 {
-        assert!(strider1.shape()[2] == strider2.shape()[1]);
-        let (a_batch, b_batch) = (strider1.shape()[0], strider2.shape()[0]);
-        let (m, k) = (strider1.shape()[1], strider1.shape()[2]);
-        let (bi_stride, mi_stride, ki_stride) = (
-            strider1.strides()[0],
-            strider1.strides()[1],
-            strider1.strides()[2],
-        );
-        (a_batch, b_batch, m, k, bi_stride, mi_stride, ki_stride)
+    // 3d and 4d matmul could be handled by the same function
+    let (a_batch, b_batch) = if strider1.dims() == 3 {
+        // (s, m, k) @ (s, k) -> (s, m)
+        (strider1.shape()[0], strider2.shape()[0])
     } else if strider1.dims() == 4 {
-        // (b, s, m, k) @ (b, s, k) -> (b, s, m) => bmm_4d_3d
+        // (b, s, m, k) @ (b, s, k) -> (b, s, m)
         // the b and s dimensions are considered as contiguous, and the m and k dimensions maybe not.
         // so the we can merge the b and s dimensions into a single batch dimension.
-        assert!(strider1.shape()[3] == strider2.shape()[2]);
-        let (a_batch, b_batch) = (
+        (
             strider1.shape()[0] * strider1.shape()[1],
             strider2.shape()[0] * strider2.shape()[1],
-        );
-        let (m, k) = (strider1.shape()[2], strider1.shape()[3]);
-        let (bi_stride, mi_stride, ki_stride) = (
-            strider1.strides()[1],
-            strider1.strides()[2],
-            strider1.strides()[3],
-        );
-        (a_batch, b_batch, m, k, bi_stride, mi_stride, ki_stride)
+        )
     } else {
         unreachable!();
+    };
+
+    // m, k are always the last two dimensions of strider1
+    let (m, k) = {
+        let shape_tail = &strider1.shape()[strider1.dims() - 2..strider1.dims()];
+        (shape_tail[0], shape_tail[1])
+    };
+
+    // strides for the last three dimensions
+    let (bi_stride, mi_stride, ki_stride) = {
+        let strides_tail = &strider1.strides()[strider1.dims() - 3..strider1.dims()];
+        (strides_tail[0], strides_tail[1], strides_tail[2])
     };
 
     match bufa {

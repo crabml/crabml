@@ -51,7 +51,7 @@ where
     F: Fn(&mut f32, f32),
 {
     assert!(buf1.len() % buf2.len() == 0);
-    assert!(strider1.shape().last() == strider2.shape().last());
+    assert!(strider1.shape().last() == strider2.shape().last() || buf2.len() == 1);
     assert!(strider1.is_contiguous());
     assert!(strider2.is_contiguous());
 

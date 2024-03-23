@@ -17,16 +17,19 @@ pub fn rope_inplace(
     assert!(strider1.is_contiguous());
     assert!(strider1.dims() == 2 || strider1.dims() == 3);
 
-    let head_dim = strider1.shape()[1];
     let buf = match buf1 {
         CpuTensorBuf::F32(Cow::Owned(buf)) => buf,
         _ => panic!("only support f32 yet"),
     };
 
-    let (n_batch, bi_stride) = if strider1.dims() == 2 {
-        (1, strider1.len())
+    let (n_batch, bi_stride, head_dim) = if strider1.dims() == 2 {
+        (1, strider1.len(), strider1.shape()[1])
     } else {
-        (strider1.shape()[0], strider1.strides()[0])
+        (
+            strider1.shape()[0],
+            strider1.strides()[0],
+            strider1.shape()[2],
+        )
     };
 
     for bi in 0..n_batch {
@@ -49,9 +52,9 @@ fn rope_llama(buf: &mut [f32], pos: usize, head_dim: usize, rope_dim: usize) {
             let cos_theta = theta.cos();
             let sin_theta = theta.sin();
             theta *= theta_scale;
+            let qp0 = chunk[i * 2];
+            let qp1 = chunk[i * 2 + 1];
             unsafe {
-                let qp0 = *chunk.get_unchecked(i * 2);
-                let qp1 = *chunk.get_unchecked(i * 2 + 1);
                 *chunk.get_unchecked_mut(i * 2) = qp0 * cos_theta - qp1 * sin_theta;
                 *chunk.get_unchecked_mut(i * 2 + 1) = qp0 * sin_theta + qp1 * cos_theta;
             }

@@ -660,16 +660,16 @@ impl Tensor for WgpuTensor {
 
         // (b, m, k) @ (b, k, n) => (b, m, n)
         let output = Self::alloc(
-            &[self.shape()[0], self.shape()[1], y.shape()[2]],
+            &[y.shape()[0], self.shape()[1], y.shape()[2]],
             GGMLType::F32,
             self.device.clone(),
         )?;
 
         let meta = BatchMatmulMeta {
-            b: self.strider.shape()[0] as u32,
-            m: self.strider.shape()[1] as u32,
-            k: self.strider.shape()[2] as u32,
-            n: y.strider.shape()[2] as u32,
+            b: y.shape()[0] as u32,
+            m: self.shape()[1] as u32,
+            k: self.shape()[2] as u32,
+            n: y.shape()[2] as u32,
             strides_b: [
                 self.strider.strides()[0] as u32,
                 self.strider.strides()[1] as u32,

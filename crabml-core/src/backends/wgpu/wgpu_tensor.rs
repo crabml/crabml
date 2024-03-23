@@ -643,7 +643,7 @@ impl Tensor for WgpuTensor {
         Ok(output)
     }
 
-    fn batch_matmul_vec(&self, y: &Self) -> Result<Self> {
+    fn batch_matmul(&self, y: &Self) -> Result<Self> {
         assert!(self.shape().len() == 3);
         assert!(y.shape().len() == 2);
         assert!(self.shape()[0] == y.shape()[0]);
@@ -880,7 +880,7 @@ mod tests {
 
         let t1 = WgpuTensor::new(&v1, &[1, 3, 2], DEVICE.clone())?;
         let t2 = WgpuTensor::new(&[2.0; 2], &[1, 2], DEVICE.clone())?;
-        let t3 = t1.batch_matmul_vec(&t2)?;
+        let t3 = t1.batch_matmul(&t2)?;
         let mut dst1 = vec![0.0; 3]; // 1 x 3
         t3.export(&mut dst1)?;
         // assert_eq!(t1.strider().strides(), &[6, 2, 1]);
@@ -889,7 +889,7 @@ mod tests {
         let v1 = vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0];
         let t1 = WgpuTensor::new(&v1, &[2, 3, 2], DEVICE.clone())?;
         let t2 = WgpuTensor::new(&[2.0; 4], &[2, 2], DEVICE.clone())?;
-        let t3 = t1.batch_matmul_vec(&t2)?;
+        let t3 = t1.batch_matmul(&t2)?;
         let mut dst1 = vec![0.0; 6]; // 2 x 3
         t3.export(&mut dst1)?;
         assert_eq!(t1.strider().shape(), &[2, 3, 2]);

@@ -9,10 +9,12 @@ use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::backends::cpu::CpuTensorDeviceRef;
 use crate::tensor::TensorStrider;
 
-// (m, k) @ (k, ) -> (m, ) => gemv_2d_1d
-// (s, m, k) @ (s, k, ) -> (s, m, )  => bmm_3d_2d
-// (b, s, m, k) @ (b, s, k) -> (b, s, m) => bmm_4d_3d
-// a is allowed to be not contiguous, but not quantized
+/// (m, k) @ (k, ) -> (m, ) => gemv_2d_1d
+/// (s, m, k) @ (s, k, ) -> (s, m, )  => bmm_3d_2d
+/// (b, s, m, k) @ (b, s, k) -> (b, s, m) => bmm_4d_3d
+///
+/// the first dimension of A is expected to be always contiguous, and the last two dimensions
+/// of A is allowed to be column-wise contiguous.
 pub fn gemv<'a>(
     device: &CpuTensorDeviceRef<'a>,
     bufa: &CpuTensorBuf<'a>,
@@ -25,7 +27,7 @@ pub fn gemv<'a>(
     assert!(strider2.dims() == strider1.dims() - 1);
     assert!(strider2.is_contiguous());
 
-    // a dense 2dx1d matmul is a special case of 3dx2d matmul
+    // on the case of 2d x 1d matmul, we can expect it to be always contiguous.
     if strider1.dims() == 2 {
         assert!(strider1.is_contiguous());
         assert!(strider1.shape()[1] == strider2.shape()[0]);
@@ -58,7 +60,6 @@ pub fn gemv<'a>(
         let shape_tail = &strider1.shape()[strider1.dims() - 2..strider1.dims()];
         (shape_tail[0], shape_tail[1])
     };
-
     // strides for the last three dimensions
     let (bi_stride, mi_stride, ki_stride) = {
         let strides_tail = &strider1.strides()[strider1.dims() - 3..strider1.dims()];
@@ -82,6 +83,7 @@ pub fn gemv<'a>(
             );
         }
         bufa => {
+            // the quantized matmul is always dense
             assert!(strider1.is_contiguous());
             gemv_dense_3d_2d(
                 device, bufa, bufb, bufc, a_batch, b_batch, m, k, bi_stride, mi_stride, ki_stride,

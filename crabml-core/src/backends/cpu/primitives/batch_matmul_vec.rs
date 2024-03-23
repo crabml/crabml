@@ -15,7 +15,7 @@ use crate::tensor::TensorStrider;
 ///
 /// the first dimension of A is expected to be always contiguous, and the last two dimensions
 /// of A is allowed to be column-wise contiguous.
-pub fn gemv<'a>(
+pub fn batch_matmul<'a>(
     device: &CpuTensorDeviceRef<'a>,
     bufa: &CpuTensorBuf<'a>,
     bufb: &CpuTensorBuf<'a>,

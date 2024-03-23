@@ -354,7 +354,7 @@ impl<'a> Tensor for CpuTensor<'a> {
         let bufc = c.buf_mut();
         let strider1 = self.strider();
         let strider2 = b.strider();
-        primitives::gemv(&self.device(), bufa, bufb, bufc, strider1, strider2);
+        primitives::batch_matmul(&self.device(), bufa, bufb, bufc, strider1, strider2);
         Ok(c)
     }
 
@@ -368,7 +368,7 @@ impl<'a> Tensor for CpuTensor<'a> {
         let strider1 = self.strider();
         let strider2 = x.strider();
         let _t = self.device.metrics.matmul_walltime.track();
-        primitives::gemv(&self.device, bufa, bufb, bufc, strider1, strider2);
+        primitives::matmul_vec(&self.device, bufa, bufb, bufc, strider1, strider2);
         Ok(c)
     }
 

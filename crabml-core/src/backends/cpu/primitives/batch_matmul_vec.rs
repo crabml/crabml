@@ -83,6 +83,7 @@ fn bmm_3d_2d<'a>(
     let mi_stride = strider1.strides()[1];
     let ki_stride = strider1.strides()[2];
 
+    // specialize for f32 and f16, they are used in kv cache, which is allowed to be not contiguous
     match a {
         CpuTensorBuf::F32(bufa) => {
             let bufc = c.as_f32_mut();
@@ -106,7 +107,26 @@ fn bmm_3d_2d<'a>(
                     *c = tmp.to_f32();
                 });
         }
-        _ => unreachable!(),
+        bufa => {
+            assert!(strider1.is_contiguous());
+
+            let bufc = c.as_f32_mut();
+            let bufb = &b.quantize(bufa.vec_dot_rhs_dtype()).unwrap();
+            let k = bufb.len();
+            bufc.par_chunks_exact_mut(4)
+                .enumerate()
+                .for_each(|(cn, cp)| {
+                    // a: b x m x k
+                    // b: b x k
+                    // c: b x m
+                    let mi = cn * 4 % m;
+                    let bi = (cn * 4 - mi) / m;
+                    cp[0] = bufa.vec_dot(bi * bi_stride + mi * mi_stride, bufb, 0, k);
+                    cp[1] = bufa.vec_dot(bi * bi_stride + (mi + 1) * mi_stride, bufb, 0, k);
+                    cp[2] = bufa.vec_dot(bi * bi_stride + (mi + 2) * mi_stride, bufb, 0, k);
+                    cp[3] = bufa.vec_dot(bi * bi_stride + (mi + 3) * mi_stride, bufb, 0, k);
+                });
+        }
     };
 }
 

@@ -15,9 +15,9 @@ use crate::tensor::TensorStrider;
 // a is allowed to be not contiguous, but not quantized
 pub fn gemv<'a>(
     device: &CpuTensorDeviceRef<'a>,
-    a: &CpuTensorBuf<'a>,
-    b: &CpuTensorBuf<'a>,
-    c: &mut CpuTensorBuf<'a>,
+    bufa: &CpuTensorBuf<'a>,
+    bufb: &CpuTensorBuf<'a>,
+    bufc: &mut CpuTensorBuf<'a>,
     strider1: &TensorStrider,
     strider2: &TensorStrider,
 ) {
@@ -32,7 +32,9 @@ pub fn gemv<'a>(
 
             let (m, k) = (strider1.shape()[0], strider1.shape()[1]);
             let (mi_stride, ki_stride) = (strider1.strides()[0], strider1.strides()[1]);
-            gemv_dense_3d_2d(device, a, b, c, 1, 1, m, k, 0, mi_stride, ki_stride);
+            gemv_dense_3d_2d(
+                device, bufa, bufb, bufc, 1, 1, m, k, 0, mi_stride, ki_stride,
+            );
         }
 
         3 => {
@@ -45,18 +47,18 @@ pub fn gemv<'a>(
                 strider1.strides()[1],
                 strider1.strides()[2],
             );
-            match a {
+            match bufa {
                 CpuTensorBuf::F32(bufa) => {
-                    let bufc = c.as_f32_mut();
-                    let bufb = b.as_f32_ref();
+                    let bufc = bufc.as_f32_mut();
+                    let bufb = bufb.as_f32_ref();
                     gemv_3d_2d_f32(
                         device, bufa, bufb, bufc, a_batch, b_batch, m, k, bi_stride, mi_stride,
                         ki_stride,
                     );
                 }
                 CpuTensorBuf::F16(bufa) => {
-                    let bufb = b.as_f32_ref();
-                    let bufc = c.as_f32_mut();
+                    let bufb = bufb.as_f32_ref();
+                    let bufc = bufc.as_f32_mut();
                     let bufb = quantize_f32_f16(bufb);
                     gemv_3d_2d_f16(
                         device, bufa, &bufb, bufc, a_batch, b_batch, m, k, bi_stride, mi_stride,
@@ -66,7 +68,8 @@ pub fn gemv<'a>(
                 bufa => {
                     assert!(strider1.is_contiguous());
                     gemv_dense_3d_2d(
-                        device, bufa, b, c, a_batch, b_batch, m, k, bi_stride, mi_stride, ki_stride,
+                        device, bufa, bufb, bufc, a_batch, b_batch, m, k, bi_stride, mi_stride,
+                        ki_stride,
                     );
                 }
             }
@@ -88,6 +91,8 @@ fn gemv_dense_3d_2d(
     mi_stride: usize,
     _ki_stride: usize,
 ) {
+    assert!(bufc.len() % 4 == 0);
+
     let bufc = bufc.as_f32_mut();
     let bufb = &bufb.quantize(bufa.vec_dot_rhs_dtype()).unwrap();
     bufc.par_chunks_exact_mut(4)
@@ -149,6 +154,8 @@ fn gemv_3d_2d_f16(
 ) {
     let mut tmpc = vec![f16::ZERO; b_batch * m]; // TODO: avoid allocation
 
+    // if matrix A is row-wise contiguous, then we can use vec_dot_f16_f16
+    // if matrix A is column-wise contiguous, then we can use vec_fma_f16_f16
     if a_stride2 == 1 {
         let _t = device.metrics.batch_matmul_rowwise_walltime.track();
         tmpc.par_iter_mut().enumerate().for_each(|(i, bufcp)| {

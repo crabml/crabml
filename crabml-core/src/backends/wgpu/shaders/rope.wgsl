@@ -1,5 +1,5 @@
 struct Meta {
-    M: u32, // number of vectors
+    B: u32, // number of vectors
     N: u32, // length of vector
     pos: u32,
     n_heads: u32,
@@ -19,10 +19,10 @@ fn main(
     @builtin(local_invocation_id) local_id: vec3<u32>,
 ) {
     let head_size = input_m.N / input_m.n_heads;
-    let idx_m = workgroup_id.x * 32u + local_id.x;
+    let gidx = workgroup_id.x * 32u + local_id.x;
 
-    // process each vector in one thread. if there's only one vector, only idx_m == 0 makes sense
-    if idx_m > input_m.M {
+    // process each vector in one thread. if there's only one vector, only gidx == 0 makes sense
+    if gidx > input_m.B {
         return;
     }
 
@@ -33,7 +33,7 @@ fn main(
 
             let cos_theta = cos(theta);
             let sin_theta = sin(theta);
-            let qp_offset = idx_m * input_m.N + h * head_size + i * 2u;
+            let qp_offset = gidx * input_m.N + h * head_size + i * 2u;
             let qp0 = input[qp_offset];
             let qp1 = input[qp_offset + 1u];
             input[qp_offset] = qp0 * cos_theta - qp1 * sin_theta;

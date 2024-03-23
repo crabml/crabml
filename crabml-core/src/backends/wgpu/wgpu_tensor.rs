@@ -354,16 +354,24 @@ impl Tensor for WgpuTensor {
     }
 
     fn rope_inplace(self, mode: RopeMode, pos: usize, rope_dims: usize) -> Result<Self> {
-        assert!(self.shape().len() == 3);
+        assert!(self.shape().len() == 3 || self.shape().len() == 2);
         assert!(self.is_contiguous());
         assert!(mode == RopeMode::Llama, "TODO: only support Llama mode yet");
 
-        let n_heads = self.shape()[0];
+        let (rows, n_head, m) = if self.strider.dims() == 3 {
+            (
+                self.shape()[0],
+                self.shape()[1],
+                self.shape()[1] * self.shape()[2],
+            )
+        } else {
+            (1, self.shape()[0], self.shape()[0] * self.shape()[1])
+        };
         let meta = RopeMeta {
-            m: 1,
-            n: self.strider.len() as u32,
+            b: rows as u32,
+            m: m as u32,
             pos: pos as u32,
-            n_heads: n_heads as u32,
+            n_heads: n_head as u32,
             rope_dims: rope_dims as u32,
             _padding: [0; 7],
         };
@@ -381,9 +389,11 @@ impl Tensor for WgpuTensor {
                 resource: meta_buf.as_entire_binding(),
             },
         ];
-        let encoder = self
-            .device
-            .encode_pipeline_commnad("rope_inplace", entries, (1, 1, 1));
+        let encoder = self.device.encode_pipeline_commnad(
+            "rope_inplace",
+            entries,
+            (rows as u32 / 32 + 1, 1, 1),
+        );
         self.device.queue.submit(Some(encoder.finish()));
 
         Ok(self)

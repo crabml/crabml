@@ -32,8 +32,8 @@ pub struct BatchMatmulMeta {
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C, align(16))]
 pub struct RopeMeta {
+    pub b: u32,
     pub m: u32,
-    pub n: u32,
     pub pos: u32,
     pub n_heads: u32,
     pub rope_dims: u32,

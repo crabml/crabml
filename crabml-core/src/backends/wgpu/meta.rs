@@ -21,11 +21,11 @@ pub struct MatmulMeta {
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Default)]
 #[repr(C, align(16))]
 pub struct BatchMatmulMeta {
+    pub b: u32,
     pub m: u32,
-    pub n: u32,
     pub k: u32,
-    pub _padding_0: u32,
-    pub strides_0: [u32; 3],
+    pub n: u32,
+    pub strides_b: [u32; 3],
     pub _padding_1: u32,
 }
 

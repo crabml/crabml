@@ -404,12 +404,18 @@ impl Tensor for WgpuTensor {
     }
 
     fn softmax_inplace(self, axis: usize) -> Result<Self> {
-        assert!(axis == 1);
+        assert!(axis == self.strider.dims() - 1);
         assert!(self.is_contiguous());
-        assert!(self.shape().len() == 2);
+        assert!(self.shape().len() == 3 || self.shape().len() == 2);
 
-        let m = self.shape()[0] as u32;
-        let n = self.shape()[1] as u32;
+        let (m, n) = if self.strider.dims() == 3 {
+            (
+                (self.shape()[0] * self.shape()[1]) as u32,
+                self.shape()[2] as u32,
+            )
+        } else {
+            (self.shape()[0] as u32, self.shape()[1] as u32)
+        };
         let meta_buf = self
             .device
             .make_storage_buffer("meta", bytemuck::cast_slice(&[m, n]));
@@ -643,25 +649,28 @@ impl Tensor for WgpuTensor {
         Ok(output)
     }
 
+    /// (b, m, k) @ (b, k, n) => (b, m, n)
+    /// the A matrix is dense and the B matrix is allowed to be strided
     fn batch_matmul(&self, y: &Self) -> Result<Self> {
         assert!(self.shape().len() == 3);
-        assert!(y.shape().len() == 2);
+        assert!(y.shape().len() == 3);
         assert!(self.shape()[0] == y.shape()[0]);
         assert!(self.shape()[2] == y.shape()[1]);
-        assert!(y.is_contiguous());
+        assert!(self.is_contiguous());
 
-        // (m, n, k) @ (m, k) => (m, n)
+        // (b, m, k) @ (b, k, n) => (b, m, n)
         let output = Self::alloc(
-            &[self.shape()[0], self.shape()[1]],
+            &[self.shape()[0], self.shape()[1], y.shape()[2]],
             GGMLType::F32,
             self.device.clone(),
         )?;
 
         let meta = BatchMatmulMeta {
-            m: self.strider.shape()[0] as u32,
-            n: self.strider.shape()[1] as u32,
+            b: self.strider.shape()[0] as u32,
+            m: self.strider.shape()[1] as u32,
             k: self.strider.shape()[2] as u32,
-            strides_0: [
+            n: y.strider.shape()[2] as u32,
+            strides_b: [
                 self.strider.strides()[0] as u32,
                 self.strider.strides()[1] as u32,
                 self.strider.strides()[2] as u32,
@@ -689,9 +698,11 @@ impl Tensor for WgpuTensor {
                 resource: output.buf.as_entire_binding(),
             },
         ];
-        let encoder =
-            self.device
-                .encode_pipeline_commnad("batch_matmul", entries, (meta.m / 32 + 1, 1, 1));
+        let encoder = self.device.encode_pipeline_commnad(
+            "batch_matmul",
+            entries,
+            (meta.b * meta.m * meta.n / 32 + 1, 1, 1),
+        );
         self.device.queue.submit(Some(encoder.finish()));
 
         Ok(output)
@@ -879,22 +890,12 @@ mod tests {
         // => 2.0, 10.0, 18.0
 
         let t1 = WgpuTensor::new(&v1, &[1, 3, 2], DEVICE.clone())?;
-        let t2 = WgpuTensor::new(&[2.0; 2], &[1, 2], DEVICE.clone())?;
+        let t2 = WgpuTensor::new(&[2.0; 2], &[1, 2, 1], DEVICE.clone())?;
         let t3 = t1.batch_matmul(&t2)?;
-        let mut dst1 = vec![0.0; 3]; // 1 x 3
+        let mut dst1 = vec![0.0; 3]; // 1 x 3 x 1
         t3.export(&mut dst1)?;
-        // assert_eq!(t1.strider().strides(), &[6, 2, 1]);
-        // assert_eq!(dst1, vec![2.0, 10.0, 18.0]);
-
-        let v1 = vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0];
-        let t1 = WgpuTensor::new(&v1, &[2, 3, 2], DEVICE.clone())?;
-        let t2 = WgpuTensor::new(&[2.0; 4], &[2, 2], DEVICE.clone())?;
-        let t3 = t1.batch_matmul(&t2)?;
-        let mut dst1 = vec![0.0; 6]; // 2 x 3
-        t3.export(&mut dst1)?;
-        assert_eq!(t1.strider().shape(), &[2, 3, 2]);
         assert_eq!(t1.strider().strides(), &[6, 2, 1]);
-        // assert_eq!(dst1, vec![2.0, 10.0, 18.0, 2.0, 10.0, 18.0]);
+        assert_eq!(dst1, vec![2.0, 10.0, 18.0]);
 
         Ok(())
     }

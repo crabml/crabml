@@ -109,25 +109,42 @@ fn bmm_3d_2d<'a>(
         }
         bufa => {
             assert!(strider1.is_contiguous());
-
-            let bufc = c.as_f32_mut();
-            let bufb = &b.quantize(bufa.vec_dot_rhs_dtype()).unwrap();
-            let k = bufb.len();
-            bufc.par_chunks_exact_mut(4)
-                .enumerate()
-                .for_each(|(cn, cp)| {
-                    // a: b x m x k
-                    // b: b x k
-                    // c: b x m
-                    let mi = cn * 4 % m;
-                    let bi = (cn * 4 - mi) / m;
-                    cp[0] = bufa.vec_dot(bi * bi_stride + mi * mi_stride, bufb, 0, k);
-                    cp[1] = bufa.vec_dot(bi * bi_stride + (mi + 1) * mi_stride, bufb, 0, k);
-                    cp[2] = bufa.vec_dot(bi * bi_stride + (mi + 2) * mi_stride, bufb, 0, k);
-                    cp[3] = bufa.vec_dot(bi * bi_stride + (mi + 3) * mi_stride, bufb, 0, k);
-                });
+            gemv_3d_2d(
+                device, bufa, b, c, a_batch, b_batch, m, k, bi_stride, mi_stride, ki_stride,
+            );
         }
     };
+}
+
+fn gemv_3d_2d(
+    _device: &CpuTensorDeviceRef,
+    bufa: &CpuTensorBuf,
+    bufb: &CpuTensorBuf,
+    bufc: &mut CpuTensorBuf,
+    a_batch: usize,
+    _b_batch: usize, // b_batch is multiple of a_batch
+    m: usize,
+    k: usize,
+    bi_stride: usize,
+    mi_stride: usize,
+    _ki_stride: usize,
+) {
+    let bufc = bufc.as_f32_mut();
+    let bufb = &bufb.quantize(bufa.vec_dot_rhs_dtype()).unwrap();
+    bufc.par_chunks_exact_mut(4)
+        .enumerate()
+        .for_each(|(cn, cp)| {
+            // a: b x m x k
+            // b: b x k
+            // c: b x m
+            let mi = cn * 4 % m;
+            let bi = (cn * 4 - mi) / m;
+            let bi_offset = (bi % a_batch) * bi_stride;
+            cp[0] = bufa.vec_dot(bi_offset + mi * mi_stride, bufb, 0, k);
+            cp[1] = bufa.vec_dot(bi_offset + (mi + 1) * mi_stride, bufb, 0, k);
+            cp[2] = bufa.vec_dot(bi_offset + (mi + 2) * mi_stride, bufb, 0, k);
+            cp[3] = bufa.vec_dot(bi_offset + (mi + 3) * mi_stride, bufb, 0, k);
+        });
 }
 
 #[allow(clippy::too_many_arguments)]

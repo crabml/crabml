@@ -25,56 +25,70 @@ pub fn gemv<'a>(
     assert!(strider2.dims() == strider1.dims() - 1);
     assert!(strider2.is_contiguous());
 
-    match strider1.dims() {
-        2 => {
+    if strider1.dims() == 2 {
+        assert!(strider1.is_contiguous());
+        assert!(strider1.shape()[1] == strider2.shape()[0]);
+
+        let (m, k) = (strider1.shape()[0], strider1.shape()[1]);
+        let (mi_stride, ki_stride) = (strider1.strides()[0], strider1.strides()[1]);
+        gemv_dense_3d_2d(
+            device, bufa, bufb, bufc, 1, 1, m, k, 0, mi_stride, ki_stride,
+        );
+        return;
+    }
+
+    let (a_batch, b_batch, m, k, bi_stride, mi_stride, ki_stride) = if strider1.dims() == 3 {
+        assert!(strider1.shape()[2] == strider2.shape()[1]);
+        let (a_batch, b_batch) = (strider1.shape()[0], strider2.shape()[0]);
+        let (m, k) = (strider1.shape()[1], strider1.shape()[2]);
+        let (bi_stride, mi_stride, ki_stride) = (
+            strider1.strides()[0],
+            strider1.strides()[1],
+            strider1.strides()[2],
+        );
+        (a_batch, b_batch, m, k, bi_stride, mi_stride, ki_stride)
+    } else if strider1.dims() == 4 {
+        // (b, s, m, k) @ (b, s, k) -> (b, s, m) => bmm_4d_3d
+        // the b and s dimensions are considered as contiguous, and the m and k dimensions maybe not.
+        // so the we can merge the b and s dimensions into a single batch dimension.
+        assert!(strider1.shape()[3] == strider2.shape()[2]);
+        let (a_batch, b_batch) = (
+            strider1.shape()[0] * strider1.shape()[1],
+            strider2.shape()[0] * strider2.shape()[1],
+        );
+        let (m, k) = (strider1.shape()[2], strider1.shape()[3]);
+        let (bi_stride, mi_stride, ki_stride) = (
+            strider1.strides()[1],
+            strider1.strides()[2],
+            strider1.strides()[3],
+        );
+        (a_batch, b_batch, m, k, bi_stride, mi_stride, ki_stride)
+    } else {
+        unreachable!();
+    };
+
+    match bufa {
+        CpuTensorBuf::F32(bufa) => {
+            let bufc = bufc.as_f32_mut();
+            let bufb = bufb.as_f32_ref();
+            gemv_3d_2d_f32(
+                device, bufa, bufb, bufc, a_batch, b_batch, m, k, bi_stride, mi_stride, ki_stride,
+            );
+        }
+        CpuTensorBuf::F16(bufa) => {
+            let bufb = bufb.as_f32_ref();
+            let bufc = bufc.as_f32_mut();
+            let bufb = quantize_f32_f16(bufb);
+            gemv_3d_2d_f16(
+                device, bufa, &bufb, bufc, a_batch, b_batch, m, k, bi_stride, mi_stride, ki_stride,
+            );
+        }
+        bufa => {
             assert!(strider1.is_contiguous());
-            assert!(strider1.shape()[1] == strider2.shape()[0]);
-
-            let (m, k) = (strider1.shape()[0], strider1.shape()[1]);
-            let (mi_stride, ki_stride) = (strider1.strides()[0], strider1.strides()[1]);
             gemv_dense_3d_2d(
-                device, bufa, bufb, bufc, 1, 1, m, k, 0, mi_stride, ki_stride,
+                device, bufa, bufb, bufc, a_batch, b_batch, m, k, bi_stride, mi_stride, ki_stride,
             );
         }
-
-        3 => {
-            assert!(strider1.shape()[2] == strider2.shape()[1]);
-
-            let (a_batch, b_batch) = (strider1.shape()[0], strider2.shape()[0]);
-            let (m, k) = (strider1.shape()[1], strider1.shape()[2]);
-            let (bi_stride, mi_stride, ki_stride) = (
-                strider1.strides()[0],
-                strider1.strides()[1],
-                strider1.strides()[2],
-            );
-            match bufa {
-                CpuTensorBuf::F32(bufa) => {
-                    let bufc = bufc.as_f32_mut();
-                    let bufb = bufb.as_f32_ref();
-                    gemv_3d_2d_f32(
-                        device, bufa, bufb, bufc, a_batch, b_batch, m, k, bi_stride, mi_stride,
-                        ki_stride,
-                    );
-                }
-                CpuTensorBuf::F16(bufa) => {
-                    let bufb = bufb.as_f32_ref();
-                    let bufc = bufc.as_f32_mut();
-                    let bufb = quantize_f32_f16(bufb);
-                    gemv_3d_2d_f16(
-                        device, bufa, &bufb, bufc, a_batch, b_batch, m, k, bi_stride, mi_stride,
-                        ki_stride,
-                    );
-                }
-                bufa => {
-                    assert!(strider1.is_contiguous());
-                    gemv_dense_3d_2d(
-                        device, bufa, bufb, bufc, a_batch, b_batch, m, k, bi_stride, mi_stride,
-                        ki_stride,
-                    );
-                }
-            }
-        }
-        _ => unreachable!(),
     }
 }
 

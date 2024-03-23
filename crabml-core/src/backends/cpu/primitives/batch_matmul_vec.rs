@@ -22,7 +22,7 @@ pub fn batch_matmul<'a>(
     strider2: &TensorStrider,
 ) {
     assert!(strider1.dims() == 3);
-    assert!(strider2.is_contiguous());
+    assert!(strider1.is_contiguous());
 
     let strider2 = if strider2.dims() == 3 {
         strider2.clone()

@@ -361,19 +361,23 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             let k_cache = self.key_cache[l].take().unwrap();
             let k_cache_strider_orig = k_cache.strider().clone();
             // (n_heads, n_seq, head_size) @ (n_head, head_size) => (n_heads, n_seq)
-            let q = q.div_scalar_inplace((head_dim as f32).sqrt())?;
-            let attn = k_cache.batch_matmul_vec(&q)?;
-            let attn = attn
-                .softmax_inplace(1)?
-                .with_name(format!("k_cache_attn:{}:{}", l, pos));
+            let q = q
+                .div_scalar_inplace((head_dim as f32).sqrt())?
+                .reshape(&[n_heads, 1, head_dim])?;
+            let k_cache = k_cache.transpose(&[0, 2, 1])?;
+            // (n_head, 1, head_size) @ (n_kv_heads, head_size, seq)
+            // attn: (n_head, 1, seq)
+            let attn = q.batch_matmul_vec(&k_cache)?;
             self.key_cache[l].replace(k_cache.with_strider(k_cache_strider_orig)?);
+
+            let attn = attn
+                .softmax_inplace(2)?
+                .with_name(format!("k_cache_attn:{}:{}", l, pos));
 
             let v_cache = self.value_cache[l].take().unwrap();
             let v_cache_strider_orig = v_cache.strider().clone();
-            // get the weighted sum of the values and attention scores
-            let v_cache = v_cache.transpose(&[0, 2, 1])?;
-            // (n_kv_heads, head_size, n_seq) @ (n_heads, n_seq) => (n_heads, head_size)
-            let x_with_attn = v_cache.batch_matmul_vec(&attn)?; // (n_heads, head_size)
+            // (n_head, 1, seq) @ (n_kv_heads, seq, head_dim) => (n_head, 1, head_dim)
+            let x_with_attn = attn.batch_matmul_vec(&v_cache)?; // (n_heads, 1, head_dim)
             let x_with_attn = x_with_attn.reshape(&[embed_dim])?;
             self.value_cache[l].replace(v_cache.with_strider(v_cache_strider_orig)?);
 

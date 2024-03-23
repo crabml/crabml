@@ -369,16 +369,15 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             // attn: (n_head, 1, seq)
             let attn = q.batch_matmul(&k_cache)?;
             self.key_cache[l].replace(k_cache.with_strider(k_cache_strider_orig)?);
-
-            let attn = attn
-                .softmax_inplace(2)?
-                .with_name(format!("k_cache_attn:{}:{}", l, pos));
+            let attn = attn.softmax_inplace(2)?;
 
             let v_cache = self.value_cache[l].take().unwrap();
             let v_cache_strider_orig = v_cache.strider().clone();
             // (n_head, 1, seq) @ (n_kv_heads, seq, head_dim) => (n_head, 1, head_dim)
             let x_with_attn = attn.batch_matmul(&v_cache)?; // (n_heads, 1, head_dim)
-            let x_with_attn = x_with_attn.reshape(&[embed_dim])?;
+            let x_with_attn = x_with_attn
+                .reshape(&[embed_dim])?
+                .with_name(format!("x_with_attn:{}:{}", l, pos));
             self.value_cache[l].replace(v_cache.with_strider(v_cache_strider_orig)?);
 
             // final matmul to get the output of the attention
@@ -559,8 +558,8 @@ mod tests {
         );
 
         assert_relative_eq!(
-            device_cpu.dump_debug_tensor("k_cache_attn:0:0").unwrap()[..],
-            device_wgpu.dump_debug_tensor("k_cache_attn:0:0").unwrap()[..],
+            device_cpu.dump_debug_tensor("x_with_attn:0:0").unwrap()[..],
+            device_wgpu.dump_debug_tensor("x_with_attn:0:0").unwrap()[..],
             epsilon = 1e-4
         );
 

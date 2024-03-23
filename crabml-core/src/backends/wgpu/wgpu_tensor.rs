@@ -671,9 +671,9 @@ impl Tensor for WgpuTensor {
             k: self.shape()[2] as u32,
             n: y.shape()[2] as u32,
             strides_b: [
-                self.strider.strides()[0] as u32,
-                self.strider.strides()[1] as u32,
-                self.strider.strides()[2] as u32,
+                y.strider.strides()[0] as u32,
+                y.strider.strides()[1] as u32,
+                y.strider.strides()[2] as u32,
             ],
             ..Default::default()
         };

@@ -36,7 +36,7 @@ fn main(
             mi * bufm.K +
             ki
         ];
-        let b = bufb[bufm.strides_b.x * bi + ki * bufm.strides_b.z + ni * bufm.strides_b.y];
+        let b = bufb[bufm.strides_b.x * bi + ki * bufm.strides_b.y + ni * bufm.strides_b.z];
         sum += a * b;
     }
 

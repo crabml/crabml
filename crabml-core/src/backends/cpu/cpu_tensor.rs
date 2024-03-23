@@ -296,8 +296,7 @@ impl<'a> Tensor for CpuTensor<'a> {
         Ok(out)
     }
 
-    // TODO(2024-02-15): dequantize the tensor here, not dequantize the embedding table on loading
-    fn copy_from(&mut self, src: &CpuTensor<'a>, pos: &[usize], len: usize) -> Result<()> {
+    fn copy_rows_from(&mut self, src: &CpuTensor<'a>, src_rows: &[usize]) -> Result<()> {
         let _t = self.device.metrics.copy_from_walltime.track();
         if !self.is_owned() {
             return Err((ErrorKind::TensorError, "not owned").into());
@@ -308,9 +307,20 @@ impl<'a> Tensor for CpuTensor<'a> {
         if !src.is_contiguous() {
             return Err((ErrorKind::TensorError, "src tensor is not contiguous").into());
         }
+        if src.strider.dims() != 2 && src.strider.dims() != 1 {
+            return Err((
+                ErrorKind::TensorError,
+                "copy_rows_from: src tensor is not 2d or 1d",
+            )
+                .into());
+        }
 
-        let offset = src.strider().at(pos)?;
-        self.buf.copy_from(&src.buf, offset, len)?;
+        let cols = *self.shape().last().unwrap();
+        for (dst_row, src_row) in src_rows.iter().enumerate() {
+            let src_offset = src_row * cols;
+            let dst_offset = dst_row * cols;
+            self.buf.copy_from(&src.buf, src_offset, dst_offset, cols)?;
+        }
         Ok(())
     }
 
@@ -344,7 +354,7 @@ impl<'a> Tensor for CpuTensor<'a> {
         let bufc = c.buf_mut();
         let strider1 = self.strider();
         let strider2 = b.strider();
-        primitives::batch_matmul_vec(&self.device(), bufa, bufb, bufc, strider1, strider2)?;
+        primitives::gemv(&self.device(), bufa, bufb, bufc, strider1, strider2);
         Ok(c)
     }
 
@@ -358,7 +368,7 @@ impl<'a> Tensor for CpuTensor<'a> {
         let strider1 = self.strider();
         let strider2 = x.strider();
         let _t = self.device.metrics.matmul_walltime.track();
-        primitives::matmul_vec(self.device.clone(), bufa, bufb, bufc, strider1, strider2)?;
+        primitives::gemv(&self.device, bufa, bufb, bufc, strider1, strider2);
         Ok(c)
     }
 
@@ -456,10 +466,10 @@ mod tests {
         let t1 = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0], &[2, 2], device.clone())?;
         let mut t2 = CpuTensor::new(vec![0.0; 2], &[2], device.clone())?;
 
-        t2.copy_from(&t1, &[1, 0], 2)?;
+        t2.copy_rows_from(&t1, &[1])?;
         assert_eq!(t2.to_vec(), vec![3.0, 4.0]);
 
-        t2.copy_from(&t1, &[0, 0], 2)?;
+        t2.copy_rows_from(&t1, &[0])?;
         assert_eq!(t2.to_vec(), vec![1.0, 2.0]);
 
         Ok(())
@@ -516,17 +526,21 @@ mod tests {
         // 1, 2, 3
         // 4, 5, 6
         let device = CpuTensorDevice::new();
-        let w = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], device.clone())?;
+        let w = CpuTensor::new(
+            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+            &[4, 2],
+            device.clone(),
+        )?;
         // 1
         // 2
         // 3
-        let b = CpuTensor::new(vec![1.0, 2.0, 3.0], &[3], device.clone())?;
+        let b = CpuTensor::new(vec![1.0, 2.0], &[2], device.clone())?;
         // 0
         // 0
         // 1*1 + 2*2 + 3*3 = 1 + 4 + 9
         // 1*4 + 2*5 + 3*6 = 4 + 10 + 18
         let out = w.matmul_vec(&b)?;
-        assert_eq!(out.to_vec(), &[14.0, 32.0]);
+        assert_eq!(out.to_vec(), &[5.0, 11.0, 17.0, 23.0]);
 
         Ok(())
     }

@@ -15,7 +15,7 @@ pub fn rope_inplace(
     rope_dim: usize,
 ) -> Result<()> {
     assert!(strider1.is_contiguous());
-    assert!(strider1.shape().len() == 2);
+    assert!(strider1.dims() == 2 || strider1.dims() == 3);
 
     let head_dim = strider1.shape()[1];
     let buf = match buf1 {
@@ -23,9 +23,19 @@ pub fn rope_inplace(
         _ => panic!("only support f32 yet"),
     };
 
-    match mode {
-        RopeMode::Llama => rope_llama(buf, pos, head_dim, rope_dim),
-        RopeMode::Neox => rope_neox(buf, pos, head_dim, rope_dim),
+    let (seq, seq_stride) = if strider1.dims() == 2 {
+        (1, strider1.len())
+    } else {
+        (strider1.shape()[0], strider1.strides()[0])
+    };
+
+    for seq_offset in 0..seq {
+        let seq_pos = pos + seq_offset;
+        let buf_row = &mut buf[seq_offset * seq_stride..(seq_offset + 1) * seq_stride];
+        match mode {
+            RopeMode::Llama => rope_llama(buf_row, seq_pos, head_dim, rope_dim),
+            RopeMode::Neox => rope_neox(buf_row, seq_pos, head_dim, rope_dim),
+        }
     }
 
     Ok(())

@@ -37,7 +37,8 @@ pub trait Tensor: Sized + Clone {
     fn concatenate(&mut self, rhs: &Self, axis: usize) -> Result<()>;
 
     /// copy from another tensor. used on loading weights from vocab table.
-    fn copy_from(&mut self, rhs: &Self, pos: &[usize], len: usize) -> Result<()>;
+    /// only support copy from 2d tensor to 2d or 1d tensor.
+    fn copy_rows_from(&mut self, rhs: &Self, rows: &[usize]) -> Result<()>;
 
     fn export(&self, buf: &mut [f32]) -> Result<()>;
 

@@ -326,7 +326,7 @@ use super::QuantBufQ8K;
 mod tests {
     use super::*;
     use crate::backends::cpu::buf::util::tests::*;
-    const MAX_Q5K_PRODUCT_ERROR: f32 = 0.002;
+    const MAX_QUANTIZATION_ERROR: f32 = 0.002;
     const MAX_DOT_PRODUCT_ERROR: f32 = 0.02;
     const TEST_SIZE: usize = 1024;
 
@@ -337,7 +337,7 @@ mod tests {
         let dequantize: Vec<f32> = bs.dequantize(0).collect();
 
         let _diff = array_rmse(&dequantize, &data);
-        assert!(_diff < MAX_Q5K_PRODUCT_ERROR);
+        assert!(_diff < MAX_QUANTIZATION_ERROR);
     }
 
     #[test]

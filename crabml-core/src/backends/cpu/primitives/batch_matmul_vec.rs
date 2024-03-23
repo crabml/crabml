@@ -32,7 +32,7 @@ pub fn gemv<'a>(
 
             let (m, k) = (strider1.shape()[0], strider1.shape()[1]);
             let (mi_stride, ki_stride) = (strider1.strides()[0], strider1.strides()[1]);
-            gemv_3d_2d(device, a, b, c, 1, 1, m, k, 0, mi_stride, ki_stride);
+            gemv_dense_3d_2d(device, a, b, c, 1, 1, m, k, 0, mi_stride, ki_stride);
         }
 
         3 => {
@@ -65,7 +65,7 @@ pub fn gemv<'a>(
                 }
                 bufa => {
                     assert!(strider1.is_contiguous());
-                    gemv_3d_2d(
+                    gemv_dense_3d_2d(
                         device, bufa, b, c, a_batch, b_batch, m, k, bi_stride, mi_stride, ki_stride,
                     );
                 }
@@ -75,7 +75,7 @@ pub fn gemv<'a>(
     }
 }
 
-fn gemv_3d_2d(
+fn gemv_dense_3d_2d(
     _device: &CpuTensorDeviceRef,
     bufa: &CpuTensorBuf,
     bufb: &CpuTensorBuf,

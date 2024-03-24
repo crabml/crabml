@@ -134,31 +134,3 @@ fn batch_matmul_simd_f16(
         *c = tmp.to_f32();
     });
 }
-
-#[allow(dead_code)]
-#[allow(clippy::too_many_arguments)]
-fn gemv_strided_3d_2d_f32(
-    _device: &CpuTensorDeviceRef,
-    abuf: &[f32],     // a_batch x M x K
-    bbuf: &[f32],     // b_batch x K
-    cbuf: &mut [f32], // b_batch x M
-    a_batch: usize,
-    _b_batch: usize,
-    m: usize,
-    k: usize,
-    bi_stride: usize,
-    mi_stride: usize,
-    ki_stride: usize,
-) {
-    cbuf.par_iter_mut().enumerate().for_each(|(i, bufcp)| {
-        let mi = i % m;
-        let bi = (i - mi) / m;
-        *bufcp = vec_dot_f32_f32_strided(
-            abuf,
-            (bi % a_batch) * bi_stride + mi * mi_stride,
-            ki_stride,
-            k,
-            &bbuf[bi * k..(bi + 1) * k],
-        );
-    });
-}

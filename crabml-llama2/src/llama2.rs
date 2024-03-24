@@ -100,10 +100,11 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             });
         }
 
-        let mut logits: &mut [f32] = &mut [];
-        for (pos, token) in prompt_tokens.iter().enumerate() {
-            logits = self.forward(&[*token], pos)?;
-        }
+        let vocab_size = self.conf.vocab_size;
+        let logits = self.forward(&prompt_tokens, 0)?;
+        let logits_len = logits.len();
+        let logits = &mut logits[logits_len - vocab_size..];
+
         let token = sampler.sample(logits)?;
         let last_token = *prompt_tokens.last().unwrap();
 

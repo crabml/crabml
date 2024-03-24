@@ -343,13 +343,7 @@ impl Tensor for WgpuTensor {
             .device
             .inner
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        encoder.copy_buffer_to_buffer(
-            &self.buf,
-            0 as u64,
-            &new_tensor.buf,
-            0 as u64,
-            self.buf.size(),
-        );
+        encoder.copy_buffer_to_buffer(&self.buf, 0, &new_tensor.buf, 0, self.buf.size());
         self.device.queue.submit(Some(encoder.finish()));
         Ok(new_tensor)
     }
@@ -426,11 +420,9 @@ impl Tensor for WgpuTensor {
                 resource: meta_buf.as_entire_binding(),
             },
         ];
-        let encoder = self.device.encode_pipeline_commnad(
-            "rms_norm_inplace",
-            entries,
-            (meta.n_batch as u32, 1, 1),
-        );
+        let encoder =
+            self.device
+                .encode_pipeline_commnad("rms_norm_inplace", entries, (meta.n_batch, 1, 1));
         self.device.queue.submit(Some(encoder.finish()));
         Ok(self)
     }
@@ -739,8 +731,8 @@ impl Tensor for WgpuTensor {
         let n_elms = self.strider.len();
         let output = Self::alloc(self.strider.shape(), self.dtype, self.device.clone())?;
         let mut meta = ContiguousMeta {
-            shape: [0 as u32; 4],
-            strides: [0 as u32; 4],
+            shape: [0; 4],
+            strides: [0; 4],
             n_dims: self.strider.dims() as u32,
             n_elms: n_elms as u32,
             _padding: [0; 2],

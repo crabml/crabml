@@ -52,9 +52,9 @@ fn rope_llama(buf: &mut [f32], pos: usize, head_dim: usize, rope_dim: usize) {
             let cos_theta = theta.cos();
             let sin_theta = theta.sin();
             theta *= theta_scale;
-            let qp0 = chunk[i * 2];
-            let qp1 = chunk[i * 2 + 1];
             unsafe {
+                let qp0 = *chunk.get_unchecked(i * 2);
+                let qp1 = *chunk.get_unchecked(i * 2 + 1);
                 *chunk.get_unchecked_mut(i * 2) = qp0 * cos_theta - qp1 * sin_theta;
                 *chunk.get_unchecked_mut(i * 2 + 1) = qp0 * sin_theta + qp1 * cos_theta;
             }

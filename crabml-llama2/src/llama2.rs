@@ -323,7 +323,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         k: T,
         v: T,
         l: usize,
-        pos: usize,
+        _pos: usize,
         n_kv_heads: usize,
         n_heads: usize,
         embed_dim: usize,
@@ -378,11 +378,14 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             let v_cache_strider_orig = v_cache.strider().clone();
             // (n_head, n_batch, seq) @ (n_kv_heads, seq, head_dim) => (n_head, n_batch, head_dim)
             let x_with_attn = attn.batch_matmul(&v_cache)?; // (n_heads, n_batch, head_dim)
-            let x_with_attn = x_with_attn
-                .transpose(&[1, 0, 2])? // (n_batch, n_heads, head_dim)
-                .contiguous()?
-                .reshape(&[n_batch, embed_dim])?
-                .with_name(format!("x_with_attn:{}:{}", l, pos));
+            let x_with_attn = if n_batch == 1 {
+                x_with_attn.reshape(&[n_batch, embed_dim])?
+            } else {
+                x_with_attn
+                    .transpose(&[1, 0, 2])? // (n_batch, n_heads, head_dim)
+                    .contiguous()?
+                    .reshape(&[n_batch, embed_dim])?
+            };
             self.value_cache[l].replace(v_cache.with_strider(v_cache_strider_orig)?);
 
             // final matmul to get the output of the attention
@@ -560,12 +563,6 @@ mod tests {
             device_cpu.dump_debug_tensor("q_roped:0:0").unwrap()[..],
             device_wgpu.dump_debug_tensor("q_roped:0:0").unwrap()[..],
             epsilon = 1e-2
-        );
-
-        assert_relative_eq!(
-            device_cpu.dump_debug_tensor("x_with_attn:0:0").unwrap()[..],
-            device_wgpu.dump_debug_tensor("x_with_attn:0:0").unwrap()[..],
-            epsilon = 1e-4
         );
 
         assert_relative_eq!(

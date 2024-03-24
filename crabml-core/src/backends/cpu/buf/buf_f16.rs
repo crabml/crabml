@@ -114,15 +114,15 @@ pub fn vec_dot_f16_f16_strided(
     }
 }
 
-pub fn vec_fma_f16_f16(a: &[f16], b: f16, c: &mut [f16], a_offset: usize, m: usize) {
+pub fn vec_fma_f16_f16(v: &[f16], b: f16, c: &mut [f16], v_offset: usize, m: usize) {
     #[cfg(target_arch = "aarch64")]
     {
-        vec_fma_f16_f16_neon(a, b, c, a_offset, m)
+        vec_fma_f16_f16_neon(v, b, c, v_offset, m)
     }
 
     #[cfg(not(any(target_arch = "aarch64",)))]
     {
-        vec_fma_f16_f16_fallback(a, b, c, a_offset, m)
+        vec_fma_f16_f16_fallback(v, b, c, v_offset, m)
     }
 }
 

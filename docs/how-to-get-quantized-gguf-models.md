@@ -57,8 +57,8 @@ Execute the following steps to compile llama.cpp:
 
    ```bash
    ❯ ls | grep 'quantize'
-   .rwxr-xr-x 1.4M psiace 24 Mar 10:09 quantize
-   .rwxr-xr-x 1.5M psiace 24 Mar 10:09 quantize-stats
+   .rwxr-xr-x 1.4M user 24 Mar 10:09 quantize
+   .rwxr-xr-x 1.5M user 24 Mar 10:09 quantize-stats
    ```
 
 ### Quantifying the Model
@@ -82,7 +82,7 @@ To quantify your model using llama.cpp, proceed with the following:
 
    ```bash
    # Replace `<type>` with target type
-   ./quantize <model>-f16.gguf <model>-<type>.gguf <type>
+   ./quantize <model>-<outtype>.gguf <model>-<type>.gguf <type>
    ```
 
 4. After the process is complete, you will have a quantized GGUF model file.

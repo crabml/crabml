@@ -1,4 +1,3 @@
-use std::arch::aarch64;
 use std::borrow::Cow;
 use std::slice;
 
@@ -175,6 +174,8 @@ pub fn vec_convert_f16_f32(dst: &mut [f16], src: &[f32]) {
 
 #[cfg(target_arch = "aarch64")]
 pub fn vec_convert_f16_f32_neon(dst: &mut [f16], src: &[f32]) {
+    use std::arch::aarch64;
+
     use crate::backends::cpu::arch::aarch64 as myaarch64;
 
     dst.chunks_exact_mut(4)

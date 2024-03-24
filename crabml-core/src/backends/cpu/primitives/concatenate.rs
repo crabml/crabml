@@ -2,7 +2,6 @@ use std::borrow::Cow;
 
 use half::f16;
 
-use crate::backends::cpu::buf::buf_f16::vec_convert_f16_f32;
 use crate::backends::cpu::CpuTensorBuf;
 use crate::error::ErrorKind;
 use crate::error::Result;
@@ -41,7 +40,7 @@ pub fn concatenate_inplace<'a>(
                 && strider2.strides()[2] == 1
                 && strider1.strides()[2] == 1
             {
-                concatenate_3d_dense_f16_f32(
+                concatenate_3d_f16_f32(
                     buf1,
                     buf2,
                     strider1.shape(),
@@ -167,7 +166,7 @@ pub fn concatenate_3d<A, B: Copy>(
 
 // TODO: can be removed, just it's easier to make experiments on a specialized function
 #[allow(clippy::too_many_arguments)]
-pub fn concatenate_3d_dense_f16_f32(
+pub fn concatenate_3d_f16_f32(
     buf1: &mut [f16],
     buf2: &[f32],
     shape1: &[usize],
@@ -176,23 +175,22 @@ pub fn concatenate_3d_dense_f16_f32(
     strides2: &[usize],
     axis: usize,
 ) -> Result<Vec<usize>> {
-    assert!(strides1[2] == 1);
-    assert!(strides2[2] == 1);
     let buf1_offset = shape1[axis] * strides1[axis];
 
     let stride1_0 = strides1[0];
     let stride1_1 = strides1[1];
+    let stride1_2 = strides1[2];
     let stride2_0 = strides2[0];
     let stride2_1 = strides2[1];
+    let stride2_2 = strides2[2];
 
     for x in 0..shape2[0] {
         for y in 0..shape2[1] {
-            let buf1_base = buf1_offset + x * stride1_0 + y * stride1_1;
-            let buf2_base = x * stride2_0 + y * stride2_1;
-            vec_convert_f16_f32(
-                &mut buf1[buf1_base..buf1_base + shape2[2]],
-                &buf2[buf2_base..buf2_base + shape2[2]],
-            );
+            for z in 0..shape2[2] {
+                let buf1_offset = buf1_offset + x * stride1_0 + y * stride1_1 + z * stride1_2;
+                let buf2_offset = x * stride2_0 + y * stride2_1 + z * stride2_2;
+                buf1[buf1_offset] = f16::from_f32(buf2[buf2_offset]);
+            }
         }
     }
 

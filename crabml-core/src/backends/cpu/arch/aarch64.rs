@@ -29,18 +29,6 @@ pub unsafe fn vcvt_f16_f32(i: float16x4_t) -> float32x4_t {
     result
 }
 
-/// Convert to lower precision
-#[inline]
-pub unsafe fn vcvt_f32_f16(i: float32x4_t) -> float16x4_t {
-    let result: float16x4_t;
-    asm!(
-        "fcvtn {0:v}.4h, {1:v}.4s",
-        out(vreg) result,
-        in(vreg) i,
-        options(pure, nomem, nostack, preserves_flags));
-    result
-}
-
 /// Convert to higher precision
 /// Takes the top 64 bits and convert them as [`float32x4_t`]
 /// [doc](https://developer.arm.com/documentation/dui0801/g/A64-SIMD-Vector-Instructions/FCVTL--FCVTL2--vector-)

@@ -7,6 +7,7 @@ use super::meta::MatmulMeta;
 use super::meta::RmsNormMeta;
 use super::WgpuTensorDeviceRef;
 use crate::backends::wgpu::meta::BatchMatmulMeta;
+use crate::backends::wgpu::meta::ContiguousMeta;
 use crate::backends::wgpu::meta::RopeMeta;
 use crate::error::ErrorKind;
 use crate::error::Result;
@@ -263,14 +264,15 @@ impl Tensor for WgpuTensor {
         if !self.is_contiguous() {
             return Err((ErrorKind::TensorError, "not contiguous").into());
         }
+        assert!(src.strider.dims() == 2);
 
-        let cols = src.shape().last().unwrap();
+        let n_dims = src.shape().last().unwrap();
         let f32_bytes = std::mem::size_of::<f32>();
 
         for (dst_row, src_row) in src_rows.iter().enumerate() {
-            let dst_offset = dst_row * cols * f32_bytes;
-            let src_offset = src_row * cols * f32_bytes;
-            let row_bytes = cols * f32_bytes;
+            let dst_offset = dst_row * n_dims * f32_bytes;
+            let src_offset = src_row * n_dims * f32_bytes;
+            let row_bytes = n_dims * f32_bytes;
 
             // enqueue copy from rhs to self's buffer
             let mut encoder = self
@@ -335,23 +337,37 @@ impl Tensor for WgpuTensor {
     }
 
     fn dup(&self) -> Result<Self> {
-        let mut new_tensor = Self::alloc(self.strider.shape(), self.dtype, self.device.clone())?;
-        new_tensor.copy_rows_from(self, &[0]).unwrap();
+        let new_tensor = Self::alloc(self.strider.shape(), self.dtype, self.device.clone())?;
+
+        let mut encoder = self
+            .device
+            .inner
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        encoder.copy_buffer_to_buffer(&self.buf, 0, &new_tensor.buf, 0, self.buf.size());
+        self.device.queue.submit(Some(encoder.finish()));
         Ok(new_tensor)
     }
 
     fn rope_inplace(self, mode: RopeMode, pos: usize, rope_dims: usize) -> Result<Self> {
-        assert!(self.shape().len() == 2);
+        assert!(self.shape().len() == 3 || self.shape().len() == 2);
         assert!(self.is_contiguous());
         assert!(mode == RopeMode::Llama, "TODO: only support Llama mode yet");
 
-        let n_heads = self.shape()[0];
+        let (rows, n_head, m) = if self.strider.dims() == 3 {
+            (
+                self.shape()[0],
+                self.shape()[1],
+                self.shape()[1] * self.shape()[2],
+            )
+        } else {
+            (1, self.shape()[0], self.shape()[0] * self.shape()[1])
+        };
         let meta = RopeMeta {
-            m: 1,
-            n: self.strider.len() as u32,
+            n_batch: rows as u32,
+            n_dims: m as u32,
             pos: pos as u32,
-            n_heads: n_heads as u32,
-            rope_dims: rope_dims as u32,
+            n_heads: n_head as u32,
+            n_rope_dims: rope_dims as u32,
             _padding: [0; 7],
         };
 
@@ -368,24 +384,32 @@ impl Tensor for WgpuTensor {
                 resource: meta_buf.as_entire_binding(),
             },
         ];
-        let encoder = self
-            .device
-            .encode_pipeline_commnad("rope_inplace", entries, (1, 1, 1));
+        let encoder = self.device.encode_pipeline_commnad(
+            "rope_inplace",
+            entries,
+            (rows as u32 / 32 + 1, 1, 1),
+        );
         self.device.queue.submit(Some(encoder.finish()));
 
         Ok(self)
     }
 
     fn rms_norm_inplace(self, eps: f32) -> Result<Self> {
-        let meta_buf = self.device.make_storage_buffer(
-            "meta",
-            bytemuck::bytes_of(&RmsNormMeta {
-                m: 1,
-                n: self.strider.len() as u32,
-                eps,
-                _padding: 0.0,
-            }),
-        );
+        assert!(self.strider.dims() == 2 || self.strider.dims() == 1);
+        let (n_batch, n_dims) = if self.strider.dims() == 2 {
+            (self.shape()[0], self.shape()[1])
+        } else {
+            (1, self.shape()[0])
+        };
+        let meta = &RmsNormMeta {
+            n_batch: n_batch as u32,
+            n_dims: n_dims as u32,
+            eps,
+            _padding: 0,
+        };
+        let meta_buf = self
+            .device
+            .make_storage_buffer("meta", bytemuck::bytes_of(meta));
         let entries = &[
             wgpu::BindGroupEntry {
                 binding: 0,
@@ -396,20 +420,26 @@ impl Tensor for WgpuTensor {
                 resource: meta_buf.as_entire_binding(),
             },
         ];
-        let encoder = self
-            .device
-            .encode_pipeline_commnad("rms_norm_inplace", entries, (1, 1, 1));
+        let encoder =
+            self.device
+                .encode_pipeline_commnad("rms_norm_inplace", entries, (meta.n_batch, 1, 1));
         self.device.queue.submit(Some(encoder.finish()));
         Ok(self)
     }
 
     fn softmax_inplace(self, axis: usize) -> Result<Self> {
-        assert!(axis == 1);
+        assert!(axis == self.strider.dims() - 1);
         assert!(self.is_contiguous());
-        assert!(self.shape().len() == 2);
+        assert!(self.shape().len() == 3 || self.shape().len() == 2);
 
-        let m = self.shape()[0] as u32;
-        let n = self.shape()[1] as u32;
+        let (m, n) = if self.strider.dims() == 3 {
+            (
+                (self.shape()[0] * self.shape()[1]) as u32,
+                self.shape()[2] as u32,
+            )
+        } else {
+            (self.shape()[0] as u32, self.shape()[1] as u32)
+        };
         let meta_buf = self
             .device
             .make_storage_buffer("meta", bytemuck::cast_slice(&[m, n]));
@@ -425,68 +455,52 @@ impl Tensor for WgpuTensor {
         ];
         let encoder =
             self.device
-                .encode_pipeline_commnad("softmax_inplace", entries, (m / 32 + 1, 1, 1));
+                .encode_pipeline_commnad("softmax_inplace", entries, (m * n / 16 + 1, 1, 1));
         self.device.queue.submit(Some(encoder.finish()));
         Ok(self)
     }
 
     fn silu_inplace(self) -> Result<Self> {
         assert!(self.is_contiguous());
-        assert!(self.shape().len() == 1);
 
-        let m = 1;
-        let n = self.shape()[0] as u32;
-        let meta_buf = self
-            .device
-            .make_storage_buffer("meta", bytemuck::cast_slice(&[m, n]));
-        let entries = &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: self.buf.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: meta_buf.as_entire_binding(),
-            },
-        ];
-        let encoder = self
-            .device
-            .encode_pipeline_commnad("silu_inplace", entries, (1, 1, 1));
+        let elms = self.strider().len();
+        let entries = &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: self.buf.as_entire_binding(),
+        }];
+        let encoder = self.device.encode_pipeline_commnad(
+            "silu_inplace",
+            entries,
+            ((elms / 32 + 1) as u32, 1, 1),
+        );
         self.device.queue.submit(Some(encoder.finish()));
         Ok(self)
     }
 
     fn gelu_inplace(self) -> Result<Self> {
         assert!(self.is_contiguous());
-        assert!(self.shape().len() == 1);
 
-        let m = 1;
-        let n = self.shape()[0] as u32;
-        let meta_buf = self
-            .device
-            .make_storage_buffer("meta", bytemuck::cast_slice(&[m, n]));
-        let entries = &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: self.buf.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: meta_buf.as_entire_binding(),
-            },
-        ];
-        let encoder = self
-            .device
-            .encode_pipeline_commnad("gelu_inplace", entries, (1, 1, 1));
+        let elms = self.strider().len();
+        let entries = &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: self.buf.as_entire_binding(),
+        }];
+        let encoder = self.device.encode_pipeline_commnad(
+            "gelu_inplace",
+            entries,
+            ((elms / 32 + 1) as u32, 1, 1),
+        );
         self.device.queue.submit(Some(encoder.finish()));
         Ok(self)
     }
 
     fn mul_inplace(self, rhs: &Self) -> Result<Self> {
-        let meta_buf = self.device.make_storage_buffer(
-            "meta",
-            bytemuck::cast_slice(&[1u32, self.strider.len() as u32]),
-        );
+        assert!(self.is_contiguous());
+        assert!(rhs.is_contiguous());
+        let n_elms = self.strider.len();
+        let meta_buf = self
+            .device
+            .make_storage_buffer("meta", bytemuck::cast_slice(&[n_elms as u32]));
         let entries = &[
             wgpu::BindGroupEntry {
                 binding: 0,
@@ -501,19 +515,22 @@ impl Tensor for WgpuTensor {
                 resource: meta_buf.as_entire_binding(),
             },
         ];
-        let encoder = self
-            .device
-            .encode_pipeline_commnad("mul_inplace", entries, (1, 1, 1));
+        let encoder = self.device.encode_pipeline_commnad(
+            "mul_inplace",
+            entries,
+            (n_elms as u32 / 32 + 1, 1, 1),
+        );
         self.device.queue.submit(Some(encoder.finish()));
         Ok(self)
     }
 
     fn add_inplace(self, rhs: &Self) -> Result<Self> {
-        assert!(self.strider().len() % 32 == 0);
-        let meta_buf = self.device.make_storage_buffer(
-            "meta",
-            bytemuck::cast_slice(&[1u32, self.strider.len() as u32]),
-        );
+        assert!(self.is_contiguous());
+        assert!(rhs.is_contiguous());
+        let n_elms = self.strider.len();
+        let meta_buf = self
+            .device
+            .make_storage_buffer("meta", bytemuck::cast_slice(&[n_elms as u32]));
         let entries = &[
             wgpu::BindGroupEntry {
                 binding: 0,
@@ -528,22 +545,26 @@ impl Tensor for WgpuTensor {
                 resource: meta_buf.as_entire_binding(),
             },
         ];
-        let encoder = self
-            .device
-            .encode_pipeline_commnad("add_inplace", entries, (1, 1, 1));
+        let encoder = self.device.encode_pipeline_commnad(
+            "add_inplace",
+            entries,
+            (n_elms as u32 / 32 + 1, 1, 1),
+        );
         self.device.queue.submit(Some(encoder.finish()));
         Ok(self)
     }
 
     fn scale_inplace(self, rhs: f32) -> Result<Self> {
         // assert!(self.strider().len() % 32 == 0);
-        let meta_buf = self.device.make_storage_buffer(
-            "meta",
-            bytemuck::cast_slice(&[1u32, self.strider.len() as u32]),
-        );
+        assert!(self.is_contiguous());
+        let n_elms = self.strider.len();
         let rhs_buf = self
             .device
             .make_storage_buffer("rhs", bytemuck::cast_slice(&[rhs]));
+        // TODO: make uniform buffer for meta
+        let meta_buf = self
+            .device
+            .make_storage_buffer("meta", bytemuck::cast_slice(&[n_elms as u32]));
         let entries = &[
             wgpu::BindGroupEntry {
                 binding: 0,
@@ -558,19 +579,21 @@ impl Tensor for WgpuTensor {
                 resource: meta_buf.as_entire_binding(),
             },
         ];
-        let encoder = self
-            .device
-            .encode_pipeline_commnad("mul_inplace", entries, (1, 1, 1));
+        let encoder = self.device.encode_pipeline_commnad(
+            "mul_inplace",
+            entries,
+            (n_elms as u32 / 32 + 1, 1, 1),
+        );
         self.device.queue.submit(Some(encoder.finish()));
         Ok(self)
     }
 
     fn div_scalar_inplace(self, rhs: f32) -> Result<Self> {
-        // assert!(self.strider().len() % 32 == 0);
-        let meta_buf = self.device.make_storage_buffer(
-            "meta",
-            bytemuck::cast_slice(&[1u32, self.strider.len() as u32]),
-        );
+        assert!(self.is_contiguous());
+        let n_elms = self.strider.len();
+        let meta_buf = self
+            .device
+            .make_storage_buffer("meta", bytemuck::cast_slice(&[n_elms as u32]));
         let rhs_buf = self
             .device
             .make_storage_buffer("rhs", bytemuck::cast_slice(&[rhs]));
@@ -588,29 +611,29 @@ impl Tensor for WgpuTensor {
                 resource: meta_buf.as_entire_binding(),
             },
         ];
-        let encoder = self
-            .device
-            .encode_pipeline_commnad("div_inplace", entries, (1, 1, 1));
+        let encoder =
+            self.device
+                .encode_pipeline_commnad("div_inplace", entries, (n_elms as u32 / 32, 1, 1));
         self.device.queue.submit(Some(encoder.finish()));
         Ok(self)
     }
 
-    fn matmul_vec(&self, y: &Self) -> Result<Self> {
+    // (m, k) @ (b, k) => (b, m)
+    fn matmul_vec(&self, rhs: &Self) -> Result<Self> {
         assert!(self.shape().len() == 2);
-        assert!(self.shape()[1] == y.shape()[0]);
-        assert!(y.shape().len() == 1);
+        assert!(self.shape().last() == rhs.shape().last());
         assert!(self.is_contiguous());
-        assert!(y.is_contiguous());
+        assert!(rhs.is_contiguous());
 
         let output = Self::alloc(
-            &[self.strider.shape()[0]],
+            &[rhs.strider.shape()[0], self.strider.shape()[0]],
             GGMLType::F32,
             self.device.clone(),
         )?;
         let meta = MatmulMeta {
+            b: rhs.strider.shape()[0] as u32,
             m: self.strider.shape()[0] as u32,
             k: self.strider.shape()[1] as u32,
-            n: 1,
             _padding: 0,
         };
 
@@ -624,7 +647,7 @@ impl Tensor for WgpuTensor {
             },
             wgpu::BindGroupEntry {
                 binding: 1,
-                resource: y.buf.as_entire_binding(),
+                resource: rhs.buf.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
                 binding: 2,
@@ -635,36 +658,39 @@ impl Tensor for WgpuTensor {
                 resource: output.buf.as_entire_binding(),
             },
         ];
-        let encoder = self
-            .device
-            .encode_pipeline_commnad("sgemv", entries, (meta.m / 32, 1, 1));
+        let encoder =
+            self.device
+                .encode_pipeline_commnad("sgemv", entries, (meta.b * meta.m / 32, 1, 1));
         self.device.queue.submit(Some(encoder.finish()));
 
         Ok(output)
     }
 
-    fn batch_matmul_vec(&self, y: &Self) -> Result<Self> {
+    /// (b, m, k) @ (b, k, n) => (b, m, n)
+    /// the A matrix is dense and the B matrix is allowed to be strided
+    fn batch_matmul(&self, y: &Self) -> Result<Self> {
         assert!(self.shape().len() == 3);
-        assert!(y.shape().len() == 2);
+        assert!(y.shape().len() == 3);
         assert!(self.shape()[0] == y.shape()[0]);
         assert!(self.shape()[2] == y.shape()[1]);
-        assert!(y.is_contiguous());
+        assert!(self.is_contiguous());
 
-        // (m, n, k) @ (m, k) => (m, n)
+        // (b, m, k) @ (b, k, n) => (b, m, n)
         let output = Self::alloc(
-            &[self.shape()[0], self.shape()[1]],
+            &[y.shape()[0], self.shape()[1], y.shape()[2]],
             GGMLType::F32,
             self.device.clone(),
         )?;
 
         let meta = BatchMatmulMeta {
-            m: self.strider.shape()[0] as u32,
-            n: self.strider.shape()[1] as u32,
-            k: self.strider.shape()[2] as u32,
-            strides_0: [
-                self.strider.strides()[0] as u32,
-                self.strider.strides()[1] as u32,
-                self.strider.strides()[2] as u32,
+            b: y.shape()[0] as u32,
+            m: self.shape()[1] as u32,
+            k: self.shape()[2] as u32,
+            n: y.shape()[2] as u32,
+            strides_b: [
+                y.strider.strides()[0] as u32,
+                y.strider.strides()[1] as u32,
+                y.strider.strides()[2] as u32,
             ],
             ..Default::default()
         };
@@ -689,16 +715,60 @@ impl Tensor for WgpuTensor {
                 resource: output.buf.as_entire_binding(),
             },
         ];
-        let encoder =
-            self.device
-                .encode_pipeline_commnad("batch_matmul", entries, (meta.m / 32 + 1, 1, 1));
+        let encoder = self.device.encode_pipeline_commnad(
+            "batch_matmul",
+            entries,
+            (meta.b * meta.m * meta.n / 32 + 1, 1, 1),
+        );
         self.device.queue.submit(Some(encoder.finish()));
 
         Ok(output)
     }
 
-    fn contiguous(&self) -> Result<Self> {
-        todo!()
+    fn contiguous(self) -> Result<Self> {
+        assert!(self.strider.dims() == 3 || self.strider.dims() == 2);
+        if self.is_contiguous() {
+            return Ok(self);
+        }
+
+        let n_elms = self.strider.len();
+        let output = Self::alloc(self.strider.shape(), self.dtype, self.device.clone())?;
+        let mut meta = ContiguousMeta {
+            shape: [0; 4],
+            strides: [0; 4],
+            n_dims: self.strider.dims() as u32,
+            n_elms: n_elms as u32,
+            _padding: [0; 2],
+        };
+        for i in 0..self.strider.dims() {
+            meta.shape[i] = self.strider.shape()[i] as u32;
+            meta.strides[i] = self.strider.strides()[i] as u32;
+        }
+        let meta_bytes = bytemuck::bytes_of(&meta);
+        let meta_buf = self.device.make_storage_buffer("meta", meta_bytes);
+
+        let entries = &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: output.buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: self.buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: meta_buf.as_entire_binding(),
+            },
+        ];
+        let encoder = self.device.encode_pipeline_commnad(
+            "contiguous",
+            entries,
+            (n_elms as u32 / 32 + 1, 1, 1),
+        );
+        self.device.queue.submit(Some(encoder.finish()));
+
+        Ok(output)
     }
 }
 
@@ -795,7 +865,7 @@ mod tests {
 
     #[test]
     fn test_wgpu_tensor_with_name() -> Result<()> {
-        let t1 = WgpuTensor::alloc(&[512, 2], GGMLType::F32, DEVICE.clone())?;
+        let t1 = WgpuTensor::new(&[0.0; 1024], &[512, 2], DEVICE.clone())?;
         let t2 = WgpuTensor::new(&[1.0; 1024], &[512, 2], DEVICE.clone())?;
         let t1 = t1.add_inplace(&t2)?;
         let _ = t1.with_name("t1".to_string());
@@ -879,22 +949,12 @@ mod tests {
         // => 2.0, 10.0, 18.0
 
         let t1 = WgpuTensor::new(&v1, &[1, 3, 2], DEVICE.clone())?;
-        let t2 = WgpuTensor::new(&[2.0; 2], &[1, 2], DEVICE.clone())?;
-        let t3 = t1.batch_matmul_vec(&t2)?;
-        let mut dst1 = vec![0.0; 3]; // 1 x 3
+        let t2 = WgpuTensor::new(&[2.0; 2], &[1, 2, 1], DEVICE.clone())?;
+        let t3 = t1.batch_matmul(&t2)?;
+        let mut dst1 = vec![0.0; 3]; // 1 x 3 x 1
         t3.export(&mut dst1)?;
-        // assert_eq!(t1.strider().strides(), &[6, 2, 1]);
-        // assert_eq!(dst1, vec![2.0, 10.0, 18.0]);
-
-        let v1 = vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0];
-        let t1 = WgpuTensor::new(&v1, &[2, 3, 2], DEVICE.clone())?;
-        let t2 = WgpuTensor::new(&[2.0; 4], &[2, 2], DEVICE.clone())?;
-        let t3 = t1.batch_matmul_vec(&t2)?;
-        let mut dst1 = vec![0.0; 6]; // 2 x 3
-        t3.export(&mut dst1)?;
-        assert_eq!(t1.strider().shape(), &[2, 3, 2]);
         assert_eq!(t1.strider().strides(), &[6, 2, 1]);
-        // assert_eq!(dst1, vec![2.0, 10.0, 18.0, 2.0, 10.0, 18.0]);
+        assert_eq!(dst1, vec![2.0, 10.0, 18.0]);
 
         Ok(())
     }
@@ -1019,6 +1079,50 @@ mod tests {
             &[
                 0.7310586, 1.761594, 2.8577225, 3.928055, 4.9665356, 5.9851646
             ][..],
+            epsilon = 1e-5
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_dup() -> Result<()> {
+        let v1 = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let t1 = WgpuTensor::new(&v1, &[2, 3], DEVICE.clone())?;
+        let t2 = t1.dup()?;
+
+        let mut dst1 = vec![0.0; 6];
+        t2.export(&mut dst1)?;
+
+        assert_relative_eq!(
+            &dst1[..],
+            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0][..],
+            epsilon = 1e-5
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_congiguous() -> Result<()> {
+        // 1, 2, 3
+        // 4, 5, 6
+        let v1 = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let t1 = WgpuTensor::new(&v1, &[2, 3], DEVICE.clone())?;
+        let t1 = t1.transpose(&[1, 0])?;
+        let t2 = t1.contiguous()?;
+        // 1, 4
+        // 2, 5
+        // 3, 6
+
+        let mut dst1 = vec![0.0; 6];
+        t2.export(&mut dst1)?;
+
+        assert_eq!(t2.strider.shape(), &[3, 2]);
+        assert_eq!(t2.strider.dims(), 2);
+        assert_relative_eq!(
+            &dst1[..],
+            &[1.0, 4.0, 2.0, 5.0, 3.0, 6.0][..],
             epsilon = 1e-5
         );
 

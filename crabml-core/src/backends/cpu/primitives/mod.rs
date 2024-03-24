@@ -1,5 +1,5 @@
 mod arithmetic;
-mod batch_matmul_vec;
+mod batch_matmul;
 mod concatenate;
 mod contiguous;
 mod gelu;
@@ -12,7 +12,7 @@ mod softmax;
 pub use arithmetic::add_inplace;
 pub use arithmetic::div_inplace;
 pub use arithmetic::mul_inplace;
-pub use batch_matmul_vec::batch_matmul;
+pub use batch_matmul::batch_matmul;
 pub use concatenate::concatenate_inplace;
 pub use contiguous::contiguous;
 pub use gelu::gelu_inplace;

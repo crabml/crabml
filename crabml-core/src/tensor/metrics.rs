@@ -15,7 +15,7 @@ pub struct TensorMetrics {
     pub dequantize_walltime: TimeMetric,
     pub matmul_quantize_walltime: TimeMetric,
     pub batch_matmul_quantize_walltime: TimeMetric,
-    pub matmul_vec_dot_walltime: TimeMetric,
+    pub export_walltime: TimeMetric,
     pub batch_matmul_walltime: TimeMetric,
     pub alloc_walltime: TimeMetric,
     pub sample_walltime: TimeMetric,
@@ -42,7 +42,7 @@ impl TensorMetrics {
         self.total_walltime.reset();
         self.matmul_quantize_walltime.reset();
         self.batch_matmul_quantize_walltime.reset();
-        self.matmul_vec_dot_walltime.reset();
+        self.export_walltime.reset();
         self.batch_matmul_walltime.reset();
         self.alloc_walltime.reset();
         self.sample_walltime.reset();
@@ -94,8 +94,8 @@ impl TensorMetrics {
                 self.matmul_walltime.as_millis(),
             ),
             (
-                "matmul_vec_dot_walltime".to_string(),
-                self.matmul_vec_dot_walltime.as_millis(),
+                "export_walltime".to_string(),
+                self.export_walltime.as_millis(),
             ),
             (
                 "matmul_quantize_walltime".to_string(),

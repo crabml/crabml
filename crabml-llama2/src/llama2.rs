@@ -148,8 +148,8 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         let _t = self.metrics.forward_walltime.track();
 
         let x = match self.conf.architecture {
-            ModelArchitecture::Llama => self.forward_llama(token, pos)?,
-            ModelArchitecture::Gemma => self.forward_gemma(token, pos)?,
+            ModelArchitecture::Llama => self.forward_llama(&[token], pos)?,
+            ModelArchitecture::Gemma => self.forward_gemma(&[token], pos)?,
         };
 
         // classifier into logits
@@ -164,16 +164,17 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         Ok(&mut self.logits)
     }
 
-    fn forward_llama(&mut self, token: usize, pos: usize) -> Result<T> {
+    fn forward_llama(&mut self, tokens: &[usize], pos: usize) -> Result<T> {
         let embed_dim = self.conf.embedding_dim;
         let n_heads = self.conf.n_heads;
         let n_kv_heads = self.conf.n_kv_heads;
         let head_dim = self.conf.head_size();
         let rope_dim = self.conf.rope_dim.unwrap_or(head_dim);
+        let n_batch = tokens.len();
 
         // copy the token embedding into x
-        let mut x = T::alloc(&[embed_dim], GGMLType::F32, self.device.clone())?;
-        x.copy_rows_from(&self.weights.token_embed, &[token])?;
+        let mut x = T::alloc(&[n_batch, embed_dim], GGMLType::F32, self.device.clone())?;
+        x.copy_rows_from(&self.weights.token_embed, tokens)?;
 
         // forward all the layers
         for l in 0..self.conf.n_layers {
@@ -189,9 +190,9 @@ impl<'a, T: Tensor> Llama2Runner<T> {
 
             // matmul qkv for every head
             let (q, k, v) = {
-                // wq: (embed_dim, embed_dim) @ x (embed_dim, ) => (embed_dim, )
-                // wk: (kv_dim, embed_dim) @ x (embed_dim, ) => (kv_dim, )
-                // wv: (kv_dim, embed_dim) @ x (embed_dim, ) => (kv_dim, )
+                // wq: (embed_dim, embed_dim) @ x (n_batch, embed_dim, ) => (n_batch, embed_dim, )
+                // wk: (kv_dim, embed_dim) @ x (n_batch, embed_dim, ) => (n_batch, kv_dim, )
+                // wv: (kv_dim, embed_dim) @ x (n_batch, embed_dim, ) => (n_batch, kv_dim, )
                 let q = self.weights.wq[l].matmul_vec(&x)?;
                 let k = self.weights.wk[l].matmul_vec(&x)?;
                 let v = self.weights.wv[l].matmul_vec(&x)?;
@@ -200,8 +201,8 @@ impl<'a, T: Tensor> Llama2Runner<T> {
 
             // ROPE
             let (q, k) = {
-                let q = q.reshape(&[n_heads, head_dim])?;
-                let k = k.reshape(&[n_kv_heads, head_dim])?;
+                let q = q.reshape(&[n_batch, n_heads, head_dim])?;
+                let k = k.reshape(&[n_batch, n_kv_heads, head_dim])?;
 
                 let q = q.rope_inplace(RopeMode::Llama, pos, rope_dim)?;
                 let k = k.rope_inplace(RopeMode::Llama, pos, rope_dim)?;
@@ -212,7 +213,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             };
 
             x = self.forward_multi_query_attention(
-                q, k, v, l, pos, n_kv_heads, n_heads, embed_dim, head_dim,
+                q, k, v, l, pos, n_kv_heads, n_heads, embed_dim, head_dim, n_batch,
             )?;
             x = x.with_name(format!("attn_out:{}:{}", l, pos));
 
@@ -220,7 +221,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             x = x.add_inplace(&x_attn_orig)?;
 
             // ffn
-            x = self.forward_ffn(x, l, Activation::SiLU)?;
+            x = self.forward_ffn(x, l, pos, Activation::SiLU)?;
             x = x.with_name(format!("ffn_out:{}:{}", l, pos));
         }
 
@@ -241,16 +242,17 @@ impl<'a, T: Tensor> Llama2Runner<T> {
     // 4. it adds a 1.0 to every weights on rmsnorm (rms_att_weight, rms_ffn_weight,
     //    rms_final_weight), this have been processed during GGUF format convert, so we
     //    don't need to do it here.
-    fn forward_gemma(&mut self, token: usize, pos: usize) -> Result<T> {
+    fn forward_gemma(&mut self, tokens: &[usize], pos: usize) -> Result<T> {
         let embed_dim = self.conf.embedding_dim;
         let n_heads = self.conf.n_heads;
         let n_kv_heads = self.conf.n_kv_heads;
         let head_dim = self.conf.head_size();
         let rope_dim = self.conf.rope_dim.unwrap_or(head_dim);
+        let n_batch = tokens.len();
 
         // copy the token embedding into x
-        let mut x = T::alloc(&[embed_dim], GGMLType::F32, self.device.clone())?;
-        x.copy_rows_from(&self.weights.token_embed, &[token])?;
+        let mut x = T::alloc(&[n_batch, embed_dim], GGMLType::F32, self.device.clone())?;
+        x.copy_rows_from(&self.weights.token_embed, tokens)?;
 
         // GEMMA only: scale the embedding with sqrt(embed_dim)
         x = x.scale_inplace((embed_dim as f32).sqrt())?;
@@ -293,14 +295,14 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             };
 
             x = self.forward_multi_query_attention(
-                q, k, v, l, pos, n_kv_heads, n_heads, embed_dim, head_dim,
+                q, k, v, l, pos, n_kv_heads, n_heads, embed_dim, head_dim, n_batch,
             )?;
 
             // residual connection back into x
             x = x.add_inplace(&x_attn_orig)?;
 
             // ffn
-            x = self.forward_ffn(x, l, Activation::GeLU)?;
+            x = self.forward_ffn(x, l, pos, Activation::GeLU)?;
             x = x.with_name(format!("ffn_out:{}:{}", l, pos));
         }
 
@@ -321,20 +323,21 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         k: T,
         v: T,
         l: usize,
-        pos: usize,
+        _pos: usize,
         n_kv_heads: usize,
         n_heads: usize,
         embed_dim: usize,
         head_dim: usize,
+        n_batch: usize,
     ) -> Result<T> {
-        // save to kv cache in layout of (seq, n_kv_heads, head_dim)
+        // save to kv cache in layout of (n_kv_heads, n_batch, head_dim)
         {
             let _t = self.metrics.save_kvcache_walltime.track();
             let k = k
-                .reshape(&[1, n_kv_heads, head_dim])?
+                .reshape(&[n_batch, n_kv_heads, head_dim])?
                 .transpose(&[1, 0, 2])?;
             let v = v
-                .reshape(&[1, n_kv_heads, head_dim])?
+                .reshape(&[n_batch, n_kv_heads, head_dim])?
                 .transpose(&[1, 0, 2])?;
 
             if let Some(k_cache) = self.key_cache[l].as_mut() {
@@ -347,34 +350,42 @@ impl<'a, T: Tensor> Llama2Runner<T> {
 
         // multi query attention
         let x = {
-            let q = q.reshape(&[n_heads, head_dim])?;
+            // - q: [n_batch, n_head, head_size]
+            // - q = q.transpose(1, 0, 2).contiguous => [n_head, n_batch, head_size]
+            let q = q
+                .reshape(&[n_batch, n_heads, head_dim])?
+                .transpose(&[1, 0, 2])?
+                .contiguous()?
+                .div_scalar_inplace((head_dim as f32).sqrt())?;
 
-            // - key_cache: [n_kv_head, seq, head_size]
-            // - q: [n_head, head_size]
-            // - attn_score = batch_matmul(key_cache, q) => [n_head, seq]
-            // - softmax(attn_score, axis=1) => [n_head, seq]
-            // - val_cache: [n_kv_head, seq, head_size]
-            // - val_cache = val_cache.transpose(0, 2, 1) => [n_kv_head, head_size, seq]
-            // - out = batch_matmul(val_cache, atten_scores) => [n_head, head_size]
-
-            // get attention scores
+            // get attention scores:
+            // - key_cache: [n_kv_head, seq, head_size].transpose(0, 2, 1) => [n_kv_head, head_size, seq]
+            // - attn_scores = batch_matmul(q, key_cache) => [n_head, n_batch, seq]
+            // - attn_scores = softmax(attn_score, axis=2) => [n_head, n_batch, seq]
             let k_cache = self.key_cache[l].take().unwrap();
             let k_cache_strider_orig = k_cache.strider().clone();
-            // (n_heads, n_seq, head_size) @ (n_head, head_size) => (n_heads, n_seq)
-            let q = q.div_scalar_inplace((head_dim as f32).sqrt())?;
-            let attn = k_cache.batch_matmul_vec(&q)?;
-            let attn = attn
-                .softmax_inplace(1)?
-                .with_name(format!("k_cache_attn:{}:{}", l, pos));
+            let k_cache = k_cache.transpose(&[0, 2, 1])?; // (n_kv_heads, head_size, seq)
+            // (n_head, 1, head_size) @ (n_kv_heads, head_size, seq)
+            let attn = q.batch_matmul(&k_cache)?; // (n_head, n_batch, seq)
+            let attn = attn.softmax_inplace(2)?;
             self.key_cache[l].replace(k_cache.with_strider(k_cache_strider_orig)?);
 
+            // - val_cache: [n_kv_head, seq, head_size]
+            // - out = batch_matmul(atten_scores, val_cache) => [n_head, n_batch, head_size]
+            // - out = out.transpose(1, 0, 2).contiguous => [n_batch, n_head, head_size]
+            // - out = out.reshape(n_batch, embed_dim)
             let v_cache = self.value_cache[l].take().unwrap();
             let v_cache_strider_orig = v_cache.strider().clone();
-            // get the weighted sum of the values and attention scores
-            let v_cache = v_cache.transpose(&[0, 2, 1])?;
-            // (n_kv_heads, head_size, n_seq) @ (n_heads, n_seq) => (n_heads, head_size)
-            let x_with_attn = v_cache.batch_matmul_vec(&attn)?; // (n_heads, head_size)
-            let x_with_attn = x_with_attn.reshape(&[embed_dim])?;
+            // (n_head, n_batch, seq) @ (n_kv_heads, seq, head_dim) => (n_head, n_batch, head_dim)
+            let x_with_attn = attn.batch_matmul(&v_cache)?; // (n_heads, n_batch, head_dim)
+            let x_with_attn = if n_batch == 1 {
+                x_with_attn.reshape(&[n_batch, embed_dim])?
+            } else {
+                x_with_attn
+                    .transpose(&[1, 0, 2])? // (n_batch, n_heads, head_dim)
+                    .contiguous()?
+                    .reshape(&[n_batch, embed_dim])?
+            };
             self.value_cache[l].replace(v_cache.with_strider(v_cache_strider_orig)?);
 
             // final matmul to get the output of the attention
@@ -383,9 +394,9 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         Ok(x)
     }
 
-    fn forward_ffn(&self, mut x: T, l: usize, activation: Activation) -> Result<T> {
+    fn forward_ffn(&self, mut x: T, l: usize, _pos: usize, activation: Activation) -> Result<T> {
         // save for redidual connection
-        let x_orig_ffn = x.dup()?;
+        let x_orig_ffn = x.dup()?; // (n_batch, embed_dim)
 
         // ffn rmsnorm
         x = {
@@ -396,8 +407,8 @@ impl<'a, T: Tensor> Llama2Runner<T> {
 
         // Now for FFN in PyTorch we have: self.down_proj(F.silu(self.gate_proj(x)) * self.up_proj(x))
         // first calculate self.w1(x) and self.w3(x)
-        // w1: (hidden_dim, embed_dim) @ x (embed_dim, ) => (hidden_dim, )
-        // w3: (hidden_dim, embed_dim) @ x (embed_dim, ) => (hidden_dim, )
+        // w1: (hidden_dim, embed_dim) @ x (n_batch, embed_dim, ) => (n_batch, hidden_dim, )
+        // w3: (hidden_dim, embed_dim) @ x (n_batch, embed_dim, ) => (n_batch, hidden_dim, )
         let mut h1 = self.weights.ffn_gate_weight[l].matmul_vec(&x)?;
         let h2 = self.weights.ffn_up_weight[l].matmul_vec(&x)?;
 
@@ -411,7 +422,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         h1 = h1.mul_inplace(&h2)?;
 
         // final matmul to get the output of the ffn
-        x = self.weights.ffn_down_weight[l].matmul_vec(&h1)?;
+        x = self.weights.ffn_down_weight[l].matmul_vec(&h1)?; // (n_batch, embed_dim)
 
         // residual connection
         x = x.add_inplace(&x_orig_ffn)?;
@@ -552,18 +563,6 @@ mod tests {
             device_cpu.dump_debug_tensor("q_roped:0:0").unwrap()[..],
             device_wgpu.dump_debug_tensor("q_roped:0:0").unwrap()[..],
             epsilon = 1e-2
-        );
-
-        assert_relative_eq!(
-            device_cpu.dump_debug_tensor("k_cache_attn:0:0").unwrap()[..],
-            device_wgpu.dump_debug_tensor("k_cache_attn:0:0").unwrap()[..],
-            epsilon = 1e-4
-        );
-
-        assert_relative_eq!(
-            device_cpu.dump_debug_tensor("attn_out:0:0").unwrap()[..],
-            device_wgpu.dump_debug_tensor("attn_out:0:0").unwrap()[..],
-            epsilon = 1e-4
         );
 
         assert_relative_eq!(

@@ -102,7 +102,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
 
         let mut logits: &mut [f32] = &mut [];
         for (pos, token) in prompt_tokens.iter().enumerate() {
-            logits = self.forward(*token, pos)?;
+            logits = self.forward(&[*token], pos)?;
         }
         let token = sampler.sample(logits)?;
         let last_token = *prompt_tokens.last().unwrap();
@@ -121,7 +121,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         let max_steps = (self.conf.seq_len - pos).min(steps);
         let first_token = self.tokenizer.decode(prev_token, token);
         let tokens_iter = (pos..pos + max_steps).scan(token, move |current_token, pos| {
-            let logits = self.forward(*current_token, pos).unwrap();
+            let logits = self.forward(&[*current_token], pos).unwrap();
             let new_token = sampler.sample(logits).unwrap();
             if new_token == self.tokenizer.eos_token() {
                 return None;
@@ -144,12 +144,12 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         Ok(self.generate(pos, prev_token, token, steps, sampler))
     }
 
-    pub fn forward(&mut self, token: usize, pos: usize) -> Result<&mut [f32]> {
+    pub fn forward(&mut self, tokens: &[usize], pos: usize) -> Result<&mut [f32]> {
         let _t = self.metrics.forward_walltime.track();
 
         let x = match self.conf.architecture {
-            ModelArchitecture::Llama => self.forward_llama(&[token], pos)?,
-            ModelArchitecture::Gemma => self.forward_gemma(&[token], pos)?,
+            ModelArchitecture::Llama => self.forward_llama(tokens, pos)?,
+            ModelArchitecture::Gemma => self.forward_gemma(tokens, pos)?,
         };
 
         // classifier into logits

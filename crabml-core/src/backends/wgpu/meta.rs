@@ -1,8 +1,8 @@
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C, align(16))]
 pub struct RmsNormMeta {
-    pub b: u32,
-    pub m: u32,
+    pub n_batch: u32,
+    pub n_dims: u32,
     pub eps: f32,
     pub _padding: u32,
 }

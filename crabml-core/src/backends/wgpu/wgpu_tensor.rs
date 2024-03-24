@@ -401,14 +401,14 @@ impl Tensor for WgpuTensor {
 
     fn rms_norm_inplace(self, eps: f32) -> Result<Self> {
         assert!(self.strider.dims() == 2 || self.strider.dims() == 1);
-        let (b, m) = if self.strider.dims() == 2 {
+        let (n_batch, n_dims) = if self.strider.dims() == 2 {
             (self.shape()[0], self.shape()[1])
         } else {
             (1, self.shape()[0])
         };
         let meta = &RmsNormMeta {
-            b: b as u32,
-            m: m as u32,
+            n_batch: n_batch as u32,
+            n_dims: n_dims as u32,
             eps,
             _padding: 0,
         };
@@ -425,9 +425,11 @@ impl Tensor for WgpuTensor {
                 resource: meta_buf.as_entire_binding(),
             },
         ];
-        let encoder =
-            self.device
-                .encode_pipeline_commnad("rms_norm_inplace", entries, (meta.b as u32, 1, 1));
+        let encoder = self.device.encode_pipeline_commnad(
+            "rms_norm_inplace",
+            entries,
+            (meta.n_batch as u32, 1, 1),
+        );
         self.device.queue.submit(Some(encoder.finish()));
         Ok(self)
     }

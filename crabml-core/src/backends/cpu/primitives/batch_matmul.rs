@@ -71,32 +71,6 @@ fn batch_matmul_naive_f32(
     }
 }
 
-fn batch_matmul_naive_f16(
-    bufa: &[f16],     // b x m x k
-    bufb: &[f16],     // b x k x n
-    bufc: &mut [f32], // b x m x n
-    stride1: &TensorStrider,
-    stride2: &TensorStrider,
-) {
-    let (a_batch, b_batch) = (stride1.shape()[0], stride2.shape()[0]);
-    assert!(a_batch >= b_batch);
-    let (m, k, n) = (stride1.shape()[1], stride1.shape()[2], stride2.shape()[2]);
-    for bi in 0..a_batch {
-        for mi in 0..m {
-            for ni in 0..n {
-                for ki in 0..k {
-                    let a_val = bufa[bi * stride1.strides()[0]
-                        + mi * stride1.strides()[1]
-                        + ki * stride1.strides()[2]];
-                    let b_val = bufb[(bi % b_batch) * stride2.strides()[0]
-                        + ki * stride2.strides()[1]
-                        + ni * stride2.strides()[2]];
-                    bufc[bi * (m * n) + mi * n + ni] += (a_val * b_val).to_f32();
-                }
-            }
-        }
-    }
-}
 fn batch_matmul_simd_f16(
     bufa: &[f16],     // b x m x k
     bufb: &[f16],     // b x k x n
@@ -117,7 +91,8 @@ fn batch_matmul_simd_f16(
 
     // matrix A is always row-wise contiguous, matrix B should be contiguous on the K
     // dimension or N dimension.
-    // if matrix B is contiguous on the k dimension, then we can use vec_dot_f16_f16
+    // if matrix B is contiguous on the k dimension, then we use vec_dot_f16_f16
+    // if matrix B is contiguous on the n dimension, then we use vec_fma_f16_f16
     if stride_bk == 1 {
         tmpc.par_iter_mut().enumerate().for_each(|(i, bufcp)| {
             let ni = i % n;

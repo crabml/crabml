@@ -341,13 +341,13 @@ impl<'a> Tensor for CpuTensor<'a> {
         Ok(())
     }
 
-    fn batch_matmul_vec(&self, b: &CpuTensor<'a>) -> Result<Self> {
-        // (b, m, k) @ (b, k, ) -> (b, m, )
+    // (b, m, k) @ (b, k, n) -> (b, m, n)
+    fn batch_matmul(&self, b: &CpuTensor<'a>) -> Result<Self> {
         let bufa = self.buf();
         let bufb = b.buf();
         let _t = self.device.metrics.batch_matmul_walltime.track();
         let mut c = CpuTensor::alloc(
-            &[b.shape()[0], self.shape()[1]],
+            &[self.shape()[0], self.shape()[1], b.shape()[2]],
             GGMLType::F32,
             self.device(),
         )?;
@@ -360,6 +360,7 @@ impl<'a> Tensor for CpuTensor<'a> {
 
     // gemv
     // (m, k) @ (k, ) => (m, )
+    // (m, k) @ (b, k) => (b, m, )
     fn matmul_vec(&self, x: &CpuTensor<'a>) -> Result<Self> {
         let bufa = self.buf();
         let bufb = x.buf();

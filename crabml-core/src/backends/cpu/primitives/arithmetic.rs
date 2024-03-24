@@ -50,8 +50,8 @@ pub fn binary_inplace<'a, F>(
 where
     F: Fn(&mut f32, f32),
 {
-    assert!(buf1.len() == buf2.len() || buf2.len() == 1);
-    assert!(strider1.shape() == strider2.shape() || strider2.len() == 1);
+    assert!(buf1.len() % buf2.len() == 0);
+    assert!(strider1.shape().last() == strider2.shape().last() || buf2.len() == 1);
     assert!(strider1.is_contiguous());
     assert!(strider2.is_contiguous());
 
@@ -64,9 +64,9 @@ where
     }
 
     buf1.iter_f32_mut()
-        .zip(buf2.iter_f32())
+        .zip(buf2.as_f32_ref().iter().cycle())
         .for_each(|(ia, ib)| {
-            f(ia, ib);
+            f(ia, *ib);
         });
 
     Ok(())

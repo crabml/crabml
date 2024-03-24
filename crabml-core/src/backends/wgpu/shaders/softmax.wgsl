@@ -9,12 +9,12 @@ var<storage, read_write> input: array<f32>;
 @group(0) @binding(1)
 var<storage, read> input_m: Meta;
 
-@compute @workgroup_size(32)
+@compute @workgroup_size(16)
 fn main(
     @builtin(workgroup_id) workgroup_id: vec3<u32>,
     @builtin(local_invocation_id) local_id: vec3<u32>,
 ) {
-    let mi = workgroup_id.x * 32u + local_id.x;
+    let mi = workgroup_id.x * 16u + local_id.x;
     if (mi >= input_m.M) {
         return;
     }

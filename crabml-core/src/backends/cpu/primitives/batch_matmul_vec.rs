@@ -9,123 +9,100 @@ use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::backends::cpu::CpuTensorDeviceRef;
 use crate::tensor::TensorStrider;
 
-/// (m, k) @ (k, ) -> (m, ) => gemv_2d_1d
-/// (s, m, k) @ (s, k, ) -> (s, m, )  => bmm_3d_2d
-/// (b, s, m, k) @ (b, s, k) -> (b, s, m) => bmm_4d_3d
+/// A (b, m, n) @ B (b, k, n) -> C (b, m, n)
+/// A (b, m, n) @ B (k, n) -> C (b, m)
 ///
-/// the first dimension of A is expected to be always contiguous, and the last two dimensions
-/// of A is allowed to be column-wise contiguous.
+/// A is expected to be contiguous, B is allowed to be strided.
 pub fn batch_matmul<'a>(
-    device: &CpuTensorDeviceRef<'a>,
+    _device: &CpuTensorDeviceRef<'a>,
     bufa: &CpuTensorBuf<'a>,
     bufb: &CpuTensorBuf<'a>,
     bufc: &mut CpuTensorBuf<'a>,
     strider1: &TensorStrider,
     strider2: &TensorStrider,
 ) {
-    assert!(strider1.dims() == 4 || strider1.dims() == 3 || strider1.dims() == 2);
-    assert!(strider2.dims() == strider1.dims() - 1);
-    assert!(strider2.is_contiguous());
+    assert!(strider1.dims() == 3);
+    assert!(strider2.dims() == 3 || strider2.dims() == 2);
+    assert!(strider1.is_contiguous());
 
-    // on the case of 2d x 1d matmul, we can expect it to be always contiguous.
-    if strider1.dims() == 2 {
-        assert!(strider1.is_contiguous());
-        assert!(strider1.shape()[1] == strider2.shape()[0]);
-        let (m, k) = (strider1.shape()[0], strider1.shape()[1]);
-        let (mi_stride, ki_stride) = (strider1.strides()[0], strider1.strides()[1]);
-        gemv_dense_3d_2d(
-            device, bufa, bufb, bufc, 1, 1, m, k, 0, mi_stride, ki_stride,
-        );
-        return;
-    }
-
-    // 3d and 4d matmul could be handled by the same function
-    let (a_batch, b_batch) = if strider1.dims() == 3 {
-        // (s, m, k) @ (s, k) -> (s, m)
-        (strider1.shape()[0], strider2.shape()[0])
-    } else if strider1.dims() == 4 {
-        // (b, s, m, k) @ (b, s, k) -> (b, s, m)
-        // the b and s dimensions are considered as contiguous, and the m and k dimensions maybe not.
-        // so the we can merge the b and s dimensions into a single batch dimension.
-        (
-            strider1.shape()[0] * strider1.shape()[1],
-            strider2.shape()[0] * strider2.shape()[1],
-        )
+    let strider2 = if strider2.dims() == 3 {
+        strider2.clone()
     } else {
-        unreachable!();
+        strider2
+            .reshape(vec![strider2.shape()[0], strider2.shape()[1], 1])
+            .unwrap()
     };
 
-    // m, k are always the last two dimensions of strider1
-    let (m, k) = {
-        let shape_tail = &strider1.shape()[strider1.dims() - 2..strider1.dims()];
-        (shape_tail[0], shape_tail[1])
-    };
-    // strides for the last three dimensions
-    let (bi_stride, mi_stride, ki_stride) = {
-        let strides_tail = &strider1.strides()[strider1.dims() - 3..strider1.dims()];
-        (strides_tail[0], strides_tail[1], strides_tail[2])
-    };
+    match bufb {
+        CpuTensorBuf::F32(bufb) => batch_matmul_naive_f32(
+            bufa.as_f32_ref(),
+            bufb,
+            bufc.as_f32_mut(),
+            strider1,
+            &strider2,
+        ),
+        CpuTensorBuf::F16(bufb) => {
+            let bufa = quantize_f32_f16(bufa.as_f32_ref());
+            batch_matmul_naive_f16(&bufa, bufb, bufc.as_f32_mut(), strider1, &strider2)
+        }
+        _ => unreachable!(),
+    }
+}
 
-    match bufa {
-        CpuTensorBuf::F32(bufa) => {
-            let bufc = bufc.as_f32_mut();
-            let bufb = bufb.as_f32_ref();
-            gemv_strided_3d_2d_f32(
-                device, bufa, bufb, bufc, a_batch, b_batch, m, k, bi_stride, mi_stride, ki_stride,
-            );
-        }
-        CpuTensorBuf::F16(bufa) => {
-            let bufb = bufb.as_f32_ref();
-            let bufc = bufc.as_f32_mut();
-            let bufb = quantize_f32_f16(bufb);
-            gemv_strided_3d_2d_f16(
-                device, bufa, &bufb, bufc, a_batch, b_batch, m, k, bi_stride, mi_stride, ki_stride,
-            );
-        }
-        bufa => {
-            // the quantized matmul is always dense
-            assert!(strider1.is_contiguous());
-            gemv_dense_3d_2d(
-                device, bufa, bufb, bufc, a_batch, b_batch, m, k, bi_stride, mi_stride, ki_stride,
-            );
+fn batch_matmul_naive_f32(
+    bufa: &[f32],     // b x m x k
+    bufb: &[f32],     // b x k x n
+    bufc: &mut [f32], // b x m x n
+    stride1: &TensorStrider,
+    stride2: &TensorStrider,
+) {
+    let (a_batch, b_batch) = (stride1.shape()[0], stride2.shape()[0]);
+    assert!(a_batch >= b_batch);
+    let (m, k, n) = (stride1.shape()[1], stride1.shape()[2], stride2.shape()[2]);
+    for bi in 0..a_batch {
+        for mi in 0..m {
+            for ni in 0..n {
+                for ki in 0..k {
+                    bufc[bi * (m * n) + mi * n + ni] += bufa[bi * stride1.strides()[0]
+                        + mi * stride1.strides()[1]
+                        + ki * stride1.strides()[2]]
+                        * bufb[(bi % b_batch) * stride2.strides()[0]
+                            + ki * stride2.strides()[1]
+                            + ni * stride2.strides()[2]];
+                }
+            }
         }
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn gemv_dense_3d_2d(
-    _device: &CpuTensorDeviceRef,
-    bufa: &CpuTensorBuf,
-    bufb: &CpuTensorBuf,
-    bufc: &mut CpuTensorBuf,
-    a_batch: usize,
-    _b_batch: usize, // b_batch is multiple of a_batch
-    m: usize,
-    k: usize,
-    bi_stride: usize,
-    mi_stride: usize,
-    _ki_stride: usize,
+fn batch_matmul_naive_f16(
+    bufa: &[f16],     // b x m x k
+    bufb: &[f16],     // b x k x n
+    bufc: &mut [f32], // b x m x n
+    stride1: &TensorStrider,
+    stride2: &TensorStrider,
 ) {
-    assert!(bufc.len() % 4 == 0);
-
-    let bufc = bufc.as_f32_mut();
-    let bufb = &bufb.quantize(bufa.vec_dot_rhs_dtype()).unwrap();
-    bufc.par_chunks_exact_mut(4)
-        .enumerate()
-        .for_each(|(cn, cp)| {
-            // a: b x m x k
-            // b: b x k
-            // c: b x m
-            let mi = cn * 4 % m;
-            let bi = (cn * 4 - mi) / m;
-            let bi_offset = (bi % a_batch) * bi_stride;
-            cp[0] = bufa.vec_dot(bi_offset + mi * mi_stride, bufb, 0, k);
-            cp[1] = bufa.vec_dot(bi_offset + (mi + 1) * mi_stride, bufb, 0, k);
-            cp[2] = bufa.vec_dot(bi_offset + (mi + 2) * mi_stride, bufb, 0, k);
-            cp[3] = bufa.vec_dot(bi_offset + (mi + 3) * mi_stride, bufb, 0, k);
-        });
+    let (a_batch, b_batch) = (stride1.shape()[0], stride2.shape()[0]);
+    assert!(a_batch >= b_batch);
+    let (m, k, n) = (stride1.shape()[1], stride1.shape()[2], stride2.shape()[2]);
+    for bi in 0..a_batch {
+        for mi in 0..m {
+            for ni in 0..n {
+                for ki in 0..k {
+                    let a_val = bufa[bi * stride1.strides()[0]
+                        + mi * stride1.strides()[1]
+                        + ki * stride1.strides()[2]];
+                    let b_val = bufb[(bi % b_batch) * stride2.strides()[0]
+                        + ki * stride2.strides()[1]
+                        + ni * stride2.strides()[2]];
+                    bufc[bi * (m * n) + mi * n + ni] += (a_val * b_val).to_f32();
+                }
+            }
+        }
+    }
 }
 
+#[allow(dead_code)]
 #[allow(clippy::too_many_arguments)]
 fn gemv_strided_3d_2d_f32(
     _device: &CpuTensorDeviceRef,
@@ -153,6 +130,7 @@ fn gemv_strided_3d_2d_f32(
     });
 }
 
+#[allow(dead_code)]
 #[allow(clippy::too_many_arguments)]
 fn gemv_strided_3d_2d_f16(
     device: &CpuTensorDeviceRef,

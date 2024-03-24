@@ -65,5 +65,5 @@ pub trait Tensor: Sized + Clone {
 
     fn matmul_vec(&self, y: &Self) -> Result<Self>;
 
-    fn batch_matmul_vec(&self, y: &Self) -> Result<Self>;
+    fn batch_matmul(&self, y: &Self) -> Result<Self>;
 }

@@ -92,7 +92,7 @@ fn batch_matmul_simd_f16(
     // if matrix B is contiguous on the k dimension, then we use vec_dot_f16_f16
     // if matrix B is contiguous on the n dimension, then we use vec_fma_f16_f16
     if stride_bk == 1 {
-        bufc.par_iter_mut().enumerate().for_each(|(i, bufcp)| {
+        bufc.iter_mut().enumerate().for_each(|(i, bufcp)| {
             let ni = i % n;
             let mi = (i - ni) / n % m;
             let bi = (i - ni - mi * n) / (m * n);

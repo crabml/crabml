@@ -10,6 +10,9 @@ fn main(
     @builtin(local_invocation_id) local_id: vec3<u32>,
 ) {
     let gidx = workgroup_id.x * 32u + local_id.x;
+    if gidx >= arrayLength(&input) {
+        return;
+    }
 
     // x = 0.5 * x * (1.0 + (SQRT_2_OVER_PI * x * (1.0 + COEF_A * x * x)).tanh())
     let x = input[gidx];

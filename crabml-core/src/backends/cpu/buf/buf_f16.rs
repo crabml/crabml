@@ -180,7 +180,7 @@ pub fn vec_convert_f16_f32_neon(dst: &mut [f16], src: &[f32]) {
     dst.chunks_exact_mut(4)
         .zip(src.chunks_exact(4))
         .for_each(|(chunk_dst, chunk_src)| unsafe {
-            let dst_ptr = chunk_dst.as_mut_ptr() as *mut f16;
+            let dst_ptr = chunk_dst.as_mut_ptr();
             let src_ptr = chunk_src.as_ptr();
             let src = std::arch::aarch64::vld1q_f32(src_ptr);
             let dst = myaarch64::vcvt_f32_f16(src);

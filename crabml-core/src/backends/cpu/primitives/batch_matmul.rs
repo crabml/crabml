@@ -23,18 +23,10 @@ pub fn batch_matmul<'a>(
     strider2: &TensorStrider,
 ) {
     assert!(strider1.dims() == 3);
-    assert!(strider2.dims() == 3 || strider2.dims() == 2);
+    assert!(strider2.dims() == 3);
     assert!(strider1.is_contiguous());
     assert!(bufa.dtype() == GGMLType::F32 || bufa.dtype() == GGMLType::F16);
     assert!(bufb.dtype() == GGMLType::F32 || bufb.dtype() == GGMLType::F16);
-
-    let strider2 = if strider2.dims() == 3 {
-        strider2.clone()
-    } else {
-        strider2
-            .reshape(vec![strider2.shape()[0], strider2.shape()[1], 1])
-            .unwrap()
-    };
 
     match bufb {
         CpuTensorBuf::F32(bufb) => batch_matmul_naive_f32(
@@ -122,7 +114,8 @@ fn batch_matmul_simd_f16(
 
     let mut tmpc = vec![f16::ZERO; b_batch * m * n]; // TODO: avoid allocation
 
-    // matrix A is always row-wise contiguous
+    // matrix A is always row-wise contiguous, matrix B should be contiguous on the K
+    // dimension or N dimension.
     // if matrix B is contiguous on the k dimension, then we can use vec_dot_f16_f16
     if stride_bk == 1 {
         tmpc.par_iter_mut().enumerate().for_each(|(i, bufcp)| {

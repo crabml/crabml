@@ -2,6 +2,7 @@ struct Meta {
     shape: vec4<u32>,
     strides: vec4<u32>,
     nDims: u32,
+    nElms: u32,
 };
 
 @group(0) @binding(0)
@@ -37,6 +38,10 @@ fn contiguous3D(globalID: vec3<u32>) {
 fn main(
     @builtin(global_invocation_id) globalID: vec3<u32>,
 ) {
+    if globalID.x >= bufM.nElms {
+        return;
+    }
+
     if bufM.nDims == 2u {
         contiguous2D(globalID);
     } else {

@@ -7,6 +7,7 @@ use super::meta::MatmulMeta;
 use super::meta::RmsNormMeta;
 use super::WgpuTensorDeviceRef;
 use crate::backends::wgpu::meta::BatchMatmulMeta;
+use crate::backends::wgpu::meta::ContiguousMeta;
 use crate::backends::wgpu::meta::RopeMeta;
 use crate::error::ErrorKind;
 use crate::error::Result;
@@ -733,7 +734,44 @@ impl Tensor for WgpuTensor {
     }
 
     fn contiguous(&self) -> Result<Self> {
-        todo!()
+        assert!(self.strider.dims() == 3 || self.strider.dims() == 2);
+
+        let n_elms = self.strider.len();
+        let output = Self::alloc(self.strider.shape(), self.dtype, self.device.clone())?;
+        let mut meta = ContiguousMeta {
+            shape: [0 as u32; 4],
+            strides: [0 as u32; 4],
+            n_dims: self.strider.dims() as u32,
+            n_elms: n_elms as u32,
+            _padding: [0; 2],
+        };
+        for i in 0..self.strider.dims() {
+            meta.shape[i] = self.strider.shape()[i] as u32;
+            meta.strides[i] = self.strider.shape()[i] as u32;
+        }
+        let meta_bytes = bytemuck::bytes_of(&meta);
+        let meta_buf = self.device.make_storage_buffer("meta", meta_bytes);
+
+        let entries = &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: self.buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: output.buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: meta_buf.as_entire_binding(),
+            },
+        ];
+        let encoder =
+            self.device
+                .encode_pipeline_commnad("contiguous", entries, (n_elms as u32 / 32, 1, 1));
+        self.device.queue.submit(Some(encoder.finish()));
+
+        Ok(output)
     }
 }
 

@@ -51,3 +51,13 @@ pub struct ConcatenateMeta {
     pub dims: u32,
     pub _padding: [u32; 2],
 }
+
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Default)]
+#[repr(C, align(16))]
+pub struct ContiguousMeta {
+    pub shape: [u32; 4],
+    pub strides: [u32; 4],
+    pub n_dims: u32,
+    pub n_elms: u32,
+    pub _padding: [u32; 2],
+}

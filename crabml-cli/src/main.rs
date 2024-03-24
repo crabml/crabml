@@ -74,6 +74,10 @@ fn run<U: Tensor>(
     let prefill_started_at = Instant::now();
     let (prefill_pos, prev_token, token) = runner.prefill(&args.prompt, sampler)?;
     let prefill_elapsed = prefill_started_at.elapsed();
+    if args.verbose {
+        dump_metrics(metrics);
+    }
+    metrics.reset();
 
     let mut output = runner.generate(prefill_pos, prev_token, token, args.steps, sampler);
     let mut generated_tokens = 0;
@@ -94,12 +98,7 @@ fn run<U: Tensor>(
         }
 
         if args.verbose {
-            println!();
-            let mut metric_values = metrics.as_vec();
-            metric_values.sort_by_key(|v| (v.1 * 1000.0) as u32);
-            for (k, v) in metric_values.iter() {
-                println!("{0: <40} | {1: <10}", k, v);
-            }
+            dump_metrics(metrics);
         }
         metrics.reset();
     }
@@ -119,6 +118,18 @@ fn run<U: Tensor>(
     );
 
     Ok(())
+}
+
+fn dump_metrics(metrics: &TensorMetrics) {
+    println!();
+    if metrics.forward_walltime.as_millis() == 0.0 {
+        return;
+    }
+    let mut metric_values = metrics.as_vec();
+    metric_values.sort_by_key(|v| (v.1 * 1000.0) as u32);
+    for (k, v) in metric_values.iter() {
+        println!("{0: <40} | {1: <10}", k, v);
+    }
 }
 
 fn main() -> Result<()> {

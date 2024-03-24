@@ -88,28 +88,21 @@ fn batch_matmul_simd_f16(
         stride2.strides()[2],
     );
 
-    let mut tmpc = alloc_f16_buf(a_batch * m * n); // TODO: avoid allocation
-
     // matrix A is always row-wise contiguous, matrix B should be contiguous on the K
     // dimension or N dimension.
     // if matrix B is contiguous on the k dimension, then we use vec_dot_f16_f16
     // if matrix B is contiguous on the n dimension, then we use vec_fma_f16_f16
     if stride_bk == 1 {
-        tmpc.par_iter_mut().enumerate().for_each(|(i, bufcp)| {
+        bufc.par_iter_mut().enumerate().for_each(|(i, bufcp)| {
             let ni = i % n;
             let mi = (i - ni) / n % m;
             let bi = (i - ni - mi * n) / (m * n);
             let offset_a = bi * (m * k) + mi * k;
             let offset_b = (bi % b_batch) * stride_bb + ni * stride_bn;
-            *bufcp = f16::from_f32(vec_dot_f16_f16(
-                bufa,
-                offset_a,
-                &bufb[offset_b..offset_b + k],
-                0,
-                k,
-            ));
+            *bufcp = vec_dot_f16_f16(bufa, offset_a, &bufb[offset_b..offset_b + k], 0, k);
         });
     } else if stride_bn == 1 {
+        let mut tmpc = alloc_f16_buf(a_batch * m * n); // TODO: avoid allocation
         for bi in 0..a_batch {
             for mi in 0..m {
                 for ki in 0..k {
@@ -126,11 +119,11 @@ fn batch_matmul_simd_f16(
                 }
             }
         }
+
+        bufc.iter_mut().zip(tmpc.iter()).for_each(|(c, tmp)| {
+            *c = tmp.to_f32();
+        });
     } else {
         unreachable!()
     }
-
-    bufc.iter_mut().zip(tmpc.iter()).for_each(|(c, tmp)| {
-        *c = tmp.to_f32();
-    });
 }

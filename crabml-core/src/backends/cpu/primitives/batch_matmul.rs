@@ -1,7 +1,6 @@
 use half::f16;
 use rayon::prelude::*;
 
-use crate::backends::cpu::buf::buf_f16::alloc_f16_buf;
 use crate::backends::cpu::buf::buf_f16::quantize_f32_f16;
 use crate::backends::cpu::buf::buf_f16::vec_dot_f16_f16;
 use crate::backends::cpu::buf::buf_f16::vec_fma_f16_f16;
@@ -102,7 +101,7 @@ fn batch_matmul_simd_f16(
             *bufcp = vec_dot_f16_f16(bufa, offset_a, &bufb[offset_b..offset_b + k], 0, k);
         });
     } else if stride_bn == 1 {
-        let mut tmpc = alloc_f16_buf(a_batch * m * n); // TODO: avoid allocation
+        let mut tmpc = vec![f16::ZERO; a_batch * m * n]; // TODO: avoid allocation
         for bi in 0..a_batch {
             for mi in 0..m {
                 for ki in 0..k {

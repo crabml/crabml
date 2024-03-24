@@ -1,5 +1,4 @@
 use half::f16;
-use rayon::prelude::*;
 
 use crate::backends::cpu::buf::buf_f16::quantize_f32_f16;
 use crate::backends::cpu::buf::buf_f16::vec_dot_f16_f16;

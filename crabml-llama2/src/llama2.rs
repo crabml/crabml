@@ -1,4 +1,6 @@
 use std::rc::Rc;
+use std::time::Duration;
+use std::time::Instant;
 use std::vec;
 
 use crabml::error::Error;
@@ -101,9 +103,16 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             });
         }
 
+        // this is expected to be eos, make it as the prewarm
+        self.forward(&prompt_tokens[0..1], 0)?;
+
         let mut logits: &mut [f32] = &mut [];
-        for (pos, token) in prompt_tokens.iter().enumerate() {
-            logits = self.forward(&[*token], pos)?;
+        if batched {
+            logits = self.forward(&prompt_tokens[1..], 1)?;
+        } else {
+            for (i, token) in prompt_tokens.iter().enumerate() {
+                logits = self.forward(&[*token], i + 1)?;
+            }
         }
         let token = sampler.sample(logits)?;
         let last_token = *prompt_tokens.last().unwrap();

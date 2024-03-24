@@ -265,13 +265,13 @@ impl Tensor for WgpuTensor {
         }
         assert!(src.strider.dims() == 2);
 
-        let cols = src.shape().last().unwrap();
+        let n_dims = src.shape().last().unwrap();
         let f32_bytes = std::mem::size_of::<f32>();
 
         for (dst_row, src_row) in src_rows.iter().enumerate() {
-            let dst_offset = dst_row * cols * f32_bytes;
-            let src_offset = src_row * cols * f32_bytes;
-            let row_bytes = cols * f32_bytes;
+            let dst_offset = dst_row * n_dims * f32_bytes;
+            let src_offset = src_row * n_dims * f32_bytes;
+            let row_bytes = n_dims * f32_bytes;
 
             // enqueue copy from rhs to self's buffer
             let mut encoder = self
@@ -368,11 +368,11 @@ impl Tensor for WgpuTensor {
             (1, self.shape()[0], self.shape()[0] * self.shape()[1])
         };
         let meta = RopeMeta {
-            b: rows as u32,
-            m: m as u32,
+            n_batch: rows as u32,
+            n_dims: m as u32,
             pos: pos as u32,
             n_heads: n_head as u32,
-            rope_dims: rope_dims as u32,
+            n_rope_dims: rope_dims as u32,
             _padding: [0; 7],
         };
 

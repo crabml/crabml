@@ -72,7 +72,7 @@ fn run<U: Tensor>(
     metrics: &TensorMetrics,
 ) -> Result<()> {
     let prefill_started_at = Instant::now();
-    let (prefill_pos, prev_token, token) = runner.prefill(&args.prompt, sampler)?;
+    let (prefill_pos, prev_token, token) = runner.prefill(&args.prompt, sampler, false)?;
     let prefill_elapsed = prefill_started_at.elapsed();
     if args.verbose {
         dump_metrics(metrics);

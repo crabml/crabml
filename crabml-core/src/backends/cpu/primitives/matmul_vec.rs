@@ -36,12 +36,17 @@ fn gemv_dense_2d_2d(
 
     let bufc = bufc.as_f32_mut();
     let bufb = &bufb.quantize(bufa.vec_dot_rhs_dtype()).unwrap();
-    bufc.par_iter_mut().enumerate().for_each(|(cn, cp)| {
-        // a: m x k
-        // b: b x k
-        // c: b x m
-        let mi = cn % m;
-        let bi = (cn - mi) / m;
-        *cp = bufa.vec_dot(mi * k, bufb, bi * k, k);
-    });
+    bufc.par_chunks_exact_mut(4)
+        .enumerate()
+        .for_each(|(cn, cp)| {
+            // a: m x k
+            // b: b x k
+            // c: b x m
+            let mi = cn * 4 % m;
+            let bi = (cn * 4 - mi) / m;
+            cp[0] = bufa.vec_dot((mi + 0) * k, bufb, bi * k, k);
+            cp[1] = bufa.vec_dot((mi + 1) * k, bufb, bi * k, k);
+            cp[2] = bufa.vec_dot((mi + 2) * k, bufb, bi * k, k);
+            cp[3] = bufa.vec_dot((mi + 3) * k, bufb, bi * k, k);
+        });
 }

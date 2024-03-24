@@ -90,6 +90,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         &mut self,
         prompt: &str,
         sampler: &'a mut Llama2Sampler,
+        batched: bool,
     ) -> Result<(usize, usize, usize)> {
         let prompt_tokens = self.tokenizer.encode(prompt, true, false)?;
         if prompt_tokens.is_empty() {
@@ -100,7 +101,10 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             });
         }
 
-        let logits = self.forward(&prompt_tokens, 0)?;
+        let mut logits: &mut [f32] = &mut [];
+        for (pos, token) in prompt_tokens.iter().enumerate() {
+            logits = self.forward(&[*token], pos)?;
+        }
         let token = sampler.sample(logits)?;
         let last_token = *prompt_tokens.last().unwrap();
 
@@ -137,7 +141,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         steps: usize,
         sampler: &'a mut Llama2Sampler,
     ) -> Result<impl Iterator<Item = Result<String>> + '_> {
-        let (pos, prev_token, token) = self.prefill(prompt, sampler)?;
+        let (pos, prev_token, token) = self.prefill(prompt, sampler, false)?;
         Ok(self.generate(pos, prev_token, token, steps, sampler))
     }
 

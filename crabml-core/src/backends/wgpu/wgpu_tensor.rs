@@ -747,7 +747,7 @@ impl Tensor for WgpuTensor {
         };
         for i in 0..self.strider.dims() {
             meta.shape[i] = self.strider.shape()[i] as u32;
-            meta.strides[i] = self.strider.shape()[i] as u32;
+            meta.strides[i] = self.strider.strides()[i] as u32;
         }
         let meta_bytes = bytemuck::bytes_of(&meta);
         let meta_buf = self.device.make_storage_buffer("meta", meta_bytes);
@@ -755,20 +755,22 @@ impl Tensor for WgpuTensor {
         let entries = &[
             wgpu::BindGroupEntry {
                 binding: 0,
-                resource: self.buf.as_entire_binding(),
+                resource: output.buf.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
                 binding: 1,
-                resource: output.buf.as_entire_binding(),
+                resource: self.buf.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
                 binding: 2,
                 resource: meta_buf.as_entire_binding(),
             },
         ];
-        let encoder =
-            self.device
-                .encode_pipeline_commnad("contiguous", entries, (n_elms as u32 / 32, 1, 1));
+        let encoder = self.device.encode_pipeline_commnad(
+            "contiguous",
+            entries,
+            (n_elms as u32 / 32 + 1, 1, 1),
+        );
         self.device.queue.submit(Some(encoder.finish()));
 
         Ok(output)
@@ -1100,6 +1102,32 @@ mod tests {
         assert_relative_eq!(
             &dst1[..],
             &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0][..],
+            epsilon = 1e-5
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_congiguous() -> Result<()> {
+        // 1, 2, 3
+        // 4, 5, 6
+        let v1 = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let t1 = WgpuTensor::new(&v1, &[2, 3], DEVICE.clone())?;
+        let t1 = t1.transpose(&[1, 0])?;
+        let t2 = t1.contiguous()?;
+        // 1, 4
+        // 2, 5
+        // 3, 6
+
+        let mut dst1 = vec![0.0; 6];
+        t2.export(&mut dst1)?;
+
+        assert_eq!(t2.strider.shape(), &[3, 2]);
+        assert_eq!(t2.strider.dims(), 2);
+        assert_relative_eq!(
+            &dst1[..],
+            &[1.0, 4.0, 2.0, 5.0, 3.0, 6.0][..],
             epsilon = 1e-5
         );
 

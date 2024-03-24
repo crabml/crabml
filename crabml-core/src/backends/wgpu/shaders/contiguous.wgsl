@@ -6,10 +6,10 @@ struct Meta {
 };
 
 @group(0) @binding(0)
-var<storage, read_write> buf1: array<f32>;
+var<storage, read_write> bufDst: array<f32>;
 
 @group(0) @binding(1)
-var<storage, read> buf2: array<f32>;
+var<storage, read> bufSrc: array<f32>;
 
 @group(0) @binding(2)
 var<storage, read> bufM: Meta;
@@ -20,7 +20,7 @@ fn contiguous2D(globalID: vec3<u32>) {
     
     let idxOrig = bufM.strides.x * x + bufM.strides.y * y;
     let idxCont = x * bufM.shape.y + y;
-    buf1[idxCont] = buf2[idxOrig];
+    bufDst[idxCont] = bufSrc[idxOrig];
 }
 
 fn contiguous3D(globalID: vec3<u32>) {
@@ -30,11 +30,11 @@ fn contiguous3D(globalID: vec3<u32>) {
 
     let idxOrig = bufM.strides.x * x + bufM.strides.y * y + bufM.strides.z * z;
     let idxCont = x * bufM.shape.y * bufM.shape.z + y * bufM.shape.z + z;
-    buf1[idxCont] = buf2[idxOrig];
+    bufDst[idxCont] = bufSrc[idxOrig];
 }
 
 @compute
-@workgroup_size(16)
+@workgroup_size(32)
 fn main(
     @builtin(global_invocation_id) globalID: vec3<u32>,
 ) {

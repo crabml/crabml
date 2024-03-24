@@ -67,19 +67,27 @@ To convert your non-GGUF model(*.pth, *.pt, *.bin) using llama.cpp, proceed with
 
 1. (Optional) Clone the huggingface model repo:
 
-    ```
+    ```bash
     # Make sure you have git-lfs installed (https://git-lfs.com)
     git lfs install
     # Replace `<repo>` with something like `PY007/TinyLlama-1.1B-Chat-v0.3`.
     git clone https://huggingface.co/<repo>
     ```
 
-2. Convert non-GGUF models with `convert.py`:
+2. Prepare Python environment:
+
+    ```bash
+    python -m venv venv
+    source venv/bin/activate
+    python -m pip install -r requirements.txt
+    ```
+
+3. Convert non-GGUF models with `convert.py`:
 
    ```bash
    # Replace `<outtype>` with {f32,f16,q8_0}, but requantizing from type q8_0 is disabled
    # Replace `<model>` with the path of model
-   python3 convert.py <model> --outfile <model>-<outtype>.gguf  --outtype <outtype>
+   python convert.py <model> --outfile <model>-<outtype>.gguf  --outtype <outtype>
    ```
 
 ### Quantifying the Model

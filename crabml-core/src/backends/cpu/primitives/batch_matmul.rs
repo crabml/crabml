@@ -11,9 +11,9 @@ use crate::gguf::GGMLType;
 use crate::tensor::TensorStrider;
 
 /// A (b, m, n) @ B (b, k, n) -> C (b, m, n)
-/// A (b, m, n) @ B (k, n) -> C (b, m)
 ///
-/// A is expected to be contiguous, B is allowed to be strided.
+/// A is expected to be contiguous, B is allowed to be strided, but B should
+/// be contiguous on the K dimension or N dimension.
 pub fn batch_matmul<'a>(
     _device: &CpuTensorDeviceRef<'a>,
     bufa: &CpuTensorBuf<'a>,
@@ -25,6 +25,7 @@ pub fn batch_matmul<'a>(
     assert!(strider1.dims() == 3);
     assert!(strider2.dims() == 3);
     assert!(strider1.is_contiguous());
+    assert!(strider2.strides()[1] == 1 || strider2.strides()[2] == 1);
     assert!(bufa.dtype() == GGMLType::F32 || bufa.dtype() == GGMLType::F16);
     assert!(bufb.dtype() == GGMLType::F32 || bufb.dtype() == GGMLType::F16);
 

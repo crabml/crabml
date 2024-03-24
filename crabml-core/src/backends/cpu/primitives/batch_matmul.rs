@@ -7,6 +7,7 @@ use crate::backends::cpu::buf::buf_f16::vec_fma_f16_f16;
 use crate::backends::cpu::buf::buf_f32::vec_dot_f32_f32_strided;
 use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::backends::cpu::CpuTensorDeviceRef;
+use crate::gguf::GGMLType;
 use crate::tensor::TensorStrider;
 
 /// A (b, m, n) @ B (b, k, n) -> C (b, m, n)
@@ -24,6 +25,8 @@ pub fn batch_matmul<'a>(
     assert!(strider1.dims() == 3);
     assert!(strider2.dims() == 3 || strider2.dims() == 2);
     assert!(strider1.is_contiguous());
+    assert!(bufa.dtype() == GGMLType::F32 || bufa.dtype() == GGMLType::F16);
+    assert!(bufb.dtype() == GGMLType::F32 || bufb.dtype() == GGMLType::F16);
 
     let strider2 = if strider2.dims() == 3 {
         strider2.clone()

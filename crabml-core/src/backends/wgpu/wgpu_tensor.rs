@@ -479,7 +479,7 @@ impl Tensor for WgpuTensor {
         let encoder = self.device.encode_pipeline_commnad(
             "silu_inplace",
             entries,
-            ((elms / 16 + 1) as u32, 1, 1),
+            ((elms / 32 + 1) as u32, 1, 1),
         );
         self.device.queue.submit(Some(encoder.finish()));
         Ok(self)
@@ -496,7 +496,7 @@ impl Tensor for WgpuTensor {
         let encoder = self.device.encode_pipeline_commnad(
             "gelu_inplace",
             entries,
-            ((elms / 16 + 1) as u32, 1, 1),
+            ((elms / 32 + 1) as u32, 1, 1),
         );
         self.device.queue.submit(Some(encoder.finish()));
         Ok(self)

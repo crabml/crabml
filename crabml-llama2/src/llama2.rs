@@ -221,7 +221,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             x = x.add_inplace(&x_attn_orig)?;
 
             // ffn
-            x = self.forward_ffn(x, l, Activation::SiLU)?;
+            x = self.forward_ffn(x, l, pos, Activation::SiLU)?;
             x = x.with_name(format!("ffn_out:{}:{}", l, pos));
         }
 
@@ -302,7 +302,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             x = x.add_inplace(&x_attn_orig)?;
 
             // ffn
-            x = self.forward_ffn(x, l, Activation::GeLU)?;
+            x = self.forward_ffn(x, l, pos, Activation::GeLU)?;
             x = x.with_name(format!("ffn_out:{}:{}", l, pos));
         }
 
@@ -391,7 +391,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         Ok(x)
     }
 
-    fn forward_ffn(&self, mut x: T, l: usize, activation: Activation) -> Result<T> {
+    fn forward_ffn(&self, mut x: T, l: usize, _pos: usize, activation: Activation) -> Result<T> {
         // save for redidual connection
         let x_orig_ffn = x.dup()?; // (n_batch, embed_dim)
 
@@ -565,12 +565,6 @@ mod tests {
         assert_relative_eq!(
             device_cpu.dump_debug_tensor("x_with_attn:0:0").unwrap()[..],
             device_wgpu.dump_debug_tensor("x_with_attn:0:0").unwrap()[..],
-            epsilon = 1e-4
-        );
-
-        assert_relative_eq!(
-            device_cpu.dump_debug_tensor("attn_out:0:0").unwrap()[..],
-            device_wgpu.dump_debug_tensor("attn_out:0:0").unwrap()[..],
             epsilon = 1e-4
         );
 

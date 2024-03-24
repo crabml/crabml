@@ -725,8 +725,11 @@ impl Tensor for WgpuTensor {
         Ok(output)
     }
 
-    fn contiguous(&self) -> Result<Self> {
+    fn contiguous(self) -> Result<Self> {
         assert!(self.strider.dims() == 3 || self.strider.dims() == 2);
+        if self.is_contiguous() {
+            return Ok(self);
+        }
 
         let n_elms = self.strider.len();
         let output = Self::alloc(self.strider.shape(), self.dtype, self.device.clone())?;

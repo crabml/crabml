@@ -287,8 +287,11 @@ impl<'a> Tensor for CpuTensor<'a> {
         Ok(())
     }
 
-    fn contiguous(&self) -> Result<Self> {
+    fn contiguous(self) -> Result<Self> {
         let _t = self.device.metrics.contiguous_walltime.track();
+        if self.is_contiguous() {
+            return Ok(self);
+        }
         assert!(self.dtype() == GGMLType::F32 || self.dtype() == GGMLType::F16);
 
         let mut out = CpuTensor::alloc(self.shape(), self.dtype(), self.device())?;

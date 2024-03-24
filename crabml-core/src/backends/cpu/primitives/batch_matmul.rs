@@ -46,7 +46,7 @@ pub fn batch_matmul<'a>(
         ),
         CpuTensorBuf::F16(bufb) => {
             let bufa = quantize_f32_f16(bufa.as_f32_ref());
-            batch_matmul_naive_f16(&bufa, bufb, bufc.as_f32_mut(), strider1, &strider2)
+            batch_matmul_simd_f16(&bufa, bufb, bufc.as_f32_mut(), strider1, &strider2)
         }
         _ => unreachable!(),
     }
@@ -102,6 +102,48 @@ fn batch_matmul_naive_f16(
                 }
             }
         }
+    }
+}
+fn batch_matmul_simd_f16(
+    bufa: &[f16],     // b x m x k
+    bufb: &[f16],     // b x k x n
+    bufc: &mut [f32], // b x m x n
+    stride1: &TensorStrider,
+    stride2: &TensorStrider,
+) {
+    let (a_batch, b_batch) = (stride1.shape()[0], stride2.shape()[0]);
+    assert!(a_batch >= b_batch);
+    let (m, k, n) = (stride1.shape()[1], stride1.shape()[2], stride2.shape()[2]);
+    let (stride_bb, stride_bk, stride_bn) = (
+        stride2.strides()[0],
+        stride2.strides()[1],
+        stride2.strides()[2],
+    );
+
+    let mut tmpc = vec![f16::ZERO; b_batch * m * n]; // TODO: avoid allocation
+
+    // matrix A is always row-wise contiguous
+    // if matrix B is contiguous on the k dimension, then we can use vec_dot_f16_f16
+    if stride_bk == 1 {
+        tmpc.par_iter_mut().enumerate().for_each(|(i, bufcp)| {
+            let ni = i % n;
+            let mi = (i - ni) / n % m;
+            let bi = (i - ni - mi * n) / (m * n);
+            let offset_a = bi * (m * k) + mi * k;
+            let offset_b = (bi % b_batch) * stride_bb + ni * stride_bn;
+            *bufcp = f16::from_f32(vec_dot_f16_f16(
+                bufa,
+                offset_a,
+                &bufb[offset_b..offset_b + k],
+                0,
+                k,
+            ));
+        });
+        bufc.iter_mut().zip(tmpc.iter()).for_each(|(c, tmp)| {
+            *c = tmp.to_f32();
+        });
+    } else {
+        batch_matmul_naive_f16(bufa, bufb, bufc, stride1, stride2);
     }
 }
 

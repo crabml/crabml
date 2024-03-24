@@ -45,6 +45,7 @@ pub fn batch_matmul<'a>(
     }
 }
 
+// TODO: use vec_dot and vec_fma to optimize this function
 fn batch_matmul_naive_f32(
     bufa: &[f32],     // b x m x k
     bufb: &[f32],     // b x k x n

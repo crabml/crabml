@@ -534,18 +534,12 @@ impl Tensor for WgpuTensor {
     }
 
     fn add_inplace(self, rhs: &Self) -> Result<Self> {
-        let (n_batch, m) = if self.strider.dims() == 2 {
-            (
-                self.strider.shape()[0] as u32,
-                self.strider.shape()[1] as u32,
-            )
-        } else {
-            (1, self.strider.shape()[0] as u32)
-        };
-
+        assert!(self.is_contiguous());
+        assert!(rhs.is_contiguous());
+        let n_elms = self.strider.len();
         let meta_buf = self
             .device
-            .make_storage_buffer("meta", bytemuck::cast_slice(&[n_batch, m as u32]));
+            .make_storage_buffer("meta", bytemuck::cast_slice(&[n_elms as u32]));
         let entries = &[
             wgpu::BindGroupEntry {
                 binding: 0,
@@ -560,9 +554,11 @@ impl Tensor for WgpuTensor {
                 resource: meta_buf.as_entire_binding(),
             },
         ];
-        let encoder = self
-            .device
-            .encode_pipeline_commnad("add_inplace", entries, (n_batch, 1, 1));
+        let encoder = self.device.encode_pipeline_commnad(
+            "add_inplace",
+            entries,
+            (n_elms as u32 / 32 + 1, 1, 1),
+        );
         self.device.queue.submit(Some(encoder.finish()));
         Ok(self)
     }
@@ -832,7 +828,7 @@ mod tests {
 
     #[test]
     fn test_wgpu_tensor_with_name() -> Result<()> {
-        let t1 = WgpuTensor::alloc(&[512, 2], GGMLType::F32, DEVICE.clone())?;
+        let t1 = WgpuTensor::new(&[0.0; 1024], &[512, 2], DEVICE.clone())?;
         let t2 = WgpuTensor::new(&[1.0; 1024], &[512, 2], DEVICE.clone())?;
         let t1 = t1.add_inplace(&t2)?;
         let _ = t1.with_name("t1".to_string());

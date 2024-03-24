@@ -334,6 +334,7 @@ impl<'a> Tensor for CpuTensor<'a> {
     }
 
     fn export(&self, dst: &mut [f32]) -> Result<()> {
+        let _t = self.device.metrics.export_walltime.track();
         assert!(self.is_contiguous());
 
         dst.iter_mut()

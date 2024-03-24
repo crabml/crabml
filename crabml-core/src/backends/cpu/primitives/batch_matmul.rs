@@ -1,6 +1,7 @@
 use half::f16;
 use rayon::prelude::*;
 
+use crate::backends::cpu::buf::buf_f16::alloc_f16_buf;
 use crate::backends::cpu::buf::buf_f16::quantize_f32_f16;
 use crate::backends::cpu::buf::buf_f16::vec_dot_f16_f16;
 use crate::backends::cpu::buf::buf_f16::vec_fma_f16_f16;
@@ -87,7 +88,7 @@ fn batch_matmul_simd_f16(
         stride2.strides()[2],
     );
 
-    let mut tmpc = vec![f16::ZERO; b_batch * m * n]; // TODO: avoid allocation
+    let mut tmpc = alloc_f16_buf(a_batch * m * n); // TODO: avoid allocation
 
     // matrix A is always row-wise contiguous, matrix B should be contiguous on the K
     // dimension or N dimension.

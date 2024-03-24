@@ -4,7 +4,6 @@ use rayon::prelude::*;
 use crate::backends::cpu::buf::buf_f16::quantize_f32_f16;
 use crate::backends::cpu::buf::buf_f16::vec_dot_f16_f16;
 use crate::backends::cpu::buf::buf_f16::vec_fma_f16_f16;
-use crate::backends::cpu::buf::buf_f32::vec_dot_f32_f32_strided;
 use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::backends::cpu::CpuTensorDeviceRef;
 use crate::gguf::GGMLType;
@@ -35,11 +34,11 @@ pub fn batch_matmul<'a>(
             bufb,
             bufc.as_f32_mut(),
             strider1,
-            &strider2,
+            strider2,
         ),
         CpuTensorBuf::F16(bufb) => {
             let bufa = quantize_f32_f16(bufa.as_f32_ref());
-            batch_matmul_simd_f16(&bufa, bufb, bufc.as_f32_mut(), strider1, &strider2)
+            batch_matmul_simd_f16(&bufa, bufb, bufc.as_f32_mut(), strider1, strider2)
         }
         _ => unreachable!(),
     }

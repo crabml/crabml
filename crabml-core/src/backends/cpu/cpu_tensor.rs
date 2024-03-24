@@ -368,7 +368,12 @@ impl<'a> Tensor for CpuTensor<'a> {
     fn matmul_vec(&self, x: &CpuTensor<'a>) -> Result<Self> {
         let bufa = self.buf();
         let bufb = x.buf();
-        let mut c = CpuTensor::alloc(&[self.shape()[0]], GGMLType::F32, x.device())?;
+        let shape_c = if x.shape().len() == 1 {
+            vec![self.shape()[0]]
+        } else {
+            vec![x.shape()[0], self.shape()[0]]
+        };
+        let mut c = CpuTensor::alloc(&shape_c, GGMLType::F32, x.device())?;
         let bufc = c.buf_mut();
         let strider1 = self.strider();
         let strider2 = x.strider();

@@ -100,11 +100,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             });
         }
 
-        let vocab_size = self.conf.vocab_size;
         let logits = self.forward(&prompt_tokens, 0)?;
-        let logits_len = logits.len();
-        let logits = &mut logits[logits_len - vocab_size..];
-
         let token = sampler.sample(logits)?;
         let last_token = *prompt_tokens.last().unwrap();
 
@@ -153,6 +149,13 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             ModelArchitecture::Gemma => self.forward_gemma(tokens, pos)?,
         };
 
+        let mut x_final = T::alloc(
+            &[self.conf.embedding_dim],
+            GGMLType::F32,
+            self.device.clone(),
+        )?;
+        x_final.copy_rows_from(&x, &[tokens.len() - 1])?;
+
         // classifier into logits
         // TODO: it'd be make sense to reuse the same buffer for the logits
         let output_weight = self
@@ -160,7 +163,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             .output_weight
             .as_ref()
             .unwrap_or_else(|| &self.weights.token_embed);
-        let logits = output_weight.matmul_vec(&x)?; // (vocab_size,
+        let logits = output_weight.matmul_vec(&x_final)?; // (batch_size, vocab_size),
         logits.export(&mut self.logits)?;
         Ok(&mut self.logits)
     }

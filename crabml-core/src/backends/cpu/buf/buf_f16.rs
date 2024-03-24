@@ -162,6 +162,33 @@ fn vec_fma_f16_f16_fallback(a: &[f16], b: f16, c: &mut [f16], a_offset: usize, m
     }
 }
 
+pub fn vec_convert_f16_f32(dst: &mut [f16], src: &[f32]) {
+    #[cfg(target_arch = "aarch64")]
+    vec_convert_f16_f32_neon(dst, src);
+
+    #[cfg(not(target_arch = "aarch64"))]
+    dst.iter_mut().zip(src.iter()).for_each(|(d, s)| {
+        *d = f16::from_f32(*s);
+    });
+}
+
+#[cfg(target_arch = "aarch64")]
+pub fn vec_convert_f16_f32_neon(dst: &mut [f16], src: &[f32]) {
+    use std::arch::aarch64;
+
+    use crate::backends::cpu::arch::aarch64 as myaarch64;
+
+    dst.chunks_exact_mut(4)
+        .zip(src.chunks_exact(4))
+        .for_each(|(chunk_dst, chunk_src)| unsafe {
+            let dst_ptr = chunk_dst.as_mut_ptr();
+            let src_ptr = chunk_src.as_ptr();
+            let src = std::arch::aarch64::vld1q_f32(src_ptr);
+            let dst = myaarch64::vcvt_f32_f16(src);
+            aarch64::vst1_u16(dst_ptr as *mut u16, dst as aarch64::uint16x4_t);
+        })
+}
+
 #[cfg(target_arch = "aarch64")]
 pub fn vec_dot_f16_f16_strided_simd(
     a: &[f16],

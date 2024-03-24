@@ -133,12 +133,30 @@ fn batch_matmul_simd_f16(
                 k,
             ));
         });
-        bufc.iter_mut().zip(tmpc.iter()).for_each(|(c, tmp)| {
-            *c = tmp.to_f32();
-        });
+    } else if stride_bn == 1 {
+        for bi in 0..a_batch {
+            for mi in 0..m {
+                for ki in 0..k {
+                    let offset_a = bi * (m * k) + mi * k + ki;
+                    let offset_b = (bi % b_batch) * stride_bb + ki * stride_bk;
+                    let offset_c = bi * (m * n) + mi * n;
+                    vec_fma_f16_f16(
+                        &bufb[offset_b..offset_b + n],
+                        bufa[offset_a],
+                        &mut tmpc[offset_c..offset_c + n],
+                        0,
+                        n,
+                    );
+                }
+            }
+        }
     } else {
-        batch_matmul_naive_f16(bufa, bufb, bufc, stride1, stride2);
+        unreachable!()
     }
+
+    bufc.iter_mut().zip(tmpc.iter()).for_each(|(c, tmp)| {
+        *c = tmp.to_f32();
+    });
 }
 
 #[allow(dead_code)]
@@ -166,57 +184,5 @@ fn gemv_strided_3d_2d_f32(
             k,
             &bbuf[bi * k..(bi + 1) * k],
         );
-    });
-}
-
-#[allow(dead_code)]
-#[allow(clippy::too_many_arguments)]
-fn gemv_strided_3d_2d_f16(
-    device: &CpuTensorDeviceRef,
-    abuf: &[f16],     // Batch x M x K
-    bbuf: &[f16],     // Batch x K
-    cbuf: &mut [f32], // Batch x M
-    a_batch: usize,
-    b_batch: usize, // b_batch is multiple of a_batch
-    m: usize,
-    k: usize,
-    a_stride0: usize,
-    a_stride1: usize,
-    a_stride2: usize,
-) {
-    let mut tmpc = vec![f16::ZERO; b_batch * m]; // TODO: avoid allocation
-
-    // if matrix A is row-wise contiguous, then we can use vec_dot_f16_f16
-    // if matrix A is column-wise contiguous, then we can use vec_fma_f16_f16
-    if a_stride2 == 1 {
-        let _t = device.metrics.batch_matmul_rowwise_walltime.track();
-        tmpc.par_iter_mut().enumerate().for_each(|(i, bufcp)| {
-            let mi = i % m;
-            let bi = (i - mi) / m;
-            *bufcp = f16::from_f32(vec_dot_f16_f16(
-                abuf,
-                (bi % a_batch) * a_stride0 + mi * a_stride1,
-                &bbuf[bi * k..(bi + 1) * k],
-                0,
-                k,
-            ));
-        });
-    } else {
-        let _t = device.metrics.batch_matmul_colwise_walltime.track();
-        for bi in 0..b_batch {
-            for ki in 0..k {
-                vec_fma_f16_f16(
-                    abuf,
-                    bbuf[bi * k + ki],
-                    &mut tmpc[bi * m..],
-                    (bi % a_batch) * a_stride0 + ki * a_stride2,
-                    m,
-                );
-            }
-        }
-    }
-
-    cbuf.iter_mut().zip(tmpc.iter()).for_each(|(c, tmp)| {
-        *c = tmp.to_f32();
     });
 }

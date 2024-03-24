@@ -86,6 +86,7 @@ impl WgpuTensorDevice {
                 "concatenate_inplace",
                 include_str!("shaders/concatenate.wgsl"),
             ),
+            ("contiguous", include_str!("shaders/contiguous.wgsl")),
         ];
         let mut modules = HashMap::new();
         for (module_name, module_source) in module_sources {

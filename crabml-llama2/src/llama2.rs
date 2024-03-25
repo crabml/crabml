@@ -92,7 +92,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         &mut self,
         prompt: &str,
         sampler: &'a mut Llama2Sampler,
-        batched: bool,
+        _batched: bool,
     ) -> Result<(usize, usize, usize)> {
         let prompt_tokens = self.tokenizer.encode(prompt, true, false)?;
         if prompt_tokens.is_empty() {
@@ -104,15 +104,10 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         }
 
         // this is expected to be eos, make it as the prewarm
-        self.forward(&prompt_tokens[0..1], 0)?;
 
         let mut logits: &mut [f32] = &mut [];
-        if batched {
-            logits = self.forward(&prompt_tokens[1..], 1)?;
-        } else {
-            for (i, token) in prompt_tokens.iter().enumerate() {
-                logits = self.forward(&[*token], i + 1)?;
-            }
+        for (pos, token) in prompt_tokens.iter().enumerate() {
+            logits = self.forward(&[*token], pos)?;
         }
         let token = sampler.sample(logits)?;
         let last_token = *prompt_tokens.last().unwrap();

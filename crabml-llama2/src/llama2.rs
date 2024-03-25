@@ -344,7 +344,6 @@ impl<'a, T: Tensor> Llama2Runner<T> {
     ) -> Result<T> {
         // save to kv cache in layout of (n_kv_heads, n_batch, head_dim)
         {
-            let _t = self.metrics.save_kvcache_walltime.track();
             let k = k
                 .reshape(&[n_batch, n_kv_heads, head_dim])?
                 .transpose(&[1, 0, 2])?;

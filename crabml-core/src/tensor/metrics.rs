@@ -20,7 +20,6 @@ pub struct TensorMetrics {
     pub alloc_walltime: TimeMetric,
     pub sample_walltime: TimeMetric,
     pub forward_walltime: TimeMetric,
-    pub save_kvcache_walltime: TimeMetric,
     pub copy_from_walltime: TimeMetric,
     pub concatenate_walltime: TimeMetric,
     pub dup_walltime: TimeMetric,
@@ -47,7 +46,6 @@ impl TensorMetrics {
         self.alloc_walltime.reset();
         self.sample_walltime.reset();
         self.forward_walltime.reset();
-        self.save_kvcache_walltime.reset();
         self.copy_from_walltime.reset();
         self.concatenate_walltime.reset();
         self.dup_walltime.reset();
@@ -108,10 +106,6 @@ impl TensorMetrics {
             (
                 "batch_matmul_walltime".to_string(),
                 self.batch_matmul_walltime.as_millis(),
-            ),
-            (
-                "save_kv_cache_walltime".to_string(),
-                self.save_kvcache_walltime.as_millis(),
             ),
             (
                 "copy_walltime".to_string(),

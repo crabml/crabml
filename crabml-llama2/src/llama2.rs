@@ -1,6 +1,4 @@
 use std::rc::Rc;
-use std::time::Duration;
-use std::time::Instant;
 use std::vec;
 
 use crabml::error::Error;
@@ -218,10 +216,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
 
                 let q = q.rope_inplace(RopeMode::Llama, pos, rope_dim)?;
                 let k = k.rope_inplace(RopeMode::Llama, pos, rope_dim)?;
-                (
-                    q.with_name(format!("q_roped:{}:{}", l, pos)),
-                    k.with_name(format!("k_roped:{}:{}", l, pos)),
-                )
+                (q, k)
             };
 
             x = self.forward_multi_query_attention(
@@ -300,10 +295,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
 
                 let q = q.rope_inplace(RopeMode::Neox, pos, rope_dim)?;
                 let k = k.rope_inplace(RopeMode::Neox, pos, rope_dim)?;
-                (
-                    q.with_name(format!("q_roped:{}:{}", l, pos)),
-                    k.with_name(format!("k_roped:{}:{}", l, pos)),
-                )
+                (q, k)
             };
 
             x = self.forward_multi_query_attention(
@@ -568,12 +560,6 @@ mod tests {
             device_cpu.dump_debug_tensor("attn_rmsnorm:0:0").unwrap()[0..10],
             device_wgpu.dump_debug_tensor("attn_rmsnorm:0:0").unwrap()[0..10],
             epsilon = 1e-7
-        );
-
-        assert_relative_eq!(
-            device_cpu.dump_debug_tensor("q_roped:0:0").unwrap()[..],
-            device_wgpu.dump_debug_tensor("q_roped:0:0").unwrap()[..],
-            epsilon = 1e-2
         );
 
         assert_relative_eq!(

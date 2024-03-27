@@ -128,8 +128,15 @@ fn dump_metrics(metrics: &TensorMetrics) {
     let mut metric_values = metrics.as_vec();
     metric_values.sort_by_key(|v| (v.1 * 1000.0) as u32);
     for (k, v) in metric_values.iter() {
-        println!("{0: <40} | {1: <10}", k, v);
+        println!("{0: <40} | {1: <4}", k, v);
     }
+    println!(
+        "{0: <40} | {1: <4}",
+        "non_matmul",
+        metrics.forward_walltime.as_millis()
+            - metrics.matmul_walltime.as_millis()
+            - metrics.batch_matmul_walltime.as_millis()
+    );
 }
 
 fn main() -> Result<()> {

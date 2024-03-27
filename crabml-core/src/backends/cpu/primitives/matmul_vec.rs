@@ -19,13 +19,14 @@ pub fn matmul_vec<'a>(
     assert!(strider2.is_contiguous());
     assert!(strider1.shape().last() == strider2.shape().last());
 
+    let _t = device.metrics.matmul_walltime.track();
     let (m, k) = (strider1.shape()[0], strider1.shape()[1]);
     gemv_dense_2d_2d(device, bufa, bufb, bufc, m, k);
 }
 
 #[allow(clippy::too_many_arguments)]
 fn gemv_dense_2d_2d(
-    _device: &CpuTensorDeviceRef,
+    device: &CpuTensorDeviceRef,
     bufa: &CpuTensorBuf,
     bufb: &CpuTensorBuf,
     bufc: &mut CpuTensorBuf,
@@ -36,17 +37,17 @@ fn gemv_dense_2d_2d(
 
     let bufc = bufc.as_f32_mut();
     let bufb = &bufb.quantize(bufa.vec_dot_rhs_dtype()).unwrap();
-    bufc.par_chunks_exact_mut(4)
+    let chunk = 16;
+    bufc.par_chunks_exact_mut(chunk)
         .enumerate()
         .for_each(|(cn, cp)| {
             // a: m x k
             // b: b x k
             // c: b x m
-            let mi = cn * 4 % m;
-            let bi = (cn * 4 - mi) / m;
-            cp[0] = bufa.vec_dot((mi + 0) * k, bufb, bi * k, k);
-            cp[1] = bufa.vec_dot((mi + 1) * k, bufb, bi * k, k);
-            cp[2] = bufa.vec_dot((mi + 2) * k, bufb, bi * k, k);
-            cp[3] = bufa.vec_dot((mi + 3) * k, bufb, bi * k, k);
+            let mi = cn * chunk % m;
+            let bi = (cn * chunk - mi) / m;
+            for i in 0..chunk {
+                cp[i] = bufa.vec_dot((mi + i) * k, bufb, bi * k, k);
+            }
         });
 }

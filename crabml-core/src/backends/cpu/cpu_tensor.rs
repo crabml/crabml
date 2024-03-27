@@ -377,7 +377,7 @@ impl<'a> Tensor for CpuTensor<'a> {
         let bufc = c.buf_mut();
         let strider1 = self.strider();
         let strider2 = x.strider();
-        let _t = self.device.metrics.matmul_walltime.track();
+        // let _t = self.device.metrics.matmul_walltime.track();
         primitives::matmul_vec(&self.device, bufa, bufb, bufc, strider1, strider2);
         Ok(c)
     }

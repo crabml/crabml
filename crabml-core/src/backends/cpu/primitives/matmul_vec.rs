@@ -19,7 +19,6 @@ pub fn matmul_vec<'a>(
     assert!(strider2.is_contiguous());
     assert!(strider1.shape().last() == strider2.shape().last());
 
-    let _t = device.metrics.matmul_walltime.track();
     let (m, k) = (strider1.shape()[0], strider1.shape()[1]);
     gemv_dense_2d_2d(device, bufa, bufb, bufc, m, k);
 }
@@ -38,6 +37,8 @@ fn gemv_dense_2d_2d(
     let bufc = bufc.as_f32_mut();
     let bufb = &bufb.quantize(bufa.vec_dot_rhs_dtype()).unwrap();
     let chunk = 16;
+    let metrics = device.metrics.clone();
+    let _t = metrics.matmul_walltime.track();
     bufc.par_chunks_exact_mut(chunk)
         .enumerate()
         .for_each(|(cn, cp)| {

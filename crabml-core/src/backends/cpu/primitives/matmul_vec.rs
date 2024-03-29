@@ -47,8 +47,8 @@ fn gemv_dense_2d_2d(
             // c: b x m
             let mi = cn * chunk % m;
             let bi = (cn * chunk - mi) / m;
-            for i in 0..chunk {
-                cp[i] = bufa.vec_dot((mi + i) * k, bufb, bi * k, k);
+            for (i, cval) in cp.iter_mut().enumerate() {
+                *cval = bufa.vec_dot((mi + i) * k, bufb, bi * k, k);
             }
         });
 }

@@ -533,24 +533,14 @@ mod tests {
 
     #[test]
     fn test_matmul() -> Result<()> {
-        // 1, 2, 3
-        // 4, 5, 6
         let device = CpuTensorDevice::new();
-        let w = CpuTensor::new(
-            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
-            &[4, 2],
-            device.clone(),
-        )?;
-        // 1
-        // 2
-        // 3
+        let w = CpuTensor::new(vec![4.0; 32], &[16, 2], device.clone())?;
         let b = CpuTensor::new(vec![1.0, 2.0], &[2], device.clone())?;
-        // 0
-        // 0
-        // 1*1 + 2*2 + 3*3 = 1 + 4 + 9
-        // 1*4 + 2*5 + 3*6 = 4 + 10 + 18
         let out = w.matmul_vec(&b)?;
-        assert_eq!(out.to_vec(), &[5.0, 11.0, 17.0, 23.0]);
+        assert_eq!(out.to_vec(), &[
+            12.0, 12.0, 12.0, 12.0, 12.0, 12.0, 12.0, 12.0, 12.0, 12.0, 12.0, 12.0, 12.0, 12.0,
+            12.0, 12.0
+        ]);
 
         Ok(())
     }

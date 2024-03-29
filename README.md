@@ -8,10 +8,10 @@
 
 `crabml` is designed with the following objectives in mind:
 
-- Focus solely on inference.
-- Runs on browsers, desktops, and servers everywhere with the help of **WebGPU**.
-- **SIMD** accelerated inference on inexpensive hardware.
-- `mmap()` from day one, minimized memory requirement.
+- 🤖 Focus solely on inference.
+- 🎮 Runs on browsers, desktops, and servers everywhere with the help of **WebGPU**.
+- ⏩ **SIMD**-accelerated inference on inexpensive hardware.
+- 💼 `mmap()` from day one, minimized memory requirement with various quantization support.
 
 ## Usage
 

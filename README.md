@@ -2,16 +2,16 @@
 
 [![](https://img.shields.io/discord/1111711408875393035?logo=discord&label=discord)](https://discord.gg/wbzqddT3QC)
 
-`crabml` is a llama.cpp-compatible AI inference engine written in Rust, which runs everywhere with the help of WebGPU.
+`crabml` is a llama.cpp-compatible AI inference engine written in 🦀 **Rust**, which runs everywhere with the help of 🎮 **WebGPU**.
 
 ## Project Goals
 
 `crabml` is designed with the following objectives in mind:
 
-- Focus on inference only.
-- Runs everywhere using WebGPU.
-- Accelerated inferencing on cheap hardwares.
-- `mmap()` from day one.
+- Focus solely on inference.
+- Runs on browsers, desktops, and servers everywhere with the help of **WebGPU**.
+- **SIMD** accelerated inference on inexpensive hardware.
+- `mmap()` from day one, minimized memory requirement.
 
 ## Usage
 

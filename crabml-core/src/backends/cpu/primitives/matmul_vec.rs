@@ -1,8 +1,14 @@
+use std::sync::LazyLock;
+use std::sync::Mutex;
+
 use rayon::prelude::*;
 
 use crate::backends::cpu::buf::CpuTensorBuf;
+use crate::backends::cpu::thread_pool::ThreadPool;
 use crate::backends::cpu::CpuTensorDeviceRef;
 use crate::tensor::TensorStrider;
+
+static POOL: LazyLock<Mutex<ThreadPool>> = LazyLock::new(|| Mutex::new(ThreadPool::new(2)));
 
 /// only dense GEMV is supported
 /// (m, k) @ k -> (m, )
@@ -34,21 +40,25 @@ fn gemv_dense_2d_2d(
 ) {
     let bufc = bufc.as_f32_mut();
     let bufb = &bufb.quantize(bufa.vec_dot_rhs_dtype()).unwrap();
-    let chunk = 16;
-    assert!(bufc.len() % chunk == 0);
+    let split_size = bufc.len() / 2;
+    let chunk_size = 16;
+    assert!(split_size % chunk_size == 0);
 
-    let metrics = device.metrics.clone();
-    let _t = metrics.matmul_walltime.track();
-    bufc.par_chunks_exact_mut(chunk)
-        .enumerate()
-        .for_each(|(cn, cp)| {
-            // a: m x k
-            // b: b x k
-            // c: b x m
-            let mi = cn * chunk % m;
-            let bi = (cn * chunk - mi) / m;
-            for (i, cval) in cp.iter_mut().enumerate() {
-                *cval = bufa.vec_dot((mi + i) * k, bufb, bi * k, k);
-            }
-        });
+    POOL.lock().unwrap().scoped(|s| {
+        bufc.chunks_exact_mut(split_size)
+            .enumerate()
+            .for_each(|(cn, cp)| {
+                s.spawn(move || {
+                    cp.chunks_exact_mut(chunk_size)
+                        .enumerate()
+                        .for_each(|(i, cpp)| {
+                            let mi = (cn * split_size + i * chunk_size) % m;
+                            let bi = ((cn * split_size + i * chunk_size) - mi) / m;
+                            for (j, cval) in cpp.iter_mut().enumerate() {
+                                *cval = bufa.vec_dot((mi + j) * k, bufb, bi * k, k);
+                            }
+                        });
+                });
+            });
+    });
 }

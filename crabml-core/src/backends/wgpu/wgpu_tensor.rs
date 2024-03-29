@@ -660,7 +660,7 @@ impl Tensor for WgpuTensor {
         ];
         let encoder =
             self.device
-                .encode_pipeline_commnad("sgemv", entries, (meta.b * meta.m / 32, 1, 1));
+                .encode_pipeline_commnad("sgemv", entries, (meta.b, meta.m / 32, 1));
         self.device.queue.submit(Some(encoder.finish()));
 
         Ok(output)

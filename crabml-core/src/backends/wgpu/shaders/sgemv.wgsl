@@ -20,17 +20,15 @@ var<storage, read_write> bufC: array<vec4<f32>>;
 // (M, K) * (K, 1) = (M, 1)
 // split the work by M / 32
 
-@compute @workgroup_size(8)
+@compute @workgroup_size(1, 8, 1)
 fn main(
-    @builtin(workgroup_id) workgroup_id: vec3<u32>,
-    @builtin(global_invocation_id) global_id: vec3<u32>,
-    @builtin(local_invocation_id) local_id: vec3<u32>,
+    @builtin(global_invocation_id) gIdx: vec3<u32>,
 ) {
     let B = md.B;
     let M = md.M;
     let K = md.K;
-    let mi = global_id.x * 4u % M;
-    let bi = global_id.x * 4u / M;
+    let bi = gIdx.x;
+    let mi = gIdx.y * 4u % M;
 
     // A: (M, K)
     // B: (B, K)

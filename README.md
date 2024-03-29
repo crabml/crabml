@@ -2,17 +2,15 @@
 
 [![](https://img.shields.io/discord/1111711408875393035?logo=discord&label=discord)](https://discord.gg/wbzqddT3QC)
 
-`crabml` is focusing on the reimplementation of GGML using the Rust programming language.
-
-> The project is currently an active experiment with the capability to run inference on a Q8_0 quantized Llama 3B model. While the inference is currently not optimized for speed, `crabml` is a promising endeavor for efficient machine learning inferencing.
+`crabml` is a llama.cpp-compatible AI inference engine written in Rust, which runs everywhere with the help of WebGPU.
 
 ## Project Goals
 
 `crabml` is designed with the following objectives in mind:
 
 - Focus on inference only.
-- Runs everywhere with WebGPU.
-- Achieve fast enough inferencing on cheap hardwares.
+- Runs everywhere using WebGPU.
+- Accelerated inferencing on cheap hardwares.
 - `mmap()` from day one.
 
 ## Usage

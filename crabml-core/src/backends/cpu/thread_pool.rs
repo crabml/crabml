@@ -42,7 +42,8 @@ impl ThreadPool {
         f(&mut scope);
 
         let wg = crossbeam_utils::sync::WaitGroup::new();
-        for (i, thunk) in scope.into_inner().into_iter().enumerate() {
+        let thunks_iter = scope.into_inner().into_iter();
+        for (i, thunk) in thunks_iter.enumerate() {
             let work = (thunk, wg.clone());
             let thread_idx = i % self.senders.len();
             self.senders[thread_idx].send(work).unwrap();

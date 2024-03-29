@@ -45,6 +45,8 @@ fn gemv_dense_2d_2d(
     let chunk_size = 16;
     assert!(split_size % chunk_size == 0);
 
+    let _t = device.metrics.matmul_walltime.track();
+
     POOL.lock().unwrap().scoped(|s| {
         bufc.chunks_exact_mut(split_size)
             .enumerate()

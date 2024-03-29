@@ -1,15 +1,14 @@
 use std::mem;
-use std::sync::mpsc;
 use std::time::Instant;
 
 type Thunk<'a> = Box<dyn FnOnce() + Send + 'a>;
 
-type Work = (Thunk<'static>, crossbeam_utils::sync::WaitGroup);
+type Work = (Thunk<'static>, crossbeam_utils::sync::WaitGroup, Instant);
 
 /// A threadpool that acts as a handle to a number
 /// of threads spawned at construction.
 pub struct ThreadPool {
-    senders: Vec<mpsc::Sender<Work>>,
+    senders: Vec<crossbeam_channel::Sender<Work>>,
 }
 
 impl ThreadPool {
@@ -18,12 +17,12 @@ impl ThreadPool {
     pub fn new(n: usize) -> Self {
         assert!(n >= 1);
 
-        let mut senders = vec![];
+        let mut senders: Vec<crossbeam_channel::Sender<Work>> = vec![];
         for _ in 0..n {
-            let (sender, receiver) = mpsc::channel::<Work>();
+            let (sender, receiver) = crossbeam_channel::bounded(4);
             senders.push(sender);
             std::thread::spawn(move || {
-                while let Ok((thunk, wg)) = receiver.recv() {
+                while let Ok((thunk, wg, _dispatched_time)) = receiver.recv() {
                     thunk();
                     drop(wg)
                 }
@@ -53,7 +52,7 @@ impl ThreadPool {
 
         let wg = crossbeam_utils::sync::WaitGroup::new();
         for (i, thunk) in thunks_iter.enumerate() {
-            let work = (thunk, wg.clone());
+            let work = (thunk, wg.clone(), Instant::now());
             let thread_idx = i % self.senders.len();
             self.senders[thread_idx].send(work).unwrap();
         }

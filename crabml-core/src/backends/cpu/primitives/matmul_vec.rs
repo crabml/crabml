@@ -40,6 +40,7 @@ fn gemv_dense_2d_2d(
 ) {
     let bufc = bufc.as_f32_mut();
     let bufb = &bufb.quantize(bufa.vec_dot_rhs_dtype()).unwrap();
+    let thread_num = device.thread_num();
     let split_size = bufc.len() / 2;
     let chunk_size = 16;
     assert!(split_size % chunk_size == 0);

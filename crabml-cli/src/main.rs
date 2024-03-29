@@ -6,6 +6,7 @@ use std::time::Instant;
 use clap::Parser;
 use clap::ValueEnum;
 use crabml::backends::cpu::CpuTensorDevice;
+use crabml::backends::cpu::CpuTensorDeviceOptions;
 use crabml::backends::wgpu::WgpuTensorDevice;
 use crabml::backends::wgpu::WgpuTensorDeviceOptions;
 use crabml::error::Result;
@@ -144,12 +145,12 @@ fn main() -> Result<()> {
     let start_time = Instant::now();
 
     // configure rayon
-    let mut threads = args.threads;
-    if threads == 0 {
-        threads = num_cpus::get();
+    let mut thread_num = args.threads;
+    if thread_num == 0 {
+        thread_num = num_cpus::get();
     }
     rayon::ThreadPoolBuilder::new()
-        .num_threads(threads)
+        .num_threads(thread_num)
         .build_global()
         .unwrap();
 
@@ -157,7 +158,11 @@ fn main() -> Result<()> {
     let gf = gl.open()?;
 
     let metrics = TensorMetrics::default();
-    let device_cpu = CpuTensorDevice::new().with_metrics(metrics.clone());
+    let device_cpu = CpuTensorDevice::with_options(CpuTensorDeviceOptions {
+        debug_named_tensors: false,
+        thread_num,
+        metrics: metrics.clone(),
+    });
     let model_cpu = CpuLlama2Model::load(&gf, device_cpu.clone())?;
     let conf = model_cpu.conf.clone();
 

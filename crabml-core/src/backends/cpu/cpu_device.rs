@@ -12,6 +12,10 @@ pub struct CpuTensorDeviceOptions {
     /// when enabled, whenever tensor called with `with_name`, the name and the
     /// tensor will be recorded in the device. only used in test.
     pub debug_named_tensors: bool,
+
+    pub metrics: TensorMetrics,
+
+    pub thread_num: usize,
 }
 
 #[derive(Debug)]
@@ -40,10 +44,11 @@ impl<'a> CpuTensorDevice<'a> {
     }
 
     pub fn with_options(opts: CpuTensorDeviceOptions) -> CpuTensorDeviceRef<'a> {
+        let metrics = opts.metrics.clone();
         let device = Self {
             opts,
             debug_tensors: RefCell::new(HashMap::new()),
-            metrics: TensorMetrics::default(),
+            metrics: metrics,
             wbuf: RefCell::new(Some(vec![0.0; 32000])),
             exp_cache: Rc::new(Self::init_exp_cache()),
             _phantom: std::marker::PhantomData,
@@ -51,20 +56,12 @@ impl<'a> CpuTensorDevice<'a> {
         Rc::new(device)
     }
 
-    pub fn with_metrics(self: Rc<Self>, metrics: TensorMetrics) -> CpuTensorDeviceRef<'a> {
-        let device = Self {
-            opts: self.opts.clone(),
-            debug_tensors: self.debug_tensors.clone(),
-            wbuf: self.wbuf.clone(),
-            exp_cache: self.exp_cache.clone(),
-            metrics,
-            _phantom: std::marker::PhantomData,
-        };
-        Rc::new(device)
-    }
-
     pub fn metrics(&self) -> &TensorMetrics {
         &self.metrics
+    }
+
+    pub fn thread_num(&self) -> usize {
+        self.opts.thread_num
     }
 
     pub fn dump_debug_tensor(&self, name: &str) -> Option<Vec<f32>> {

@@ -1,5 +1,6 @@
 use std::mem;
 use std::sync::mpsc;
+use std::time::Instant;
 
 type Thunk<'a> = Box<dyn FnOnce() + Send + 'a>;
 

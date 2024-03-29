@@ -32,11 +32,11 @@ fn gemv_dense_2d_2d(
     m: usize,
     k: usize,
 ) {
-    assert!(bufc.len() % 4 == 0);
-
     let bufc = bufc.as_f32_mut();
     let bufb = &bufb.quantize(bufa.vec_dot_rhs_dtype()).unwrap();
     let chunk = 16;
+    assert!(bufc.len() % chunk == 0);
+
     let metrics = device.metrics.clone();
     let _t = metrics.matmul_walltime.track();
     bufc.par_chunks_exact_mut(chunk)

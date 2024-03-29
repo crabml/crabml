@@ -47,15 +47,16 @@ fn gemv_dense_2d_2d(
     POOL.lock().unwrap().scoped(|s| {
         bufc.chunks_exact_mut(split_size)
             .enumerate()
-            .for_each(|(cn, cp)| {
+            .for_each(|(sn, sbuf)| {
                 s.spawn(move || {
-                    cp.chunks_exact_mut(chunk_size)
+                    sbuf.chunks_exact_mut(chunk_size)
                         .enumerate()
-                        .for_each(|(i, cpp)| {
-                            let mi = (cn * split_size + i * chunk_size) % m;
-                            let bi = ((cn * split_size + i * chunk_size) - mi) / m;
-                            for (j, cval) in cpp.iter_mut().enumerate() {
-                                *cval = bufa.vec_dot((mi + j) * k, bufb, bi * k, k);
+                        .for_each(|(cn, cbuf)| {
+                            let offset = sn * split_size + cn * chunk_size;
+                            let mi = offset % m;
+                            let bi = (offset - mi) / m;
+                            for (i, cval) in cbuf.iter_mut().enumerate() {
+                                *cval = bufa.vec_dot((mi + i) * k, bufb, bi * k, k);
                             }
                         });
                 });

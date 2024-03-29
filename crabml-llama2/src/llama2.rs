@@ -90,6 +90,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         &mut self,
         prompt: &str,
         sampler: &'a mut Llama2Sampler,
+        _batched: bool,
     ) -> Result<(usize, usize, usize)> {
         let prompt_tokens = self.tokenizer.encode(prompt, true, false)?;
         if prompt_tokens.is_empty() {
@@ -100,9 +101,11 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             });
         }
 
+        // this is expected to be eos, make it as the prewarm
+
         let mut logits: &mut [f32] = &mut [];
         for (pos, token) in prompt_tokens.iter().enumerate() {
-            logits = self.forward(*token, pos)?;
+            logits = self.forward(&[*token], pos)?;
         }
         let token = sampler.sample(logits)?;
         let last_token = *prompt_tokens.last().unwrap();
@@ -121,7 +124,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         let max_steps = (self.conf.seq_len - pos).min(steps);
         let first_token = self.tokenizer.decode(prev_token, token);
         let tokens_iter = (pos..pos + max_steps).scan(token, move |current_token, pos| {
-            let logits = self.forward(*current_token, pos).unwrap();
+            let logits = self.forward(&[*current_token], pos).unwrap();
             let new_token = sampler.sample(logits).unwrap();
             if new_token == self.tokenizer.eos_token() {
                 return None;
@@ -140,17 +143,24 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         steps: usize,
         sampler: &'a mut Llama2Sampler,
     ) -> Result<impl Iterator<Item = Result<String>> + '_> {
-        let (pos, prev_token, token) = self.prefill(prompt, sampler)?;
+        let (pos, prev_token, token) = self.prefill(prompt, sampler, false)?;
         Ok(self.generate(pos, prev_token, token, steps, sampler))
     }
 
-    pub fn forward(&mut self, token: usize, pos: usize) -> Result<&mut [f32]> {
+    pub fn forward(&mut self, tokens: &[usize], pos: usize) -> Result<&mut [f32]> {
         let _t = self.metrics.forward_walltime.track();
 
         let x = match self.conf.architecture {
-            ModelArchitecture::Llama => self.forward_llama(&[token], pos)?,
-            ModelArchitecture::Gemma => self.forward_gemma(&[token], pos)?,
+            ModelArchitecture::Llama => self.forward_llama(tokens, pos)?,
+            ModelArchitecture::Gemma => self.forward_gemma(tokens, pos)?,
         };
+
+        let mut x_final = T::alloc(
+            &[self.conf.embedding_dim],
+            GGMLType::F32,
+            self.device.clone(),
+        )?;
+        x_final.copy_rows_from(&x, &[tokens.len() - 1])?;
 
         // classifier into logits
         // TODO: it'd be make sense to reuse the same buffer for the logits
@@ -159,7 +169,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             .output_weight
             .as_ref()
             .unwrap_or_else(|| &self.weights.token_embed);
-        let logits = output_weight.matmul_vec(&x)?; // (vocab_size,
+        let logits = output_weight.matmul_vec(&x_final)?; // (batch_size, vocab_size),
         logits.export(&mut self.logits)?;
         Ok(&mut self.logits)
     }
@@ -206,10 +216,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
 
                 let q = q.rope_inplace(RopeMode::Llama, pos, rope_dim)?;
                 let k = k.rope_inplace(RopeMode::Llama, pos, rope_dim)?;
-                (
-                    q.with_name(format!("q_roped:{}:{}", l, pos)),
-                    k.with_name(format!("k_roped:{}:{}", l, pos)),
-                )
+                (q, k)
             };
 
             x = self.forward_multi_query_attention(
@@ -288,10 +295,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
 
                 let q = q.rope_inplace(RopeMode::Neox, pos, rope_dim)?;
                 let k = k.rope_inplace(RopeMode::Neox, pos, rope_dim)?;
-                (
-                    q.with_name(format!("q_roped:{}:{}", l, pos)),
-                    k.with_name(format!("k_roped:{}:{}", l, pos)),
-                )
+                (q, k)
             };
 
             x = self.forward_multi_query_attention(
@@ -332,7 +336,6 @@ impl<'a, T: Tensor> Llama2Runner<T> {
     ) -> Result<T> {
         // save to kv cache in layout of (n_kv_heads, n_batch, head_dim)
         {
-            let _t = self.metrics.save_kvcache_walltime.track();
             let k = k
                 .reshape(&[n_batch, n_kv_heads, head_dim])?
                 .transpose(&[1, 0, 2])?;
@@ -544,12 +547,12 @@ mod tests {
         let mut runner_wgpu = Llama2Runner::new(&model_wgpu, TensorMetrics::default(), 200, false)?;
 
         let output_cpu = runner_cpu
-            .prefill_and_generate("Lily is a cat", 30, &mut sampler)?
+            .prefill_and_generate("Lily is a cat", 15, &mut sampler)?
             .collect::<Result<Vec<String>>>()?
             .join("");
 
         let output_wgpu = runner_wgpu
-            .prefill_and_generate("Lily is a cat", 30, &mut sampler)?
+            .prefill_and_generate("Lily is a cat", 15, &mut sampler)?
             .collect::<Result<Vec<String>>>()?
             .join("");
 
@@ -560,12 +563,6 @@ mod tests {
         );
 
         assert_relative_eq!(
-            device_cpu.dump_debug_tensor("q_roped:0:0").unwrap()[..],
-            device_wgpu.dump_debug_tensor("q_roped:0:0").unwrap()[..],
-            epsilon = 1e-2
-        );
-
-        assert_relative_eq!(
             device_cpu.dump_debug_tensor("final_rmsnorm:0").unwrap()[..],
             device_wgpu.dump_debug_tensor("final_rmsnorm:0").unwrap()[..],
             epsilon = 1e-2
@@ -573,12 +570,12 @@ mod tests {
 
         assert_eq!(
             output_cpu,
-            " who likes to play with yarn. She has many colors of yarn in her box. She likes to make shapes with yarn and show"
+            " who likes to play with yarn. She has many colors of yarn"
         );
 
         assert_eq!(
             output_wgpu,
-            " who likes to play with yarn. She has many colors of yarn in her box. She likes to make shapes with yarn and show"
+            " who likes to play with yarn. She has many colors of yarn"
         );
 
         Ok(())

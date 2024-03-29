@@ -25,23 +25,30 @@ pub fn matmul_vec<'a>(
 
 #[allow(clippy::too_many_arguments)]
 fn gemv_dense_2d_2d(
-    _device: &CpuTensorDeviceRef,
+    device: &CpuTensorDeviceRef,
     bufa: &CpuTensorBuf,
     bufb: &CpuTensorBuf,
     bufc: &mut CpuTensorBuf,
     m: usize,
     k: usize,
 ) {
-    assert!(bufc.len() % 4 == 0);
-
     let bufc = bufc.as_f32_mut();
     let bufb = &bufb.quantize(bufa.vec_dot_rhs_dtype()).unwrap();
-    bufc.par_iter_mut().enumerate().for_each(|(cn, cp)| {
-        // a: m x k
-        // b: b x k
-        // c: b x m
-        let mi = cn % m;
-        let bi = (cn - mi) / m;
-        *cp = bufa.vec_dot(mi * k, bufb, bi * k, k);
-    });
+    let chunk = 16;
+    assert!(bufc.len() % chunk == 0);
+
+    let metrics = device.metrics.clone();
+    let _t = metrics.matmul_walltime.track();
+    bufc.par_chunks_exact_mut(chunk)
+        .enumerate()
+        .for_each(|(cn, cp)| {
+            // a: m x k
+            // b: b x k
+            // c: b x m
+            let mi = cn * chunk % m;
+            let bi = (cn * chunk - mi) / m;
+            for (i, cval) in cp.iter_mut().enumerate() {
+                *cval = bufa.vec_dot((mi + i) * k, bufb, bi * k, k);
+            }
+        });
 }

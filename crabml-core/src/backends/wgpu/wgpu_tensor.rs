@@ -658,9 +658,10 @@ impl Tensor for WgpuTensor {
                 resource: output.buf.as_entire_binding(),
             },
         ];
+        assert!(meta.m / 32 < 65535); // vulkan limit each dimension to 65535
         let encoder =
             self.device
-                .encode_pipeline_commnad("sgemv", entries, (meta.b * meta.m / 32, 1, 1));
+                .encode_pipeline_commnad("sgemv", entries, (meta.b, meta.m / 32, 1));
         self.device.queue.submit(Some(encoder.finish()));
 
         Ok(output)

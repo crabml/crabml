@@ -11,10 +11,9 @@
 `crabml` is designed with the following objectives in mind:
 
 - Focus on inference only.
-- Limit tensor operators to the bare minimum required for LLM inference.
+- Runs everywhere with WebGPU.
 - Achieve fast enough inferencing on cheap hardwares.
 - `mmap()` from day one.
-- Prioritize SIMD ahead of GPU.
 
 ## Usage
 

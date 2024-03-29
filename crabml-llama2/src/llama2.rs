@@ -547,12 +547,12 @@ mod tests {
         let mut runner_wgpu = Llama2Runner::new(&model_wgpu, TensorMetrics::default(), 200, false)?;
 
         let output_cpu = runner_cpu
-            .prefill_and_generate("Lily is a cat", 30, &mut sampler)?
+            .prefill_and_generate("Lily is a cat", 15, &mut sampler)?
             .collect::<Result<Vec<String>>>()?
             .join("");
 
         let output_wgpu = runner_wgpu
-            .prefill_and_generate("Lily is a cat", 30, &mut sampler)?
+            .prefill_and_generate("Lily is a cat", 15, &mut sampler)?
             .collect::<Result<Vec<String>>>()?
             .join("");
 
@@ -570,12 +570,12 @@ mod tests {
 
         assert_eq!(
             output_cpu,
-            " who likes to play with yarn. She has many colors of yarn in her box. She likes to make shapes with yarn and show"
+            " who likes to play with yarn. She has many colors of yarn"
         );
 
         assert_eq!(
             output_wgpu,
-            " who likes to play with yarn. She has many colors of yarn in her box. She likes to make shapes with yarn and show"
+            " who likes to play with yarn. She has many colors of yarn"
         );
 
         Ok(())

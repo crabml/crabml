@@ -1,9 +1,11 @@
 use std::mem;
+use std::sync::atomic::AtomicUsize;
+use std::sync::Arc;
 use std::time::Instant;
 
 type Thunk<'a> = Box<dyn FnOnce() + Send + 'a>;
 
-type Work = (Thunk<'static>, crossbeam_utils::sync::WaitGroup, Instant);
+type Work = (Thunk<'static>, Arc<AtomicUsize>, Instant);
 
 /// A threadpool that acts as a handle to a number
 /// of threads spawned at construction.
@@ -19,12 +21,12 @@ impl ThreadPool {
 
         let mut senders: Vec<crossbeam_channel::Sender<Work>> = vec![];
         for _ in 0..n {
-            let (sender, receiver) = crossbeam_channel::bounded(4);
+            let (sender, receiver) = crossbeam_channel::unbounded();
             senders.push(sender);
             std::thread::spawn(move || {
-                while let Ok((thunk, wg, _dispatched_time)) = receiver.recv() {
+                while let Ok((thunk, counter, _dispatched_time)) = receiver.recv() {
                     thunk();
-                    drop(wg)
+                    counter.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
                 }
             });
         }
@@ -35,7 +37,7 @@ impl ThreadPool {
     pub fn scoped<'scope, F>(&self, f: F)
     where F: FnOnce(&mut Scope<'scope>) + Send + 'scope {
         let mut scope = Scope::<'scope> {
-            thunks: Vec::new(),
+            thunks: Vec::with_capacity(4),
             _phantom: std::marker::PhantomData,
         };
 
@@ -50,18 +52,17 @@ impl ThreadPool {
         let mut thunks_iter = thunks_vec.into_iter();
         let first_thunk = thunks_iter.next().unwrap();
 
-        let wg = crossbeam_utils::sync::WaitGroup::new();
+        let counter = Arc::new(AtomicUsize::new(thunks_len));
         for (i, thunk) in thunks_iter.enumerate() {
-            let work = (thunk, wg.clone(), Instant::now());
+            let work = (thunk, counter.clone(), Instant::now());
             let thread_idx = i % self.senders.len();
             self.senders[thread_idx].send(work).unwrap();
         }
 
-        // execute the first thunk in the current thread
         first_thunk();
 
         // await the rest of the thunks
-        wg.wait();
+        while counter.load(std::sync::atomic::Ordering::Relaxed) > 1 {}
     }
 }
 

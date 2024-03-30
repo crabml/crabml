@@ -20,6 +20,7 @@ byteorder = "1.5.0"
 scoped_threadpool = "0.1.9"
 crossbeam-channel = "0.5"
 crossbeam-utils = "0.8"
+quanta = "0.12.2"
 
 [dev-dependencies]
 pretty_assertions = "1.2.1"

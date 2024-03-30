@@ -1,11 +1,13 @@
 use std::sync::LazyLock;
 use std::sync::Mutex;
+use std::time::Instant;
 
 use rayon::prelude::*;
 
 use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::backends::cpu::thread_pool::ThreadPool;
 use crate::backends::cpu::CpuTensorDeviceRef;
+use crate::tensor::metrics::TimeMetric;
 use crate::tensor::TensorStrider;
 
 static POOL: LazyLock<Mutex<ThreadPool>> = LazyLock::new(|| Mutex::new(ThreadPool::new(2)));
@@ -45,24 +47,44 @@ fn gemv_dense_2d_2d(
     let chunk_size = 16;
     assert!(split_size % chunk_size == 0);
 
-    let _t = device.metrics.matmul_walltime.track();
+    let metrics = device.metrics.clone();
+    let _t = metrics.matmul_walltime.track();
 
-    POOL.lock().unwrap().scoped(|s| {
-        bufc.chunks_exact_mut(split_size)
-            .enumerate()
-            .for_each(|(sn, sbuf)| {
-                s.spawn(move || {
-                    sbuf.chunks_exact_mut(chunk_size)
-                        .enumerate()
-                        .for_each(|(cn, cbuf)| {
-                            let offset = sn * split_size + cn * chunk_size;
-                            let mi = offset % m;
-                            let bi = (offset - mi) / m;
-                            for (i, cval) in cbuf.iter_mut().enumerate() {
-                                *cval = bufa.vec_dot((mi + i) * k, bufb, bi * k, k);
-                            }
-                        });
+    let thread_metrics: Vec<TimeMetric> = vec![TimeMetric::new(), TimeMetric::new()];
+    let total_time = TimeMetric::new();
+    let mut scoped_time = Instant::now();
+    {
+        let _t = total_time.track();
+
+        // TODO: 看每个 thread 执行的时间
+        POOL.lock().unwrap().scoped(|s| {
+            bufc.chunks_exact_mut(split_size)
+                .enumerate()
+                .zip(thread_metrics.clone())
+                .for_each(|((sn, sbuf), metric)| {
+                    s.spawn(move || {
+                        let _t = metric.track();
+                        sbuf.chunks_exact_mut(chunk_size)
+                            .enumerate()
+                            .for_each(|(cn, cbuf)| {
+                                let offset = sn * split_size + cn * chunk_size;
+                                let mi = offset % m;
+                                let bi = (offset - mi) / m;
+                                for (i, cval) in cbuf.iter_mut().enumerate() {
+                                    *cval = bufa.vec_dot((mi + i) * k, bufb, bi * k, k);
+                                }
+                            });
+                    });
                 });
-            });
-    });
+            scoped_time = Instant::now();
+        });
+    }
+    let max_thread_nanos = thread_metrics
+        .iter()
+        .map(|m| m.as_nanos())
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    metrics
+        .matmuL_non_compute_walltime
+        .increment_nanos(total_time.as_nanos() - max_thread_nanos);
 }

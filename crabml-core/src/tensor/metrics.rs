@@ -12,7 +12,7 @@ pub struct TensorMetrics {
     pub softmax_walltime: TimeMetric,
     pub activate_walltime: TimeMetric,
     pub matmul_walltime: TimeMetric,
-    pub matmuL_non_compute_walltime: TimeMetric,
+    pub matmul_non_compute_walltime: TimeMetric,
     pub dequantize_walltime: TimeMetric,
     pub matmul_quantize_walltime: TimeMetric,
     pub batch_matmul_quantize_walltime: TimeMetric,
@@ -41,7 +41,7 @@ impl TensorMetrics {
         self.activate_walltime.reset();
         self.total_walltime.reset();
         self.matmul_quantize_walltime.reset();
-        self.matmuL_non_compute_walltime.reset();
+        self.matmul_non_compute_walltime.reset();
         self.batch_matmul_quantize_walltime.reset();
         self.export_walltime.reset();
         self.batch_matmul_walltime.reset();
@@ -136,7 +136,7 @@ impl TensorMetrics {
             ),
             (
                 "matmul_non_compute_walltime".to_string(),
-                self.matmuL_non_compute_walltime.as_millis(),
+                self.matmul_non_compute_walltime.as_millis(),
             ),
         ]
     }
@@ -164,7 +164,7 @@ impl TimeMetric {
     }
 
     pub fn as_nanos(&self) -> u64 {
-        self.inner.load(std::sync::atomic::Ordering::Relaxed) as u64
+        self.inner.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     pub fn as_millis(&self) -> f64 {

@@ -2,8 +2,6 @@ use std::sync::LazyLock;
 use std::sync::Mutex;
 use std::time::Instant;
 
-use rayon::prelude::*;
-
 use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::backends::cpu::thread_pool::ThreadPool;
 use crate::backends::cpu::CpuTensorDeviceRef;
@@ -85,6 +83,6 @@ fn gemv_dense_2d_2d(
         .max_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap();
     metrics
-        .matmuL_non_compute_walltime
+        .matmul_non_compute_walltime
         .increment_nanos(total_time.as_nanos() - max_thread_nanos);
 }

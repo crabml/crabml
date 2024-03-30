@@ -7,7 +7,7 @@ use half::f16;
 use super::CpuTensor;
 use crate::tensor::TensorMetrics;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct CpuTensorDeviceOptions {
     /// when enabled, whenever tensor called with `with_name`, the name and the
     /// tensor will be recorded in the device. only used in test.
@@ -16,6 +16,33 @@ pub struct CpuTensorDeviceOptions {
     pub metrics: TensorMetrics,
 
     pub thread_num: usize,
+}
+
+impl Default for CpuTensorDeviceOptions {
+    fn default() -> Self {
+        Self {
+            debug_named_tensors: false,
+            metrics: TensorMetrics::default(),
+            thread_num: 1,
+        }
+    }
+}
+
+impl CpuTensorDeviceOptions {
+    pub fn with_thread_num(mut self, thread_num: usize) -> Self {
+        self.thread_num = thread_num;
+        self
+    }
+
+    pub fn with_debug_named_tensors(mut self, debug_named_tensors: bool) -> Self {
+        self.debug_named_tensors = debug_named_tensors;
+        self
+    }
+
+    pub fn with_metrics(mut self, metrics: TensorMetrics) -> Self {
+        self.metrics = metrics;
+        self
+    }
 }
 
 #[derive(Debug)]
@@ -31,14 +58,8 @@ pub type CpuTensorDeviceRef<'a> = Rc<CpuTensorDevice<'a>>;
 
 impl<'a> CpuTensorDevice<'a> {
     pub fn new() -> CpuTensorDeviceRef<'a> {
-        let device = Self {
-            opts: CpuTensorDeviceOptions::default(),
-            debug_tensors: RefCell::new(HashMap::new()),
-            metrics: TensorMetrics::default(),
-            exp_cache: Rc::new(Self::init_exp_cache()),
-            _phantom: std::marker::PhantomData,
-        };
-        Rc::new(device)
+        let opts = CpuTensorDeviceOptions::default();
+        Self::with_options(opts)
     }
 
     pub fn with_options(opts: CpuTensorDeviceOptions) -> CpuTensorDeviceRef<'a> {

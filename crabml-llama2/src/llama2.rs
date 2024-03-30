@@ -452,9 +452,7 @@ mod tests {
             GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-f32.gguf")?;
         let gf = gl.open()?;
 
-        let device = CpuTensorDevice::with_options(CpuTensorDeviceOptions {
-            debug_named_tensors: false,
-        });
+        let device = CpuTensorDevice::with_options(CpuTensorDeviceOptions::default());
         let lm = CpuLlama2Model::load(&gf, device.clone())?;
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0, device.exp_cache());
@@ -529,9 +527,9 @@ mod tests {
             GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-f32.gguf")?;
         let gf = gl.open()?;
 
-        let device_cpu = CpuTensorDevice::with_options(CpuTensorDeviceOptions {
-            debug_named_tensors: true,
-        });
+        let device_cpu = CpuTensorDevice::with_options(
+            CpuTensorDeviceOptions::default().with_debug_named_tensors(true),
+        );
         let model_cpu = CpuLlama2Model::load(&gf, device_cpu.clone())?;
 
         let device_wgpu = WgpuTensorDevice::new(

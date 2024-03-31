@@ -1,5 +1,3 @@
-use std::time::Instant;
-
 use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::backends::cpu::CpuTensorDeviceRef;
 use crate::tensor::metrics::TimeMetric;
@@ -43,18 +41,20 @@ fn gemv_dense_2d_2d(
     let metrics = device.metrics.clone();
     let _t = metrics.matmul_walltime.track();
 
-    let thread_metrics: Vec<TimeMetric> = vec![TimeMetric::new(), TimeMetric::new()];
-    let total_time = TimeMetric::new();
+    // track walltime of each thread, we can compare the longest one with total walltime, the difference
+    // represents the cost of thread synchronization cost.
+    let task_walltimes: Vec<TimeMetric> = vec![TimeMetric::new(), TimeMetric::new()];
+    let total_walltime = TimeMetric::new();
     {
-        let _t = total_time.track();
+        let _t = total_walltime.track();
 
         device.thread_pool().lock().unwrap().scoped(|s| {
             bufc.chunks_exact_mut(split_size)
                 .enumerate()
-                .zip(thread_metrics.clone())
-                .for_each(|((sn, sbuf), metric)| {
+                .zip(task_walltimes.clone())
+                .for_each(|((sn, sbuf), task_walltime)| {
                     s.spawn(move || {
-                        let _t = metric.track();
+                        let _t = task_walltime.track();
                         sbuf.chunks_exact_mut(chunk_size)
                             .enumerate()
                             .for_each(|(cn, cbuf)| {
@@ -70,12 +70,12 @@ fn gemv_dense_2d_2d(
         });
     }
 
-    let max_thread_nanos = thread_metrics
+    let max_thread_nanos = task_walltimes
         .iter()
         .map(|m| m.as_nanos())
         .max_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap();
     metrics
         .matmul_non_compute_walltime
-        .increment_nanos(total_time.as_nanos() - max_thread_nanos);
+        .increment_nanos(total_walltime.as_nanos() - max_thread_nanos);
 }

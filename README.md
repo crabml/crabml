@@ -2,7 +2,7 @@
 
 [![](https://img.shields.io/discord/1111711408875393035?logo=discord&label=discord)](https://discord.gg/wbzqddT3QC)
 
-`crabml` is a llama.cpp-compatible AI inference engine written in 🦀 **Rust**, which runs everywhere with the help of 🎮 **WebGPU**.
+`crabml` is a llama.cpp compatible (and equally fast!) AI inference engine written in 🦀 **Rust**, which runs everywhere with the help of 🎮 **WebGPU**.
 
 ## Project Goals
 
@@ -12,6 +12,30 @@
 - 🎮 Runs on browsers, desktops, and servers everywhere with the help of **WebGPU**.
 - ⏩ **SIMD**-accelerated inference on inexpensive hardware.
 - 💼 `mmap()` from day one, minimized memory requirement with various quantization support.
+- 👾 Hackable & embeddable.
+
+## Supported Models
+
+`crabml` supports the following models in GGUF format:
+
+- 🦙 Llama
+- 🦙 Gemma
+- 🚄 On the way: Mistral MoE, QWen, StarCoder, Llava, and more! 
+
+For more information, you can visit [How to Get GGUF Models](https://github.com/crabml/crabml/blob/main/docs/how-to-get-gguf-models.md) to learn how to download the GGUF files you need.
+
+## Supported Quantization Methods
+
+`crabml` supports the following quantization methods on the CPU:
+
+- 8 bits: Q8_0, Q8_1
+- 6 bits: Q6_K
+- 5 bits: Q5_0, Q5_1, Q5_k
+- 4 bits: Q4_0, Q4_1, Q4_k
+- 3 bits: Q3_k
+- 2 bits: Q2_k
+
+The GPU quantization support is on the way!
 
 ## Usage
 

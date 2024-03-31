@@ -1,14 +1,9 @@
-use std::sync::LazyLock;
-use std::sync::Mutex;
 use std::time::Instant;
 
 use crate::backends::cpu::buf::CpuTensorBuf;
-use crate::backends::cpu::thread_pool::ThreadPool;
 use crate::backends::cpu::CpuTensorDeviceRef;
 use crate::tensor::metrics::TimeMetric;
 use crate::tensor::TensorStrider;
-
-static POOL: LazyLock<Mutex<ThreadPool>> = LazyLock::new(|| Mutex::new(ThreadPool::new(2)));
 
 /// only dense GEMV is supported
 /// (m, k) @ k -> (m, )
@@ -50,12 +45,10 @@ fn gemv_dense_2d_2d(
 
     let thread_metrics: Vec<TimeMetric> = vec![TimeMetric::new(), TimeMetric::new()];
     let total_time = TimeMetric::new();
-    let mut scoped_time = Instant::now();
     {
         let _t = total_time.track();
 
-        // TODO: 看每个 thread 执行的时间
-        POOL.lock().unwrap().scoped(|s| {
+        device.thread_pool().lock().unwrap().scoped(|s| {
             bufc.chunks_exact_mut(split_size)
                 .enumerate()
                 .zip(thread_metrics.clone())
@@ -74,9 +67,9 @@ fn gemv_dense_2d_2d(
                             });
                     });
                 });
-            scoped_time = Instant::now();
         });
     }
+
     let max_thread_nanos = thread_metrics
         .iter()
         .map(|m| m.as_nanos())

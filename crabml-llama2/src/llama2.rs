@@ -28,8 +28,8 @@ pub struct Llama2Runner<T: Tensor> {
     tokenizer: Rc<BpeTokenizer>,
     device: T::Device,
     logits: Vec<f32>,            // output logits (vocab_size, )
-    key_cache: Vec<Option<T>>,   // (layer, seq_len, kv_dim)
-    value_cache: Vec<Option<T>>, // (layer, seq_len, kv_dim)
+    key_cache: Vec<Option<T>>,   // (layer, n_kv_head, seq_len, kv_dim)
+    value_cache: Vec<Option<T>>, // (layer, n_kv_head, seq_len, kv_dim)
     metrics: TensorMetrics,
 }
 
@@ -90,9 +90,10 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         &mut self,
         prompt: &str,
         sampler: &'a mut Llama2Sampler,
+        bos: bool,
         _batched: bool,
     ) -> Result<(usize, usize, usize)> {
-        let prompt_tokens = self.tokenizer.encode(prompt, true, false)?;
+        let prompt_tokens = self.tokenizer.encode(prompt, bos, false)?;
         if prompt_tokens.is_empty() {
             return Err(Error {
                 kind: ErrorKind::BadInput,
@@ -110,7 +111,9 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         let token = sampler.sample(logits)?;
         let last_token = *prompt_tokens.last().unwrap();
 
-        Ok((prompt_tokens.len(), last_token, token))
+        // take the length of kv cache as the next position
+        let key_cache_len = self.key_cache[0].as_ref().unwrap().shape()[1];
+        Ok((key_cache_len, last_token, token))
     }
 
     pub fn generate(
@@ -143,7 +146,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         steps: usize,
         sampler: &'a mut Llama2Sampler,
     ) -> Result<impl Iterator<Item = Result<String>> + '_> {
-        let (pos, prev_token, token) = self.prefill(prompt, sampler, false)?;
+        let (pos, prev_token, token) = self.prefill(prompt, sampler, true, false)?;
         Ok(self.generate(pos, prev_token, token, steps, sampler))
     }
 

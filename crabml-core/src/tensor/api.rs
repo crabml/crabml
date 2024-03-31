@@ -32,6 +32,8 @@ pub trait Tensor: Sized + Clone {
 
     fn contiguous(self) -> Result<Self>;
 
+    fn shape(&self) -> &[usize];
+
     fn strider(&self) -> &TensorStrider;
 
     fn concatenate(&mut self, rhs: &Self, axis: usize) -> Result<()>;

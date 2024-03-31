@@ -128,7 +128,8 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         steps: usize,
         sampler: &'a mut Llama2Sampler,
     ) -> impl Iterator<Item = Result<String>> + '_ {
-        let max_steps = (self.conf.seq_len - pos).min(steps);
+        // the first token has already been generated in the prefill phase.
+        let max_steps = (self.conf.seq_len - pos - 1).min(steps - 1);
         let first_token = self.tokenizer.decode(prev_token, token);
         let tokens_iter = (pos..pos + max_steps).scan(token, move |current_token, pos| {
             let logits = self.forward(&[*current_token], pos).unwrap();
@@ -465,7 +466,7 @@ mod tests {
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0, device.exp_cache());
         let mut runner = Llama2Runner::new(&lm, TensorMetrics::default(), 200, false)?;
-        let output = runner.prefill_and_generate("Lily is a cat", 30, &mut sampler)?;
+        let output = runner.prefill_and_generate("Lily is a cat", 31, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
 
         assert_eq!(
@@ -487,7 +488,7 @@ mod tests {
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0, device.exp_cache());
         let mut runner = Llama2Runner::new(&lm, TensorMetrics::default(), 200, false)?;
-        let output = runner.prefill_and_generate("Lily is a cute cat, ", 10, &mut sampler)?;
+        let output = runner.prefill_and_generate("Lily is a cute cat, ", 11, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
         assert_eq!(s, "3 years old. She likes to play with her");
         Ok(())
@@ -505,7 +506,7 @@ mod tests {
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0, device.exp_cache());
         let mut runner = Llama2Runner::new(&lm, TensorMetrics::default(), 200, true)?;
-        let output = runner.prefill_and_generate("Lily is a cute cat, ", 10, &mut sampler)?;
+        let output = runner.prefill_and_generate("Lily is a cute cat, ", 11, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
         assert_eq!(s, "3 years old. She likes to play with her");
         Ok(())
@@ -523,7 +524,7 @@ mod tests {
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0, device.exp_cache());
         let mut runner = Llama2Runner::new(&lm, TensorMetrics::default(), 200, false)?;
-        let output = runner.prefill_and_generate("Lily is a cute cat, ", 10, &mut sampler)?;
+        let output = runner.prefill_and_generate("Lily is a cute cat, ", 11, &mut sampler)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
         assert_eq!(s, "3 year old. She likes to play with her friends");
         Ok(())
@@ -553,12 +554,12 @@ mod tests {
         let mut runner_wgpu = Llama2Runner::new(&model_wgpu, TensorMetrics::default(), 200, false)?;
 
         let output_cpu = runner_cpu
-            .prefill_and_generate("Lily is a cat", 15, &mut sampler)?
+            .prefill_and_generate("Lily is a cat", 16, &mut sampler)?
             .collect::<Result<Vec<String>>>()?
             .join("");
 
         let output_wgpu = runner_wgpu
-            .prefill_and_generate("Lily is a cat", 15, &mut sampler)?
+            .prefill_and_generate("Lily is a cat", 16, &mut sampler)?
             .collect::<Result<Vec<String>>>()?
             .join("");
 

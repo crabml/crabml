@@ -121,7 +121,8 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         steps: usize,
         sampler: &'a mut Llama2Sampler,
     ) -> impl Iterator<Item = Result<String>> + '_ {
-        let max_steps = (self.conf.seq_len - pos).min(steps);
+        // the first token has already been generated in the prefill phase.
+        let max_steps = (self.conf.seq_len - pos - 1).min(steps - 1);
         let first_token = self.tokenizer.decode(prev_token, token);
         let tokens_iter = (pos..pos + max_steps).scan(token, move |current_token, pos| {
             let logits = self.forward(&[*current_token], pos).unwrap();

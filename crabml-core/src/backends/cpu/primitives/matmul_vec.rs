@@ -35,17 +35,17 @@ fn gemv_dense_2d_2d(
     let bufb = &bufb.quantize(bufa.vec_dot_rhs_dtype()).unwrap();
     let thread_num = device.thread_num();
 
-    // each thread handles 1/thread_num of the elements in the C matrix
+    // each thread handles 1/thread_num of the elements in the C matrix. thread_num is allowed
+    // to be even.
     let work_len = bufc.len() / thread_num;
     let chunk_len = 16;
-    assert!(work_len % chunk_len == 0);
 
     let metrics = device.metrics.clone();
     let _t = metrics.matmul_walltime.track();
 
     // track walltime of each thread, we can compare the longest one with total walltime, the difference
     // represents the cost of thread synchronization cost.
-    let work_walltimes: Vec<TimeMetric> = vec![TimeMetric::new(), TimeMetric::new()];
+    let work_walltimes: Vec<TimeMetric> = vec![TimeMetric::new(); thread_num + 1];
     let total_walltime = TimeMetric::new();
     {
         let _t = total_walltime.track();
@@ -57,17 +57,16 @@ fn gemv_dense_2d_2d(
                 .for_each(|((work_idx, work_buf), work_walltime)| {
                     s.spawn(move || {
                         let _t = work_walltime.track();
-                        work_buf
-                            .chunks_exact_mut(chunk_len)
-                            .enumerate()
-                            .for_each(|(cn, cbuf)| {
-                                let offset = work_idx * work_len + cn * chunk_len;
-                                let mi = offset % m;
-                                let bi = (offset - mi) / m;
-                                for (i, cval) in cbuf.iter_mut().enumerate() {
+                        work_buf.chunks_mut(chunk_len).enumerate().for_each(
+                            |(chunk_idx, chunk_buf)| {
+                                let elem_idx = work_idx * work_len + chunk_idx * chunk_len;
+                                let mi = elem_idx % m;
+                                let bi = (elem_idx - mi) / m;
+                                for (i, cval) in chunk_buf.iter_mut().enumerate() {
                                     *cval = bufa.vec_dot((mi + i) * k, bufb, bi * k, k);
                                 }
-                            });
+                            },
+                        );
                     });
                 });
         });
@@ -77,7 +76,7 @@ fn gemv_dense_2d_2d(
         .iter()
         .map(|m| m.as_nanos())
         .max_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap();
+        .unwrap_or_default();
     metrics
         .matmul_non_compute_walltime
         .increment_nanos(total_walltime.as_nanos() - max_thread_nanos);

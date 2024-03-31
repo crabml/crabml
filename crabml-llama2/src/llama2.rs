@@ -382,6 +382,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             // (n_head, n_batch, seq) @ (n_kv_heads, seq, head_dim) => (n_head, n_batch, head_dim)
             let x_with_attn = attn.batch_matmul(&v_cache)?; // (n_heads, n_batch, head_dim)
             let x_with_attn = if n_batch == 1 {
+                // TODO: this specialase might be able to unify with the general case
                 x_with_attn.reshape(&[n_batch, embed_dim])?
             } else {
                 x_with_attn
@@ -452,9 +453,7 @@ mod tests {
             GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-f32.gguf")?;
         let gf = gl.open()?;
 
-        let device = CpuTensorDevice::with_options(CpuTensorDeviceOptions {
-            debug_named_tensors: false,
-        });
+        let device = CpuTensorDevice::with_options(CpuTensorDeviceOptions::default());
         let lm = CpuLlama2Model::load(&gf, device.clone())?;
 
         let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0, device.exp_cache());
@@ -529,9 +528,9 @@ mod tests {
             GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-f32.gguf")?;
         let gf = gl.open()?;
 
-        let device_cpu = CpuTensorDevice::with_options(CpuTensorDeviceOptions {
-            debug_named_tensors: true,
-        });
+        let device_cpu = CpuTensorDevice::with_options(
+            CpuTensorDeviceOptions::default().with_debug_named_tensors(true),
+        );
         let model_cpu = CpuLlama2Model::load(&gf, device_cpu.clone())?;
 
         let device_wgpu = WgpuTensorDevice::new(

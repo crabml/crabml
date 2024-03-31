@@ -1,7 +1,6 @@
-use rayon::prelude::*;
-
 use crate::backends::cpu::buf::CpuTensorBuf;
 use crate::backends::cpu::CpuTensorDeviceRef;
+use crate::tensor::metrics::TimeMetric;
 use crate::tensor::TensorStrider;
 
 /// only dense GEMV is supported
@@ -26,29 +25,59 @@ pub fn matmul_vec<'a>(
 #[allow(clippy::too_many_arguments)]
 fn gemv_dense_2d_2d(
     device: &CpuTensorDeviceRef,
-    bufa: &CpuTensorBuf,
-    bufb: &CpuTensorBuf,
-    bufc: &mut CpuTensorBuf,
+    bufa: &CpuTensorBuf,     // (m, k)
+    bufb: &CpuTensorBuf,     // (b, k)
+    bufc: &mut CpuTensorBuf, // (b, m)
     m: usize,
     k: usize,
 ) {
     let bufc = bufc.as_f32_mut();
     let bufb = &bufb.quantize(bufa.vec_dot_rhs_dtype()).unwrap();
-    let chunk = 16;
-    assert!(bufc.len() % chunk == 0);
+    let thread_num = device.thread_num();
+
+    // each thread handles 1/thread_num of the elements in the C matrix. thread_num is allowed
+    // to be even.
+    let work_len = bufc.len() / thread_num;
+    let chunk_len = 16;
 
     let metrics = device.metrics.clone();
     let _t = metrics.matmul_walltime.track();
-    bufc.par_chunks_exact_mut(chunk)
-        .enumerate()
-        .for_each(|(cn, cp)| {
-            // a: m x k
-            // b: b x k
-            // c: b x m
-            let mi = cn * chunk % m;
-            let bi = (cn * chunk - mi) / m;
-            for (i, cval) in cp.iter_mut().enumerate() {
-                *cval = bufa.vec_dot((mi + i) * k, bufb, bi * k, k);
-            }
+
+    // track walltime of each thread, we can compare the longest one with total walltime, the difference
+    // represents the cost of thread synchronization cost.
+    let work_walltimes: Vec<TimeMetric> = vec![TimeMetric::new(); thread_num + 1];
+    let total_walltime = TimeMetric::new();
+    {
+        let _t = total_walltime.track();
+
+        device.thread_pool().lock().unwrap().scoped(|s| {
+            bufc.chunks_mut(work_len)
+                .enumerate()
+                .zip(work_walltimes.clone())
+                .for_each(|((work_idx, work_buf), work_walltime)| {
+                    s.spawn(move || {
+                        let _t = work_walltime.track();
+                        work_buf.chunks_mut(chunk_len).enumerate().for_each(
+                            |(chunk_idx, chunk_buf)| {
+                                let elem_idx = work_idx * work_len + chunk_idx * chunk_len;
+                                let mi = elem_idx % m;
+                                let bi = (elem_idx - mi) / m;
+                                for (i, cval) in chunk_buf.iter_mut().enumerate() {
+                                    *cval = bufa.vec_dot((mi + i) * k, bufb, bi * k, k);
+                                }
+                            },
+                        );
+                    });
+                });
         });
+    }
+
+    let max_thread_nanos = work_walltimes
+        .iter()
+        .map(|m| m.as_nanos())
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap_or_default();
+    metrics
+        .matmul_non_compute_walltime
+        .increment_nanos(total_walltime.as_nanos() - max_thread_nanos);
 }

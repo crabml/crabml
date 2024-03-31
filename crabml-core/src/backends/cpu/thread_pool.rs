@@ -9,6 +9,7 @@ type Work = (Thunk<'static>, Arc<AtomicUsize>, Instant);
 
 /// A threadpool that acts as a handle to a number
 /// of threads spawned at construction.
+#[derive(Debug)]
 pub struct ThreadPool {
     senders: Vec<crossbeam_channel::Sender<Work>>,
 }

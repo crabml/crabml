@@ -382,7 +382,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             // (n_head, n_batch, seq) @ (n_kv_heads, seq, head_dim) => (n_head, n_batch, head_dim)
             let x_with_attn = attn.batch_matmul(&v_cache)?; // (n_heads, n_batch, head_dim)
             let x_with_attn = if n_batch == 1 {
-                // TODO: this special case might be able to unify with the general case
+                // TODO: this specialase might be able to unify with the general case
                 x_with_attn.reshape(&[n_batch, embed_dim])?
             } else {
                 x_with_attn

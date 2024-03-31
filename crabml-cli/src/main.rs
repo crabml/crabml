@@ -144,15 +144,10 @@ fn main() -> Result<()> {
     let args = CommandArgs::parse();
     let start_time = Instant::now();
 
-    // configure rayon
     let mut thread_num = args.threads;
     if thread_num == 0 {
         thread_num = num_cpus::get();
     }
-    rayon::ThreadPoolBuilder::new()
-        .num_threads(thread_num)
-        .build_global()
-        .unwrap();
 
     let gl = GGUFFileLoader::new(&args.model)?;
     let gf = gl.open()?;

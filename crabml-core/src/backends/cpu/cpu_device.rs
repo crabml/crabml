@@ -1,9 +1,11 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::sync::Mutex;
 
 use half::f16;
 
+use super::thread_pool::ThreadPool;
 use super::CpuTensor;
 use crate::tensor::TensorMetrics;
 
@@ -51,6 +53,7 @@ pub struct CpuTensorDevice<'a> {
     pub(crate) metrics: TensorMetrics,
     pub(crate) debug_tensors: RefCell<HashMap<String, Vec<f32>>>,
     pub(crate) exp_cache: Rc<Vec<f16>>,
+    pub(crate) thread_pool: Mutex<ThreadPool>,
     _phantom: std::marker::PhantomData<&'a ()>,
 }
 
@@ -64,10 +67,12 @@ impl<'a> CpuTensorDevice<'a> {
 
     pub fn with_options(opts: CpuTensorDeviceOptions) -> CpuTensorDeviceRef<'a> {
         let metrics = opts.metrics.clone();
+        let thread_pool = Mutex::new(ThreadPool::new(opts.thread_num));
         let device = Self {
             opts,
-            debug_tensors: RefCell::new(HashMap::new()),
             metrics,
+            thread_pool,
+            debug_tensors: RefCell::new(HashMap::new()),
             exp_cache: Rc::new(Self::init_exp_cache()),
             _phantom: std::marker::PhantomData,
         };
@@ -80,6 +85,10 @@ impl<'a> CpuTensorDevice<'a> {
 
     pub fn thread_num(&self) -> usize {
         self.opts.thread_num
+    }
+
+    pub fn thread_pool(&self) -> &Mutex<ThreadPool> {
+        &self.thread_pool
     }
 
     pub fn dump_debug_tensor(&self, name: &str) -> Option<Vec<f32>> {

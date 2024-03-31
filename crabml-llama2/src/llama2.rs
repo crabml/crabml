@@ -85,6 +85,10 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         })
     }
 
+    pub fn kv_cache_len(&self) -> usize {
+        self.key_cache[0].as_ref().unwrap().shape()[1]
+    }
+
     // prefill the model with the prompt, return the next position and the first generated token
     pub fn prefill(
         &mut self,
@@ -112,8 +116,8 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         let last_token = *prompt_tokens.last().unwrap();
 
         // take the length of kv cache as the next position
-        let key_cache_len = self.key_cache[0].as_ref().unwrap().shape()[1];
-        Ok((key_cache_len, last_token, token))
+        let next_pos = self.kv_cache_len();
+        Ok((next_pos, last_token, token))
     }
 
     pub fn generate(

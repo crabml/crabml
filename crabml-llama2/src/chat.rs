@@ -23,7 +23,7 @@ impl<T: Tensor> Llama2Chat<T> {
         prepend_end_token: bool,
     ) -> Result<impl Iterator<Item = Result<String>> + '_> {
         let prompt = wrap_prompt(prompt, prepend_end_token);
-        let (_, last_token, token) =
+        let (pos, last_token, token) =
             self.runner
                 .prefill(&prompt, &mut self.sampler, false, false)?;
         // self.runner.generate(pos, prev_token, token, steps, sampler);

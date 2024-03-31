@@ -125,11 +125,16 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         pos: usize,
         prev_token: usize,
         token: usize,
-        steps: usize,
+        steps: Option<usize>,
         sampler: &'a mut Llama2Sampler,
     ) -> impl Iterator<Item = Result<String>> + '_ {
         // the first token has already been generated in the prefill phase.
-        let max_steps = (self.conf.seq_len - pos - 1).min(steps - 1);
+        let max_seq = self.conf.seq_len - pos - 1;
+        let max_steps = match steps {
+            Some(steps) => max_seq.min(steps - 1),
+            None => max_seq,
+        };
+
         let first_token = self.tokenizer.decode(prev_token, token);
         let tokens_iter = (pos..pos + max_steps).scan(token, move |current_token, pos| {
             let logits = self.forward(&[*current_token], pos).unwrap();
@@ -152,7 +157,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         sampler: &'a mut Llama2Sampler,
     ) -> Result<impl Iterator<Item = Result<String>> + '_> {
         let (pos, prev_token, token) = self.prefill(prompt, sampler, true, false)?;
-        Ok(self.generate(pos, prev_token, token, steps, sampler))
+        Ok(self.generate(pos, prev_token, token, Some(steps), sampler))
     }
 
     pub fn forward(&mut self, tokens: &[usize], pos: usize) -> Result<&mut [f32]> {

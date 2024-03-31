@@ -80,7 +80,7 @@ fn run<U: Tensor>(
     }
     metrics.reset();
 
-    let mut output = runner.generate(prefill_pos, prev_token, token, args.steps, sampler);
+    let mut output = runner.generate(prefill_pos, prev_token, token, Some(args.steps), sampler);
     let mut generated_tokens = 0;
     let generation_started_at = Instant::now();
 

@@ -60,9 +60,12 @@ impl ThreadPool {
             self.senders[thread_idx].send(work).unwrap();
         }
 
+        // execute the first thunk in the current thread.
         first_thunk();
 
-        // await the rest of the thunks
+        // await the completion of the remaining thunks. a busy loop here appears to be faster than
+        // using crossbeam's WaitGroup. generating a token can trigger 100+ task coordination operations
+        // (using condvar inside), which might introduce an overhead about 2ms for each token generation.
         while counter.load(std::sync::atomic::Ordering::Relaxed) > 1 {}
     }
 }

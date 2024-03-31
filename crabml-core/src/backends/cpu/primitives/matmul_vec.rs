@@ -25,40 +25,43 @@ pub fn matmul_vec<'a>(
 #[allow(clippy::too_many_arguments)]
 fn gemv_dense_2d_2d(
     device: &CpuTensorDeviceRef,
-    bufa: &CpuTensorBuf,
-    bufb: &CpuTensorBuf,
-    bufc: &mut CpuTensorBuf,
+    bufa: &CpuTensorBuf,     // (m, k)
+    bufb: &CpuTensorBuf,     // (b, k)
+    bufc: &mut CpuTensorBuf, // (b, m)
     m: usize,
     k: usize,
 ) {
     let bufc = bufc.as_f32_mut();
     let bufb = &bufb.quantize(bufa.vec_dot_rhs_dtype()).unwrap();
     let thread_num = device.thread_num();
-    let split_size = bufc.len() / thread_num;
-    let chunk_size = 16;
-    assert!(split_size % chunk_size == 0);
+
+    // each thread handles 1/thread_num of the elements in the C matrix
+    let work_len = bufc.len() / thread_num;
+    let chunk_len = 16;
+    assert!(work_len % chunk_len == 0);
 
     let metrics = device.metrics.clone();
     let _t = metrics.matmul_walltime.track();
 
     // track walltime of each thread, we can compare the longest one with total walltime, the difference
     // represents the cost of thread synchronization cost.
-    let task_walltimes: Vec<TimeMetric> = vec![TimeMetric::new(), TimeMetric::new()];
+    let work_walltimes: Vec<TimeMetric> = vec![TimeMetric::new(), TimeMetric::new()];
     let total_walltime = TimeMetric::new();
     {
         let _t = total_walltime.track();
 
         device.thread_pool().lock().unwrap().scoped(|s| {
-            bufc.chunks_exact_mut(split_size)
+            bufc.chunks_mut(work_len)
                 .enumerate()
-                .zip(task_walltimes.clone())
-                .for_each(|((sn, sbuf), task_walltime)| {
+                .zip(work_walltimes.clone())
+                .for_each(|((work_idx, work_buf), work_walltime)| {
                     s.spawn(move || {
-                        let _t = task_walltime.track();
-                        sbuf.chunks_exact_mut(chunk_size)
+                        let _t = work_walltime.track();
+                        work_buf
+                            .chunks_exact_mut(chunk_len)
                             .enumerate()
                             .for_each(|(cn, cbuf)| {
-                                let offset = sn * split_size + cn * chunk_size;
+                                let offset = work_idx * work_len + cn * chunk_len;
                                 let mi = offset % m;
                                 let bi = (offset - mi) / m;
                                 for (i, cval) in cbuf.iter_mut().enumerate() {
@@ -70,7 +73,7 @@ fn gemv_dense_2d_2d(
         });
     }
 
-    let max_thread_nanos = task_walltimes
+    let max_thread_nanos = work_walltimes
         .iter()
         .map(|m| m.as_nanos())
         .max_by(|a, b| a.partial_cmp(b).unwrap())

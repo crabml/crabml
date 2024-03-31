@@ -2,7 +2,7 @@
 
 [![](https://img.shields.io/discord/1111711408875393035?logo=discord&label=discord)](https://discord.gg/wbzqddT3QC)
 
-`crabml` is a llama.cpp-compatible AI inference engine (and equally fast!) written in 🦀 **Rust**, which runs everywhere with the help of 🎮 **WebGPU**.
+`crabml` is a llama.cpp compatible (and equally fast!) AI inference engine written in 🦀 **Rust**, which runs everywhere with the help of 🎮 **WebGPU**.
 
 ## Project Goals
 

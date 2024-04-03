@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub enum ErrorKind {
     /// Unexpected error
@@ -25,11 +27,11 @@ pub enum ErrorKind {
     NotImplemented,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Error {
     pub kind: ErrorKind,
     pub message: String,
-    pub cause: Option<Box<dyn std::error::Error>>,
+    pub cause: Option<Arc<dyn std::error::Error>>,
 }
 
 impl std::fmt::Display for Error {

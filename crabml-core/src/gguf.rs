@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::fmt::Display;
 use std::fs::File;
 use std::mem;
+use std::sync::Arc;
 
 use int_enum::IntEnum;
 use memmap2::Mmap;
@@ -137,7 +138,7 @@ impl TryFrom<u32> for GGMLType {
         Self::from_int(v).map_err(|err| Error {
             kind: ErrorKind::FormatError,
             message: format!("failed to decode the ggml type for {}", v),
-            cause: Some(Box::new(err)),
+            cause: Some(Arc::new(err)),
         })
     }
 }
@@ -183,7 +184,7 @@ impl TryFrom<u32> for GGUFMetadataValueType {
         Self::from_int(v).map_err(|err| Error {
             kind: ErrorKind::FormatError,
             message: format!("failed to decode the value type for {}", v),
-            cause: Some(Box::new(err)),
+            cause: Some(Arc::new(err)),
         })
     }
 }
@@ -297,6 +298,7 @@ macro_rules! define_gguf_metadata_value_read_fn {
             let transmuted_data = unsafe {
                 assert!(data.len() % typ_size == 0);
                 let ptr = data.as_ptr();
+                // assert!(ptr.align_offset(typ_size) == 0, "unaligned data: {:p}", ptr);
                 mem::transmute(std::slice::from_raw_parts(ptr, data.len() / typ_size))
             };
             Ok(transmuted_data)
@@ -386,7 +388,7 @@ impl<'a, 'b> GGUFMetadataReader<'a, 'b> {
         let s = std::str::from_utf8(buf).map_err(|e| Error {
             kind: ErrorKind::FormatError,
             message: "Invalid UTF-8 string".to_string(),
-            cause: Some(Box::new(e)),
+            cause: Some(Arc::new(e)),
         });
         s
     }
@@ -535,7 +537,7 @@ impl<'a> GGUFHeader<'a> {
                 "Unsupported version number: {}, only 1, 2 is supported yet",
                 version
             ),
-            cause: Some(Box::new(err)),
+            cause: Some(Arc::new(err)),
         })?;
         r.version = version;
 
@@ -798,21 +800,21 @@ impl GGUFFileLoader {
         let file = File::open(path).map_err(|err| Error {
             kind: ErrorKind::IOError,
             message: format!("failed to open the file: {}", path),
-            cause: Some(Box::new(err)),
+            cause: Some(Arc::new(err)),
         })?;
 
         let mmap = unsafe {
             Mmap::map(&file).map_err(|err| Error {
                 kind: ErrorKind::IOError,
                 message: format!("failed to mmap file: {}", path),
-                cause: Some(Box::new(err)),
+                cause: Some(Arc::new(err)),
             })?
         };
         mmap.advise(memmap2::Advice::WillNeed)
             .map_err(|err| Error {
                 kind: ErrorKind::IOError,
                 message: format!("failed to advise the mmap: {}", path),
-                cause: Some(Box::new(err)),
+                cause: Some(Arc::new(err)),
             })?;
         Ok(Self { mmap })
     }

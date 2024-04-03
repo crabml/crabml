@@ -73,73 +73,69 @@ impl<'a> QuantBufQ8K<'_> {
     }
 }
 
-mod impl_fallback {
-    use super::BlockQ8K;
-    pub fn quantize_f32_q8_k(data: &[f32]) -> Vec<BlockQ8K> {
-        let mut bs = Vec::with_capacity(data.len() / 32);
+pub fn quantize_f32_q8_k(data: &[f32]) -> Vec<BlockQ8K> {
+    let mut bs = Vec::with_capacity(data.len() / 32);
 
-        for chunk in data.chunks(256) {
-            let mut max_abs_value = 0.0;
-            let mut max_value = 0.0;
+    for chunk in data.chunks(256) {
+        let mut max_abs_value = 0.0;
+        let mut max_value = 0.0;
 
-            // Find the maximum absolute value in the chunk
-            for &value in chunk {
-                let abs_value = value.abs();
-                if abs_value > max_abs_value {
-                    max_abs_value = abs_value;
-                    max_value = value;
-                }
+        // Find the maximum absolute value in the chunk
+        for &value in chunk {
+            let abs_value = value.abs();
+            if abs_value > max_abs_value {
+                max_abs_value = abs_value;
+                max_value = value;
             }
-
-            let scale = -128f32 / max_value;
-            let mut d = 1.0 / scale; // Compute the scaling factor
-            let mut qs = [0_i8; 256]; // Initialize the quantized values array
-            let mut bsums = [0_i16; 16];
-
-            // Quantize the chunk
-
-            if max_abs_value == 0f32 {
-                d = 0f32;
-                qs.fill(0)
-            } else {
-                for (i, q) in qs.iter_mut().enumerate() {
-                    // ggml uses nearest_int with bit magic here, maybe we want the same
-                    // but we would have to test and benchmark it.
-                    let v = (scale * chunk[i]).round();
-                    *q = v.min(127.) as i8
-                }
-                for i in 0..16 {
-                    let mut sum = 0i32;
-                    for j in 0..16 {
-                        sum += qs[i * 16 + j] as i32
-                    }
-                    bsums[i] = sum as i16
-                }
-            }
-
-            // Store the block with the scaling factor, quantized values
-            bs.push(BlockQ8K { d, qs, bsums });
         }
 
-        bs
-    }
+        let scale = -128f32 / max_value;
+        let mut d = 1.0 / scale; // Compute the scaling factor
+        let mut qs = [0_i8; 256]; // Initialize the quantized values array
+        let mut bsums = [0_i16; 16];
 
-    pub fn vec_dot_q8_k_q8_k(abs: &[BlockQ8K], bbs: &[BlockQ8K]) -> f32 {
-        let mut sumf = 0f32;
-        for (abs, bbs) in abs.iter().zip(bbs.iter()) {
-            let sum_i = abs
-                .qs
-                .iter()
-                .zip(bbs.qs.iter())
-                .map(|(&x, &y)| x as i32 * y as i32)
-                .sum::<i32>();
-            sumf += sum_i as f32 * abs.d * bbs.d
+        // Quantize the chunk
+
+        if max_abs_value == 0f32 {
+            d = 0f32;
+            qs.fill(0)
+        } else {
+            for (i, q) in qs.iter_mut().enumerate() {
+                // ggml uses nearest_int with bit magic here, maybe we want the same
+                // but we would have to test and benchmark it.
+                let v = (scale * chunk[i]).round();
+                *q = v.min(127.) as i8
+            }
+            for i in 0..16 {
+                let mut sum = 0i32;
+                for j in 0..16 {
+                    sum += qs[i * 16 + j] as i32
+                }
+                bsums[i] = sum as i16
+            }
         }
 
-        sumf
+        // Store the block with the scaling factor, quantized values
+        bs.push(BlockQ8K { d, qs, bsums });
     }
+
+    bs
 }
-use impl_fallback::*;
+
+pub fn vec_dot_q8_k_q8_k(abs: &[BlockQ8K], bbs: &[BlockQ8K]) -> f32 {
+    let mut sumf = 0f32;
+    for (abs, bbs) in abs.iter().zip(bbs.iter()) {
+        let sum_i = abs
+            .qs
+            .iter()
+            .zip(bbs.qs.iter())
+            .map(|(&x, &y)| x as i32 * y as i32)
+            .sum::<i32>();
+        sumf += sum_i as f32 * abs.d * bbs.d
+    }
+
+    sumf
+}
 
 #[cfg(test)]
 mod tests {

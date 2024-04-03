@@ -95,144 +95,137 @@ impl<'a> QuantBufQ6K<'_> {
     }
 }
 
-mod impl_fallback {
-    use half::f16;
-
-    use super::BlockQ6K;
-    use crate::backends::cpu::buf::buf_q8_k::BlockQ8K;
-    use crate::backends::cpu::buf::util::make_qx_quants;
-    use crate::backends::cpu::buf::util::nearest_i32;
-
-    pub fn quantize_f32_q6_k(data: &[f32]) -> Vec<BlockQ6K> {
-        let mut bs = Vec::with_capacity(data.len() / 256);
-
-        for chunk in data.chunks(256) {
-            let mut l = [0_i8; 256];
-            let mut max_scale = 0.0;
-            let mut max_abs_scale = 0.0;
-            let mut scales = [0f32; 16];
-            let mut block_scales = [0_i8; 16];
-            let mut ql = [0_u8; 128];
-            let mut qh = [0_u8; 64];
-
-            // Find the maximum absolute scale in the chunk
-            for (ib, (data_block, l)) in chunk.chunks(16).zip(l.chunks_mut(16)).enumerate() {
-                scales[ib] = make_qx_quants(16, 32, data_block, l, 1);
-                let scale = scales[ib];
-                let abs_scale = scale.abs();
-                if abs_scale > max_abs_scale {
-                    max_abs_scale = abs_scale;
-                    max_scale = scale
-                }
-            }
-
-            let iscale = -128f32 / max_scale;
-            let d = 1.0 / iscale;
-
-            // Quantize the chunk
-            for (block_scale, scale) in block_scales.iter_mut().zip(scales.iter()) {
-                *block_scale = nearest_i32(iscale * scale).min(127) as i8
-            }
-
-            for (j, &block_scale) in block_scales.iter().enumerate() {
-                let d = d * block_scale as f32;
-                if d == 0.0 {
-                    continue;
-                }
-                for ii in 0..16 {
-                    let index = 16 * j + ii;
-                    let ll = nearest_i32(chunk[index] / d).clamp(-32, 31);
-                    l[index] = (ll + 32) as i8;
-                }
-            }
-
-            for j in (0..256).step_by(128) {
-                let quick_idx = j / 128;
-                for l_idx in 0..32 {
-                    let base_idx = j + l_idx;
-                    let q1 = l[base_idx] & 0xF;
-                    let q2 = l[base_idx + 32] & 0xF;
-                    let q3 = l[base_idx + 64] & 0xF;
-                    let q4 = l[base_idx + 96] & 0xF;
-                    ql[quick_idx * 64 + l_idx] = (q1 | (q3 << 4)) as u8;
-                    ql[quick_idx * 64 + l_idx + 32] = (q2 | (q4 << 4)) as u8;
-                    qh[quick_idx * 32 + l_idx] = ((l[base_idx] >> 4)
-                        | ((l[base_idx + 32] >> 4) << 2)
-                        | ((l[base_idx + 64] >> 4) << 4)
-                        | ((l[base_idx + 96] >> 4) << 6))
-                        as u8;
-                }
-            }
-
-            // Store the block with the scaling factor, quantized values
-            bs.push(BlockQ6K {
-                ql,
-                qh,
-                scales: block_scales,
-                d: f16::from_f32(d),
-            });
-        }
-        bs
-    }
-
-    pub fn vec_dot_q6_k_q8_k(abs: &[BlockQ6K], bbs: &[BlockQ8K]) -> f32 {
-        let mut aux8 = [0i8; 256];
-        let mut aux16 = [0i16; 8];
-        let mut sums = [0f32; 8];
-        let mut aux32 = [0f32; 8];
-
-        for (abs, bbs) in abs.iter().zip(bbs.iter()) {
-            let q4 = &abs.ql;
-            let qh = &abs.qh;
-            let q8 = &bbs.qs;
-            aux32.fill(0f32);
-
-            for j in (0..256).step_by(128) {
-                let aux8 = &mut aux8[j..];
-                let q4 = &q4[j / 2..];
-                let qh = &qh[j / 4..];
-                for l in 0..32 {
-                    aux8[l] = (((q4[l] & 0xF) | ((qh[l] & 3) << 4)) as i32 - 32) as i8;
-                    aux8[l + 32] =
-                        (((q4[l + 32] & 0xF) | (((qh[l] >> 2) & 3) << 4)) as i32 - 32) as i8;
-                    aux8[l + 64] = (((q4[l] >> 4) | (((qh[l] >> 4) & 3) << 4)) as i32 - 32) as i8;
-                    aux8[l + 96] =
-                        (((q4[l + 32] >> 4) | (((qh[l] >> 6) & 3) << 4)) as i32 - 32) as i8;
-                }
-            }
-
-            for (j, &scale) in abs.scales.iter().enumerate() {
-                let scale = scale as f32;
-                let q8 = &q8[16 * j..];
-                let aux8 = &aux8[16 * j..];
-                for l in 0..8 {
-                    aux16[l] = q8[l] as i16 * aux8[l] as i16;
-                }
-                for l in 0..8 {
-                    aux32[l] += scale * aux16[l] as f32
-                }
-                let q8 = &q8[8..];
-                let aux8 = &aux8[8..];
-                for l in 0..8 {
-                    aux16[l] = q8[l] as i16 * aux8[l] as i16;
-                }
-                for l in 0..8 {
-                    aux32[l] += scale * aux16[l] as f32
-                }
-            }
-
-            let d = abs.d.to_f32() * bbs.d;
-            for (sum, &a) in sums.iter_mut().zip(aux32.iter()) {
-                *sum += a * d;
-            }
-        }
-
-        let sumf = sums.iter().sum();
-        sumf
-    }
-}
 use half::f16;
-use impl_fallback::*;
+
+use crate::backends::cpu::buf::buf_q8_k::BlockQ8K;
+use crate::backends::cpu::buf::util::make_qx_quants;
+use crate::backends::cpu::buf::util::nearest_i32;
+
+pub fn quantize_f32_q6_k(data: &[f32]) -> Vec<BlockQ6K> {
+    let mut bs = Vec::with_capacity(data.len() / 256);
+
+    for chunk in data.chunks(256) {
+        let mut l = [0_i8; 256];
+        let mut max_scale = 0.0;
+        let mut max_abs_scale = 0.0;
+        let mut scales = [0f32; 16];
+        let mut block_scales = [0_i8; 16];
+        let mut ql = [0_u8; 128];
+        let mut qh = [0_u8; 64];
+
+        // Find the maximum absolute scale in the chunk
+        for (ib, (data_block, l)) in chunk.chunks(16).zip(l.chunks_mut(16)).enumerate() {
+            scales[ib] = make_qx_quants(16, 32, data_block, l, 1);
+            let scale = scales[ib];
+            let abs_scale = scale.abs();
+            if abs_scale > max_abs_scale {
+                max_abs_scale = abs_scale;
+                max_scale = scale
+            }
+        }
+
+        let iscale = -128f32 / max_scale;
+        let d = 1.0 / iscale;
+
+        // Quantize the chunk
+        for (block_scale, scale) in block_scales.iter_mut().zip(scales.iter()) {
+            *block_scale = nearest_i32(iscale * scale).min(127) as i8
+        }
+
+        for (j, &block_scale) in block_scales.iter().enumerate() {
+            let d = d * block_scale as f32;
+            if d == 0.0 {
+                continue;
+            }
+            for ii in 0..16 {
+                let index = 16 * j + ii;
+                let ll = nearest_i32(chunk[index] / d).clamp(-32, 31);
+                l[index] = (ll + 32) as i8;
+            }
+        }
+
+        for j in (0..256).step_by(128) {
+            let quick_idx = j / 128;
+            for l_idx in 0..32 {
+                let base_idx = j + l_idx;
+                let q1 = l[base_idx] & 0xF;
+                let q2 = l[base_idx + 32] & 0xF;
+                let q3 = l[base_idx + 64] & 0xF;
+                let q4 = l[base_idx + 96] & 0xF;
+                ql[quick_idx * 64 + l_idx] = (q1 | (q3 << 4)) as u8;
+                ql[quick_idx * 64 + l_idx + 32] = (q2 | (q4 << 4)) as u8;
+                qh[quick_idx * 32 + l_idx] = ((l[base_idx] >> 4)
+                    | ((l[base_idx + 32] >> 4) << 2)
+                    | ((l[base_idx + 64] >> 4) << 4)
+                    | ((l[base_idx + 96] >> 4) << 6))
+                    as u8;
+            }
+        }
+
+        // Store the block with the scaling factor, quantized values
+        bs.push(BlockQ6K {
+            ql,
+            qh,
+            scales: block_scales,
+            d: f16::from_f32(d),
+        });
+    }
+    bs
+}
+
+pub fn vec_dot_q6_k_q8_k(abs: &[BlockQ6K], bbs: &[BlockQ8K]) -> f32 {
+    let mut aux8 = [0i8; 256];
+    let mut aux16 = [0i16; 8];
+    let mut sums = [0f32; 8];
+    let mut aux32 = [0f32; 8];
+
+    for (abs, bbs) in abs.iter().zip(bbs.iter()) {
+        let q4 = &abs.ql;
+        let qh = &abs.qh;
+        let q8 = &bbs.qs;
+        aux32.fill(0f32);
+
+        for j in (0..256).step_by(128) {
+            let aux8 = &mut aux8[j..];
+            let q4 = &q4[j / 2..];
+            let qh = &qh[j / 4..];
+            for l in 0..32 {
+                aux8[l] = (((q4[l] & 0xF) | ((qh[l] & 3) << 4)) as i32 - 32) as i8;
+                aux8[l + 32] = (((q4[l + 32] & 0xF) | (((qh[l] >> 2) & 3) << 4)) as i32 - 32) as i8;
+                aux8[l + 64] = (((q4[l] >> 4) | (((qh[l] >> 4) & 3) << 4)) as i32 - 32) as i8;
+                aux8[l + 96] = (((q4[l + 32] >> 4) | (((qh[l] >> 6) & 3) << 4)) as i32 - 32) as i8;
+            }
+        }
+
+        for (j, &scale) in abs.scales.iter().enumerate() {
+            let scale = scale as f32;
+            let q8 = &q8[16 * j..];
+            let aux8 = &aux8[16 * j..];
+            for l in 0..8 {
+                aux16[l] = q8[l] as i16 * aux8[l] as i16;
+            }
+            for l in 0..8 {
+                aux32[l] += scale * aux16[l] as f32
+            }
+            let q8 = &q8[8..];
+            let aux8 = &aux8[8..];
+            for l in 0..8 {
+                aux16[l] = q8[l] as i16 * aux8[l] as i16;
+            }
+            for l in 0..8 {
+                aux32[l] += scale * aux16[l] as f32
+            }
+        }
+
+        let d = abs.d.to_f32() * bbs.d;
+        for (sum, &a) in sums.iter_mut().zip(aux32.iter()) {
+            *sum += a * d;
+        }
+    }
+
+    let sumf = sums.iter().sum();
+    sumf
+}
 
 use super::QuantBufQ8K;
 

@@ -1,10 +1,12 @@
 use std::borrow::Cow;
+use std::cmp;
 
 use byteorder::ByteOrder;
 use byteorder::LittleEndian;
 use half::f16;
 
 use super::QuantBufQ8_0;
+use crate::backends::cpu::buf::buf_q8_0::BlockQ8_0;
 
 #[derive(Debug, Clone)]
 #[repr(C)]
@@ -88,81 +90,70 @@ impl<'a> QuantBufQ5_0<'_> {
     }
 }
 
-mod impl_fallback {
-    use std::cmp;
+pub fn quantize_f32_q5_0(data: &[f32]) -> Vec<BlockQ5_0> {
+    let mut bs = Vec::with_capacity(data.len() / 32);
+    for chunk in data.chunks(32) {
+        let mut max_val = 0.0;
+        let mut max_abs_val = 0.0;
 
-    use byteorder::ByteOrder;
-    use byteorder::LittleEndian;
-    use half::f16;
-
-    use super::BlockQ5_0;
-    use crate::backends::cpu::buf::buf_q8_0::BlockQ8_0;
-    pub fn quantize_f32_q5_0(data: &[f32]) -> Vec<BlockQ5_0> {
-        let mut bs = Vec::with_capacity(data.len() / 32);
-        for chunk in data.chunks(32) {
-            let mut max_val = 0.0;
-            let mut max_abs_val = 0.0;
-
-            for &v in chunk {
-                let abs_value = v.abs();
-                if max_abs_val < abs_value {
-                    max_abs_val = abs_value;
-                    max_val = v;
-                }
+        for &v in chunk {
+            let abs_value = v.abs();
+            if max_abs_val < abs_value {
+                max_abs_val = abs_value;
+                max_val = v;
             }
-
-            let d = max_val / -16.0;
-            let id = if d != 0.0 { 1.0 / d } else { 0.0 };
-
-            let mut qh = [0u8; 4];
-            let mut iqh = 0u32;
-
-            let mut qs = [0u8; 16];
-
-            for (i, q) in qs.iter_mut().take(16).enumerate() {
-                // Scale the value and convert to u8
-                let x0 = chunk[i] * id;
-                let x1 = (chunk[i + 16]) * id;
-
-                let xi0 = cmp::min((x0 + 16.5) as i8, 31) as u8;
-                let xi1 = cmp::min((x1 + 16.5) as i8, 31) as u8;
-
-                *q = (xi0 & 0x0F) | ((xi1 & 0x0F) << 4);
-                // get the 5-th bit and store it in qh at the right position
-                iqh |= ((xi0 as u32 & 0x10) >> 4) << i;
-                iqh |= ((xi1 as u32 & 0x10) >> 4) << (i + 16);
-            }
-            LittleEndian::write_u32(&mut qh, iqh);
-            bs.push(BlockQ5_0 {
-                d: f16::from_f32(d),
-                qh,
-                qs,
-            })
-        }
-        bs
-    }
-
-    pub fn vec_dot_q5_0_q8_0(abs: &[BlockQ5_0], bbs: &[BlockQ8_0]) -> f32 {
-        let mut sumf: f32 = 0f32;
-        for i in 0..bbs.len() {
-            let qh: u32 = LittleEndian::read_u32(&abs[i].qh);
-            let mut sumi: i32 = 0;
-
-            for j in 0..16 {
-                let xh_0 = ((qh & (1 << j)) >> j) << 4;
-                let xh_1 = (qh & (1 << (j + 16))) >> (j + 12);
-
-                let x0: i32 = ((abs[i].qs[j] as i32 & 0x0F) | xh_0 as i32) - 16;
-                let x1: i32 = ((abs[i].qs[j] as i32 >> 4) | xh_1 as i32) - 16;
-                sumi += (x0 * bbs[i].qs[j] as i32) + (x1 * bbs[i].qs[j + 16] as i32);
-            }
-            sumf += sumi as f32 * f16::to_f32(abs[i].d) * f16::to_f32(bbs[i].d);
         }
 
-        sumf
+        let d = max_val / -16.0;
+        let id = if d != 0.0 { 1.0 / d } else { 0.0 };
+
+        let mut qh = [0u8; 4];
+        let mut iqh = 0u32;
+
+        let mut qs = [0u8; 16];
+
+        for (i, q) in qs.iter_mut().take(16).enumerate() {
+            // Scale the value and convert to u8
+            let x0 = chunk[i] * id;
+            let x1 = (chunk[i + 16]) * id;
+
+            let xi0 = cmp::min((x0 + 16.5) as i8, 31) as u8;
+            let xi1 = cmp::min((x1 + 16.5) as i8, 31) as u8;
+
+            *q = (xi0 & 0x0F) | ((xi1 & 0x0F) << 4);
+            // get the 5-th bit and store it in qh at the right position
+            iqh |= ((xi0 as u32 & 0x10) >> 4) << i;
+            iqh |= ((xi1 as u32 & 0x10) >> 4) << (i + 16);
+        }
+        LittleEndian::write_u32(&mut qh, iqh);
+        bs.push(BlockQ5_0 {
+            d: f16::from_f32(d),
+            qh,
+            qs,
+        })
     }
+    bs
 }
-use impl_fallback::*;
+
+pub fn vec_dot_q5_0_q8_0(abs: &[BlockQ5_0], bbs: &[BlockQ8_0]) -> f32 {
+    let mut sumf: f32 = 0f32;
+    for i in 0..bbs.len() {
+        let qh: u32 = LittleEndian::read_u32(&abs[i].qh);
+        let mut sumi: i32 = 0;
+
+        for j in 0..16 {
+            let xh_0 = ((qh & (1 << j)) >> j) << 4;
+            let xh_1 = (qh & (1 << (j + 16))) >> (j + 12);
+
+            let x0: i32 = ((abs[i].qs[j] as i32 & 0x0F) | xh_0 as i32) - 16;
+            let x1: i32 = ((abs[i].qs[j] as i32 >> 4) | xh_1 as i32) - 16;
+            sumi += (x0 * bbs[i].qs[j] as i32) + (x1 * bbs[i].qs[j + 16] as i32);
+        }
+        sumf += sumi as f32 * f16::to_f32(abs[i].d) * f16::to_f32(bbs[i].d);
+    }
+
+    sumf
+}
 
 #[cfg(test)]
 mod tests {

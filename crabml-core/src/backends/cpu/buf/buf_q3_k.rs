@@ -3,8 +3,6 @@ use std::ptr;
 
 use half::f16;
 
-use self::impl_fallback::quantize_f32_q3_k;
-use self::impl_fallback::vec_dot_q3_k_q8_k;
 use crate::backends::cpu::buf::buf_q8_k::BlockQ8K;
 use crate::backends::cpu::buf::buf_q8_k::QuantBufQ8K;
 use crate::backends::cpu::buf::util::*;
@@ -152,179 +150,175 @@ impl<'a> QuantBufQ3K<'a> {
     }
 }
 
-mod impl_fallback {
-    use super::*;
+pub fn quantize_f32_q3_k(data: &[f32]) -> Vec<BlockQ3K> {
+    let mut bs = Vec::with_capacity(data.len() / QK_K);
 
-    pub fn quantize_f32_q3_k(data: &[f32]) -> Vec<BlockQ3K> {
-        let mut bs = Vec::with_capacity(data.len() / QK_K);
+    let mut l = [0i8; QK_K];
+    let mut scales = [0f32; QK_K / 16];
 
-        let mut l = [0i8; QK_K];
-        let mut scales = [0f32; QK_K / 16];
+    for (i, data_chunk) in data.chunks(QK_K).enumerate() {
+        bs.push(BlockQ3K::new_zero());
 
-        for (i, data_chunk) in data.chunks(QK_K).enumerate() {
-            bs.push(BlockQ3K::new_zero());
-
-            let mut max_scale = 0f32;
-            let mut amax = 0f32;
-            for (j, (data_block, l)) in data_chunk.chunks(16).zip(l.chunks_mut(16)).enumerate() {
-                scales[j] = make_q3_quants(16, 4, data_block, l, true);
-                let scale = scales[j].abs();
-                if scale > amax {
-                    amax = scale;
-                    max_scale = scales[j];
-                }
+        let mut max_scale = 0f32;
+        let mut amax = 0f32;
+        for (j, (data_block, l)) in data_chunk.chunks(16).zip(l.chunks_mut(16)).enumerate() {
+            scales[j] = make_q3_quants(16, 4, data_block, l, true);
+            let scale = scales[j].abs();
+            if scale > amax {
+                amax = scale;
+                max_scale = scales[j];
             }
+        }
 
-            if max_scale != 0f32 {
-                let iscale = -32f32 / max_scale;
-                for (j, &scale) in scales.iter().enumerate() {
-                    let mut _l = nearest_i32(iscale * scale) as i8;
-                    _l = _l.min(31).max(-32) + 32;
-                    if j < 8 {
-                        bs[i].scales[j] = _l as u8 & 0xf;
-                    } else {
-                        bs[i].scales[j - 8] |= (_l as u8 & 0xf) << 4;
-                    }
-                    _l >>= 4;
-                    bs[i].scales[j % 4 + 8] |= (_l as u8) << (2 * (j / 4));
-                }
-                bs[i].d = f16::from_f32(1f32 / iscale);
-            } // bs[i] is default to zero, so passed for max_scale == 0.0
-
-            let mut sc;
-            for (j, (data_block, l)) in data_chunk.chunks(16).zip(l.chunks_mut(16)).enumerate() {
-                sc = if j < 8 {
-                    (bs[i].scales[j] & 0xf) as i8
+        if max_scale != 0f32 {
+            let iscale = -32f32 / max_scale;
+            for (j, &scale) in scales.iter().enumerate() {
+                let mut _l = nearest_i32(iscale * scale) as i8;
+                _l = _l.min(31).max(-32) + 32;
+                if j < 8 {
+                    bs[i].scales[j] = _l as u8 & 0xf;
                 } else {
-                    (bs[i].scales[j - 8] >> 4) as i8
-                };
-                sc = (sc | (((bs[i].scales[8 + j % 4] >> (2 * (j / 4))) & 3) << 4) as i8) - 32;
-                let _d = Into::<f32>::into(bs[i].d) * sc as f32;
-                if _d == 0f32 {
-                    continue;
+                    bs[i].scales[j - 8] |= (_l as u8 & 0xf) << 4;
                 }
-                for (&d, l) in data_block.iter().zip(l.iter_mut()) {
-                    let mut _l = nearest_i32(d / _d);
-                    _l = _l.min(3).max(-4);
-                    *l = (_l + 4) as i8;
-                }
+                _l >>= 4;
+                bs[i].scales[j % 4 + 8] |= (_l as u8) << (2 * (j / 4));
             }
+            bs[i].d = f16::from_f32(1f32 / iscale);
+        } // bs[i] is default to zero, so passed for max_scale == 0.0
 
-            let mut m = 0;
-            let mut hm = 1u8;
-            for l in l.iter_mut() {
-                if *l > 3 {
-                    bs[i].hmask[m] |= hm;
-                    *l -= 4;
-                }
-                m += 1;
-                if m == QK_K / 8 {
-                    m = 0;
-                    hm <<= 1;
-                }
+        let mut sc;
+        for (j, (data_block, l)) in data_chunk.chunks(16).zip(l.chunks_mut(16)).enumerate() {
+            sc = if j < 8 {
+                (bs[i].scales[j] & 0xf) as i8
+            } else {
+                (bs[i].scales[j - 8] >> 4) as i8
+            };
+            sc = (sc | (((bs[i].scales[8 + j % 4] >> (2 * (j / 4))) & 3) << 4) as i8) - 32;
+            let _d = Into::<f32>::into(bs[i].d) * sc as f32;
+            if _d == 0f32 {
+                continue;
             }
-            for j in (0..QK_K).step_by(128) {
-                for _l in 0..32 {
-                    bs[i].qs[j / 4 + _l] = (l[j + _l]
-                        | (l[j + _l + 32] << 2)
-                        | (l[j + _l + 64] << 4)
-                        | (l[j + _l + 96] << 6)) as u8;
-                }
+            for (&d, l) in data_block.iter().zip(l.iter_mut()) {
+                let mut _l = nearest_i32(d / _d);
+                _l = _l.min(3).max(-4);
+                *l = (_l + 4) as i8;
             }
         }
 
-        bs
-    }
-
-    pub fn vec_dot_q3_k_q8_k(q3k_bs: &[BlockQ3K], q8k_bs: &[BlockQ8K]) -> f32 {
-        const KMASK_1: u32 = 0x03030303;
-        const KMASK_2: u32 = 0x0f0f0f0f;
-
-        let mut aux_8 = [0i8; QK_K];
-        let mut aux_16 = [0i16; 8];
-
-        let mut sums = [0f32; 8];
-        for (q3k, q8k) in q3k_bs.iter().zip(q8k_bs.iter()) {
-            let mut a8_i: usize = 0;
-            let mut q3_i: usize = 0;
-            let mut m: u8 = 1;
-            for _ in (0..QK_K).step_by(128) {
-                for l in 0..32 {
-                    aux_8[a8_i + l] = (q3k.qs[q3_i + l] & 3) as i8;
-                }
-                for l in 0..32 {
-                    aux_8[a8_i + l] -= if q3k.hmask[l] & m != 0 { 0 } else { 4 };
-                }
-                a8_i += 32;
-                m <<= 1;
-                for l in 0..32 {
-                    aux_8[a8_i + l] = ((q3k.qs[q3_i + l] >> 2) & 3) as i8;
-                }
-                for l in 0..32 {
-                    aux_8[a8_i + l] -= if q3k.hmask[l] & m != 0 { 0 } else { 4 };
-                }
-                a8_i += 32;
-                m <<= 1;
-                for l in 0..32 {
-                    aux_8[a8_i + l] = ((q3k.qs[q3_i + l] >> 4) & 3) as i8;
-                }
-                for l in 0..32 {
-                    aux_8[a8_i + l] -= if q3k.hmask[l] & m != 0 { 0 } else { 4 };
-                }
-                a8_i += 32;
-                m <<= 1;
-                for l in 0..32 {
-                    aux_8[a8_i + l] = ((q3k.qs[q3_i + l] >> 6) & 3) as i8;
-                }
-                for l in 0..32 {
-                    aux_8[a8_i + l] -= if q3k.hmask[l] & m != 0 { 0 } else { 4 };
-                }
-                a8_i += 32;
-                m <<= 1;
-                q3_i += 32;
+        let mut m = 0;
+        let mut hm = 1u8;
+        for l in l.iter_mut() {
+            if *l > 3 {
+                bs[i].hmask[m] |= hm;
+                *l -= 4;
             }
-            a8_i = 0;
-
-            let mut aux_32 = [0i32; 8];
-            let mut auxs: [u32; 4] = [0; 4];
-            // memcpy q3k.scales into aux
-            unsafe {
-                let aux_u8 = &mut auxs as *mut [u32] as *mut u8;
-                ptr::copy_nonoverlapping(&q3k.scales as *const u8, aux_u8, 12);
-            }
-            let tmp = auxs[2];
-            auxs[2] = ((auxs[0] >> 4) & KMASK_2) | (((tmp >> 4) & KMASK_1) << 4);
-            auxs[3] = ((auxs[1] >> 4) & KMASK_2) | (((tmp >> 6) & KMASK_1) << 4);
-            auxs[0] = (auxs[0] & KMASK_2) | (((tmp) & KMASK_1) << 4);
-            auxs[1] = (auxs[1] & KMASK_2) | (((tmp >> 2) & KMASK_1) << 4);
-            let scales: &[i8] =
-                unsafe { &*ptr::slice_from_raw_parts(&mut auxs as *mut u32 as *mut i8, 16) };
-            let mut q8_i: usize = 0;
-            for &sc in scales.iter().take(QK_K / 16) {
-                for l in 0..8 {
-                    aux_16[l] = q8k.qs[q8_i + l] as i16 * aux_8[a8_i + l] as i16;
-                }
-                for l in 0..8 {
-                    aux_32[l] += (sc - 32) as i32 * aux_16[l] as i32;
-                }
-                q8_i += 8;
-                a8_i += 8;
-                for l in 0..8 {
-                    aux_16[l] = q8k.qs[q8_i + l] as i16 * aux_8[a8_i + l] as i16;
-                }
-                for l in 0..8 {
-                    aux_32[l] += (sc - 32) as i32 * aux_16[l] as i32;
-                }
-                q8_i += 8;
-                a8_i += 8;
-            }
-            let d = Into::<f32>::into(q3k.d) * q8k.d;
-            for (sum, &a32) in sums.iter_mut().zip(aux_32.iter()) {
-                *sum += d * a32 as f32
+            m += 1;
+            if m == QK_K / 8 {
+                m = 0;
+                hm <<= 1;
             }
         }
-        sums.into_iter().reduce(|sums, s| sums + s).unwrap()
+        for j in (0..QK_K).step_by(128) {
+            for _l in 0..32 {
+                bs[i].qs[j / 4 + _l] = (l[j + _l]
+                    | (l[j + _l + 32] << 2)
+                    | (l[j + _l + 64] << 4)
+                    | (l[j + _l + 96] << 6)) as u8;
+            }
+        }
     }
+
+    bs
+}
+
+pub fn vec_dot_q3_k_q8_k(q3k_bs: &[BlockQ3K], q8k_bs: &[BlockQ8K]) -> f32 {
+    const KMASK_1: u32 = 0x03030303;
+    const KMASK_2: u32 = 0x0f0f0f0f;
+
+    let mut aux_8 = [0i8; QK_K];
+    let mut aux_16 = [0i16; 8];
+
+    let mut sums = [0f32; 8];
+    for (q3k, q8k) in q3k_bs.iter().zip(q8k_bs.iter()) {
+        let mut a8_i: usize = 0;
+        let mut q3_i: usize = 0;
+        let mut m: u8 = 1;
+        for _ in (0..QK_K).step_by(128) {
+            for l in 0..32 {
+                aux_8[a8_i + l] = (q3k.qs[q3_i + l] & 3) as i8;
+            }
+            for l in 0..32 {
+                aux_8[a8_i + l] -= if q3k.hmask[l] & m != 0 { 0 } else { 4 };
+            }
+            a8_i += 32;
+            m <<= 1;
+            for l in 0..32 {
+                aux_8[a8_i + l] = ((q3k.qs[q3_i + l] >> 2) & 3) as i8;
+            }
+            for l in 0..32 {
+                aux_8[a8_i + l] -= if q3k.hmask[l] & m != 0 { 0 } else { 4 };
+            }
+            a8_i += 32;
+            m <<= 1;
+            for l in 0..32 {
+                aux_8[a8_i + l] = ((q3k.qs[q3_i + l] >> 4) & 3) as i8;
+            }
+            for l in 0..32 {
+                aux_8[a8_i + l] -= if q3k.hmask[l] & m != 0 { 0 } else { 4 };
+            }
+            a8_i += 32;
+            m <<= 1;
+            for l in 0..32 {
+                aux_8[a8_i + l] = ((q3k.qs[q3_i + l] >> 6) & 3) as i8;
+            }
+            for l in 0..32 {
+                aux_8[a8_i + l] -= if q3k.hmask[l] & m != 0 { 0 } else { 4 };
+            }
+            a8_i += 32;
+            m <<= 1;
+            q3_i += 32;
+        }
+        a8_i = 0;
+
+        let mut aux_32 = [0i32; 8];
+        let mut auxs: [u32; 4] = [0; 4];
+        // memcpy q3k.scales into aux
+        unsafe {
+            let aux_u8 = &mut auxs as *mut [u32] as *mut u8;
+            ptr::copy_nonoverlapping(&q3k.scales as *const u8, aux_u8, 12);
+        }
+        let tmp = auxs[2];
+        auxs[2] = ((auxs[0] >> 4) & KMASK_2) | (((tmp >> 4) & KMASK_1) << 4);
+        auxs[3] = ((auxs[1] >> 4) & KMASK_2) | (((tmp >> 6) & KMASK_1) << 4);
+        auxs[0] = (auxs[0] & KMASK_2) | (((tmp) & KMASK_1) << 4);
+        auxs[1] = (auxs[1] & KMASK_2) | (((tmp >> 2) & KMASK_1) << 4);
+        let scales: &[i8] =
+            unsafe { &*ptr::slice_from_raw_parts(&mut auxs as *mut u32 as *mut i8, 16) };
+        let mut q8_i: usize = 0;
+        for &sc in scales.iter().take(QK_K / 16) {
+            for l in 0..8 {
+                aux_16[l] = q8k.qs[q8_i + l] as i16 * aux_8[a8_i + l] as i16;
+            }
+            for l in 0..8 {
+                aux_32[l] += (sc - 32) as i32 * aux_16[l] as i32;
+            }
+            q8_i += 8;
+            a8_i += 8;
+            for l in 0..8 {
+                aux_16[l] = q8k.qs[q8_i + l] as i16 * aux_8[a8_i + l] as i16;
+            }
+            for l in 0..8 {
+                aux_32[l] += (sc - 32) as i32 * aux_16[l] as i32;
+            }
+            q8_i += 8;
+            a8_i += 8;
+        }
+        let d = Into::<f32>::into(q3k.d) * q8k.d;
+        for (sum, &a32) in sums.iter_mut().zip(aux_32.iter()) {
+            *sum += d * a32 as f32
+        }
+    }
+    sums.into_iter().reduce(|sums, s| sums + s).unwrap()
 }
 
 #[cfg(test)]

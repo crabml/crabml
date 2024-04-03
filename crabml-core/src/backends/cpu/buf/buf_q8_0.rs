@@ -129,12 +129,12 @@ pub fn quantize_f32_q8_0(data: &[f32]) -> Vec<BlockQ8_0> {
 fn vec_dot_q8_0_q8_0(abs: &[BlockQ8_0], bbs: &[BlockQ8_0]) -> f32 {
     #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
     {
-        return vec_dot_q8_0_q8_0_neon(abs, bbs);
+        vec_dot_q8_0_q8_0_neon(abs, bbs)
     }
 
     #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
     {
-        return vec_dot_q8_0_q8_0_avx2(abs, bbs);
+        vec_dot_q8_0_q8_0_avx2(abs, bbs)
     }
 
     #[cfg(not(any(

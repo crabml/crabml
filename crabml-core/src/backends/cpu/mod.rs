@@ -1,4 +1,4 @@
-mod arch;
+mod archutil;
 pub mod buf;
 mod cpu_device;
 mod cpu_tensor;

@@ -58,7 +58,7 @@ pub fn vec_dot_f16_f16_simd(
     b_offset: usize,
     k: usize,
 ) -> f32 {
-    use crate::backends::cpu::arch::aarch64 as myaarch64;
+    use crate::backends::cpu::archutil::aarch64 as myaarch64;
     unsafe {
         let mut sumv0 = myaarch64::vdupq_n_f16(f16::ZERO.to_bits());
         let mut sumv1 = myaarch64::vdupq_n_f16(f16::ZERO.to_bits());
@@ -128,7 +128,7 @@ pub fn vec_fma_f16_f16(v: &[f16], b: f16, c: &mut [f16], v_offset: usize, m: usi
 
 #[cfg(target_arch = "aarch64")]
 fn vec_fma_f16_f16_neon(a: &[f16], b: f16, c: &mut [f16], a_offset: usize, m: usize) {
-    use crate::backends::cpu::arch::aarch64 as myaarch64;
+    use crate::backends::cpu::archutil::aarch64 as myaarch64;
     unsafe {
         let m_rounded = m - m % 16;
         let bv = myaarch64::vdupq_n_f16(b.to_bits());
@@ -176,7 +176,7 @@ pub fn vec_convert_f16_f32(dst: &mut [f16], src: &[f32]) {
 pub fn vec_convert_f16_f32_neon(dst: &mut [f16], src: &[f32]) {
     use std::arch::aarch64;
 
-    use crate::backends::cpu::arch::aarch64 as myaarch64;
+    use crate::backends::cpu::archutil::aarch64 as myaarch64;
 
     dst.chunks_exact_mut(4)
         .zip(src.chunks_exact(4))
@@ -197,7 +197,7 @@ pub fn vec_dot_f16_f16_strided_simd(
     k: usize,
     b: &[f16],
 ) -> f32 {
-    use crate::backends::cpu::arch::aarch64 as myaarch64;
+    use crate::backends::cpu::archutil::aarch64 as myaarch64;
     unsafe {
         let a_ptr = a.as_ptr().add(a_base);
 

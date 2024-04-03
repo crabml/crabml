@@ -126,106 +126,101 @@ pub fn quantize_f32_q8_0_stdsimd(data: &[f32]) -> Vec<BlockQ8_0> {
     bs
 }
 
-#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-mod impl_aarch64_neon {
-    use std::arch::aarch64;
-
-    use half::f16;
-
-    use super::BlockQ8_0;
-
-    pub fn vec_dot_q8_0_q8_0(abs: &[BlockQ8_0], bbs: &[BlockQ8_0]) -> f32 {
-        assert!(abs.len() == bbs.len());
-
-        if bbs.len() % 2 == 0 {
-            return vec_dot_q8_0_q8_0_unrolled(abs, bbs);
-        }
-        vec_dot_q8_0_q8_0_rolled(abs, bbs)
+fn vec_dot_q8_0_q8_0(abs: &[BlockQ8_0], bbs: &[BlockQ8_0]) -> f32 {
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    {
+        return vec_dot_q8_0_q8_0_neon(abs, bbs);
     }
 
-    fn vec_dot_q8_0_q8_0_rolled(abs: &[BlockQ8_0], bbs: &[BlockQ8_0]) -> f32 {
-        unsafe {
-            let mut sumv0 = aarch64::vdupq_n_f32(0.0);
-            let zerov = aarch64::vdupq_n_s32(0);
-
-            for i in 0..bbs.len() {
-                let ab0 = abs.get_unchecked(i);
-                let bb0 = bbs.get_unchecked(i);
-
-                let av00 = aarch64::vld1q_s8(ab0.qs.as_ptr());
-                let av01 = aarch64::vld1q_s8(ab0.qs.as_ptr().add(16));
-
-                let bv00 = aarch64::vld1q_s8(bb0.qs.as_ptr());
-                let bv01 = aarch64::vld1q_s8(bb0.qs.as_ptr().add(16));
-
-                sumv0 = aarch64::vmlaq_n_f32(
-                    sumv0,
-                    aarch64::vcvtq_f32_s32(aarch64::vaddq_s32(
-                        aarch64::vdotq_s32(zerov, av00, bv00),
-                        aarch64::vdotq_s32(zerov, av01, bv01),
-                    )),
-                    f16::to_f32(ab0.d) * f16::to_f32(bb0.d),
-                );
-            }
-
-            aarch64::vaddvq_f32(sumv0)
-        }
+    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    {
+        return impl_x86_64_avx2::vec_dot_q8_0_q8_0_avx2(abs, bbs);
     }
 
-    fn vec_dot_q8_0_q8_0_unrolled(abs: &[BlockQ8_0], bbs: &[BlockQ8_0]) -> f32 {
-        assert!(
-            bbs.len() % 2 == 0,
-            "bbs.len() must be a multiple of 64, got: {}",
-            bbs.len()
-        );
-
-        unsafe {
-            let mut sumv0 = aarch64::vdupq_n_f32(0.0);
-            let mut sumv1 = aarch64::vdupq_n_f32(0.0);
-            let zerov = aarch64::vdupq_n_s32(0);
-
-            for i in (0..bbs.len()).step_by(2) {
-                let ab0 = abs.get_unchecked(i);
-                let ab1 = abs.get_unchecked(i + 1);
-                let bb0 = bbs.get_unchecked(i);
-                let bb1 = bbs.get_unchecked(i + 1);
-
-                let av00 = aarch64::vld1q_s8(ab0.qs.as_ptr());
-                let av01 = aarch64::vld1q_s8(ab0.qs.as_ptr().add(16));
-                let av10 = aarch64::vld1q_s8(ab1.qs.as_ptr());
-                let av11 = aarch64::vld1q_s8(ab1.qs.as_ptr().add(16));
-
-                let bv00 = aarch64::vld1q_s8(bb0.qs.as_ptr());
-                let bv01 = aarch64::vld1q_s8(bb0.qs.as_ptr().add(16));
-                let bv10 = aarch64::vld1q_s8(bb1.qs.as_ptr());
-                let bv11 = aarch64::vld1q_s8(bb1.qs.as_ptr().add(16));
-
-                sumv0 = aarch64::vmlaq_n_f32(
-                    sumv0,
-                    aarch64::vcvtq_f32_s32(aarch64::vaddq_s32(
-                        aarch64::vdotq_s32(zerov, av00, bv00),
-                        aarch64::vdotq_s32(zerov, av01, bv01),
-                    )),
-                    f16::to_f32(ab0.d) * f16::to_f32(bb0.d),
-                );
-
-                sumv1 = aarch64::vmlaq_n_f32(
-                    sumv1,
-                    aarch64::vcvtq_f32_s32(aarch64::vaddq_s32(
-                        aarch64::vdotq_s32(zerov, av10, bv10),
-                        aarch64::vdotq_s32(zerov, av11, bv11),
-                    )),
-                    f16::to_f32(ab1.d) * f16::to_f32(bb1.d),
-                );
-            }
-
-            aarch64::vaddvq_f32(sumv0) + aarch64::vaddvq_f32(sumv1)
-        }
-    }
+    #[cfg(not(any(
+        all(target_arch = "aarch64", target_feature = "neon"),
+        all(target_arch = "x86_64", target_feature = "avx2")
+    )))]
+    vec_dot_q8_0_q8_0_fallback(abs, bbs)
 }
 
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-use impl_aarch64_neon::*;
+fn vec_dot_q8_0_q8_0_neon(abs: &[BlockQ8_0], bbs: &[BlockQ8_0]) -> f32 {
+    use std::arch::aarch64;
+
+    assert!(
+        bbs.len() % 2 == 0,
+        "bbs.len() must be a multiple of 64, got: {}",
+        bbs.len()
+    );
+
+    let blocks_rounded = bbs.len() - bbs.len() % 2;
+    let mut result = 0.0;
+
+    unsafe {
+        let mut sumv0 = aarch64::vdupq_n_f32(0.0);
+        let mut sumv1 = aarch64::vdupq_n_f32(0.0);
+        let zerov = aarch64::vdupq_n_s32(0);
+
+        for i in (0..blocks_rounded).step_by(2) {
+            let ab0 = abs.get_unchecked(i);
+            let ab1 = abs.get_unchecked(i + 1);
+            let bb0 = bbs.get_unchecked(i);
+            let bb1 = bbs.get_unchecked(i + 1);
+
+            let av00 = aarch64::vld1q_s8(ab0.qs.as_ptr());
+            let av01 = aarch64::vld1q_s8(ab0.qs.as_ptr().add(16));
+            let av10 = aarch64::vld1q_s8(ab1.qs.as_ptr());
+            let av11 = aarch64::vld1q_s8(ab1.qs.as_ptr().add(16));
+
+            let bv00 = aarch64::vld1q_s8(bb0.qs.as_ptr());
+            let bv01 = aarch64::vld1q_s8(bb0.qs.as_ptr().add(16));
+            let bv10 = aarch64::vld1q_s8(bb1.qs.as_ptr());
+            let bv11 = aarch64::vld1q_s8(bb1.qs.as_ptr().add(16));
+
+            sumv0 = aarch64::vmlaq_n_f32(
+                sumv0,
+                aarch64::vcvtq_f32_s32(aarch64::vaddq_s32(
+                    aarch64::vdotq_s32(zerov, av00, bv00),
+                    aarch64::vdotq_s32(zerov, av01, bv01),
+                )),
+                f16::to_f32(ab0.d) * f16::to_f32(bb0.d),
+            );
+
+            sumv1 = aarch64::vmlaq_n_f32(
+                sumv1,
+                aarch64::vcvtq_f32_s32(aarch64::vaddq_s32(
+                    aarch64::vdotq_s32(zerov, av10, bv10),
+                    aarch64::vdotq_s32(zerov, av11, bv11),
+                )),
+                f16::to_f32(ab1.d) * f16::to_f32(bb1.d),
+            );
+        }
+        result += aarch64::vaddvq_f32(sumv0) + aarch64::vaddvq_f32(sumv1);
+
+        for i in blocks_rounded..bbs.len() {
+            let ab = abs.get_unchecked(i);
+            let bb = bbs.get_unchecked(i);
+
+            let av0 = aarch64::vld1q_s8(ab.qs.as_ptr());
+            let av1 = aarch64::vld1q_s8(ab.qs.as_ptr().add(16));
+            let bv0 = aarch64::vld1q_s8(bb.qs.as_ptr());
+            let bv1 = aarch64::vld1q_s8(bb.qs.as_ptr().add(16));
+
+            sumv0 = aarch64::vmlaq_n_f32(
+                sumv0,
+                aarch64::vcvtq_f32_s32(aarch64::vaddq_s32(
+                    aarch64::vdotq_s32(zerov, av0, bv0),
+                    aarch64::vdotq_s32(zerov, av1, bv1),
+                )),
+                f16::to_f32(ab.d) * f16::to_f32(bb.d),
+            );
+            result += aarch64::vaddvq_f32(sumv0);
+        }
+    };
+
+    result
+}
 
 #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
 mod impl_x86_64_avx2 {
@@ -319,36 +314,20 @@ mod impl_x86_64_avx2 {
         _mm_cvtss_f32(res)
     }
 }
-#[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
-use impl_x86_64_avx2::*;
 
-#[cfg(not(any(
-    all(target_arch = "aarch64", target_feature = "neon"),
-    all(target_arch = "x86_64", target_feature = "avx2")
-)))]
-mod impl_fallback {
-    use half::f16;
-
-    use super::BlockQ8_0;
-
-    pub fn vec_dot_q8_0_q8_0(abs: &[BlockQ8_0], bbs: &[BlockQ8_0]) -> f32 {
-        let mut sumf: f32 = 0.0;
-        for i in 0..bbs.len() {
-            let mut sumi: i32 = 0;
-            for j in 0..32 {
-                sumi += (abs[i].qs[j] as i32) * (bbs[i].qs[j] as i32);
-            }
-            sumf += sumi as f32 * abs[i].d.to_f32() * bbs[i].d.to_f32();
+#[allow(unused)]
+pub fn vec_dot_q8_0_q8_0_fallback(abs: &[BlockQ8_0], bbs: &[BlockQ8_0]) -> f32 {
+    let mut sumf: f32 = 0.0;
+    for i in 0..bbs.len() {
+        let mut sumi: i32 = 0;
+        for j in 0..32 {
+            sumi += (abs[i].qs[j] as i32) * (bbs[i].qs[j] as i32);
         }
-
-        sumf
+        sumf += sumi as f32 * abs[i].d.to_f32() * bbs[i].d.to_f32();
     }
+
+    sumf
 }
-#[cfg(not(any(
-    all(target_arch = "aarch64", target_feature = "neon"),
-    all(target_arch = "x86_64", target_feature = "avx2")
-)))]
-use impl_fallback::*;
 
 #[cfg(test)]
 mod tests {

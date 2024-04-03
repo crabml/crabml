@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::simd::num::SimdFloat;
 
 use half::f16;
 
@@ -42,7 +43,7 @@ impl<'a> QuantBufQ8_0<'a> {
     }
 
     pub fn quantize(data: &[f32]) -> Self {
-        let bs = quantize_f32_q8_0(data);
+        let bs = quantize_f32_q8_0_stdsimd(data);
         Self { blocks: bs.into() }
     }
 
@@ -75,6 +76,54 @@ impl<'a> QuantBufQ8_0<'a> {
 
         vec_dot_q8_0_q8_0(abs, bbs)
     }
+}
+
+pub fn quantize_f32_q8_0_stdsimd(data: &[f32]) -> Vec<BlockQ8_0> {
+    use std::simd::f32x4;
+
+    let mut bs = Vec::with_capacity(data.len() / 32);
+
+    for i in (0..data.len()).step_by(32) {
+        let mut vsrc = [f32x4::splat(0.0); 8];
+        let mut vasrc = [f32x4::splat(0.0); 8];
+        let mut vmax = [f32x4::splat(0.0); 8];
+
+        for j in 0..8 {
+            vsrc[j] = f32x4::from_slice(&data[i + j * 4..]);
+            vasrc[j] = vsrc[j].abs();
+        }
+
+        for j in 0..4 {
+            vmax[2 * j] = vasrc[2 * j].simd_max(vasrc[2 * j + 1]);
+        }
+        for j in 0..2 {
+            vmax[4 * j] = vmax[4 * j].simd_max(vmax[4 * j + 2]);
+        }
+        for j in 0..1 {
+            vmax[8 * j] = vmax[8 * j].simd_max(vmax[8 * j + 4]);
+        }
+        let max = vmax[0].reduce_max();
+
+        let d = max / 127.0;
+        let vd = f32x4::splat(d);
+        let mut qs = [0_i8; 32];
+
+        for j in 0..8 {
+            let v = vsrc[j] / vd;
+            let vi: std::simd::i32x4 = v.cast();
+            qs[4 * j] = vi[0] as i8;
+            qs[4 * j + 1] = vi[1] as i8;
+            qs[4 * j + 2] = vi[2] as i8;
+            qs[4 * j + 3] = vi[3] as i8;
+        }
+
+        bs.push(BlockQ8_0 {
+            d: f16::from_f32(d),
+            qs,
+        });
+    }
+
+    bs
 }
 
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]

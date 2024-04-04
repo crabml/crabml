@@ -1,3 +1,4 @@
+use std::borrow::BorrowMut;
 use std::rc::Rc;
 use std::vec;
 
@@ -26,6 +27,7 @@ pub struct Llama2Runner<T: Tensor> {
     conf: Llama2Config,
     weights: Rc<Llama2Weights<T>>,
     tokenizer: Rc<BpeTokenizer>,
+    sampler: Rc<Llama2Sampler>,
     device: T::Device,
     logits: Vec<f32>,            // output logits (vocab_size, )
     key_cache: Vec<Option<T>>,   // (layer, n_kv_head, seq_len, kv_dim)
@@ -36,6 +38,7 @@ pub struct Llama2Runner<T: Tensor> {
 impl<'a, T: Tensor> Llama2Runner<T> {
     pub fn new(
         model: impl Llama2Model<T = T>,
+        sampler: Rc<Llama2Sampler>,
         metrics: TensorMetrics,
         seq_len: usize,
         use_f16_kv_cache: bool,
@@ -76,6 +79,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         Ok(Self {
             conf: conf.clone(),
             logits,
+            sampler,
             key_cache,
             value_cache,
             weights,
@@ -93,7 +97,6 @@ impl<'a, T: Tensor> Llama2Runner<T> {
     pub fn prefill(
         &mut self,
         prompt: &str,
-        sampler: &'a mut Llama2Sampler,
         bos: bool,
         _batched: bool,
     ) -> Result<(usize, usize, usize)> {
@@ -107,7 +110,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         }
 
         // this is expected to be eos, make it as the prewarm
-
+        let sampler = self.sampler.clone();
         let mut logits: &mut [f32] = &mut [];
         for (pos, token) in prompt_tokens.iter().enumerate() {
             logits = self.forward(&[*token], pos)?;
@@ -126,7 +129,6 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         prev_token: usize,
         token: usize,
         steps: Option<usize>,
-        sampler: &'a mut Llama2Sampler,
     ) -> impl Iterator<Item = Result<String>> + '_ {
         // the first token has already been generated in the prefill phase.
         let max_seq = self.conf.seq_len - pos - 1;
@@ -135,6 +137,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             None => max_seq,
         };
 
+        let sampler = self.sampler.clone();
         let first_token = self.tokenizer.decode(prev_token, token);
         let tokens_iter = (pos..pos + max_steps).scan(token, move |current_token, pos| {
             let logits = self.forward(&[*current_token], pos).unwrap();
@@ -154,10 +157,9 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         &'a mut self,
         prompt: &str,
         steps: usize,
-        sampler: &'a mut Llama2Sampler,
     ) -> Result<impl Iterator<Item = Result<String>> + '_> {
-        let (pos, prev_token, token) = self.prefill(prompt, sampler, true, false)?;
-        Ok(self.generate(pos, prev_token, token, Some(steps), sampler))
+        let (pos, prev_token, token) = self.prefill(prompt, true, false)?;
+        Ok(self.generate(pos, prev_token, token, Some(steps)))
     }
 
     pub fn forward(&mut self, tokens: &[usize], pos: usize) -> Result<&mut [f32]> {
@@ -469,9 +471,14 @@ mod tests {
         let device = CpuTensorDevice::with_options(CpuTensorDeviceOptions::default());
         let lm = CpuLlama2Model::load(&gf, device.clone())?;
 
-        let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0, device.exp_cache());
-        let mut runner = Llama2Runner::new(&lm, TensorMetrics::default(), 200, false)?;
-        let output = runner.prefill_and_generate("Lily is a cat", 31, &mut sampler)?;
+        let sampler = Rc::new(Llama2Sampler::new(
+            lm.conf.vocab_size,
+            0.0,
+            0.0,
+            device.exp_cache(),
+        ));
+        let mut runner = Llama2Runner::new(&lm, sampler, TensorMetrics::default(), 200, false)?;
+        let output = runner.prefill_and_generate("Lily is a cat", 31)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
 
         assert_eq!(
@@ -491,9 +498,14 @@ mod tests {
         assert_eq!(lm.conf.rope_dim, Some(48));
         assert_eq!(lm.conf.head_size(), 48);
 
-        let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0, device.exp_cache());
-        let mut runner = Llama2Runner::new(&lm, TensorMetrics::default(), 200, false)?;
-        let output = runner.prefill_and_generate("Lily is a cute cat, ", 11, &mut sampler)?;
+        let sampler = Rc::new(Llama2Sampler::new(
+            lm.conf.vocab_size,
+            0.0,
+            0.0,
+            device.exp_cache(),
+        ));
+        let mut runner = Llama2Runner::new(&lm, sampler, TensorMetrics::default(), 200, false)?;
+        let output = runner.prefill_and_generate("Lily is a cute cat, ", 11)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
         assert_eq!(s, "3 years old. She likes to play with her");
         Ok(())
@@ -509,9 +521,14 @@ mod tests {
         assert_eq!(lm.conf.rope_dim, Some(48));
         assert_eq!(lm.conf.head_size(), 48);
 
-        let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0, device.exp_cache());
-        let mut runner = Llama2Runner::new(&lm, TensorMetrics::default(), 200, true)?;
-        let output = runner.prefill_and_generate("Lily is a cute cat, ", 11, &mut sampler)?;
+        let sampler = Rc::new(Llama2Sampler::new(
+            lm.conf.vocab_size,
+            0.0,
+            0.0,
+            device.exp_cache(),
+        ));
+        let mut runner = Llama2Runner::new(&lm, sampler, TensorMetrics::default(), 200, true)?;
+        let output = runner.prefill_and_generate("Lily is a cute cat, ", 11)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
         assert_eq!(s, "3 years old. She likes to play with her");
         Ok(())
@@ -527,9 +544,14 @@ mod tests {
         assert_eq!(lm.conf.rope_dim, Some(4));
         assert_eq!(lm.conf.head_size(), 4);
 
-        let mut sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0, device.exp_cache());
-        let mut runner = Llama2Runner::new(&lm, TensorMetrics::default(), 200, false)?;
-        let output = runner.prefill_and_generate("Lily is a cute cat, ", 11, &mut sampler)?;
+        let sampler = Rc::new(Llama2Sampler::new(
+            lm.conf.vocab_size,
+            0.0,
+            0.0,
+            device.exp_cache(),
+        ));
+        let mut runner = Llama2Runner::new(&lm, sampler, TensorMetrics::default(), 200, false)?;
+        let output = runner.prefill_and_generate("Lily is a cute cat, ", 11)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
         assert_eq!(s, "3 year old. She likes to play with her friends");
         Ok(())
@@ -553,18 +575,29 @@ mod tests {
         );
         let model_wgpu = WgpuLlama2Model::from_cpu(&model_cpu, device_wgpu.clone())?;
 
-        let mut sampler =
-            Llama2Sampler::new(model_cpu.conf.vocab_size, 0.0, 0.0, device_cpu.exp_cache());
-        let mut runner_cpu = Llama2Runner::new(&model_cpu, TensorMetrics::default(), 200, false)?;
-        let mut runner_wgpu = Llama2Runner::new(&model_wgpu, TensorMetrics::default(), 200, false)?;
+        let sampler = Rc::new(Llama2Sampler::new(
+            model_cpu.conf.vocab_size,
+            0.0,
+            0.0,
+            device_cpu.exp_cache(),
+        ));
+        let mut runner_cpu = Llama2Runner::new(
+            &model_cpu,
+            sampler.clone(),
+            TensorMetrics::default(),
+            200,
+            false,
+        )?;
+        let mut runner_wgpu =
+            Llama2Runner::new(&model_wgpu, sampler, TensorMetrics::default(), 200, false)?;
 
         let output_cpu = runner_cpu
-            .prefill_and_generate("Lily is a cat", 16, &mut sampler)?
+            .prefill_and_generate("Lily is a cat", 16)?
             .collect::<Result<Vec<String>>>()?
             .join("");
 
         let output_wgpu = runner_wgpu
-            .prefill_and_generate("Lily is a cat", 16, &mut sampler)?
+            .prefill_and_generate("Lily is a cat", 16)?
             .collect::<Result<Vec<String>>>()?
             .join("");
 

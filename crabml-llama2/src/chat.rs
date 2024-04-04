@@ -2,18 +2,16 @@ use crabml::error::Result;
 use crabml::tensor::Tensor;
 
 use crate::llama2::Llama2Runner;
-use crate::Llama2Sampler;
 
 struct Llama2Chat<T: Tensor> {
     runner: Llama2Runner<T>,
-    sampler: Llama2Sampler,
 }
 
 impl<T: Tensor> Llama2Chat<T> {
-    pub fn new(runner: Llama2Runner<T>, sampler: Llama2Sampler) -> Result<Self> {
-        let mut chat = Self { runner, sampler };
+    pub fn new(runner: Llama2Runner<T>) -> Result<Self> {
+        let mut chat = Self { runner };
         // insert BOS token
-        chat.runner.prefill("", &mut chat.sampler, true, false)?;
+        chat.runner.prefill("", true, false)?;
         Ok(chat)
     }
 
@@ -35,14 +33,8 @@ struct Llama2Dialogue<'a, T: Tensor> {
 impl<'a, T: Tensor> Llama2Dialogue<'a, T> {
     pub fn iter(&mut self) -> Result<Llama2DialogueIterator> {
         let prompt = wrap_prompt(&self.prompt);
-        let (pos, last_token, token) =
-            self.inner
-                .runner
-                .prefill(&prompt, &mut self.inner.sampler, false, false)?;
-        let iter =
-            self.inner
-                .runner
-                .generate(pos, last_token, token, None, &mut self.inner.sampler);
+        let (pos, last_token, token) = self.inner.runner.prefill(&prompt, false, false)?;
+        let iter = self.inner.runner.generate(pos, last_token, token, None);
         let chat_iter =
             Llama2DialogueIterator::new(Box::new(iter), "<end_of_turn>", &mut self.stats);
         Ok(chat_iter)
@@ -50,9 +42,7 @@ impl<'a, T: Tensor> Llama2Dialogue<'a, T> {
 
     pub fn finish(&mut self) -> Result<()> {
         if !self.stats.has_end_mark {
-            self.inner
-                .runner
-                .prefill("<end_of_turn>", &mut self.inner.sampler, false, false)?;
+            self.inner.runner.prefill("<end_of_turn>", false, false)?;
         }
 
         Ok(())
@@ -123,6 +113,8 @@ fn wrap_prompt(prompt: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::rc::Rc;
+
     use crabml::backends::cpu::CpuTensorDevice;
     use crabml::error::Result;
     use crabml::gguf::GGUFFileLoader;
@@ -141,10 +133,15 @@ mod tests {
         let device = CpuTensorDevice::new();
         let lm = CpuLlama2Model::load(&gf, device.clone())?;
 
-        let sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0, device.exp_cache());
-        let runner = Llama2Runner::new(&lm, TensorMetrics::default(), 200, false)?;
+        let sampler = Rc::new(Llama2Sampler::new(
+            lm.conf.vocab_size,
+            0.0,
+            0.0,
+            device.exp_cache(),
+        ));
+        let runner = Llama2Runner::new(&lm, sampler, TensorMetrics::default(), 200, false)?;
 
-        let mut chat = Llama2Chat::new(runner, sampler)?;
+        let mut chat = Llama2Chat::new(runner)?;
         let mut dialogue = chat.chat("what's 1+1?");
         let output = dialogue.iter()?;
         for token in output {

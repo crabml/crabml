@@ -17,10 +17,7 @@ impl<T: Tensor> Llama2Chat<T> {
         Ok(chat)
     }
 
-    pub fn chat(
-        &mut self,
-        prompt: &str,
-    ) -> Result<ChatIterator<impl Iterator<Item = Result<String>> + '_>> {
+    pub fn chat(&mut self, prompt: &str) -> Result<Llama2Dialogue> {
         let prompt = wrap_prompt(prompt);
         let (pos, last_token, token) =
             self.runner
@@ -28,7 +25,7 @@ impl<T: Tensor> Llama2Chat<T> {
         let iter = self
             .runner
             .generate(pos, last_token, token, None, &mut self.sampler);
-        let chat_iter = ChatIterator::new(iter, "<end_of_turn>");
+        let chat_iter = Llama2Dialogue::new(Box::new(iter), "<end_of_turn>");
         Ok(chat_iter)
     }
 }
@@ -38,15 +35,15 @@ impl<T: Tensor> Llama2Chat<T> {
 /// got the end mark, like "<end_of_turn>".
 /// on some cases the model may not generate the end mark, so we need to
 /// tell the iterator is finished by end mark or not.
-struct ChatIterator<I: Iterator<Item = Result<String>>> {
-    inner: I,
+struct Llama2Dialogue<'a> {
+    inner: Box<dyn Iterator<Item = Result<String>> + 'a>,
     buf: String,
     end_mark: String,
     has_end_mark: bool,
 }
 
-impl<I: Iterator<Item = Result<String>>> ChatIterator<I> {
-    pub fn new(inner: I, end_mark: &str) -> Self {
+impl<'a> Llama2Dialogue<'a> {
+    pub fn new(inner: Box<dyn Iterator<Item = Result<String>> + 'a>, end_mark: &str) -> Self {
         Self {
             inner,
             buf: String::new(),
@@ -60,7 +57,7 @@ impl<I: Iterator<Item = Result<String>>> ChatIterator<I> {
     }
 }
 
-impl<T: Iterator<Item = Result<String>>> Iterator for ChatIterator<T> {
+impl<'a> Iterator for Llama2Dialogue<'a> {
     type Item = Result<String>;
 
     fn next(&mut self) -> Option<Self::Item> {

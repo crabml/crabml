@@ -17,30 +17,32 @@ impl<T: Tensor> Llama2Chat<T> {
         Ok(chat)
     }
 
-    pub fn dialogue<'a>(&'a mut self) -> Llama2Dialogue<'a, T> {
+    pub fn chat<'a>(&'a mut self, prompt: &str) -> Llama2Dialogue<'a, T> {
         Llama2Dialogue {
-            chat: self,
+            inner: self,
+            prompt: prompt.to_string(),
             stats: Default::default(),
         }
     }
 }
 
 struct Llama2Dialogue<'a, T: Tensor> {
-    chat: &'a mut Llama2Chat<T>,
+    inner: &'a mut Llama2Chat<T>,
+    prompt: String,
     stats: Llama2DialogueStats,
 }
 
 impl<'a, T: Tensor> Llama2Dialogue<'a, T> {
-    pub fn generate(&mut self, prompt: &str) -> Result<Llama2DialogueIterator> {
-        let prompt = wrap_prompt(prompt);
+    pub fn generate(&mut self) -> Result<Llama2DialogueIterator> {
+        let prompt = wrap_prompt(&self.prompt);
         let (pos, last_token, token) =
-            self.chat
+            self.inner
                 .runner
-                .prefill(&prompt, &mut self.chat.sampler, false, false)?;
-        let iter = self
-            .chat
-            .runner
-            .generate(pos, last_token, token, None, &mut self.chat.sampler);
+                .prefill(&prompt, &mut self.inner.sampler, false, false)?;
+        let iter =
+            self.inner
+                .runner
+                .generate(pos, last_token, token, None, &mut self.inner.sampler);
         let chat_iter =
             Llama2DialogueIterator::new(Box::new(iter), "<end_of_turn>", &mut self.stats);
         Ok(chat_iter)
@@ -137,8 +139,8 @@ mod tests {
         let runner = Llama2Runner::new(&lm, TensorMetrics::default(), 200, false)?;
 
         let mut chat = Llama2Chat::new(runner, sampler)?;
-        let mut dialogue = chat.dialogue();
-        let output = dialogue.generate("how to understand spacetime curvature?")?;
+        let mut dialogue = chat.chat("what's 1+1?");
+        let output = dialogue.generate()?;
         for token in output {
             print!("{}", token?);
         }

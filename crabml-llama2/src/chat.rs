@@ -18,27 +18,71 @@ impl<T: Tensor> Llama2Chat<T> {
     }
 
     pub fn chat(&mut self, prompt: &str) -> Result<impl Iterator<Item = Result<String>> + '_> {
-        let prepend_end_token = self.runner.kv_cache_len() > 1;
-        let prompt = wrap_prompt(prompt, prepend_end_token);
+        let prompt = wrap_prompt(prompt);
         let (pos, last_token, token) =
             self.runner
                 .prefill(&prompt, &mut self.sampler, false, false)?;
         let iter = self
             .runner
             .generate(pos, last_token, token, None, &mut self.sampler);
-        Ok(iter)
+        let chat_iter = ChatIterator::new(iter, "<end_of_turn>");
+        Ok(chat_iter)
     }
 }
 
-fn wrap_prompt(prompt: &str, prepend_end_token: bool) -> String {
-    let end_token = if prepend_end_token {
-        "<end_of_turn>"
-    } else {
-        ""
-    };
+/// each dialog has a start mark and an end mark. The chat iterator will
+/// take the generation result from the model and concatenate them until
+/// got the end mark, like "<end_of_turn>".
+/// on some cases the model may not generate the end mark, so we need to
+/// tell the iterator is finished by end mark or not.
+struct ChatIterator<I: Iterator<Item = Result<String>>> {
+    inner: I,
+    buf: String,
+    end_mark: String,
+    has_end_mark: bool,
+}
+
+impl<I: Iterator<Item = Result<String>>> ChatIterator<I> {
+    pub fn new(inner: I, end_mark: &str) -> Self {
+        Self {
+            inner,
+            buf: String::new(),
+            end_mark: end_mark.to_string(),
+            has_end_mark: false,
+        }
+    }
+
+    fn has_end_mark(&self) -> bool {
+        self.has_end_mark
+    }
+}
+
+impl<T: Iterator<Item = Result<String>>> Iterator for ChatIterator<T> {
+    type Item = Result<String>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.has_end_mark {
+            return None;
+        }
+
+        let token = match self.inner.next() {
+            None => return None,
+            Some(Err(err)) => return Some(Err(err)),
+            Some(Ok(token)) => token,
+        };
+
+        self.buf.push_str(&token);
+        if self.buf.ends_with(&self.end_mark) {
+            self.has_end_mark = true;
+        }
+        Some(Ok(token))
+    }
+}
+
+fn wrap_prompt(prompt: &str) -> String {
     format!(
-        "{}<start_of_turn>user\n{}<end_of_turn><start_of_turn>model\n",
-        end_token, prompt
+        "<start_of_turn>user\n{}<end_of_turn><start_of_turn>model\n",
+        prompt
     )
 }
 

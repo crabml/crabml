@@ -33,7 +33,7 @@ struct Llama2Dialogue<'a, T: Tensor> {
 }
 
 impl<'a, T: Tensor> Llama2Dialogue<'a, T> {
-    pub fn generate(&mut self) -> Result<Llama2DialogueIterator> {
+    pub fn iter(&mut self) -> Result<Llama2DialogueIterator> {
         let prompt = wrap_prompt(&self.prompt);
         let (pos, last_token, token) =
             self.inner
@@ -49,7 +49,13 @@ impl<'a, T: Tensor> Llama2Dialogue<'a, T> {
     }
 
     pub fn finish(&mut self) -> Result<()> {
-        todo!()
+        if !self.stats.has_end_mark {
+            self.inner
+                .runner
+                .prefill("<end_of_turn>", &mut self.inner.sampler, false, false)?;
+        }
+
+        Ok(())
     }
 }
 
@@ -140,7 +146,7 @@ mod tests {
 
         let mut chat = Llama2Chat::new(runner, sampler)?;
         let mut dialogue = chat.chat("what's 1+1?");
-        let output = dialogue.generate()?;
+        let output = dialogue.iter()?;
         for token in output {
             print!("{}", token?);
         }

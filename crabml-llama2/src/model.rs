@@ -252,7 +252,9 @@ impl<'a> CpuLlama2Model<'a> {
             .metadata()
             .get_f32_array("tokenizer.ggml.scores")
             .unwrap()
-            .to_vec();
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>();
         let eos_token = gf
             .metadata()
             .get_u32("tokenizer.ggml.eos_token_id")

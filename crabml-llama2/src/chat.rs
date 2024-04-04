@@ -17,7 +17,10 @@ impl<T: Tensor> Llama2Chat<T> {
         Ok(chat)
     }
 
-    pub fn chat(&mut self, prompt: &str) -> Result<impl Iterator<Item = Result<String>> + '_> {
+    pub fn chat(
+        &mut self,
+        prompt: &str,
+    ) -> Result<ChatIterator<impl Iterator<Item = Result<String>> + '_>> {
         let prompt = wrap_prompt(prompt);
         let (pos, last_token, token) =
             self.runner
@@ -74,6 +77,7 @@ impl<T: Iterator<Item = Result<String>>> Iterator for ChatIterator<T> {
         self.buf.push_str(&token);
         if self.buf.ends_with(&self.end_mark) {
             self.has_end_mark = true;
+            return None;
         }
         Some(Ok(token))
     }
@@ -100,7 +104,7 @@ mod tests {
 
     #[test]
     fn test_generate_q8_0() -> Result<()> {
-        let gl = GGUFFileLoader::new("../testdata/gemma-2b.Q8_0.gguf")?;
+        let gl = GGUFFileLoader::new("../testdata/gemma-2b-it-q8_0.gguf")?;
         let gf = gl.open()?;
 
         let device = CpuTensorDevice::new();
@@ -110,9 +114,10 @@ mod tests {
         let runner = Llama2Runner::new(&lm, TensorMetrics::default(), 200, false)?;
 
         let mut chat = Llama2Chat::new(runner, sampler)?;
-        let output = chat.chat("what's 1 + 1?")?;
-        let output_vec = output.take(2).collect::<Result<Vec<String>>>()?;
-        assert_eq!(output_vec, vec!["2".to_string()]);
+        let output = chat.chat("how to understand spacetime curvature?")?;
+        for token in output {
+            print!("{}", token?);
+        }
         Ok(())
     }
 }

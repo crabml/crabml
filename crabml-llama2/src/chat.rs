@@ -18,12 +18,16 @@ impl<T: Tensor> Llama2Chat<T> {
     }
 
     pub fn dialogue<'a>(&'a mut self) -> Llama2Dialogue<'a, T> {
-        Llama2Dialogue { chat: self }
+        Llama2Dialogue {
+            chat: self,
+            stats: Default::default(),
+        }
     }
 }
 
 struct Llama2Dialogue<'a, T: Tensor> {
     chat: &'a mut Llama2Chat<T>,
+    stats: Llama2DialogueStats,
 }
 
 impl<'a, T: Tensor> Llama2Dialogue<'a, T> {
@@ -37,9 +41,19 @@ impl<'a, T: Tensor> Llama2Dialogue<'a, T> {
             .chat
             .runner
             .generate(pos, last_token, token, None, &mut self.chat.sampler);
-        let chat_iter = Llama2DialogueIterator::new(Box::new(iter), "<end_of_turn>");
+        let chat_iter =
+            Llama2DialogueIterator::new(Box::new(iter), "<end_of_turn>", &mut self.stats);
         Ok(chat_iter)
     }
+
+    pub fn finish(&mut self) -> Result<()> {
+        todo!()
+    }
+}
+
+#[derive(Debug, Default)]
+struct Llama2DialogueStats {
+    has_end_mark: bool,
 }
 
 /// each dialog has a start mark and an end mark. The chat iterator will
@@ -51,21 +65,21 @@ struct Llama2DialogueIterator<'a> {
     inner: Box<dyn Iterator<Item = Result<String>> + 'a>,
     buf: String,
     end_mark: String,
-    has_end_mark: bool,
+    stats: &'a mut Llama2DialogueStats,
 }
 
 impl<'a> Llama2DialogueIterator<'a> {
-    pub fn new(inner: Box<dyn Iterator<Item = Result<String>> + 'a>, end_mark: &str) -> Self {
+    pub fn new(
+        inner: Box<dyn Iterator<Item = Result<String>> + 'a>,
+        end_mark: &str,
+        stats: &'a mut Llama2DialogueStats,
+    ) -> Self {
         Self {
             inner,
             buf: String::new(),
             end_mark: end_mark.to_string(),
-            has_end_mark: false,
+            stats,
         }
-    }
-
-    fn has_end_mark(&self) -> bool {
-        self.has_end_mark
     }
 }
 
@@ -73,7 +87,7 @@ impl<'a> Iterator for Llama2DialogueIterator<'a> {
     type Item = Result<String>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.has_end_mark {
+        if self.stats.has_end_mark {
             return None;
         }
 
@@ -85,7 +99,7 @@ impl<'a> Iterator for Llama2DialogueIterator<'a> {
 
         self.buf.push_str(&token);
         if self.buf.ends_with(&self.end_mark) {
-            self.has_end_mark = true;
+            self.stats.has_end_mark = true;
             return None;
         }
         Some(Ok(token))

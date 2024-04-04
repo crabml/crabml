@@ -1,6 +1,7 @@
 extern crate jemallocator;
 
 use std::io::Write;
+use std::rc::Rc;
 use std::time::Instant;
 
 use clap::Parser;
@@ -69,18 +70,17 @@ impl std::fmt::Display for DeviceType {
 fn run<U: Tensor>(
     args: &CommandArgs,
     runner: &mut Llama2Runner<U>,
-    sampler: &mut Llama2Sampler,
     metrics: &TensorMetrics,
 ) -> Result<()> {
     let prefill_started_at = Instant::now();
-    let (prefill_pos, prev_token, token) = runner.prefill(&args.prompt, sampler, true, false)?;
+    let (prefill_pos, prev_token, token) = runner.prefill(&args.prompt, true, false)?;
     let prefill_elapsed = prefill_started_at.elapsed();
     if args.verbose {
         dump_metrics(metrics);
     }
     metrics.reset();
 
-    let mut output = runner.generate(prefill_pos, prev_token, token, Some(args.steps), sampler);
+    let mut output = runner.generate(prefill_pos, prev_token, token, Some(args.steps));
     let mut generated_tokens = 0;
     let generation_started_at = Instant::now();
 
@@ -161,12 +161,12 @@ fn main() -> Result<()> {
     let model_cpu = CpuLlama2Model::load(&gf, device_cpu.clone())?;
     let conf = model_cpu.conf.clone();
 
-    let mut sampler = Llama2Sampler::new(
+    let sampler = Rc::new(Llama2Sampler::new(
         conf.vocab_size,
         args.temperature,
         args.probability,
         device_cpu.exp_cache(),
-    );
+    ));
 
     if args.verbose {
         for tensor in gf.tensor_infos() {
@@ -181,9 +181,10 @@ fn main() -> Result<()> {
 
     match args.device {
         DeviceType::Cpu => {
-            let mut runner = Llama2Runner::new(&model_cpu, metrics.clone(), conf.seq_len, true)?;
+            let mut runner =
+                Llama2Runner::new(&model_cpu, sampler, metrics.clone(), conf.seq_len, true)?;
             println!("loaded model: {}ms", start_time.elapsed().as_millis());
-            run(&args, &mut runner, &mut sampler, &metrics)?;
+            run(&args, &mut runner, &metrics)?;
         }
         DeviceType::Wgpu => {
             let device_wgpu = WgpuTensorDevice::new(
@@ -191,8 +192,9 @@ fn main() -> Result<()> {
             );
             let model_wgpu = WgpuLlama2Model::from_cpu(&model_cpu, device_wgpu)?;
 
-            let mut runner = Llama2Runner::new(&model_wgpu, metrics.clone(), conf.seq_len, false)?;
-            run(&args, &mut runner, &mut sampler, &metrics)?;
+            let mut runner =
+                Llama2Runner::new(&model_wgpu, sampler, metrics.clone(), conf.seq_len, false)?;
+            run(&args, &mut runner, &metrics)?;
         }
     }
 

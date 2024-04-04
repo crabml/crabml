@@ -3,46 +3,35 @@ use crabml::tensor::Tensor;
 
 use crate::llama2::Llama2Runner;
 
-struct Llama2Chat<T: Tensor> {
-    runner: Llama2Runner<T>,
+struct Llama2Chat<'a, T: Tensor> {
+    inner: &'a mut Llama2Runner<T>,
+    prompt: String,
+    bos: bool,
+    stats: Llama2ChatStats,
 }
 
-impl<T: Tensor> Llama2Chat<T> {
-    pub fn new(runner: Llama2Runner<T>) -> Result<Self> {
-        let mut chat = Self { runner };
-        // insert BOS token
-        chat.runner.prefill("", true, false)?;
-        Ok(chat)
-    }
-
-    pub fn chat<'a>(&'a mut self, prompt: &str) -> Llama2Dialogue<'a, T> {
-        Llama2Dialogue {
-            inner: self,
+impl<'a, T: Tensor> Llama2Chat<'a, T> {
+    pub fn new(runner: &'a mut Llama2Runner<T>, prompt: &str, bos: bool) -> Self {
+        Self {
+            inner: runner,
             prompt: prompt.to_string(),
             stats: Default::default(),
+            bos,
         }
     }
-}
 
-struct Llama2Dialogue<'a, T: Tensor> {
-    inner: &'a mut Llama2Chat<T>,
-    prompt: String,
-    stats: Llama2DialogueStats,
-}
-
-impl<'a, T: Tensor> Llama2Dialogue<'a, T> {
-    pub fn iter(&mut self) -> Result<Llama2DialogueIterator> {
+    pub fn reply(&mut self) -> Result<Llama2ChatReplyIterator> {
         let prompt = wrap_prompt(&self.prompt);
-        let (pos, last_token, token) = self.inner.runner.prefill(&prompt, false, false)?;
-        let iter = self.inner.runner.generate(pos, last_token, token, None);
+        let (pos, last_token, token) = self.inner.prefill(&prompt, self.bos, false)?;
+        let iter = self.inner.generate(pos, last_token, token, None);
         let chat_iter =
-            Llama2DialogueIterator::new(Box::new(iter), "<end_of_turn>", &mut self.stats);
+            Llama2ChatReplyIterator::new(Box::new(iter), "<end_of_turn>", &mut self.stats);
         Ok(chat_iter)
     }
 
     pub fn finish(&mut self) -> Result<()> {
         if !self.stats.has_end_mark {
-            self.inner.runner.prefill("<end_of_turn>", false, false)?;
+            self.inner.prefill("<end_of_turn>", false, false)?;
         }
 
         Ok(())
@@ -50,7 +39,7 @@ impl<'a, T: Tensor> Llama2Dialogue<'a, T> {
 }
 
 #[derive(Debug, Default)]
-struct Llama2DialogueStats {
+struct Llama2ChatStats {
     has_end_mark: bool,
 }
 
@@ -59,18 +48,18 @@ struct Llama2DialogueStats {
 /// got the end mark, like "<end_of_turn>".
 /// on some cases the model may not generate the end mark, so we need to
 /// tell the iterator is finished by end mark or not.
-struct Llama2DialogueIterator<'a> {
+struct Llama2ChatReplyIterator<'a> {
     inner: Box<dyn Iterator<Item = Result<String>> + 'a>,
     buf: String,
     end_mark: String,
-    stats: &'a mut Llama2DialogueStats,
+    stats: &'a mut Llama2ChatStats,
 }
 
-impl<'a> Llama2DialogueIterator<'a> {
+impl<'a> Llama2ChatReplyIterator<'a> {
     pub fn new(
         inner: Box<dyn Iterator<Item = Result<String>> + 'a>,
         end_mark: &str,
-        stats: &'a mut Llama2DialogueStats,
+        stats: &'a mut Llama2ChatStats,
     ) -> Self {
         Self {
             inner,
@@ -81,7 +70,7 @@ impl<'a> Llama2DialogueIterator<'a> {
     }
 }
 
-impl<'a> Iterator for Llama2DialogueIterator<'a> {
+impl<'a> Iterator for Llama2ChatReplyIterator<'a> {
     type Item = Result<String>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -139,11 +128,10 @@ mod tests {
             0.0,
             device.exp_cache(),
         ));
-        let runner = Llama2Runner::new(&lm, sampler, TensorMetrics::default(), 200, false)?;
+        let mut runner = Llama2Runner::new(&lm, sampler, TensorMetrics::default(), 200, false)?;
 
-        let mut chat = Llama2Chat::new(runner)?;
-        let mut dialogue = chat.chat("what's 1+1?");
-        let output = dialogue.iter()?;
+        let mut chat = Llama2Chat::new(&mut runner, "what's 1+1?", true);
+        let output = chat.reply()?;
         for token in output {
             print!("{}", token?);
         }

@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use half::f16;
 
 use super::QuantBufQ8_1;
+use crate::backends::cpu::buf::buf_q8_1::BlockQ8_1;
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub struct BlockQ4_1 {
@@ -83,60 +84,53 @@ impl<'a> QuantBufQ4_1<'a> {
     }
 }
 
-mod impl_fallback {
-    use half::f16;
+pub fn quantize_f32_q4_1(data: &[f32]) -> Vec<BlockQ4_1> {
+    let mut bs = Vec::with_capacity(data.len() / 32);
+    for chunk in data.chunks(32) {
+        // Find the maximum and minimum value in the chunk
+        let (min_val, max_val) = chunk
+            .iter()
+            .fold((f32::MAX, f32::MIN), |(min_val, max_val), &v| {
+                (v.min(min_val), v.max(max_val))
+            });
 
-    use super::BlockQ4_1;
-    use crate::backends::cpu::buf::buf_q8_1::BlockQ8_1;
-    pub fn quantize_f32_q4_1(data: &[f32]) -> Vec<BlockQ4_1> {
-        let mut bs = Vec::with_capacity(data.len() / 32);
-        for chunk in data.chunks(32) {
-            // Find the maximum and minimum value in the chunk
-            let (min_val, max_val) = chunk
-                .iter()
-                .fold((f32::MAX, f32::MIN), |(min_val, max_val), &v| {
-                    (v.min(min_val), v.max(max_val))
-                });
+        let d = (max_val - min_val) / 15.0; // Compute the scaling factor
+        let id = if d != 0.0 { 1.0 / d } else { 0.0 };
 
-            let d = (max_val - min_val) / 15.0; // Compute the scaling factor
-            let id = if d != 0.0 { 1.0 / d } else { 0.0 };
+        let mut qs = [0u8; 16]; // Initialize the quantized values array
 
-            let mut qs = [0u8; 16]; // Initialize the quantized values array
+        for i in (0..32).step_by(2) {
+            // Scale the value and convert to u8
+            let scale_val0 = ((chunk[i] - min_val) * id).round().min(15.0) as u8;
+            let scale_val1 = ((chunk[i + 1] - min_val) * id).round().min(15.0) as u8;
 
-            for i in (0..32).step_by(2) {
-                // Scale the value and convert to u8
-                let scale_val0 = ((chunk[i] - min_val) * id).round().min(15.0) as u8;
-                let scale_val1 = ((chunk[i + 1] - min_val) * id).round().min(15.0) as u8;
-
-                qs[i / 2] = scale_val0 | (scale_val1 << 4);
-            }
-
-            bs.push(BlockQ4_1 {
-                d: f16::from_f32(d),
-                m: f16::from_f32(min_val),
-                qs,
-            })
-        }
-        bs
-    }
-
-    pub fn vec_dot_q4_1_q8_1(abs: &[BlockQ4_1], bbs: &[BlockQ8_1]) -> f32 {
-        let mut sumf = 0f32;
-        for i in 0..abs.len() {
-            let mut sumi: i32 = 0;
-            for j in 0..16 {
-                let v0 = (abs[i].qs[j] & 0x0F) as i32;
-                let v1 = ((abs[i].qs[j] >> 4) & 0x0F) as i32;
-
-                sumi += v0 * bbs[i].qs[j] as i32 + v1 * bbs[i].qs[j + 16] as i32;
-            }
-            sumf += (abs[i].d.to_f32() * bbs[i].d) * sumi as f32 + abs[i].m.to_f32() * bbs[i].s;
+            qs[i / 2] = scale_val0 | (scale_val1 << 4);
         }
 
-        sumf
+        bs.push(BlockQ4_1 {
+            d: f16::from_f32(d),
+            m: f16::from_f32(min_val),
+            qs,
+        })
     }
+    bs
 }
-use impl_fallback::*;
+
+pub fn vec_dot_q4_1_q8_1(abs: &[BlockQ4_1], bbs: &[BlockQ8_1]) -> f32 {
+    let mut sumf = 0f32;
+    for i in 0..abs.len() {
+        let mut sumi: i32 = 0;
+        for j in 0..16 {
+            let v0 = (abs[i].qs[j] & 0x0F) as i32;
+            let v1 = ((abs[i].qs[j] >> 4) & 0x0F) as i32;
+
+            sumi += v0 * bbs[i].qs[j] as i32 + v1 * bbs[i].qs[j + 16] as i32;
+        }
+        sumf += (abs[i].d.to_f32() * bbs[i].d) * sumi as f32 + abs[i].m.to_f32() * bbs[i].s;
+    }
+
+    sumf
+}
 
 #[cfg(test)]
 mod tests {

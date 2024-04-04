@@ -17,15 +17,27 @@ impl<T: Tensor> Llama2Chat<T> {
         Ok(chat)
     }
 
-    pub fn chat(&mut self, prompt: &str) -> Result<Llama2Dialogue> {
+    pub fn dialogue<'a>(&'a mut self) -> Llama2Dialogue<'a, T> {
+        Llama2Dialogue { chat: self }
+    }
+}
+
+struct Llama2Dialogue<'a, T: Tensor> {
+    chat: &'a mut Llama2Chat<T>,
+}
+
+impl<'a, T: Tensor> Llama2Dialogue<'a, T> {
+    pub fn generate(&mut self, prompt: &str) -> Result<Llama2DialogueIterator> {
         let prompt = wrap_prompt(prompt);
         let (pos, last_token, token) =
-            self.runner
-                .prefill(&prompt, &mut self.sampler, false, false)?;
+            self.chat
+                .runner
+                .prefill(&prompt, &mut self.chat.sampler, false, false)?;
         let iter = self
+            .chat
             .runner
-            .generate(pos, last_token, token, None, &mut self.sampler);
-        let chat_iter = Llama2Dialogue::new(Box::new(iter), "<end_of_turn>");
+            .generate(pos, last_token, token, None, &mut self.chat.sampler);
+        let chat_iter = Llama2DialogueIterator::new(Box::new(iter), "<end_of_turn>");
         Ok(chat_iter)
     }
 }
@@ -35,14 +47,14 @@ impl<T: Tensor> Llama2Chat<T> {
 /// got the end mark, like "<end_of_turn>".
 /// on some cases the model may not generate the end mark, so we need to
 /// tell the iterator is finished by end mark or not.
-struct Llama2Dialogue<'a> {
+struct Llama2DialogueIterator<'a> {
     inner: Box<dyn Iterator<Item = Result<String>> + 'a>,
     buf: String,
     end_mark: String,
     has_end_mark: bool,
 }
 
-impl<'a> Llama2Dialogue<'a> {
+impl<'a> Llama2DialogueIterator<'a> {
     pub fn new(inner: Box<dyn Iterator<Item = Result<String>> + 'a>, end_mark: &str) -> Self {
         Self {
             inner,
@@ -57,7 +69,7 @@ impl<'a> Llama2Dialogue<'a> {
     }
 }
 
-impl<'a> Iterator for Llama2Dialogue<'a> {
+impl<'a> Iterator for Llama2DialogueIterator<'a> {
     type Item = Result<String>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -111,7 +123,8 @@ mod tests {
         let runner = Llama2Runner::new(&lm, TensorMetrics::default(), 200, false)?;
 
         let mut chat = Llama2Chat::new(runner, sampler)?;
-        let output = chat.chat("how to understand spacetime curvature?")?;
+        let mut dialogue = chat.dialogue();
+        let output = dialogue.generate("how to understand spacetime curvature?")?;
         for token in output {
             print!("{}", token?);
         }

@@ -49,7 +49,7 @@ struct Llama2ChatStats {
 /// tell the iterator is finished by end mark or not.
 pub struct Llama2ChatReplyIterator<'a> {
     inner: Box<dyn Iterator<Item = Result<String>> + 'a>,
-    buf: String,
+    end_mark_matcher: MarkMatcher,
     end_mark: String,
     stats: &'a mut Llama2ChatStats,
 }
@@ -62,9 +62,9 @@ impl<'a> Llama2ChatReplyIterator<'a> {
     ) -> Self {
         Self {
             inner,
-            buf: String::new(),
-            end_mark: end_mark.to_string(),
             stats,
+            end_mark: end_mark.to_string(),
+            end_mark_matcher: MarkMatcher::new(end_mark.to_string()),
         }
     }
 }
@@ -83,11 +83,16 @@ impl<'a> Iterator for Llama2ChatReplyIterator<'a> {
             Some(Ok(token)) => token,
         };
 
-        self.buf.push_str(&token);
-        if self.buf.ends_with(&self.end_mark) {
+        let token = match self.end_mark_matcher.push(token) {
+            None => return Some(Ok("".to_string())),
+            Some(token) => token,
+        };
+
+        if token == self.end_mark {
             self.stats.has_end_mark = true;
             return None;
         }
+
         Some(Ok(token))
     }
 }

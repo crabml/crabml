@@ -92,6 +92,67 @@ impl<'a> Iterator for Llama2ChatReplyIterator<'a> {
     }
 }
 
+enum MarkMatchState {
+    Inactive,
+    Active,
+}
+
+struct MarkMatcher {
+    state: MarkMatchState,
+    buf: String,
+    mark: String,
+}
+
+impl MarkMatcher {
+    fn new(mark: String) -> Self {
+        Self {
+            state: MarkMatchState::Inactive,
+            buf: String::new(),
+            mark,
+        }
+    }
+
+    fn push(&mut self, token: String) -> Option<String> {
+        match self.state {
+            MarkMatchState::Inactive => {
+                // exact match, do not change state
+                if token == self.mark {
+                    return Some(token);
+                }
+
+                // partial match, change state to active, and push the token
+                // to the buffer, and wait for the rest of the mark.
+                if self.mark.starts_with(&token) {
+                    self.state = MarkMatchState::Active;
+                    self.buf = token;
+                    return None;
+                }
+
+                // no match, return the token directly
+                Some(token)
+            }
+            MarkMatchState::Active => {
+                self.buf.push_str(&token);
+
+                // exact match, change state to inactive, and return the buffer
+                if self.buf == self.mark {
+                    self.state = MarkMatchState::Inactive;
+                    return Some(self.buf.clone());
+                }
+
+                // not match anymore, return the buffer directly
+                if !self.mark.starts_with(&self.buf) {
+                    self.state = MarkMatchState::Inactive;
+                    return Some(self.buf.clone());
+                }
+
+                // partial match, wait for the rest of the mark
+                None
+            }
+        }
+    }
+}
+
 fn wrap_prompt(prompt: &str) -> String {
     format!(
         "<start_of_turn>user\n{}<end_of_turn><start_of_turn>model\n",

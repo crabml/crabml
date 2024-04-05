@@ -6,23 +6,22 @@ use crate::llama2::Llama2Runner;
 pub struct Llama2Chat<'a, T: Tensor> {
     inner: &'a mut Llama2Runner<T>,
     prompt: String,
-    bos: bool,
     stats: Llama2ChatStats,
 }
 
 impl<'a, T: Tensor> Llama2Chat<'a, T> {
-    pub fn new(runner: &'a mut Llama2Runner<T>, prompt: &str, bos: bool) -> Self {
+    pub fn new(runner: &'a mut Llama2Runner<T>, prompt: &str) -> Self {
         Self {
             inner: runner,
             prompt: prompt.to_string(),
             stats: Default::default(),
-            bos,
         }
     }
 
     pub fn reply(&mut self) -> Result<Llama2ChatReplyIterator> {
+        let bos = self.inner.kv_cache_len() == 0;
         let prompt = wrap_prompt(&self.prompt);
-        let (pos, last_token, token) = self.inner.prefill(&prompt, self.bos, false)?;
+        let (pos, last_token, token) = self.inner.prefill(&prompt, bos, false)?;
         let iter = self.inner.generate(pos, last_token, token, None);
         let chat_iter =
             Llama2ChatReplyIterator::new(Box::new(iter), "<end_of_turn>", &mut self.stats);
@@ -56,7 +55,7 @@ pub struct Llama2ChatReplyIterator<'a> {
 }
 
 impl<'a> Llama2ChatReplyIterator<'a> {
-    pub fn new(
+    fn new(
         inner: Box<dyn Iterator<Item = Result<String>> + 'a>,
         end_mark: &str,
         stats: &'a mut Llama2ChatStats,
@@ -130,7 +129,7 @@ mod tests {
         ));
         let mut runner = Llama2Runner::new(&lm, sampler, TensorMetrics::default(), 200, false)?;
 
-        let mut chat = Llama2Chat::new(&mut runner, "what's 1+1?", true);
+        let mut chat = Llama2Chat::new(&mut runner, "what's 1+1?");
         let output = chat.reply()?;
         for token in output {
             print!("{}", token?);

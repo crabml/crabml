@@ -92,7 +92,14 @@ fn run_chat<T: Tensor>(args: &CommandArgs, runner: &mut Llama2Runner<T>) -> Resu
     let mut rl = Editor::<()>::new();
     loop {
         let line = match rl.readline(">> ") {
-            Ok(line) => line,
+            Ok(line) => {
+                if line.is_empty() {
+                    continue;
+                } else if line == "quit" {
+                    break;
+                }
+                line
+            }
             Err(ReadlineError::Interrupted) => {
                 break;
             }
@@ -105,12 +112,13 @@ fn run_chat<T: Tensor>(args: &CommandArgs, runner: &mut Llama2Runner<T>) -> Resu
             }
         };
 
-        let mut chat = Llama2Chat::new(runner, &line, args.verbose);
+        let mut chat = Llama2Chat::new(runner, &line);
         let reply_iter = chat.reply()?;
         for token in reply_iter {
             print!("{}", token?);
             std::io::stdout().flush().unwrap();
         }
+        println!();
     }
 
     Ok(())

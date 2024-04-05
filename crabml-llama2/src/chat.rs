@@ -3,7 +3,7 @@ use crabml::tensor::Tensor;
 
 use crate::llama2::Llama2Runner;
 
-struct Llama2Chat<'a, T: Tensor> {
+pub struct Llama2Chat<'a, T: Tensor> {
     inner: &'a mut Llama2Runner<T>,
     prompt: String,
     bos: bool,
@@ -48,7 +48,7 @@ struct Llama2ChatStats {
 /// got the end mark, like "<end_of_turn>".
 /// on some cases the model may not generate the end mark, so we need to
 /// tell the iterator is finished by end mark or not.
-struct Llama2ChatReplyIterator<'a> {
+pub struct Llama2ChatReplyIterator<'a> {
     inner: Box<dyn Iterator<Item = Result<String>> + 'a>,
     buf: String,
     end_mark: String,

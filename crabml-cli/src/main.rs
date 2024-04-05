@@ -5,6 +5,7 @@ use std::rc::Rc;
 use std::time::Instant;
 
 use clap::Parser;
+use clap::Subcommand;
 use clap::ValueEnum;
 use crabml::backends::cpu::CpuTensorDevice;
 use crabml::backends::cpu::CpuTensorDeviceOptions;
@@ -17,7 +18,10 @@ use crabml::tensor::TensorMetrics;
 use crabml_llama2::llama2::Llama2Runner;
 use crabml_llama2::sampler::Llama2Sampler;
 use crabml_llama2::CpuLlama2Model;
+use crabml_llama2::Llama2Chat;
 use crabml_llama2::WgpuLlama2Model;
+use rustyline::error::ReadlineError;
+use rustyline::Editor;
 
 #[global_allocator]
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
@@ -45,6 +49,9 @@ struct CommandArgs {
     #[arg(short = 'T', long, default_value_t = 2)]
     threads: usize,
 
+    #[arg(short, long, default_value_t = false)]
+    chat: bool,
+
     /// The prompt
     prompt: String,
 
@@ -67,7 +74,49 @@ impl std::fmt::Display for DeviceType {
     }
 }
 
-fn run<U: Tensor>(
+fn run<T: Tensor>(
+    args: &CommandArgs,
+    runner: &mut Llama2Runner<T>,
+    metrics: &TensorMetrics,
+) -> Result<()> {
+    if args.chat {
+        run_chat(args, runner)?;
+    } else {
+        run_generate(args, runner, metrics)?;
+    }
+
+    Ok(())
+}
+
+fn run_chat<T: Tensor>(args: &CommandArgs, runner: &mut Llama2Runner<T>) -> Result<()> {
+    let mut rl = Editor::<()>::new();
+    loop {
+        let line = match rl.readline(">> ") {
+            Ok(line) => line,
+            Err(ReadlineError::Interrupted) => {
+                break;
+            }
+            Err(ReadlineError::Eof) => {
+                break;
+            }
+            Err(err) => {
+                println!("{:?}", err);
+                break;
+            }
+        };
+
+        let mut chat = Llama2Chat::new(runner, &line, args.verbose);
+        let reply_iter = chat.reply()?;
+        for token in reply_iter {
+            print!("{}", token?);
+            std::io::stdout().flush().unwrap();
+        }
+    }
+
+    Ok(())
+}
+
+fn run_generate<U: Tensor>(
     args: &CommandArgs,
     runner: &mut Llama2Runner<U>,
     metrics: &TensorMetrics,

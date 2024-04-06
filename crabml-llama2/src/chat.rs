@@ -220,17 +220,22 @@ impl ChatTemplate {
                 let system_prompt = system_prompt
                     .map(|s| format!("<<SYS>>{}<</SYS>>", s))
                     .unwrap_or("".to_string());
-                let assistant_prefix = append_assistant_prefix.then(|| "[[INST]]").unwrap_or("");
+                let assistant_prefix = if append_assistant_prefix {
+                    "[[INST]]"
+                } else {
+                    ""
+                };
                 format!(
                     "[INST] {} {} [/INST]{}",
                     system_prompt, prompt, assistant_prefix
                 )
             }
             ChatTemplate::Gemma => {
-                let system_prompt = system_prompt.map(|s| s).unwrap_or("");
-                let assistant_prefix = append_assistant_prefix
-                    .then(|| "<start_of_turn>model\n")
-                    .unwrap_or("");
+                let system_prompt = system_prompt.unwrap_or("");
+                let assistant_prefix = match append_assistant_prefix {
+                    true => "<start_of_turn>model\n",
+                    false => "",
+                };
                 format!(
                     "<start_of_turn>user\n{} {}<end_of_turn>{}",
                     system_prompt, prompt, assistant_prefix

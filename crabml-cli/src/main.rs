@@ -5,7 +5,6 @@ use std::rc::Rc;
 use std::time::Instant;
 
 use clap::Parser;
-use clap::Subcommand;
 use clap::ValueEnum;
 use crabml::backends::cpu::CpuTensorDevice;
 use crabml::backends::cpu::CpuTensorDeviceOptions;

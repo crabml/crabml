@@ -29,7 +29,7 @@ impl<'a, T: Tensor> Llama2Chat<'a, T> {
     }
 
     pub fn finish(&mut self) -> Result<()> {
-        if !self.stats.has_end_mark {
+        if !self.stats.has_stop_mark {
             self.inner.prefill("<end_of_turn>", false, false)?;
         }
 
@@ -39,7 +39,7 @@ impl<'a, T: Tensor> Llama2Chat<'a, T> {
 
 #[derive(Debug, Default)]
 struct Llama2ChatStats {
-    has_end_mark: bool,
+    has_stop_mark: bool,
 }
 
 /// each dialog has a start mark and an end mark. The chat iterator will
@@ -73,7 +73,7 @@ impl<'a> Iterator for Llama2ChatReplyIterator<'a> {
     type Item = Result<String>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.stats.has_end_mark {
+        if self.stats.has_stop_mark {
             return None;
         }
 
@@ -89,7 +89,7 @@ impl<'a> Iterator for Llama2ChatReplyIterator<'a> {
         };
 
         if token == self.stop_mark {
-            self.stats.has_end_mark = true;
+            self.stats.has_stop_mark = true;
             return None;
         }
 

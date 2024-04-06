@@ -75,20 +75,20 @@ impl std::fmt::Display for DeviceType {
 }
 
 fn run<T: Tensor>(
-    args: &CommandArgs,
     runner: &mut Llama2Runner<T>,
+    args: &CommandArgs,
     metrics: &TensorMetrics,
 ) -> Result<()> {
     if args.chat {
-        run_chat(args, runner)?;
+        run_chat(runner)?;
     } else {
-        run_generate(args, runner, metrics)?;
+        run_generate(runner, args, metrics)?;
     }
 
     Ok(())
 }
 
-fn run_chat<T: Tensor>(args: &CommandArgs, runner: &mut Llama2Runner<T>) -> Result<()> {
+fn run_chat<T: Tensor>(runner: &mut Llama2Runner<T>) -> Result<()> {
     let mut rl = Editor::<()>::new();
     loop {
         let line = match rl.readline(">> ") {
@@ -125,8 +125,8 @@ fn run_chat<T: Tensor>(args: &CommandArgs, runner: &mut Llama2Runner<T>) -> Resu
 }
 
 fn run_generate<U: Tensor>(
-    args: &CommandArgs,
     runner: &mut Llama2Runner<U>,
+    args: &CommandArgs,
     metrics: &TensorMetrics,
 ) -> Result<()> {
     let prefill_started_at = Instant::now();
@@ -246,7 +246,7 @@ fn main() -> Result<()> {
             let mut runner =
                 Llama2Runner::new(&model_cpu, sampler, metrics.clone(), conf.seq_len, true)?;
             println!("loaded model: {}ms", start_time.elapsed().as_millis());
-            run(&args, &mut runner, &metrics)?;
+            run(&mut runner, &args, &metrics)?;
         }
         DeviceType::Wgpu => {
             let device_wgpu = WgpuTensorDevice::new(
@@ -256,7 +256,7 @@ fn main() -> Result<()> {
 
             let mut runner =
                 Llama2Runner::new(&model_wgpu, sampler, metrics.clone(), conf.seq_len, false)?;
-            run(&args, &mut runner, &metrics)?;
+            run(&mut runner, &args, &metrics)?;
         }
     }
 

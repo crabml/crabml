@@ -113,7 +113,7 @@ fn run_chat<T: Tensor>(args: &CommandArgs, runner: &mut Llama2Runner<T>) -> Resu
             }
         };
 
-        let mut chat = Llama2Chat::new(runner, &line);
+        let mut chat = Llama2Chat::new(runner, &line)?;
         let reply_iter = chat.reply()?;
         for token in reply_iter {
             print!("{}", token?);

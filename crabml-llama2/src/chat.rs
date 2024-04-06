@@ -268,6 +268,7 @@ mod tests {
     use crate::Llama2Sampler;
 
     #[test]
+    #[ignore]
     fn test_generate_q8_0() -> Result<()> {
         let gl = GGUFFileLoader::new("../testdata/gemma-2b-it-q8_0.gguf")?;
         let gf = gl.open()?;

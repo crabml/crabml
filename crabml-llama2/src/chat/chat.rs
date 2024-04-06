@@ -1,3 +1,5 @@
+use crabml::error::Error;
+use crabml::error::ErrorKind;
 use crabml::error::Result;
 use crabml::tensor::Tensor;
 
@@ -7,7 +9,7 @@ use crate::llama2::Llama2Runner;
 pub struct Llama2Chat<'a, T: Tensor> {
     inner: &'a mut Llama2Runner<T>,
     prompt: String,
-    stats: Llama2ChatStats,
+    stats: Llama2ChatReplyIteratorStats,
 }
 
 impl<'a, T: Tensor> Llama2Chat<'a, T> {
@@ -20,9 +22,11 @@ impl<'a, T: Tensor> Llama2Chat<'a, T> {
     }
 
     pub fn reply(&mut self) -> Result<Llama2ChatReplyIterator> {
+        let model_name = "gemma";
+        let templated_prompt = wrap_chat_template(model_name, &self.prompt, true)?;
+
         let bos = self.inner.kv_cache_len() == 0;
-        let prompt = wrap_prompt(&self.prompt);
-        let (pos, last_token, token) = self.inner.prefill(&prompt, bos, false)?;
+        let (pos, last_token, token) = self.inner.prefill(&templated_prompt, bos, false)?;
         let iter = self.inner.generate(pos, last_token, token, None);
         let chat_iter = Llama2ChatReplyIterator::new(
             Box::new(iter),
@@ -32,6 +36,7 @@ impl<'a, T: Tensor> Llama2Chat<'a, T> {
         Ok(chat_iter)
     }
 
+    /// the reply might ended with <eos>, but not <end_of_turn>, so we need to append the <end_of_turn>
     pub fn finish(&mut self) -> Result<()> {
         if !self.stats.has_stop_mark {
             self.inner.prefill("<end_of_turn>", false, false)?;
@@ -42,7 +47,7 @@ impl<'a, T: Tensor> Llama2Chat<'a, T> {
 }
 
 #[derive(Debug, Default)]
-struct Llama2ChatStats {
+struct Llama2ChatReplyIteratorStats {
     has_stop_mark: bool,
 }
 
@@ -55,14 +60,14 @@ pub struct Llama2ChatReplyIterator<'a> {
     inner: Box<dyn Iterator<Item = Result<String>> + 'a>,
     stop_mark_matcher: MarkMatcher,
     stop_marks: Vec<String>,
-    stats: &'a mut Llama2ChatStats,
+    stats: &'a mut Llama2ChatReplyIteratorStats,
 }
 
 impl<'a> Llama2ChatReplyIterator<'a> {
     fn new(
         inner: Box<dyn Iterator<Item = Result<String>> + 'a>,
         stop_marks: Vec<String>,
-        stats: &'a mut Llama2ChatStats,
+        stats: &'a mut Llama2ChatReplyIteratorStats,
     ) -> Self {
         Self {
             inner,
@@ -101,11 +106,38 @@ impl<'a> Iterator for Llama2ChatReplyIterator<'a> {
     }
 }
 
-fn wrap_prompt(prompt: &str) -> String {
-    format!(
-        "<start_of_turn>user\n{}<end_of_turn><start_of_turn>model\n",
-        prompt
-    )
+fn wrap_chat_template(
+    tmpl_name: &str,
+    prompt: &str,
+    append_assistant_prefix: bool,
+) -> Result<String> {
+    match tmpl_name {
+        "llama2" => {
+            let assistant_prefix = if append_assistant_prefix {
+                "[INST]"
+            } else {
+                ""
+            };
+            let templated_prompt = format!("[INST] {} [/INST]{}", prompt, assistant_prefix);
+            Ok(templated_prompt)
+        }
+        "gemma" => {
+            let assistant_prefix = if append_assistant_prefix {
+                "<start_of_turn>model\n"
+            } else {
+                ""
+            };
+            let templated_prompt = format!(
+                "<start_of_turn>user\n{}<end_of_turn>{}",
+                prompt, assistant_prefix
+            );
+            Ok(templated_prompt)
+        }
+        _ => Err(Error::new(
+            ErrorKind::ChatTemplateNotFound,
+            format!("chat template for {} is not supported yet", tmpl_name),
+        )),
+    }
 }
 
 #[cfg(test)]

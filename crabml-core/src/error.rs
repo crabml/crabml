@@ -23,6 +23,9 @@ pub enum ErrorKind {
     /// raised on manipulating tensors, like dimension mismatch
     TensorError,
 
+    /// raised on chat template is not found
+    ChatTemplateNotFound,
+
     /// unimplemented yet
     NotImplemented,
 }
@@ -32,6 +35,16 @@ pub struct Error {
     pub kind: ErrorKind,
     pub message: String,
     pub cause: Option<Arc<dyn std::error::Error>>,
+}
+
+impl Error {
+    pub fn new(kind: ErrorKind, message: impl Into<String>) -> Self {
+        Error {
+            kind,
+            message: message.into(),
+            cause: None,
+        }
+    }
 }
 
 impl std::fmt::Display for Error {

@@ -80,6 +80,7 @@ impl<'a> QuantBufQ8_0<'a> {
 
 pub fn quantize_f32_q8_0(data: &[f32]) -> Vec<BlockQ8_0> {
     use std::simd::f32x4;
+    assert!(data.len() % 32 == 0);
 
     let mut bs = Vec::with_capacity(data.len() / 32);
 
@@ -192,6 +193,7 @@ fn vec_dot_q8_0_q8_0_neon(abs: &[BlockQ8_0], bbs: &[BlockQ8_0]) -> f32 {
         }
         result += aarch64::vaddvq_f32(sumv0) + aarch64::vaddvq_f32(sumv1);
 
+        let mut sumv = aarch64::vdupq_n_f32(0.0);
         for i in blocks_rounded..bbs.len() {
             let ab = abs.get_unchecked(i);
             let bb = bbs.get_unchecked(i);
@@ -201,15 +203,15 @@ fn vec_dot_q8_0_q8_0_neon(abs: &[BlockQ8_0], bbs: &[BlockQ8_0]) -> f32 {
             let bv0 = aarch64::vld1q_s8(bb.qs.as_ptr());
             let bv1 = aarch64::vld1q_s8(bb.qs.as_ptr().add(16));
 
-            sumv0 = aarch64::vmlaq_n_f32(
-                sumv0,
+            sumv = aarch64::vmlaq_n_f32(
+                sumv,
                 aarch64::vcvtq_f32_s32(aarch64::vaddq_s32(
                     aarch64::vdotq_s32(zerov, av0, bv0),
                     aarch64::vdotq_s32(zerov, av1, bv1),
                 )),
                 f16::to_f32(ab.d) * f16::to_f32(bb.d),
             );
-            result += aarch64::vaddvq_f32(sumv0);
+            result += aarch64::vaddvq_f32(sumv);
         }
     };
 

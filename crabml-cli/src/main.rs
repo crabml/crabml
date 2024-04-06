@@ -13,6 +13,7 @@ use crabml::backends::wgpu::WgpuTensorDevice;
 use crabml::backends::wgpu::WgpuTensorDeviceOptions;
 use crabml::error::Result;
 use crabml::gguf::GGUFFileLoader;
+use crabml::gguf::GGUFMetadataValueType;
 use crabml::tensor::Tensor;
 use crabml::tensor::TensorMetrics;
 use crabml_llama2::llama2::Llama2Runner;
@@ -226,6 +227,11 @@ fn main() -> Result<()> {
     ));
 
     if args.verbose {
+        for (key, value) in gf.metadata().as_hashmap() {
+            if value.typ() != GGUFMetadataValueType::Array {
+                println!("{}: {:?}", key, value);
+            }
+        }
         for tensor in gf.tensor_infos() {
             println!(
                 "- {} \t\t\t {} \t {:?}",

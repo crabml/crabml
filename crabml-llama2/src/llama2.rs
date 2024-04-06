@@ -108,17 +108,19 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             });
         }
 
+        let base_pos = self.kv_cache_len();
         // this is expected to be eos, make it as the prewarm
         let sampler = self.sampler.clone();
         let mut logits: &mut [f32] = &mut [];
         for (pos, token) in prompt_tokens.iter().enumerate() {
-            logits = self.forward(&[*token], pos)?;
+            logits = self.forward(&[*token], base_pos + pos)?;
         }
         let token = sampler.sample(logits)?;
         let last_token = *prompt_tokens.last().unwrap();
 
         // take the length of kv cache as the next position
         let next_pos = self.kv_cache_len();
+        assert_eq!(next_pos, base_pos + prompt_tokens.len());
         Ok((next_pos, last_token, token))
     }
 

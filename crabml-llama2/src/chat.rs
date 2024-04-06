@@ -31,11 +31,9 @@ impl<'a, T: Tensor> Llama2Chat<'a, T> {
     }
 
     pub fn reply(&mut self) -> Result<Llama2ChatReplyIterator> {
-        let templated_prompt = self.chat_template.apply(
-            &self.prompt,
-            self.system_prompt.as_ref().map(|s| s.as_str()),
-            true,
-        );
+        let templated_prompt =
+            self.chat_template
+                .apply(&self.prompt, self.system_prompt.as_deref(), true);
 
         let bos = self.inner.kv_cache_len() == 0;
         let (pos, last_token, token) = self.inner.prefill(&templated_prompt, bos, false)?;

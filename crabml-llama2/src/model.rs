@@ -249,11 +249,16 @@ impl<'a> CpuLlama2Model<'a> {
             .iter()
             .map(|s| s.to_string())
             .collect::<Vec<_>>();
+        // it seems that .to_vec() will raise an memory issue but it's ok with
+        // iter().cloned().collect(), strange.
+        #[allow(clippy::iter_cloned_collect)]
         let vocab_scores = gf
             .metadata()
             .get_f32_array("tokenizer.ggml.scores")
             .unwrap()
-            .to_vec();
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>();
         let eos_token = gf
             .metadata()
             .get_u32("tokenizer.ggml.eos_token_id")

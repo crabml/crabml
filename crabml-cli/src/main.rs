@@ -4,7 +4,6 @@ use std::io::Write;
 use std::rc::Rc;
 use std::time::Instant;
 
-use clap::Command;
 use clap::Parser;
 use clap::ValueEnum;
 use crabml::backends::cpu::CpuTensorDevice;

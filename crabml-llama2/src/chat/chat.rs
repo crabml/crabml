@@ -23,7 +23,7 @@ impl<'a, T: Tensor> Llama2Chat<'a, T> {
 
     pub fn reply(&mut self) -> Result<Llama2ChatReplyIterator> {
         let model_name = "gemma";
-        let templated_prompt = wrap_chat_template(model_name, &self.prompt, true)?;
+        let templated_prompt = wrap_chat_template(model_name, &self.prompt, None, true)?;
 
         let bos = self.inner.kv_cache_len() == 0;
         let (pos, last_token, token) = self.inner.prefill(&templated_prompt, bos, false)?;
@@ -109,27 +109,29 @@ impl<'a> Iterator for Llama2ChatReplyIterator<'a> {
 fn wrap_chat_template(
     tmpl_name: &str,
     prompt: &str,
+    system_prompt: Option<&str>,
     append_assistant_prefix: bool,
 ) -> Result<String> {
     match tmpl_name {
         "llama2" => {
-            let assistant_prefix = if append_assistant_prefix {
-                "[INST]"
-            } else {
-                ""
-            };
-            let templated_prompt = format!("[INST] {} [/INST]{}", prompt, assistant_prefix);
+            let system_prompt = system_prompt
+                .map(|s| format!("<<SYS>>{}<</SYS>>", s))
+                .unwrap_or("".to_string());
+            let assistant_prefix = append_assistant_prefix.then(|| "[[INST]]").unwrap_or("");
+            let templated_prompt = format!(
+                "[INST] {} {} [/INST]{}",
+                system_prompt, prompt, assistant_prefix
+            );
             Ok(templated_prompt)
         }
         "gemma" => {
-            let assistant_prefix = if append_assistant_prefix {
-                "<start_of_turn>model\n"
-            } else {
-                ""
-            };
+            let system_prompt = system_prompt.map(|s| s).unwrap_or("");
+            let assistant_prefix = append_assistant_prefix
+                .then(|| "<start_of_turn>model\n")
+                .unwrap_or("");
             let templated_prompt = format!(
-                "<start_of_turn>user\n{}<end_of_turn>{}",
-                prompt, assistant_prefix
+                "<start_of_turn>user\n{} {}<end_of_turn>{}",
+                system_prompt, prompt, assistant_prefix
             );
             Ok(templated_prompt)
         }

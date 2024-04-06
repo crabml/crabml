@@ -4,6 +4,7 @@ use std::io::Write;
 use std::rc::Rc;
 use std::time::Instant;
 
+use clap::Command;
 use clap::Parser;
 use clap::ValueEnum;
 use crabml::backends::cpu::CpuTensorDevice;
@@ -52,8 +53,8 @@ struct CommandArgs {
     #[arg(short, long, default_value_t = false)]
     chat: bool,
 
-    /// The prompt
-    prompt: String,
+    /// The prompt, if it's in chat mode, it will play as the system prompt
+    prompt: Option<String>,
 
     #[arg(short = 'D', long, default_value_t = DeviceType::Cpu)]
     device: DeviceType,
@@ -80,7 +81,7 @@ fn run<T: Tensor>(
     metrics: &TensorMetrics,
 ) -> Result<()> {
     if args.chat {
-        run_chat(runner)?;
+        run_chat(runner, args)?;
     } else {
         run_generate(runner, args, metrics)?;
     }
@@ -88,7 +89,7 @@ fn run<T: Tensor>(
     Ok(())
 }
 
-fn run_chat<T: Tensor>(runner: &mut Llama2Runner<T>) -> Result<()> {
+fn run_chat<T: Tensor>(runner: &mut Llama2Runner<T>, args: &CommandArgs) -> Result<()> {
     let mut rl = Editor::<()>::new();
     loop {
         let line = match rl.readline(">> ") {
@@ -130,7 +131,8 @@ fn run_generate<U: Tensor>(
     metrics: &TensorMetrics,
 ) -> Result<()> {
     let prefill_started_at = Instant::now();
-    let (prefill_pos, prev_token, token) = runner.prefill(&args.prompt, true, false)?;
+    let prompt = args.prompt.clone().unwrap_or("".to_string());
+    let (prefill_pos, prev_token, token) = runner.prefill(&prompt, true, false)?;
     let prefill_elapsed = prefill_started_at.elapsed();
     if args.verbose {
         dump_metrics(metrics);
@@ -141,7 +143,7 @@ fn run_generate<U: Tensor>(
     let mut generated_tokens = 0;
     let generation_started_at = Instant::now();
 
-    print!("{}", &args.prompt);
+    print!("{}", &prompt);
     loop {
         let _t = metrics.total_walltime.track();
         match output.next() {

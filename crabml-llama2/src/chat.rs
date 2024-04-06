@@ -7,25 +7,35 @@ use crate::model::ModelArchitecture;
 pub struct Llama2Chat<'a, T: Tensor> {
     inner: &'a mut Llama2Runner<T>,
     prompt: String,
+    system_prompt: Option<String>,
     stats: Llama2ChatReplyIteratorStats,
     chat_template: ChatTemplate,
 }
 
 impl<'a, T: Tensor> Llama2Chat<'a, T> {
-    pub fn new(runner: &'a mut Llama2Runner<T>, prompt: impl Into<String>) -> Result<Self> {
+    pub fn new(
+        runner: &'a mut Llama2Runner<T>,
+        prompt: impl Into<String>,
+        system_prompt: Option<String>,
+    ) -> Result<Self> {
         let model_name = &runner.conf().model_name;
         let model_arch = runner.conf().architecture;
         let chat_template = ChatTemplate::heuristic_guess(model_name, model_arch, "")?;
         Ok(Self {
             inner: runner,
             prompt: prompt.into(),
+            system_prompt,
             stats: Default::default(),
             chat_template,
         })
     }
 
     pub fn reply(&mut self) -> Result<Llama2ChatReplyIterator> {
-        let templated_prompt = self.chat_template.apply(&self.prompt, None, true);
+        let templated_prompt = self.chat_template.apply(
+            &self.prompt,
+            self.system_prompt.as_ref().map(|s| s.as_str()),
+            true,
+        );
 
         let bos = self.inner.kv_cache_len() == 0;
         let (pos, last_token, token) = self.inner.prefill(&templated_prompt, bos, false)?;
@@ -275,7 +285,7 @@ mod tests {
         ));
         let mut runner = Llama2Runner::new(&lm, sampler, TensorMetrics::default(), 200, false)?;
 
-        let mut chat = Llama2Chat::new(&mut runner, "what's 1+1?")?;
+        let mut chat = Llama2Chat::new(&mut runner, "what's 1+1?", None)?;
         let output = chat.reply()?;
         for token in output {
             print!("{}", token?);

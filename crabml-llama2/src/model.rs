@@ -23,6 +23,7 @@ pub enum ModelArchitecture {
 #[derive(Debug, Clone)]
 pub struct Llama2Config {
     pub architecture: ModelArchitecture,
+    pub model_name: String,
     pub embedding_dim: usize, // the dim of embedding
     pub hidden_dim: usize,
     pub n_layers: usize,
@@ -280,6 +281,11 @@ impl<'a> CpuLlama2Model<'a> {
                 });
             }
         };
+        let model_name = gf
+            .metadata()
+            .get_string("general.name")
+            .unwrap()
+            .to_string();
 
         let n_heads = gf
             .metadata()
@@ -321,6 +327,7 @@ impl<'a> CpuLlama2Model<'a> {
 
         Ok(Llama2Config {
             architecture,
+            model_name,
             n_heads,
             n_kv_heads,
             n_layers,

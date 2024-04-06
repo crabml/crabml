@@ -10,20 +10,23 @@ pub struct Llama2Chat<'a, T: Tensor> {
     inner: &'a mut Llama2Runner<T>,
     prompt: String,
     stats: Llama2ChatReplyIteratorStats,
+    chat_template: ChatTemplateKind,
 }
 
 impl<'a, T: Tensor> Llama2Chat<'a, T> {
-    pub fn new(runner: &'a mut Llama2Runner<T>, prompt: &str) -> Self {
-        Self {
+    pub fn new(runner: &'a mut Llama2Runner<T>, prompt: &str) -> Result<Self> {
+        let model_name = &runner.conf().model_name;
+        let chat_template = ChatTemplateKind::heuristic_guess(model_name, "")?;
+        Ok(Self {
             inner: runner,
             prompt: prompt.to_string(),
             stats: Default::default(),
-        }
+            chat_template,
+        })
     }
 
     pub fn reply(&mut self) -> Result<Llama2ChatReplyIterator> {
-        let model_name = "gemma";
-        let templated_prompt = wrap_chat_template(model_name, &self.prompt, None, true)?;
+        let templated_prompt = wrap_chat_template(self.chat_template, &self.prompt, None, true);
 
         let bos = self.inner.kv_cache_len() == 0;
         let (pos, last_token, token) = self.inner.prefill(&templated_prompt, bos, false)?;
@@ -106,39 +109,54 @@ impl<'a> Iterator for Llama2ChatReplyIterator<'a> {
     }
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum ChatTemplateKind {
+    Llama2,
+    Gemma,
+}
+
+impl ChatTemplateKind {
+    fn heuristic_guess(model_name: &str, _chat_tmpl_meta: &str) -> Result<Self> {
+        if model_name.contains("gemma") {
+            Ok(ChatTemplateKind::Gemma)
+        } else if model_name.contains("llama2") {
+            Ok(ChatTemplateKind::Llama2)
+        } else {
+            Err(Error::new(
+                ErrorKind::ChatTemplateNotFound,
+                format!("chat template for {} is not supported yet", model_name),
+            ))
+        }
+    }
+}
+
 fn wrap_chat_template(
-    tmpl_name: &str,
+    tmpl: ChatTemplateKind,
     prompt: &str,
     system_prompt: Option<&str>,
     append_assistant_prefix: bool,
-) -> Result<String> {
-    match tmpl_name {
-        "llama2" => {
+) -> String {
+    match tmpl {
+        ChatTemplateKind::Llama2 => {
             let system_prompt = system_prompt
                 .map(|s| format!("<<SYS>>{}<</SYS>>", s))
                 .unwrap_or("".to_string());
             let assistant_prefix = append_assistant_prefix.then(|| "[[INST]]").unwrap_or("");
-            let templated_prompt = format!(
+            format!(
                 "[INST] {} {} [/INST]{}",
                 system_prompt, prompt, assistant_prefix
-            );
-            Ok(templated_prompt)
+            )
         }
-        "gemma" => {
+        ChatTemplateKind::Gemma => {
             let system_prompt = system_prompt.map(|s| s).unwrap_or("");
             let assistant_prefix = append_assistant_prefix
                 .then(|| "<start_of_turn>model\n")
                 .unwrap_or("");
-            let templated_prompt = format!(
+            format!(
                 "<start_of_turn>user\n{} {}<end_of_turn>{}",
                 system_prompt, prompt, assistant_prefix
-            );
-            Ok(templated_prompt)
+            )
         }
-        _ => Err(Error::new(
-            ErrorKind::ChatTemplateNotFound,
-            format!("chat template for {} is not supported yet", tmpl_name),
-        )),
     }
 }
 
@@ -172,7 +190,7 @@ mod tests {
         ));
         let mut runner = Llama2Runner::new(&lm, sampler, TensorMetrics::default(), 200, false)?;
 
-        let mut chat = Llama2Chat::new(&mut runner, "what's 1+1?");
+        let mut chat = Llama2Chat::new(&mut runner, "what's 1+1?")?;
         let output = chat.reply()?;
         for token in output {
             print!("{}", token?);

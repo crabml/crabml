@@ -88,6 +88,10 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         })
     }
 
+    pub fn conf(&self) -> &Llama2Config {
+        &self.conf
+    }
+
     pub fn kv_cache_len(&self) -> usize {
         self.key_cache[0].as_ref().unwrap().shape()[1]
     }

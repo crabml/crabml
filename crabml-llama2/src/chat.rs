@@ -49,22 +49,22 @@ struct Llama2ChatStats {
 /// tell the iterator is finished by end mark or not.
 pub struct Llama2ChatReplyIterator<'a> {
     inner: Box<dyn Iterator<Item = Result<String>> + 'a>,
-    end_mark_matcher: MarkMatcher,
-    end_mark: String,
+    stop_mark_matcher: MarkMatcher,
+    stop_mark: String,
     stats: &'a mut Llama2ChatStats,
 }
 
 impl<'a> Llama2ChatReplyIterator<'a> {
     fn new(
         inner: Box<dyn Iterator<Item = Result<String>> + 'a>,
-        end_mark: &str,
+        stop_mark: &str,
         stats: &'a mut Llama2ChatStats,
     ) -> Self {
         Self {
             inner,
             stats,
-            end_mark: end_mark.to_string(),
-            end_mark_matcher: MarkMatcher::new(end_mark.to_string()),
+            stop_mark: stop_mark.to_string(),
+            stop_mark_matcher: MarkMatcher::new(stop_mark.to_string()),
         }
     }
 }
@@ -83,12 +83,12 @@ impl<'a> Iterator for Llama2ChatReplyIterator<'a> {
             Some(Ok(token)) => token,
         };
 
-        let token = match self.end_mark_matcher.push(token) {
+        let token = match self.stop_mark_matcher.push(token) {
             None => return Some(Ok("".to_string())),
             Some(token) => token,
         };
 
-        if token == self.end_mark {
+        if token == self.stop_mark {
             self.stats.has_end_mark = true;
             return None;
         }
@@ -105,7 +105,7 @@ enum MarkMatchState {
 struct MarkMatcher {
     state: MarkMatchState,
     buf: String,
-    mark: String,
+    marks: Vec<String>,
 }
 
 impl MarkMatcher {
@@ -113,7 +113,7 @@ impl MarkMatcher {
         Self {
             state: MarkMatchState::Inactive,
             buf: String::new(),
-            mark,
+            marks: vec![mark],
         }
     }
 
@@ -121,13 +121,13 @@ impl MarkMatcher {
         match self.state {
             MarkMatchState::Inactive => {
                 // exact match, do not change state
-                if token == self.mark {
+                if self.marks.contains(&token) {
                     return Some(token);
                 }
 
-                // partial match, change state to active, and push the token
+                // got any partial match, change state to active, and push the token
                 // to the buffer, and wait for the rest of the mark.
-                if self.mark.starts_with(&token) {
+                if self.marks.iter().any(|m| m.starts_with(&token)) {
                     self.state = MarkMatchState::Active;
                     self.buf = token;
                     return None;
@@ -140,13 +140,13 @@ impl MarkMatcher {
                 self.buf.push_str(&token);
 
                 // exact match, change state to inactive, and return the buffer
-                if self.buf == self.mark {
+                if self.marks.contains(&self.buf) {
                     self.state = MarkMatchState::Inactive;
                     return Some(self.buf.clone());
                 }
 
                 // not match anymore, return the buffer directly
-                if !self.mark.starts_with(&self.buf) {
+                if !self.marks.iter().any(|m| m.starts_with(&self.buf)) {
                     self.state = MarkMatchState::Inactive;
                     return Some(self.buf.clone());
                 }

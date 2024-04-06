@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use crabml::backends::cpu::buf::buf_f32::exp_f32_cached;
@@ -8,23 +9,28 @@ use half::f16;
 use rand::Rng;
 
 pub struct Llama2Sampler {
-    prob_index: Vec<(f32, usize)>,
+    prob_index: RefCell<Vec<(f32, usize)>>,
     temperature: f32,
     topp: f32,
     exp_cache: Rc<Vec<f16>>,
 }
 
 impl Llama2Sampler {
-    pub fn new(vocab_size: usize, temperature: f32, topp: f32, exp_cache: Rc<Vec<f16>>) -> Self {
+    pub fn new(
+        vocab_size: usize,
+        temperature: f32,
+        topp: f32,
+        exp_cache: Rc<Vec<f16>>,
+    ) -> Llama2Sampler {
         Self {
-            prob_index: vec![(0.0, 0); vocab_size],
+            prob_index: RefCell::new(vec![(0.0, 0); vocab_size]),
             temperature,
             topp,
             exp_cache,
         }
     }
 
-    pub fn sample(&mut self, logits: &mut [f32]) -> Result<usize> {
+    pub fn sample(&self, logits: &mut [f32]) -> Result<usize> {
         if self.temperature == 0.0 {
             return Self::sample_argmax(logits);
         }
@@ -47,7 +53,7 @@ impl Llama2Sampler {
             Self::sample_multi(logits, coin);
         }
 
-        Self::sample_topp(logits, self.topp, &mut self.prob_index, coin)
+        Self::sample_topp(logits, self.topp, &self.prob_index, coin)
     }
 
     pub fn sample_multi(probs: &[f32], coin: f32) -> usize {
@@ -66,13 +72,14 @@ impl Llama2Sampler {
     pub fn sample_topp(
         probs: &[f32],
         topp: f32,
-        prob_index: &mut [(f32, usize)],
+        prob_index: &RefCell<Vec<(f32, usize)>>,
         coin: f32,
     ) -> Result<usize> {
         // top-p sampling (or "nucleus sampling") samples from the smallest set of
         // tokens that exceed probability topp. This way we never sample tokens that
         // have very low probabilities and are less likely to go "off the rails".
         // coin is a random number in [0, 1), usually from random_f32()
+        let mut prob_index = prob_index.borrow_mut();
 
         let cutoff = (1.0_f32 - topp) / (probs.len() - 1) as f32;
         let mut n0 = 0;

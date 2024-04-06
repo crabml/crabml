@@ -239,6 +239,10 @@ impl<'a> Tensor for CpuTensor<'a> {
         &self.strider
     }
 
+    fn shape(&self) -> &[usize] {
+        self.strider.shape()
+    }
+
     fn concatenate(&mut self, rhs: &Self, axis: usize) -> Result<()> {
         let _t = self.device.metrics.concatenate_walltime.track();
         // (2, 1) + (2, 1) at axis 0 -> (4, 1)

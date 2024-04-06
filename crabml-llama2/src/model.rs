@@ -23,6 +23,7 @@ pub enum ModelArchitecture {
 #[derive(Debug, Clone)]
 pub struct Llama2Config {
     pub architecture: ModelArchitecture,
+    pub model_name: String,
     pub embedding_dim: usize, // the dim of embedding
     pub hidden_dim: usize,
     pub n_layers: usize,
@@ -248,11 +249,16 @@ impl<'a> CpuLlama2Model<'a> {
             .iter()
             .map(|s| s.to_string())
             .collect::<Vec<_>>();
+        // it seems that .to_vec() will raise an memory issue but it's ok with
+        // iter().cloned().collect(), strange.
+        #[allow(clippy::iter_cloned_collect)]
         let vocab_scores = gf
             .metadata()
             .get_f32_array("tokenizer.ggml.scores")
             .unwrap()
-            .to_vec();
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>();
         let eos_token = gf
             .metadata()
             .get_u32("tokenizer.ggml.eos_token_id")
@@ -278,6 +284,11 @@ impl<'a> CpuLlama2Model<'a> {
                 });
             }
         };
+        let model_name = gf
+            .metadata()
+            .get_string("general.name")
+            .unwrap()
+            .to_string();
 
         let n_heads = gf
             .metadata()
@@ -319,6 +330,7 @@ impl<'a> CpuLlama2Model<'a> {
 
         Ok(Llama2Config {
             architecture,
+            model_name,
             n_heads,
             n_kv_heads,
             n_layers,

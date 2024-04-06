@@ -187,6 +187,10 @@ impl Tensor for WgpuTensor {
         &self.strider
     }
 
+    fn shape(&self) -> &[usize] {
+        self.strider.shape()
+    }
+
     fn concatenate(&mut self, rhs: &Self, axis: usize) -> Result<()> {
         if self.shape().len() != 3 {
             return Err((

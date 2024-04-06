@@ -90,6 +90,7 @@ fn run<T: Tensor>(
 }
 
 fn run_chat<T: Tensor>(runner: &mut Llama2Runner<T>, args: &CommandArgs) -> Result<()> {
+    let mut system_prompt = args.prompt.clone();
     let mut rl = Editor::<()>::new();
     loop {
         let line = match rl.readline(">> ") {
@@ -113,7 +114,13 @@ fn run_chat<T: Tensor>(runner: &mut Llama2Runner<T>, args: &CommandArgs) -> Resu
             }
         };
 
-        let mut chat = Llama2Chat::new(runner, &line)?;
+        let mut chat = Llama2Chat::new(runner, &line, system_prompt.clone())?;
+
+        // only put system prompt in the first round
+        if system_prompt.is_some() {
+            system_prompt = None;
+        }
+
         let reply_iter = chat.reply()?;
         for token in reply_iter {
             print!("{}", token?);

@@ -23,8 +23,11 @@ impl<'a, T: Tensor> Llama2Chat<'a, T> {
         let prompt = wrap_prompt(&self.prompt);
         let (pos, last_token, token) = self.inner.prefill(&prompt, bos, false)?;
         let iter = self.inner.generate(pos, last_token, token, None);
-        let chat_iter =
-            Llama2ChatReplyIterator::new(Box::new(iter), "<end_of_turn>", &mut self.stats);
+        let chat_iter = Llama2ChatReplyIterator::new(
+            Box::new(iter),
+            vec!["<end_of_turn>".to_string()],
+            &mut self.stats,
+        );
         Ok(chat_iter)
     }
 
@@ -50,21 +53,21 @@ struct Llama2ChatStats {
 pub struct Llama2ChatReplyIterator<'a> {
     inner: Box<dyn Iterator<Item = Result<String>> + 'a>,
     stop_mark_matcher: MarkMatcher,
-    stop_mark: String,
+    stop_marks: Vec<String>,
     stats: &'a mut Llama2ChatStats,
 }
 
 impl<'a> Llama2ChatReplyIterator<'a> {
     fn new(
         inner: Box<dyn Iterator<Item = Result<String>> + 'a>,
-        stop_mark: &str,
+        stop_marks: Vec<String>,
         stats: &'a mut Llama2ChatStats,
     ) -> Self {
         Self {
             inner,
             stats,
-            stop_mark: stop_mark.to_string(),
-            stop_mark_matcher: MarkMatcher::new(stop_mark.to_string()),
+            stop_marks: stop_marks.clone(),
+            stop_mark_matcher: MarkMatcher::new(stop_marks),
         }
     }
 }
@@ -88,7 +91,7 @@ impl<'a> Iterator for Llama2ChatReplyIterator<'a> {
             Some(token) => token,
         };
 
-        if token == self.stop_mark {
+        if self.stop_marks.contains(&token) {
             self.stats.has_stop_mark = true;
             return None;
         }
@@ -109,11 +112,11 @@ struct MarkMatcher {
 }
 
 impl MarkMatcher {
-    fn new(mark: String) -> Self {
+    fn new(marks: Vec<String>) -> Self {
         Self {
             state: MarkMatchState::Inactive,
             buf: String::new(),
-            marks: vec![mark],
+            marks,
         }
     }
 

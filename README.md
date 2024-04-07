@@ -21,7 +21,8 @@
 - 🦙 Llama
 - 🦙 CodeLlama
 - 🦙 Gemma
-- 🚄 On the way: Mistral MoE, QWen, StarCoder, Llava, and more! 
+- 〽️ Mistral
+- 🚄 On the way: Mistral MoE, Phi, QWen, StarCoder, Llava, and more!
 
 For more information, you can visit [How to Get GGUF Models](https://github.com/crabml/crabml/blob/main/docs/how-to-get-gguf-models.md) to learn how to download the GGUF files you need.
 

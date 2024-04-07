@@ -270,7 +270,7 @@ mod tests {
     #[test]
     #[ignore]
     fn test_generate_q8_0() -> Result<()> {
-        let gl = GGUFFileLoader::new("../testdata/gemma-2b-it-q8_0.gguf")?;
+        let gl = GGUFFileLoader::new("../testdata/gemma-2b-it-q8_0.gguf", false)?;
         let gf = gl.open()?;
 
         let device = CpuTensorDevice::new();

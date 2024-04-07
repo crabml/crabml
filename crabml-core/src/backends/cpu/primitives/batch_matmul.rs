@@ -71,9 +71,9 @@ fn batch_matmul_naive_f32(
 }
 
 fn batch_matmul_simd_f16(
-    bufa: &[f16],     // b x m x k
-    bufb: &[f16],     // b x k x n
-    bufc: &mut [f32], // b x m x n
+    bufa: &[f16],     // bA x m x k
+    bufb: &[f16],     // bB x k x n, bA is multiple of bB
+    bufc: &mut [f32], // bA x m x n
     stride1: &TensorStrider,
     stride2: &TensorStrider,
 ) {
@@ -86,6 +86,10 @@ fn batch_matmul_simd_f16(
         stride2.strides()[2],
     );
 
+    // On Grouped Query Attention, the batch size of A is always a multiple of the batch size of B.
+    // batch demension of A / batch_broadcast = batch dimension of B.
+    let batch_broadcast = a_batch / b_batch;
+
     // matrix A is always row-wise contiguous, matrix B should be contiguous on the K
     // dimension or N dimension.
     // if matrix B is contiguous on the k dimension, then we use vec_dot_f16_f16
@@ -94,19 +98,19 @@ fn batch_matmul_simd_f16(
         bufc.iter_mut().enumerate().for_each(|(i, bufcp)| {
             let ni = i % n;
             let mi = (i - ni) / n % m;
-            let bi = (i - ni - mi * n) / (m * n);
-            let offset_a = bi * (m * k) + mi * k;
-            let offset_b = (bi % b_batch) * stride_bb + ni * stride_bn;
+            let bi_a = (i - ni - mi * n) / (m * n);
+            let offset_a = bi_a * (m * k) + mi * k;
+            let offset_b = (bi_a / batch_broadcast) * stride_bb + ni * stride_bn;
             *bufcp = vec_dot_f16_f16(bufa, offset_a, &bufb[offset_b..offset_b + k], 0, k);
         });
     } else if stride_bn == 1 {
         let mut tmpc = vec![f16::ZERO; a_batch * m * n]; // TODO: avoid allocation
-        for bi in 0..a_batch {
+        for bi_a in 0..a_batch {
             for mi in 0..m {
                 for ki in 0..k {
-                    let offset_a = bi * (m * k) + mi * k + ki;
-                    let offset_b = (bi % b_batch) * stride_bb + ki * stride_bk;
-                    let offset_c = bi * (m * n) + mi * n;
+                    let offset_a = bi_a * (m * k) + mi * k + ki;
+                    let offset_b = (bi_a / batch_broadcast) * stride_bb + ki * stride_bk;
+                    let offset_c = bi_a * (m * n) + mi * n;
                     vec_fma_f16_f16(
                         &bufb[offset_b..offset_b + n],
                         bufa[offset_a],

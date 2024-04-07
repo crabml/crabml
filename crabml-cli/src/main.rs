@@ -124,11 +124,13 @@ fn run_chat<T: Tensor>(runner: &mut Llama2Runner<T>, args: &CommandArgs) -> Resu
             system_prompt = None;
         }
 
+        // TODO: handle the user input while generating
         let reply_iter = chat.reply()?;
         for token in reply_iter {
             print!("{}", token?);
             std::io::stdout().flush().unwrap();
         }
+        chat.finish()?;
         println!();
     }
 
@@ -218,6 +220,8 @@ fn main() -> Result<()> {
         thread_num = num_cpus::get();
     }
 
+    // it may takes a while to open the file if mlock is enabled
+    eprintln!("loading model...");
     let gl = GGUFFileLoader::new(&args.model, args.mlock)?;
     let gf = gl.open()?;
 
@@ -227,6 +231,7 @@ fn main() -> Result<()> {
         thread_num,
         metrics: metrics.clone(),
     });
+
     let model_cpu = CpuLlama2Model::load(&gf, device_cpu.clone())?;
     let conf = model_cpu.conf.clone();
 
@@ -240,11 +245,11 @@ fn main() -> Result<()> {
     if args.verbose {
         for (key, value) in gf.metadata().as_hashmap() {
             if value.typ() != GGUFMetadataValueType::Array {
-                println!("{}: {:?}", key, value);
+                eprintln!("{}: {:?}", key, value);
             }
         }
         for tensor in gf.tensor_infos() {
-            println!(
+            eprintln!(
                 "- {} \t\t\t {} \t {:?}",
                 tensor.name(),
                 tensor.typ(),
@@ -257,7 +262,7 @@ fn main() -> Result<()> {
         DeviceType::Cpu => {
             let mut runner =
                 Llama2Runner::new(&model_cpu, sampler, metrics.clone(), conf.seq_len, true)?;
-            println!("loaded model: {}ms", start_time.elapsed().as_millis());
+            eprintln!("model loaded: {}ms", start_time.elapsed().as_millis());
             run(&mut runner, &args, &metrics)?;
         }
         DeviceType::Wgpu => {

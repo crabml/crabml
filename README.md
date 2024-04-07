@@ -19,6 +19,7 @@
 `crabml` supports the following models in GGUF format:
 
 - 🦙 Llama
+- 🦙 CodeLlama
 - 🦙 Gemma
 - 〽️ Mistral
 - 🚄 On the way: Mistral MoE, Phi, QWen, StarCoder, Llava, and more!

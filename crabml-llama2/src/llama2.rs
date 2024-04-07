@@ -470,7 +470,7 @@ mod tests {
     #[test]
     fn test_generate_f32() -> Result<()> {
         let gl: GGUFFileLoader =
-            GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-f32.gguf")?;
+            GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-f32.gguf", false)?;
         let gf = gl.open()?;
 
         let device = CpuTensorDevice::with_options(CpuTensorDeviceOptions::default());
@@ -495,7 +495,7 @@ mod tests {
 
     #[test]
     fn test_generate_q8_0() -> Result<()> {
-        let gl = GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-q8_0.gguf")?;
+        let gl = GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-q8_0.gguf", false)?;
         let gf = gl.open()?;
 
         let device = CpuTensorDevice::new();
@@ -518,7 +518,7 @@ mod tests {
 
     #[test]
     fn test_generate_q8_0_with_f16_kvcache() -> Result<()> {
-        let gl = GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-q8_0.gguf")?;
+        let gl = GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-q8_0.gguf", false)?;
         let gf = gl.open()?;
 
         let device = CpuTensorDevice::new();
@@ -541,7 +541,7 @@ mod tests {
 
     #[test]
     fn test_generate_f16() -> Result<()> {
-        let gl = GGUFFileLoader::new("../testdata/TinyLLama-v0-5M-F16.gguf")?;
+        let gl = GGUFFileLoader::new("../testdata/TinyLLama-v0-5M-F16.gguf", false)?;
         let gf = gl.open()?;
 
         let device = CpuTensorDevice::new();
@@ -565,7 +565,7 @@ mod tests {
     #[test]
     fn test_generate_f32_gpu() -> Result<()> {
         let gl: GGUFFileLoader =
-            GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-f32.gguf")?;
+            GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-f32.gguf", false)?;
         let gf = gl.open()?;
 
         let device_cpu = CpuTensorDevice::with_options(

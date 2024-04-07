@@ -52,6 +52,10 @@ struct CommandArgs {
     #[arg(short, long, default_value_t = false)]
     chat: bool,
 
+    /// mlock the mmaped file, it can help run faster without swapping
+    #[arg(long, default_value_t = true)]
+    mlock: bool,
+
     /// The prompt, if it's in chat mode, it will play as the system prompt
     prompt: Option<String>,
 
@@ -214,7 +218,7 @@ fn main() -> Result<()> {
         thread_num = num_cpus::get();
     }
 
-    let gl = GGUFFileLoader::new(&args.model)?;
+    let gl = GGUFFileLoader::new(&args.model, args.mlock)?;
     let gf = gl.open()?;
 
     let metrics = TensorMetrics::default();

@@ -163,7 +163,7 @@ mod tests {
 
     #[test]
     fn test_gguf_tokenizer() -> Result<()> {
-        let gf_loader = GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-f32.gguf")?;
+        let gf_loader = GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-f32.gguf", false)?;
         let gf = gf_loader.open()?;
 
         let tokens = gf

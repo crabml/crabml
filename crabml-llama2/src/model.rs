@@ -485,7 +485,7 @@ mod tests {
 
     #[test]
     fn test_load_q8_0() -> Result<()> {
-        let gl = GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-q8_0.gguf")?;
+        let gl = GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-q8_0.gguf", false)?;
         let gf = gl.open()?;
 
         let device = CpuTensorDevice::new();

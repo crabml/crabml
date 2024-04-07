@@ -796,7 +796,7 @@ pub struct GGUFFileLoader {
 }
 
 impl GGUFFileLoader {
-    pub fn new(path: &str) -> Result<Self> {
+    pub fn new(path: &str, mlock: bool) -> Result<Self> {
         let file = File::open(path).map_err(|err| Error {
             kind: ErrorKind::IOError,
             message: format!("failed to open the file: {}", path),
@@ -816,6 +816,13 @@ impl GGUFFileLoader {
                 message: format!("failed to advise the mmap: {}", path),
                 cause: Some(Arc::new(err)),
             })?;
+        if mlock {
+            mmap.lock().map_err(|err| Error {
+                kind: ErrorKind::IOError,
+                message: format!("failed to advise the mmap: {}", path),
+                cause: Some(Arc::new(err)),
+            })?;
+        }
         Ok(Self { mmap })
     }
 
@@ -831,7 +838,7 @@ mod tests {
 
     #[test]
     fn test_load_tensors() -> Result<()> {
-        let loader = GGUFFileLoader::new("../testdata/tinyllamas-stories-260k-f32.gguf")?;
+        let loader = GGUFFileLoader::new("../testdata/tinyllamas-stories-260k-f32.gguf", false)?;
         let gf = loader.open()?;
 
         assert_eq!(gf.tensor_infos.len(), 48);
@@ -908,7 +915,7 @@ mod tests {
 
     #[test]
     fn test_load_metadata() -> Result<()> {
-        let loader = GGUFFileLoader::new("../testdata/tinyllamas-stories-260k-f32.gguf")?;
+        let loader = GGUFFileLoader::new("../testdata/tinyllamas-stories-260k-f32.gguf", false)?;
         let gf = loader.open()?;
         assert_eq!(gf.header.architecture(), "llama");
         assert_eq!(gf.header.alignment(), 32);

@@ -15,7 +15,7 @@ pub struct Llama2Sampler {
     exp_cache: Rc<Vec<f16>>,
 }
 
-type Llama2SamplerRef = Rc<Llama2Sampler>;
+pub type Llama2SamplerRef = Rc<Llama2Sampler>;
 
 impl Llama2Sampler {
     pub fn new(

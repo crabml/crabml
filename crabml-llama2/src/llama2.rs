@@ -477,8 +477,13 @@ mod tests {
         let device = CpuTensorDevice::with_options(CpuTensorDeviceOptions::default());
         let lm = CpuLlama2ModelLoader::new().load(&gf, device.clone())?;
 
-        let sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0, device.exp_cache());
-        let mut runner = Llama2Runner::new(&lm, sampler, TensorMetrics::default(), 200, false)?;
+        let mut runner = Llama2Runner::new(
+            &lm,
+            lm.sampler.clone(),
+            TensorMetrics::default(),
+            200,
+            false,
+        )?;
         let output = runner.prefill_and_generate("Lily is a cat", 31)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
 

@@ -3,6 +3,7 @@ use std::vec;
 
 use crabml::backends::cpu::CpuTensor;
 use crabml::backends::cpu::CpuTensorBuf;
+use crabml::backends::cpu::CpuTensorDeviceOptions;
 use crabml::backends::cpu::CpuTensorDeviceRef;
 use crabml::backends::wgpu::WgpuTensor;
 use crabml::backends::wgpu::WgpuTensorDeviceRef;
@@ -12,7 +13,11 @@ use crabml::error::Result;
 use crabml::gguf::GGMLType;
 use crabml::gguf::GGUFFile;
 use crabml::tensor::Tensor;
+use crabml::tensor::TensorMetrics;
 use crabml::tokenizer::BpeTokenizer;
+
+use crate::sampler::Llama2SamplerRef;
+use crate::Llama2Sampler;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ModelArchitecture {
@@ -76,6 +81,10 @@ pub trait Llama2Model {
     fn weights(&self) -> Rc<Llama2Weights<Self::T>>;
 
     fn tokenizer(&self) -> Rc<BpeTokenizer>;
+
+    fn sampler(&self) -> Llama2SamplerRef;
+
+    fn metrics(&self) -> &TensorMetrics;
 }
 
 pub struct CpuLlama2Model<'a> {
@@ -83,6 +92,8 @@ pub struct CpuLlama2Model<'a> {
     pub weights: Rc<Llama2Weights<CpuTensor<'a>>>,
     pub tokenizer: Rc<BpeTokenizer>,
     pub device: CpuTensorDeviceRef<'a>,
+    pub sampler: Llama2SamplerRef,
+    pub metrics: TensorMetrics,
 }
 
 impl<'a> Llama2Model for &CpuLlama2Model<'a> {
@@ -103,6 +114,14 @@ impl<'a> Llama2Model for &CpuLlama2Model<'a> {
     fn tokenizer(&self) -> Rc<BpeTokenizer> {
         self.tokenizer.clone()
     }
+
+    fn sampler(&self) -> Llama2SamplerRef {
+        self.sampler.clone()
+    }
+
+    fn metrics(&self) -> &TensorMetrics {
+        &self.metrics
+    }
 }
 
 pub struct CpuLlama2ModelLoader {
@@ -110,7 +129,7 @@ pub struct CpuLlama2ModelLoader {
 
     probability: f32,
 
-    thread_num: usize,
+    device_options: CpuTensorDeviceOptions,
 }
 
 impl CpuLlama2ModelLoader {
@@ -119,7 +138,7 @@ impl CpuLlama2ModelLoader {
         Self {
             temprature: 0.0,
             probability: 1.0,
-            thread_num: 2,
+            device_options: CpuTensorDeviceOptions::default(),
         }
     }
 
@@ -134,7 +153,12 @@ impl CpuLlama2ModelLoader {
     }
 
     pub fn with_thread_num(mut self, thread_num: usize) -> Self {
-        self.thread_num = thread_num;
+        self.device_options.thread_num = thread_num;
+        self
+    }
+
+    pub fn with_device_options(mut self, options: CpuTensorDeviceOptions) -> Self {
+        self.device_options = options;
         self
     }
 
@@ -143,14 +167,23 @@ impl CpuLlama2ModelLoader {
         gf: &'a GGUFFile<'a>,
         device: CpuTensorDeviceRef<'a>,
     ) -> Result<CpuLlama2Model<'a>> {
+        let metrics = TensorMetrics::default();
         let conf = self.load_config(gf)?;
         let weights = self.load_weights(gf, conf.n_layers, device.clone())?;
-        let tokenizer = Self::load_tokenizer(gf);
+        let tokenizer = self.load_tokenizer(gf);
+        let sampler = Llama2Sampler::new(
+            conf.vocab_size,
+            self.temprature,
+            self.probability,
+            device.exp_cache(),
+        );
         Ok(CpuLlama2Model {
             conf,
             weights: Rc::new(weights),
             device,
             tokenizer: Rc::new(tokenizer),
+            sampler,
+            metrics,
         })
     }
 
@@ -281,7 +314,7 @@ impl CpuLlama2ModelLoader {
         }
     }
 
-    fn load_tokenizer(gf: &GGUFFile) -> BpeTokenizer {
+    fn load_tokenizer(&self, gf: &GGUFFile) -> BpeTokenizer {
         let vocab = gf
             .metadata()
             .get_string_array("tokenizer.ggml.tokens")
@@ -390,6 +423,8 @@ pub struct WgpuLlama2Model {
     pub weights: Rc<Llama2Weights<WgpuTensor>>,
     pub tokenizer: Rc<BpeTokenizer>,
     pub device: WgpuTensorDeviceRef,
+    pub sampler: Llama2SamplerRef,
+    pub metrics: TensorMetrics,
 }
 
 impl Llama2Model for &WgpuLlama2Model {
@@ -410,6 +445,14 @@ impl Llama2Model for &WgpuLlama2Model {
     fn tokenizer(&self) -> Rc<BpeTokenizer> {
         self.tokenizer.clone()
     }
+
+    fn sampler(&self) -> Llama2SamplerRef {
+        self.sampler.clone()
+    }
+
+    fn metrics(&self) -> &TensorMetrics {
+        &self.metrics
+    }
 }
 
 impl WgpuLlama2Model {
@@ -419,6 +462,8 @@ impl WgpuLlama2Model {
             conf: cpu_model.conf.clone(),
             weights: Rc::new(weights),
             tokenizer: cpu_model.tokenizer.clone(),
+            sampler: cpu_model.sampler.clone(),
+            metrics: cpu_model.metrics.clone(),
             device,
         })
     }
@@ -522,7 +567,6 @@ mod tests {
     use crabml::tensor::Tensor;
 
     use crate::model::CpuLlama2ModelLoader;
-    use crate::CpuLlama2Model;
 
     #[test]
     fn test_load_q8_0() -> Result<()> {

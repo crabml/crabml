@@ -133,6 +133,12 @@ pub struct CpuLlama2ModelLoader {
     device_options: CpuTensorDeviceOptions,
 }
 
+impl Default for CpuLlama2ModelLoader {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CpuLlama2ModelLoader {
     pub fn new() -> Self {
         // this default value is suiteable for running tests
@@ -558,7 +564,6 @@ impl WgpuLlama2Model {
 
 #[cfg(test)]
 mod tests {
-    use crabml::backends::cpu::CpuTensorDevice;
     use crabml::error::Result;
     use crabml::gguf::GGMLType;
     use crabml::gguf::GGUFFileLoader;

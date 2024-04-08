@@ -464,6 +464,7 @@ mod tests {
     use crabml::gguf::GGUFFileLoader;
 
     use super::*;
+    use crate::model::CpuLlama2ModelLoader;
     use crate::CpuLlama2Model;
     use crate::WgpuLlama2Model;
 
@@ -474,7 +475,7 @@ mod tests {
         let gf = gl.open()?;
 
         let device = CpuTensorDevice::with_options(CpuTensorDeviceOptions::default());
-        let lm = CpuLlama2Model::load(&gf, device.clone())?;
+        let lm = CpuLlama2ModelLoader::new().load(&gf, device.clone())?;
 
         let sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0, device.exp_cache());
         let mut runner = Llama2Runner::new(&lm, sampler, TensorMetrics::default(), 200, false)?;
@@ -494,7 +495,7 @@ mod tests {
         let gf = gl.open()?;
 
         let device = CpuTensorDevice::new();
-        let lm = CpuLlama2Model::load(&gf, device.clone())?;
+        let lm = CpuLlama2ModelLoader::new().load(&gf, device.clone())?;
         assert_eq!(lm.conf.rope_dim, Some(48));
         assert_eq!(lm.conf.head_size(), 48);
 
@@ -512,7 +513,7 @@ mod tests {
         let gf = gl.open()?;
 
         let device = CpuTensorDevice::new();
-        let lm = CpuLlama2Model::load(&gf, device.clone())?;
+        let lm = CpuLlama2ModelLoader::new().load(&gf, device.clone())?;
         assert_eq!(lm.conf.rope_dim, Some(48));
         assert_eq!(lm.conf.head_size(), 48);
 
@@ -530,7 +531,7 @@ mod tests {
         let gf = gl.open()?;
 
         let device = CpuTensorDevice::new();
-        let lm = CpuLlama2Model::load(&gf, device.clone())?;
+        let lm = CpuLlama2ModelLoader::new().load(&gf, device.clone())?;
         assert_eq!(lm.conf.rope_dim, Some(4));
         assert_eq!(lm.conf.head_size(), 4);
 
@@ -551,7 +552,7 @@ mod tests {
         let device_cpu = CpuTensorDevice::with_options(
             CpuTensorDeviceOptions::default().with_debug_named_tensors(true),
         );
-        let model_cpu = CpuLlama2Model::load(&gf, device_cpu.clone())?;
+        let model_cpu = CpuLlama2ModelLoader::new().load(&gf, device_cpu.clone())?;
 
         let device_wgpu = WgpuTensorDevice::new(
             WgpuTensorDeviceOptions::new()

@@ -255,8 +255,6 @@ impl ChatTemplate {
 
 #[cfg(test)]
 mod tests {
-    use std::rc::Rc;
-
     use crabml::backends::cpu::CpuTensorDevice;
     use crabml::error::Result;
     use crabml::gguf::GGUFFileLoader;
@@ -264,7 +262,7 @@ mod tests {
 
     use crate::chat::Llama2Chat;
     use crate::llama2::Llama2Runner;
-    use crate::CpuLlama2Model;
+    use crate::model::CpuLlama2ModelLoader;
     use crate::Llama2Sampler;
 
     #[test]
@@ -274,7 +272,7 @@ mod tests {
         let gf = gl.open()?;
 
         let device = CpuTensorDevice::new();
-        let lm = CpuLlama2Model::load(&gf, device.clone())?;
+        let lm = CpuLlama2ModelLoader::new().load(&gf, device.clone())?;
 
         let sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0, device.exp_cache());
         let mut runner = Llama2Runner::new(&lm, sampler, TensorMetrics::default(), 200, false)?;

@@ -1,7 +1,6 @@
 extern crate jemallocator;
 
 use std::io::Write;
-use std::rc::Rc;
 use std::time::Instant;
 
 use clap::Parser;
@@ -16,8 +15,8 @@ use crabml::gguf::GGUFMetadataValueType;
 use crabml::tensor::Tensor;
 use crabml::tensor::TensorMetrics;
 use crabml_llama2::llama2::Llama2Runner;
+use crabml_llama2::model::CpuLlama2ModelLoader;
 use crabml_llama2::sampler::Llama2Sampler;
-use crabml_llama2::CpuLlama2Model;
 use crabml_llama2::Llama2Chat;
 use crabml_llama2::WgpuLlama2Model;
 use rustyline::error::ReadlineError;
@@ -232,7 +231,7 @@ fn main() -> Result<()> {
         metrics: metrics.clone(),
     });
 
-    let model_cpu = CpuLlama2Model::load(&gf, device_cpu.clone())?;
+    let model_cpu = CpuLlama2ModelLoader::new().load(&gf, device_cpu.clone())?;
     let conf = model_cpu.conf.clone();
 
     let sampler = Llama2Sampler::new(

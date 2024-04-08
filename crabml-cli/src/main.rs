@@ -8,6 +8,7 @@ use clap::ValueEnum;
 use crabml::backends::wgpu::WgpuTensorDevice;
 use crabml::backends::wgpu::WgpuTensorDeviceOptions;
 use crabml::error::Result;
+use crabml::gguf::GGUFFile;
 use crabml::gguf::GGUFFileLoader;
 use crabml::gguf::GGUFMetadataValueType;
 use crabml::tensor::Tensor;
@@ -200,6 +201,22 @@ fn dump_metrics(metrics: &TensorMetrics) {
     );
 }
 
+fn dump_gguf_metadata(gf: &GGUFFile) {
+    for (key, value) in gf.metadata().as_hashmap() {
+        if value.typ() != GGUFMetadataValueType::Array {
+            eprintln!("{}: {:?}", key, value);
+        }
+    }
+    for tensor in gf.tensor_infos() {
+        eprintln!(
+            "- {} \t\t\t {} \t {:?}",
+            tensor.name(),
+            tensor.typ(),
+            tensor.dimensions()
+        );
+    }
+}
+
 fn main() -> Result<()> {
     let args = CommandArgs::parse();
     let start_time = Instant::now();
@@ -215,19 +232,7 @@ fn main() -> Result<()> {
     let gf = gl.open()?;
 
     if args.verbose {
-        for (key, value) in gf.metadata().as_hashmap() {
-            if value.typ() != GGUFMetadataValueType::Array {
-                eprintln!("{}: {:?}", key, value);
-            }
-        }
-        for tensor in gf.tensor_infos() {
-            eprintln!(
-                "- {} \t\t\t {} \t {:?}",
-                tensor.name(),
-                tensor.typ(),
-                tensor.dimensions()
-            );
-        }
+        dump_gguf_metadata(&gf);
     }
 
     let model_cpu = CpuLlama2ModelLoader::new()

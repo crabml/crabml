@@ -3,6 +3,7 @@ use std::vec;
 
 use crabml::backends::cpu::CpuTensor;
 use crabml::backends::cpu::CpuTensorBuf;
+use crabml::backends::cpu::CpuTensorDevice;
 use crabml::backends::cpu::CpuTensorDeviceOptions;
 use crabml::backends::cpu::CpuTensorDeviceRef;
 use crabml::backends::wgpu::WgpuTensor;
@@ -137,7 +138,7 @@ impl CpuLlama2ModelLoader {
         // this default value is suiteable for running tests
         Self {
             temprature: 0.0,
-            probability: 1.0,
+            probability: 0.0,
             device_options: CpuTensorDeviceOptions::default(),
         }
     }
@@ -162,12 +163,9 @@ impl CpuLlama2ModelLoader {
         self
     }
 
-    pub fn load<'a>(
-        &self,
-        gf: &'a GGUFFile<'a>,
-        device: CpuTensorDeviceRef<'a>,
-    ) -> Result<CpuLlama2Model<'a>> {
-        let metrics = TensorMetrics::default();
+    pub fn load<'a>(self, gf: &'a GGUFFile<'a>) -> Result<CpuLlama2Model<'a>> {
+        let device = CpuTensorDevice::with_options(self.device_options.clone());
+        let metrics = device.metrics().clone();
         let conf = self.load_config(gf)?;
         let weights = self.load_weights(gf, conf.n_layers, device.clone())?;
         let tokenizer = self.load_tokenizer(gf);
@@ -573,8 +571,7 @@ mod tests {
         let gl = GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-q8_0.gguf", false)?;
         let gf = gl.open()?;
 
-        let device = CpuTensorDevice::new();
-        let lm = CpuLlama2ModelLoader::new().load(&gf, device)?;
+        let lm = CpuLlama2ModelLoader::new().load(&gf)?;
         assert_eq!(lm.conf.vocab_size, 32000);
         assert_eq!(lm.weights.wk[0].dtype(), GGMLType::Q8_0);
         assert_eq!(lm.weights.rms_att_weight[0].dtype(), GGMLType::F32);

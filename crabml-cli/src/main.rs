@@ -235,12 +235,12 @@ fn main() -> Result<()> {
     let model_cpu = CpuLlama2Model::load(&gf, device_cpu.clone())?;
     let conf = model_cpu.conf.clone();
 
-    let sampler = Rc::new(Llama2Sampler::new(
+    let sampler = Llama2Sampler::new(
         conf.vocab_size,
         args.temperature,
         args.probability,
         device_cpu.exp_cache(),
-    ));
+    );
 
     if args.verbose {
         for (key, value) in gf.metadata().as_hashmap() {

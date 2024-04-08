@@ -276,12 +276,7 @@ mod tests {
         let device = CpuTensorDevice::new();
         let lm = CpuLlama2Model::load(&gf, device.clone())?;
 
-        let sampler = Rc::new(Llama2Sampler::new(
-            lm.conf.vocab_size,
-            0.0,
-            0.0,
-            device.exp_cache(),
-        ));
+        let sampler = Llama2Sampler::new(lm.conf.vocab_size, 0.0, 0.0, device.exp_cache());
         let mut runner = Llama2Runner::new(&lm, sampler, TensorMetrics::default(), 200, false)?;
 
         let mut chat = Llama2Chat::new(&mut runner, "what's 1+1?", None)?;

@@ -151,8 +151,8 @@ pub fn vec_dot_q4_1_q8_1_neon(abs: &[BlockQ4_1], bbs: &[BlockQ8_1]) -> f32 {
 
             let m4b = vdupq_n_u8(0x0F);
 
-            let v0_0 = vdu1q_u8(ab0.qs);
-            let v0_1 = vdu1q_u8(ab1.qs);
+            let v0_0 = vdu1q_u8(ab0.qs.as_ptr());
+            let v0_1 = vdu1q_u8(ab1.qs.as_ptr());
 
             // 4-bit -> 8-bit
             let v0_0l = vreinterpretq_s8_u8(vandq_u8(v0_0, m4b));

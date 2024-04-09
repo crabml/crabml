@@ -1,3 +1,4 @@
+use std::cell::OnceCell;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -5,6 +6,7 @@ use std::sync::Mutex;
 
 use half::f16;
 
+use super::primitives::gelu_single;
 use super::thread_pool::ThreadPool;
 use super::CpuTensor;
 use crate::tensor::TensorMetrics;
@@ -53,6 +55,7 @@ pub struct CpuTensorDevice<'a> {
     pub(crate) metrics: TensorMetrics,
     pub(crate) debug_tensors: RefCell<HashMap<String, Vec<f32>>>,
     pub(crate) exp_cache: Rc<Vec<f16>>,
+    pub(crate) gelu_cache: OnceCell<Vec<f16>>,
     pub(crate) thread_pool: Mutex<ThreadPool>,
     _phantom: std::marker::PhantomData<&'a ()>,
 }
@@ -74,6 +77,7 @@ impl<'a> CpuTensorDevice<'a> {
             thread_pool,
             debug_tensors: RefCell::new(HashMap::new()),
             exp_cache: Rc::new(Self::init_exp_cache()),
+            gelu_cache: OnceCell::new(),
             _phantom: std::marker::PhantomData,
         };
         Rc::new(device)
@@ -99,11 +103,24 @@ impl<'a> CpuTensorDevice<'a> {
         self.exp_cache.clone()
     }
 
+    pub fn gelu_cache(&self) -> &Vec<f16> {
+        self.gelu_cache.get_or_init(|| Self::init_gelu_cache())
+    }
+
     fn init_exp_cache() -> Vec<f16> {
         (0..65536)
             .map(|x| {
                 let exp32 = f16::from_bits(x as u16).to_f32().exp();
                 f16::from_f32(exp32)
+            })
+            .collect()
+    }
+
+    fn init_gelu_cache() -> Vec<f16> {
+        (0..65536)
+            .map(|x| {
+                let v = f16::from_bits(x as u16).to_f32();
+                f16::from_f32(gelu_single(v))
             })
             .collect()
     }

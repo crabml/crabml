@@ -50,7 +50,7 @@ struct CommandArgs {
     chat: bool,
 
     /// mlock the mmaped file, it can help run faster without swapping
-    #[arg(long, default_value_t = true)]
+    #[arg(long, default_value_t = false)]
     mlock: bool,
 
     /// The prompt, if it's in chat mode, it will play as the system prompt

@@ -118,6 +118,90 @@ pub fn quantize_f32_q4_0(data: &[f32]) -> Vec<BlockQ4_0> {
 }
 
 pub fn vec_dot_q4_0_q8_0(abs: &[BlockQ4_0], bbs: &[BlockQ8_0]) -> f32 {
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    {
+        vec_dot_q4_0_q8_0_neon(abs, bbs)
+    }
+
+    #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+    {
+        vec_dot_q4_0_q8_0_fallback(abs, bbs)
+    }
+}
+
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+pub fn vec_dot_q4_0_q8_0_neon(abs: &[BlockQ4_0], bbs: &[BlockQ8_0]) -> f32 {
+    use std::arch::aarch64::*;
+    let n_blocks = abs.len();
+    let n_blocks_rounded = n_blocks - n_blocks % 2;
+
+    let mut sumf = unsafe {
+        let mut sumv0 = vdupq_n_f32(0.0);
+        let mut sumv1 = vdupq_n_f32(0.0);
+        let zerov = vdupq_n_s32(0);
+
+        for i in (0..n_blocks_rounded).step_by(2) {
+            let ab0 = abs.get_unchecked(i);
+            let ab1 = abs.get_unchecked(i + 1);
+            let bb0 = bbs.get_unchecked(i);
+            let bb1 = bbs.get_unchecked(i + 1);
+
+            // one q4_0 block can be loaded in a single v1d1q_u8 as a u8x16 register
+            let av0_orig = vld1q_u8(ab0.qs.as_ptr());
+            let av1_orig = vld1q_u8(ab1.qs.as_ptr());
+
+            // convert each u8x16 to two i16x8
+            // in each q4_0 block, the lower 4 bits of the 16 elems makes the first 16 values,
+            // and the higher 4 bits makes the second 16 values.
+            let mask4bl = vdupq_n_u8(0x0F);
+            let eightv = vdupq_n_s8(8);
+            let av00 = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(av0_orig, mask4bl)), eightv);
+            let av01 = vsubq_s8(vreinterpretq_s8_u8(vshrq_n_u8(av0_orig, 4)), eightv);
+            let av10 = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(av1_orig, mask4bl)), eightv);
+            let av11 = vsubq_s8(vreinterpretq_s8_u8(vshrq_n_u8(av1_orig, 4)), eightv);
+
+            // load bv
+            let bv00 = vld1q_s8(bb0.qs.as_ptr());
+            let bv01 = vld1q_s8(bb0.qs.as_ptr().add(16));
+            let bv10 = vld1q_s8(bb1.qs.as_ptr());
+            let bv11 = vld1q_s8(bb1.qs.as_ptr().add(16));
+
+            // same as q8_0
+            sumv0 = vmlaq_n_f32(
+                sumv0,
+                vcvtq_f32_s32(vaddq_s32(
+                    vdotq_s32(zerov, av00, bv00),
+                    vdotq_s32(zerov, av01, bv01),
+                )),
+                f16::to_f32(ab0.d) * f16::to_f32(bb0.d),
+            );
+            sumv1 = vmlaq_n_f32(
+                sumv1,
+                vcvtq_f32_s32(vaddq_s32(
+                    vdotq_s32(zerov, av10, bv10),
+                    vdotq_s32(zerov, av11, bv11),
+                )),
+                f16::to_f32(ab1.d) * f16::to_f32(bb1.d),
+            );
+        }
+        vaddvq_f32(sumv0) + vaddvq_f32(sumv1)
+    };
+
+    // handle the remaining blocks, it seems that only tinyllamas has the case where n_blocks % 2 != 0
+    for i in n_blocks_rounded..n_blocks {
+        let mut sumi = 0;
+        for j in 0..16 {
+            let v0 = (abs[i].qs[j] & 0x0F) as i32 - 8;
+            let v1 = (abs[i].qs[j] >> 4) as i32 - 8;
+            sumi += v0 * bbs[i].qs[j] as i32 + v1 * bbs[i].qs[j + 16] as i32
+        }
+        sumf += sumi as f32 * f16::to_f32(abs[i].d) * f16::to_f32(bbs[i].d);
+    }
+    sumf
+}
+
+#[allow(unused)]
+pub fn vec_dot_q4_0_q8_0_fallback(abs: &[BlockQ4_0], bbs: &[BlockQ8_0]) -> f32 {
     let mut sumf: f32 = 0f32;
     for i in 0..bbs.len() {
         let mut sumi: i32 = 0;

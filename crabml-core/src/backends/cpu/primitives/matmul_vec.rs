@@ -31,8 +31,13 @@ fn gemv_dense_2d_2d(
     m: usize,
     k: usize,
 ) {
+    let metrics = device.metrics.clone();
     let bufc = bufc.as_f32_mut();
-    let bufb = &bufb.quantize(bufa.vec_dot_rhs_dtype()).unwrap();
+
+    let bufb = &{
+        let _t = metrics.matmul_quantize_walltime.track();
+        bufb.quantize(bufa.vec_dot_rhs_dtype()).unwrap()
+    };
     let thread_num = device.thread_num();
 
     // each thread handles 1/thread_num of the elements in the C matrix. thread_num is allowed
@@ -40,7 +45,6 @@ fn gemv_dense_2d_2d(
     let work_len = bufc.len() / thread_num;
     let chunk_len = 16;
 
-    let metrics = device.metrics.clone();
     let _t = metrics.matmul_walltime.track();
 
     // track walltime of each thread, we can compare the longest one with total walltime, the difference
@@ -71,13 +75,4 @@ fn gemv_dense_2d_2d(
                 });
         });
     }
-
-    let max_thread_nanos = work_walltimes
-        .iter()
-        .map(|m| m.as_nanos())
-        .max_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap_or_default();
-    metrics
-        .matmul_non_compute_walltime
-        .increment_nanos(total_walltime.as_nanos() - max_thread_nanos);
 }

@@ -3,6 +3,8 @@ use std::vec;
 
 use crabml::backends::cpu::CpuTensor;
 use crabml::backends::cpu::CpuTensorBuf;
+use crabml::backends::cpu::CpuTensorDevice;
+use crabml::backends::cpu::CpuTensorDeviceOptions;
 use crabml::backends::cpu::CpuTensorDeviceRef;
 use crabml::backends::wgpu::WgpuTensor;
 use crabml::backends::wgpu::WgpuTensorDeviceRef;
@@ -12,7 +14,11 @@ use crabml::error::Result;
 use crabml::gguf::GGMLType;
 use crabml::gguf::GGUFFile;
 use crabml::tensor::Tensor;
+use crabml::tensor::TensorMetrics;
 use crabml::tokenizer::BpeTokenizer;
+
+use crate::sampler::Llama2SamplerRef;
+use crate::Llama2Sampler;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ModelArchitecture {
@@ -76,6 +82,10 @@ pub trait Llama2Model {
     fn weights(&self) -> Rc<Llama2Weights<Self::T>>;
 
     fn tokenizer(&self) -> Rc<BpeTokenizer>;
+
+    fn sampler(&self) -> Llama2SamplerRef;
+
+    fn metrics(&self) -> &TensorMetrics;
 }
 
 pub struct CpuLlama2Model<'a> {
@@ -83,6 +93,8 @@ pub struct CpuLlama2Model<'a> {
     pub weights: Rc<Llama2Weights<CpuTensor<'a>>>,
     pub tokenizer: Rc<BpeTokenizer>,
     pub device: CpuTensorDeviceRef<'a>,
+    pub sampler: Llama2SamplerRef,
+    pub metrics: TensorMetrics,
 }
 
 impl<'a> Llama2Model for &CpuLlama2Model<'a> {
@@ -103,28 +115,90 @@ impl<'a> Llama2Model for &CpuLlama2Model<'a> {
     fn tokenizer(&self) -> Rc<BpeTokenizer> {
         self.tokenizer.clone()
     }
+
+    fn sampler(&self) -> Llama2SamplerRef {
+        self.sampler.clone()
+    }
+
+    fn metrics(&self) -> &TensorMetrics {
+        &self.metrics
+    }
 }
 
-impl<'a> CpuLlama2Model<'a> {
-    pub fn load(gf: &'a GGUFFile<'a>, device: CpuTensorDeviceRef<'a>) -> Result<Self> {
-        let conf = Self::load_config(gf)?;
-        let weights = Self::load_weights(gf, conf.n_layers, device.clone())?;
-        let tokenizer = Self::load_tokenizer(gf);
-        Ok(Self {
+pub struct CpuLlama2ModelLoader {
+    temprature: f32,
+
+    probability: f32,
+
+    device_options: CpuTensorDeviceOptions,
+}
+
+impl Default for CpuLlama2ModelLoader {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl CpuLlama2ModelLoader {
+    pub fn new() -> Self {
+        // this default value is suiteable for running tests
+        Self {
+            temprature: 0.0,
+            probability: 0.0,
+            device_options: CpuTensorDeviceOptions::default(),
+        }
+    }
+
+    pub fn with_temperature(mut self, temperature: f32) -> Self {
+        self.temprature = temperature;
+        self
+    }
+
+    pub fn with_probability(mut self, probability: f32) -> Self {
+        self.probability = probability;
+        self
+    }
+
+    pub fn with_thread_num(mut self, thread_num: usize) -> Self {
+        self.device_options.thread_num = thread_num;
+        self
+    }
+
+    pub fn with_device_options(mut self, options: CpuTensorDeviceOptions) -> Self {
+        self.device_options = options;
+        self
+    }
+
+    pub fn load<'a>(self, gf: &'a GGUFFile<'a>) -> Result<CpuLlama2Model<'a>> {
+        let device = CpuTensorDevice::with_options(self.device_options.clone());
+        let metrics = device.metrics().clone();
+        let conf = self.load_config(gf)?;
+        let weights = self.load_weights(gf, conf.n_layers, device.clone())?;
+        let tokenizer = self.load_tokenizer(gf);
+        let sampler = Llama2Sampler::new(
+            conf.vocab_size,
+            self.temprature,
+            self.probability,
+            device.exp_cache(),
+        );
+        Ok(CpuLlama2Model {
             conf,
             weights: Rc::new(weights),
             device,
             tokenizer: Rc::new(tokenizer),
+            sampler,
+            metrics,
         })
     }
 
-    fn load_weights(
+    fn load_weights<'a>(
+        &self,
         gf: &'a GGUFFile<'a>,
         n_layers: usize,
         device: CpuTensorDeviceRef<'a>,
     ) -> Result<Llama2Weights<CpuTensor<'a>>> {
         // [64 (dim), 512 (vocab_size)]
-        let token_embed = Self::load_tensor(gf, "token_embd.weight", device.clone())?;
+        let token_embed = self.load_tensor(gf, "token_embd.weight", device.clone())?;
         let mut wq = vec![];
         let mut wk = vec![];
         let mut wv = vec![];
@@ -135,44 +209,44 @@ impl<'a> CpuLlama2Model<'a> {
         let mut rms_att_weight = vec![];
         let mut rms_ffn_weight = vec![];
         for layer in 0..n_layers {
-            wq.push(Self::load_tensor(
+            wq.push(self.load_tensor(
                 gf,
                 &format!("blk.{}.attn_q.weight", layer),
                 device.clone(),
             )?);
-            wk.push(Self::load_tensor(
+            wk.push(self.load_tensor(
                 gf,
                 &format!("blk.{}.attn_k.weight", layer),
                 device.clone(),
             )?);
-            wv.push(Self::load_tensor(
+            wv.push(self.load_tensor(
                 gf,
                 &format!("blk.{}.attn_v.weight", layer),
                 device.clone(),
             )?);
-            wo.push(Self::load_tensor(
+            wo.push(self.load_tensor(
                 gf,
                 &format!("blk.{}.attn_output.weight", layer),
                 device.clone(),
             )?);
             // (hidden_dim:172, embedding_dim:64)
-            ffn_gate_weight.push(Self::load_tensor(
+            ffn_gate_weight.push(self.load_tensor(
                 gf,
                 &format!("blk.{}.ffn_gate.weight", layer),
                 device.clone(),
             )?);
-            ffn_down_weight.push(Self::load_tensor(
+            ffn_down_weight.push(self.load_tensor(
                 gf,
                 &format!("blk.{}.ffn_down.weight", layer),
                 device.clone(),
             )?);
-            ffn_up_weight.push(Self::load_tensor(
+            ffn_up_weight.push(self.load_tensor(
                 gf,
                 &format!("blk.{}.ffn_up.weight", layer),
                 device.clone(),
             )?);
             rms_att_weight.push(
-                Self::load_tensor(
+                self.load_tensor(
                     gf,
                     &format!("blk.{}.attn_norm.weight", layer),
                     device.clone(),
@@ -180,7 +254,7 @@ impl<'a> CpuLlama2Model<'a> {
                 .dequantize(GGMLType::F32)?,
             );
             rms_ffn_weight.push(
-                Self::load_tensor(
+                self.load_tensor(
                     gf,
                     &format!("blk.{}.ffn_norm.weight", layer),
                     device.clone(),
@@ -188,11 +262,12 @@ impl<'a> CpuLlama2Model<'a> {
                 .dequantize(GGMLType::F32)?,
             );
         }
-        let rms_final_weight = Self::load_tensor(gf, "output_norm.weight", device.clone())?
+        let rms_final_weight = self
+            .load_tensor(gf, "output_norm.weight", device.clone())?
             .dequantize(GGMLType::F32)?;
 
         // in Gemma, the output weight is None
-        let output_weight = Self::load_tensor_optional(gf, "output.weight", device)?;
+        let output_weight = self.load_tensor_optional(gf, "output.weight", device)?;
 
         Ok(Llama2Weights {
             token_embed,
@@ -210,7 +285,8 @@ impl<'a> CpuLlama2Model<'a> {
         })
     }
 
-    pub(crate) fn load_tensor_optional(
+    pub(crate) fn load_tensor_optional<'a>(
+        &self,
         gf: &'a GGUFFile<'a>,
         name: &str,
         device: CpuTensorDeviceRef<'a>,
@@ -226,12 +302,13 @@ impl<'a> CpuLlama2Model<'a> {
         Ok(Some(tensor))
     }
 
-    pub(crate) fn load_tensor(
+    pub(crate) fn load_tensor<'a>(
+        &self,
         gf: &'a GGUFFile<'a>,
         name: &str,
         device: CpuTensorDeviceRef<'a>,
     ) -> Result<CpuTensor<'a>> {
-        match Self::load_tensor_optional(gf, name, device)? {
+        match self.load_tensor_optional(gf, name, device)? {
             None => Err(Error {
                 kind: ErrorKind::TensorNotFound,
                 message: format!("failed to find tensor {}", name),
@@ -241,7 +318,7 @@ impl<'a> CpuLlama2Model<'a> {
         }
     }
 
-    fn load_tokenizer(gf: &GGUFFile) -> BpeTokenizer {
+    fn load_tokenizer(&self, gf: &GGUFFile) -> BpeTokenizer {
         let vocab = gf
             .metadata()
             .get_string_array("tokenizer.ggml.tokens")
@@ -270,7 +347,7 @@ impl<'a> CpuLlama2Model<'a> {
         BpeTokenizer::new(vocab, vocab_scores, bos_token, eos_token)
     }
 
-    fn load_config(gf: &GGUFFile) -> Result<Llama2Config> {
+    fn load_config(&self, gf: &GGUFFile) -> Result<Llama2Config> {
         // let rope_dims = gf.metadata().get_u32("llama.rope.dimension_count").unwrap();
         let (architecture, prefix) = match gf.metadata().get_string("general.architecture").unwrap()
         {
@@ -350,6 +427,8 @@ pub struct WgpuLlama2Model {
     pub weights: Rc<Llama2Weights<WgpuTensor>>,
     pub tokenizer: Rc<BpeTokenizer>,
     pub device: WgpuTensorDeviceRef,
+    pub sampler: Llama2SamplerRef,
+    pub metrics: TensorMetrics,
 }
 
 impl Llama2Model for &WgpuLlama2Model {
@@ -370,6 +449,14 @@ impl Llama2Model for &WgpuLlama2Model {
     fn tokenizer(&self) -> Rc<BpeTokenizer> {
         self.tokenizer.clone()
     }
+
+    fn sampler(&self) -> Llama2SamplerRef {
+        self.sampler.clone()
+    }
+
+    fn metrics(&self) -> &TensorMetrics {
+        &self.metrics
+    }
 }
 
 impl WgpuLlama2Model {
@@ -379,6 +466,8 @@ impl WgpuLlama2Model {
             conf: cpu_model.conf.clone(),
             weights: Rc::new(weights),
             tokenizer: cpu_model.tokenizer.clone(),
+            sampler: cpu_model.sampler.clone(),
+            metrics: cpu_model.metrics.clone(),
             device,
         })
     }
@@ -475,21 +564,19 @@ impl WgpuLlama2Model {
 
 #[cfg(test)]
 mod tests {
-    use crabml::backends::cpu::CpuTensorDevice;
     use crabml::error::Result;
     use crabml::gguf::GGMLType;
     use crabml::gguf::GGUFFileLoader;
     use crabml::tensor::Tensor;
 
-    use crate::CpuLlama2Model;
+    use crate::model::CpuLlama2ModelLoader;
 
     #[test]
     fn test_load_q8_0() -> Result<()> {
         let gl = GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-q8_0.gguf", false)?;
         let gf = gl.open()?;
 
-        let device = CpuTensorDevice::new();
-        let lm = CpuLlama2Model::load(&gf, device)?;
+        let lm = CpuLlama2ModelLoader::new().load(&gf)?;
         assert_eq!(lm.conf.vocab_size, 32000);
         assert_eq!(lm.weights.wk[0].dtype(), GGMLType::Q8_0);
         assert_eq!(lm.weights.rms_att_weight[0].dtype(), GGMLType::F32);

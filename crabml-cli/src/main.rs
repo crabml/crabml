@@ -1,23 +1,20 @@
 extern crate jemallocator;
 
 use std::io::Write;
-use std::rc::Rc;
 use std::time::Instant;
 
 use clap::Parser;
 use clap::ValueEnum;
-use crabml::backends::cpu::CpuTensorDevice;
-use crabml::backends::cpu::CpuTensorDeviceOptions;
 use crabml::backends::wgpu::WgpuTensorDevice;
 use crabml::backends::wgpu::WgpuTensorDeviceOptions;
 use crabml::error::Result;
+use crabml::gguf::GGUFFile;
 use crabml::gguf::GGUFFileLoader;
 use crabml::gguf::GGUFMetadataValueType;
 use crabml::tensor::Tensor;
 use crabml::tensor::TensorMetrics;
 use crabml_llama2::llama2::Llama2Runner;
-use crabml_llama2::sampler::Llama2Sampler;
-use crabml_llama2::CpuLlama2Model;
+use crabml_llama2::model::CpuLlama2ModelLoader;
 use crabml_llama2::Llama2Chat;
 use crabml_llama2::WgpuLlama2Model;
 use rustyline::error::ReadlineError;
@@ -78,15 +75,11 @@ impl std::fmt::Display for DeviceType {
     }
 }
 
-fn run<T: Tensor>(
-    runner: &mut Llama2Runner<T>,
-    args: &CommandArgs,
-    metrics: &TensorMetrics,
-) -> Result<()> {
+fn run<T: Tensor>(runner: &mut Llama2Runner<T>, args: &CommandArgs) -> Result<()> {
     if args.chat {
         run_chat(runner, args)?;
     } else {
-        run_generate(runner, args, metrics)?;
+        run_generate(runner, args)?;
     }
 
     Ok(())
@@ -137,19 +130,16 @@ fn run_chat<T: Tensor>(runner: &mut Llama2Runner<T>, args: &CommandArgs) -> Resu
     Ok(())
 }
 
-fn run_generate<U: Tensor>(
-    runner: &mut Llama2Runner<U>,
-    args: &CommandArgs,
-    metrics: &TensorMetrics,
-) -> Result<()> {
+fn run_generate<U: Tensor>(runner: &mut Llama2Runner<U>, args: &CommandArgs) -> Result<()> {
+    let metrics = runner.metrics.clone();
     let prefill_started_at = Instant::now();
     let prompt = args.prompt.clone().unwrap_or("".to_string());
     let (prefill_pos, prev_token, token) = runner.prefill(&prompt, true, false)?;
     let prefill_elapsed = prefill_started_at.elapsed();
     if args.verbose {
-        dump_metrics(metrics);
+        dump_metrics(&runner.metrics);
     }
-    metrics.reset();
+    runner.metrics.reset();
 
     let mut output = runner.generate(prefill_pos, prev_token, token, Some(args.steps));
     let mut generated_tokens = 0;
@@ -170,7 +160,7 @@ fn run_generate<U: Tensor>(
         }
 
         if args.verbose {
-            dump_metrics(metrics);
+            dump_metrics(&metrics);
         }
         metrics.reset();
     }
@@ -211,6 +201,22 @@ fn dump_metrics(metrics: &TensorMetrics) {
     );
 }
 
+fn dump_gguf_metadata(gf: &GGUFFile) {
+    for (key, value) in gf.metadata().as_hashmap() {
+        if value.typ() != GGUFMetadataValueType::Array {
+            eprintln!("{}: {:?}", key, value);
+        }
+    }
+    for tensor in gf.tensor_infos() {
+        eprintln!(
+            "- {} \t\t\t {} \t {:?}",
+            tensor.name(),
+            tensor.typ(),
+            tensor.dimensions()
+        );
+    }
+}
+
 fn main() -> Result<()> {
     let args = CommandArgs::parse();
     let start_time = Instant::now();
@@ -225,45 +231,20 @@ fn main() -> Result<()> {
     let gl = GGUFFileLoader::new(&args.model, args.mlock)?;
     let gf = gl.open()?;
 
-    let metrics = TensorMetrics::default();
-    let device_cpu = CpuTensorDevice::with_options(CpuTensorDeviceOptions {
-        debug_named_tensors: false,
-        thread_num,
-        metrics: metrics.clone(),
-    });
-
-    let model_cpu = CpuLlama2Model::load(&gf, device_cpu.clone())?;
-    let conf = model_cpu.conf.clone();
-
-    let sampler = Rc::new(Llama2Sampler::new(
-        conf.vocab_size,
-        args.temperature,
-        args.probability,
-        device_cpu.exp_cache(),
-    ));
-
     if args.verbose {
-        for (key, value) in gf.metadata().as_hashmap() {
-            if value.typ() != GGUFMetadataValueType::Array {
-                eprintln!("{}: {:?}", key, value);
-            }
-        }
-        for tensor in gf.tensor_infos() {
-            eprintln!(
-                "- {} \t\t\t {} \t {:?}",
-                tensor.name(),
-                tensor.typ(),
-                tensor.dimensions()
-            );
-        }
+        dump_gguf_metadata(&gf);
     }
+
+    let model_cpu = CpuLlama2ModelLoader::new()
+        .with_thread_num(thread_num)
+        .load(&gf)?;
+    let conf = model_cpu.conf.clone();
 
     match args.device {
         DeviceType::Cpu => {
-            let mut runner =
-                Llama2Runner::new(&model_cpu, sampler, metrics.clone(), conf.seq_len, true)?;
+            let mut runner = Llama2Runner::new(&model_cpu, conf.seq_len, true)?;
             eprintln!("model loaded: {}ms", start_time.elapsed().as_millis());
-            run(&mut runner, &args, &metrics)?;
+            run(&mut runner, &args)?;
         }
         DeviceType::Wgpu => {
             let device_wgpu = WgpuTensorDevice::new(
@@ -271,9 +252,8 @@ fn main() -> Result<()> {
             );
             let model_wgpu = WgpuLlama2Model::from_cpu(&model_cpu, device_wgpu)?;
 
-            let mut runner =
-                Llama2Runner::new(&model_wgpu, sampler, metrics.clone(), conf.seq_len, false)?;
-            run(&mut runner, &args, &metrics)?;
+            let mut runner = Llama2Runner::new(&model_wgpu, conf.seq_len, false)?;
+            run(&mut runner, &args)?;
         }
     }
 

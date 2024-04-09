@@ -104,7 +104,7 @@ impl<'a> CpuTensorDevice<'a> {
     }
 
     pub fn gelu_cache(&self) -> &Vec<f16> {
-        self.gelu_cache.get_or_init(|| Self::init_gelu_cache())
+        self.gelu_cache.get_or_init(Self::init_gelu_cache)
     }
 
     fn init_exp_cache() -> Vec<f16> {

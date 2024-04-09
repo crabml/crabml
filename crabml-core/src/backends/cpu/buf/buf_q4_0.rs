@@ -132,15 +132,15 @@ pub fn vec_dot_q4_0_q8_0(abs: &[BlockQ4_0], bbs: &[BlockQ8_0]) -> f32 {
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 pub fn vec_dot_q4_0_q8_0_neon(abs: &[BlockQ4_0], bbs: &[BlockQ8_0]) -> f32 {
     use std::arch::aarch64::*;
-    assert!(abs.len() % 2 == 0);
     let n_blocks = abs.len();
+    let n_blocks_rounded = n_blocks - n_blocks % 2;
 
-    unsafe {
+    let mut sumf = unsafe {
         let mut sumv0 = vdupq_n_f32(0.0);
         let mut sumv1 = vdupq_n_f32(0.0);
         let zerov = vdupq_n_s32(0);
 
-        for i in (0..n_blocks).step_by(2) {
+        for i in (0..n_blocks_rounded).step_by(2) {
             let ab0 = abs.get_unchecked(i);
             let ab1 = abs.get_unchecked(i + 1);
             let bb0 = bbs.get_unchecked(i);
@@ -185,7 +185,19 @@ pub fn vec_dot_q4_0_q8_0_neon(abs: &[BlockQ4_0], bbs: &[BlockQ8_0]) -> f32 {
             );
         }
         vaddvq_f32(sumv0) + vaddvq_f32(sumv1)
+    };
+
+    // handle the remaining blocks, it seems that only tinyllamas has the case where n_blocks % 2 != 0
+    for i in n_blocks_rounded..n_blocks {
+        let mut sumi = 0;
+        for j in 0..16 {
+            let v0 = (abs[i].qs[j] & 0x0F) as i32 - 8;
+            let v1 = (abs[i].qs[j] >> 4) as i32 - 8;
+            sumi += v0 * bbs[i].qs[j] as i32 + v1 * bbs[i].qs[j + 16] as i32
+        }
+        sumf += sumi as f32 * f16::to_f32(abs[i].d) * f16::to_f32(bbs[i].d);
     }
+    sumf
 }
 
 #[allow(unused)]

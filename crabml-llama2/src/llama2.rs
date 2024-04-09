@@ -506,18 +506,11 @@ mod tests {
         let gl = GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-q4_0.gguf", false)?;
         let gf = gl.open()?;
 
-        let device = CpuTensorDevice::new();
-        let lm = CpuLlama2Model::load(&gf, device.clone())?;
+        let lm = CpuLlama2ModelLoader::new().load(&gf)?;
         assert_eq!(lm.conf.rope_dim, Some(48));
         assert_eq!(lm.conf.head_size(), 48);
 
-        let sampler = Rc::new(Llama2Sampler::new(
-            lm.conf.vocab_size,
-            0.0,
-            0.0,
-            device.exp_cache(),
-        ));
-        let mut runner = Llama2Runner::new(&lm, sampler, TensorMetrics::default(), 200, false)?;
+        let mut runner = Llama2Runner::new(&lm, 200, false)?;
         let output = runner.prefill_and_generate("Lily is a cute cat, ", 11)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
         assert_eq!(s, "3 year old Lily. She likes to play");

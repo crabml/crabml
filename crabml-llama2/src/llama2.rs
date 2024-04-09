@@ -31,14 +31,12 @@ pub struct Llama2Runner<T: Tensor> {
     logits: Vec<f32>,            // output logits (vocab_size, )
     key_cache: Vec<Option<T>>,   // (layer, n_kv_head, seq_len, kv_dim)
     value_cache: Vec<Option<T>>, // (layer, n_kv_head, seq_len, kv_dim)
-    metrics: TensorMetrics,
+    pub metrics: TensorMetrics,
 }
 
 impl<'a, T: Tensor> Llama2Runner<T> {
     pub fn new(
         model: impl Llama2Model<T = T>,
-        sampler: Rc<Llama2Sampler>,
-        metrics: TensorMetrics,
         seq_len: usize,
         use_f16_kv_cache: bool,
     ) -> Result<Self> {
@@ -52,6 +50,8 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         let device = model.device().clone();
         let weights = model.weights();
         let tokenizer = model.tokenizer();
+        let sampler = model.sampler();
+        let metrics = model.metrics().clone();
         let logits = vec![0.0; conf.vocab_size];
         let key_cache = (0..conf.n_layers)
             .map(|_| {
@@ -457,14 +457,13 @@ impl<'a, T: Tensor> Llama2Runner<T> {
 #[cfg(test)]
 mod tests {
     use approx::assert_relative_eq;
-    use crabml::backends::cpu::CpuTensorDevice;
     use crabml::backends::cpu::CpuTensorDeviceOptions;
     use crabml::backends::wgpu::WgpuTensorDevice;
     use crabml::backends::wgpu::WgpuTensorDeviceOptions;
     use crabml::gguf::GGUFFileLoader;
 
     use super::*;
-    use crate::CpuLlama2Model;
+    use crate::model::CpuLlama2ModelLoader;
     use crate::WgpuLlama2Model;
 
     #[test]
@@ -473,16 +472,9 @@ mod tests {
             GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-f32.gguf", false)?;
         let gf = gl.open()?;
 
-        let device = CpuTensorDevice::with_options(CpuTensorDeviceOptions::default());
-        let lm = CpuLlama2Model::load(&gf, device.clone())?;
+        let lm = CpuLlama2ModelLoader::new().load(&gf)?;
 
-        let sampler = Rc::new(Llama2Sampler::new(
-            lm.conf.vocab_size,
-            0.0,
-            0.0,
-            device.exp_cache(),
-        ));
-        let mut runner = Llama2Runner::new(&lm, sampler, TensorMetrics::default(), 200, false)?;
+        let mut runner = Llama2Runner::new(&lm, 200, false)?;
         let output = runner.prefill_and_generate("Lily is a cat", 31)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
 
@@ -498,18 +490,11 @@ mod tests {
         let gl = GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-q8_0.gguf", false)?;
         let gf = gl.open()?;
 
-        let device = CpuTensorDevice::new();
-        let lm = CpuLlama2Model::load(&gf, device.clone())?;
+        let lm = CpuLlama2ModelLoader::new().load(&gf)?;
         assert_eq!(lm.conf.rope_dim, Some(48));
         assert_eq!(lm.conf.head_size(), 48);
 
-        let sampler = Rc::new(Llama2Sampler::new(
-            lm.conf.vocab_size,
-            0.0,
-            0.0,
-            device.exp_cache(),
-        ));
-        let mut runner = Llama2Runner::new(&lm, sampler, TensorMetrics::default(), 200, false)?;
+        let mut runner = Llama2Runner::new(&lm, 200, false)?;
         let output = runner.prefill_and_generate("Lily is a cute cat, ", 11)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
         assert_eq!(s, "3 years old. She likes to play with her");
@@ -544,18 +529,11 @@ mod tests {
         let gl = GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-q8_0.gguf", false)?;
         let gf = gl.open()?;
 
-        let device = CpuTensorDevice::new();
-        let lm = CpuLlama2Model::load(&gf, device.clone())?;
+        let lm = CpuLlama2ModelLoader::new().load(&gf)?;
         assert_eq!(lm.conf.rope_dim, Some(48));
         assert_eq!(lm.conf.head_size(), 48);
 
-        let sampler = Rc::new(Llama2Sampler::new(
-            lm.conf.vocab_size,
-            0.0,
-            0.0,
-            device.exp_cache(),
-        ));
-        let mut runner = Llama2Runner::new(&lm, sampler, TensorMetrics::default(), 200, true)?;
+        let mut runner = Llama2Runner::new(&lm, 200, true)?;
         let output = runner.prefill_and_generate("Lily is a cute cat, ", 11)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
         assert_eq!(s, "3 years old. She likes to play with her");
@@ -567,18 +545,11 @@ mod tests {
         let gl = GGUFFileLoader::new("../testdata/TinyLLama-v0-5M-F16.gguf", false)?;
         let gf = gl.open()?;
 
-        let device = CpuTensorDevice::new();
-        let lm = CpuLlama2Model::load(&gf, device.clone())?;
+        let lm = CpuLlama2ModelLoader::new().load(&gf)?;
         assert_eq!(lm.conf.rope_dim, Some(4));
         assert_eq!(lm.conf.head_size(), 4);
 
-        let sampler = Rc::new(Llama2Sampler::new(
-            lm.conf.vocab_size,
-            0.0,
-            0.0,
-            device.exp_cache(),
-        ));
-        let mut runner = Llama2Runner::new(&lm, sampler, TensorMetrics::default(), 200, false)?;
+        let mut runner = Llama2Runner::new(&lm, 200, false)?;
         let output = runner.prefill_and_generate("Lily is a cute cat, ", 11)?;
         let s = output.collect::<Result<Vec<String>>>()?.join("");
         assert_eq!(s, "3 year old. She likes to play with her friends");
@@ -591,10 +562,10 @@ mod tests {
             GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-f32.gguf", false)?;
         let gf = gl.open()?;
 
-        let device_cpu = CpuTensorDevice::with_options(
-            CpuTensorDeviceOptions::default().with_debug_named_tensors(true),
-        );
-        let model_cpu = CpuLlama2Model::load(&gf, device_cpu.clone())?;
+        let model_cpu = CpuLlama2ModelLoader::new()
+            .with_device_options(CpuTensorDeviceOptions::default().with_debug_named_tensors(true))
+            .load(&gf)?;
+        let device_cpu = model_cpu.device.clone();
 
         let device_wgpu = WgpuTensorDevice::new(
             WgpuTensorDeviceOptions::new()
@@ -603,21 +574,8 @@ mod tests {
         );
         let model_wgpu = WgpuLlama2Model::from_cpu(&model_cpu, device_wgpu.clone())?;
 
-        let sampler = Rc::new(Llama2Sampler::new(
-            model_cpu.conf.vocab_size,
-            0.0,
-            0.0,
-            device_cpu.exp_cache(),
-        ));
-        let mut runner_cpu = Llama2Runner::new(
-            &model_cpu,
-            sampler.clone(),
-            TensorMetrics::default(),
-            200,
-            false,
-        )?;
-        let mut runner_wgpu =
-            Llama2Runner::new(&model_wgpu, sampler, TensorMetrics::default(), 200, false)?;
+        let mut runner_cpu = Llama2Runner::new(&model_cpu, 200, false)?;
+        let mut runner_wgpu = Llama2Runner::new(&model_wgpu, 200, false)?;
 
         let output_cpu = runner_cpu
             .prefill_and_generate("Lily is a cat", 16)?

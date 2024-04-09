@@ -15,19 +15,21 @@ pub struct Llama2Sampler {
     exp_cache: Rc<Vec<f16>>,
 }
 
+pub type Llama2SamplerRef = Rc<Llama2Sampler>;
+
 impl Llama2Sampler {
     pub fn new(
         vocab_size: usize,
         temperature: f32,
         topp: f32,
         exp_cache: Rc<Vec<f16>>,
-    ) -> Llama2Sampler {
-        Self {
+    ) -> Llama2SamplerRef {
+        Rc::new(Self {
             prob_index: RefCell::new(vec![(0.0, 0); vocab_size]),
             temperature,
             topp,
             exp_cache,
-        }
+        })
     }
 
     pub fn sample(&self, logits: &mut [f32]) -> Result<usize> {

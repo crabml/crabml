@@ -255,17 +255,12 @@ impl ChatTemplate {
 
 #[cfg(test)]
 mod tests {
-    use std::rc::Rc;
-
-    use crabml::backends::cpu::CpuTensorDevice;
     use crabml::error::Result;
     use crabml::gguf::GGUFFileLoader;
-    use crabml::tensor::TensorMetrics;
 
     use crate::chat::Llama2Chat;
     use crate::llama2::Llama2Runner;
-    use crate::CpuLlama2Model;
-    use crate::Llama2Sampler;
+    use crate::model::CpuLlama2ModelLoader;
 
     #[test]
     #[ignore]
@@ -273,17 +268,9 @@ mod tests {
         let gl = GGUFFileLoader::new("../testdata/gemma-2b-it-q8_0.gguf", false)?;
         let gf = gl.open()?;
 
-        let device = CpuTensorDevice::new();
-        let lm = CpuLlama2Model::load(&gf, device.clone())?;
+        let lm = CpuLlama2ModelLoader::new().load(&gf)?;
 
-        let sampler = Rc::new(Llama2Sampler::new(
-            lm.conf.vocab_size,
-            0.0,
-            0.0,
-            device.exp_cache(),
-        ));
-        let mut runner = Llama2Runner::new(&lm, sampler, TensorMetrics::default(), 200, false)?;
-
+        let mut runner = Llama2Runner::new(&lm, 200, false)?;
         let mut chat = Llama2Chat::new(&mut runner, "what's 1+1?", None)?;
         let output = chat.reply()?;
         for token in output {

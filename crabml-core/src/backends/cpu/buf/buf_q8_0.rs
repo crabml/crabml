@@ -219,7 +219,7 @@ fn vec_dot_q8_0_q8_0_neon(abs: &[BlockQ8_0], bbs: &[BlockQ8_0]) -> f32 {
 }
 
 #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
-pub fn vec_dot_q8_0_q8_0(abs: &[BlockQ8_0], bbs: &[BlockQ8_0]) -> f32 {
+pub fn vec_dot_q8_0_q8_0_avx2(abs: &[BlockQ8_0], bbs: &[BlockQ8_0]) -> f32 {
     use std::arch::x86_64::*;
 
     use crate::backends::cpu::archutil::x86_64::*;

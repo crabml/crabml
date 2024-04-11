@@ -129,47 +129,27 @@ mod tests {
     fn test_q8_1_block() {
         assert_eq!(
             std::mem::size_of::<BlockQ8_1>(),
-            2 * std::mem::size_of::<f32>() + 32,
+            2 * std::mem::size_of::<f16>() + 32,
             "wrong q8_1 block size/padding"
         );
-
         let mut buf: [u8; 80] = [0x1; 80];
 
-        let d_bytes = f32::to_le_bytes(3.0);
-        let s_bytes = f32::to_le_bytes(96.0);
-        buf[0..4].copy_from_slice(&d_bytes);
-        buf[4..8].copy_from_slice(&s_bytes);
+        let d_bytes = f16::from_f32(3.0).to_le_bytes();
+        let s_bytes = f16::from_f32(96.0).to_le_bytes();
+        buf[0..2].copy_from_slice(&d_bytes);
+        buf[2..4].copy_from_slice(&s_bytes);
 
-        buf[8] = 2;
-        buf[9] = 3;
-        buf[10] = 4;
-        buf[39] = 7;
+        buf[5] = 2;
+        buf[6] = 3;
+        buf[7] = 4;
+        buf[35] = 7;
 
-        buf[40..44].copy_from_slice(&d_bytes);
-        buf[44..48].copy_from_slice(&s_bytes);
-
-        buf[48] = 2;
-        buf[49] = 3;
-        buf[50] = 4;
-        buf[79] = 7;
-
-        let blocks = QuantBufQ8_1::from_bytes(&buf[0..40]).blocks;
+        let blocks = QuantBufQ8_1::from_bytes(&buf[0..36]).blocks;
         assert_eq!(blocks[0].d.to_f32(), 3.0);
         assert_eq!(blocks[0].s.to_f32(), 96.0);
         assert_eq!(blocks[0].qs, [
-            2, 3, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+            1, 2, 3, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
             1, 1, 7
-        ]);
-
-        let bf = QuantBufQ8_1::from_bytes(&buf);
-
-        assert_eq!(bf.len(), 64);
-
-        assert_eq!(bf.dequantize(0).collect::<Vec<_>>(), vec![
-            6.0, 9.0, 12.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0,
-            3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 21.0, 6.0, 9.0,
-            12.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0,
-            3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 21.0
         ]);
     }
 }

@@ -121,8 +121,14 @@ pub fn vec_dot_q4_1_q8_1(abs: &[BlockQ4_1], bbs: &[BlockQ8_1]) -> f32 {
     {
         vec_dot_q4_1_q8_1_neon(abs, bbs)
     }
-
-    #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    {
+        vec_dot_q4_1_q8_1_avx2(abs, bbs)
+    }
+    #[cfg(not(any(
+        all(target_arch = "aarch64", target_feature = "neon"),
+        all(target_arch = "x86_64", target_feature = "avx2")
+    )))]
     {
         vec_dot_q4_1_q8_1_fallback(abs, bbs)
     }
@@ -185,6 +191,58 @@ pub fn vec_dot_q4_1_q8_1_neon(abs: &[BlockQ4_1], bbs: &[BlockQ8_1]) -> f32 {
             );
         }
         vaddvq_f32(sumv0) + vaddvq_f32(sumv1) + summs
+    };
+
+    // handle the remaining blocks, it seems that only tinyllamas has the case where n_blocks % 2 != 0
+    for i in n_blocks_rounded..n_blocks {
+        let mut sumi = 0;
+        for j in 0..16 {
+            let v0 = (abs[i].qs[j] & 0x0F) as i32;
+            let v1 = ((abs[i].qs[j] >> 4) & 0x0F) as i32;
+
+            sumi += v0 * bbs[i].qs[j] as i32 + v1 * bbs[i].qs[j + 16] as i32;
+        }
+        sumf += (abs[i].d.to_f32() * bbs[i].d) * sumi as f32 + abs[i].m.to_f32() * bbs[i].s;
+    }
+    sumf
+}
+
+#[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+pub fn vec_dot_q4_1_q8_1_avx2(abs: &[BlockQ4_1], bbs: &[BlockQ8_1]) -> f32 {
+    use std::arch::x86_64::*;
+
+    let n_blocks = abs.len();
+    let n_blocks_rounded = n_blocks - n_blocks % 2;
+
+    let mut sumf = unsafe {
+        // Initialize accumulator with zeros
+        let mut acc = _mm256_setzero_ps();
+        let summs = 0;
+
+        for i in 0..n_blocks_rounded {
+            let ab0 = abs.get_unchecked(i);
+            let bb0 = bbs.get_unchecked(i);
+
+            let d0 = f16::to_f32(ab0.d);
+            let d1 = f16::to_f32(bb0.d);
+
+            summs += f16::to_f32(ab0.m) + f16::to_f32(bb0.m);
+
+            let d0v = _mm256_set1_ps(d0);
+            let d1v = _mm256_set1_ps(d1);
+
+            // Compute combined scales
+            let d0d1 = _mm256_mul_ps(d0v, d1v);
+
+            // Load 16 bytes, and unpack 4 bit fields into bytes, making 32 bytes
+            let qx = bytes_from_nibbles_32(ab0.qs.as_ptr());
+            let qy = _mm256_loadu_si256(bb0.qs.as_ptr());
+
+            let xy = mul_sum_us8_pairs_float(qx, qy);
+
+            acc = _mm256_fmadd_ps(d0d1, xy, acc);
+        }
+        hsum_float_8(acc) + summs
     };
 
     // handle the remaining blocks, it seems that only tinyllamas has the case where n_blocks % 2 != 0

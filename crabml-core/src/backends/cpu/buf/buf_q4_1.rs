@@ -239,6 +239,7 @@ pub fn vec_dot_q4_1_q8_1_avx2(abs: &[BlockQ4_1], bbs: &[BlockQ8_1]) -> f32 {
 
             let xy = mul_sum_us8_pairs_float(qx, qy);
 
+            // Accumulate d0*d1*x*y
             acc = _mm256_fmadd_ps(d0d1, xy, acc);
         }
         hsum_float_8(acc) + summs

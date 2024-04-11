@@ -46,11 +46,8 @@ pub unsafe fn hsum_float_8(x: __m256) -> f32 {
 // The output vector contains 32 bytes, each one in [ 0 .. 15 ] interval
 #[inline]
 pub unsafe fn bytes_from_nibbles_32(rsi: *const u8) -> __m256i {
-    // Load 16 bytes from memory
-    let mut tmpl = _mm_loadu_si128(rsi as *const _);
-    let mut tmph = _mm_srli_epi16(tmpl, 4);
-    let low_mask = _mm_set1_epi8(0xF);
-    tmpl = _mm_and_si128(low_mask, tmpl);
-    tmph = _mm_and_si128(low_mask, tmph);
-    _mm256_set_m128i(tmph, tmpl)
+    let tmp = _mm_loadu_si128(rsi as *const _);
+    let bytes = _mm256_set_m128i(_mm_srli_epi16(tmp, 4), tmp);
+    let low_mask = _mm256_set1_epi8(0xF);
+    _mm256_and_si256(low_mask, bytes)
 }

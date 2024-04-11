@@ -59,11 +59,8 @@ impl<'a> QuantBufQ8_1<'_> {
         })
     }
 
-    pub fn vec_dot(&self, a_offset: usize, b: &Self, b_offset: usize, len: usize) -> f32 {
-        let abs = &self.blocks[a_offset / 32..(a_offset + len) / 32];
-        let bbs = &b.blocks()[b_offset / 32..(b_offset + len) / 32];
-
-        vec_dot_q8_1_q8_1(abs, bbs)
+    pub fn vec_dot(&self, _a_offset: usize, _b: &Self, _b_offset: usize, _len: usize) -> f32 {
+        unreachable!("Q8_1 is not expected to have vec_dot computation")
     }
 }
 
@@ -122,20 +119,6 @@ pub fn quantize_f32_q8_1(data: &[f32]) -> Vec<BlockQ8_1> {
     }
 
     bs
-}
-
-pub fn vec_dot_q8_1_q8_1(abs: &[BlockQ8_1], bbs: &[BlockQ8_1]) -> f32 {
-    let mut sumf: f32 = 0.0;
-    for i in 0..bbs.len() {
-        let mut sumi: i32 = 0;
-        let ad = f32::from(abs[i].d);
-        let bd = f32::from(bbs[i].d);
-        for j in 0..32 {
-            sumi += (abs[i].qs[j] as i32) * (bbs[i].qs[j] as i32);
-        }
-        sumf += sumi as f32 * ad * bd;
-    }
-    sumf
 }
 
 #[cfg(test)]

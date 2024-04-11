@@ -143,7 +143,7 @@ pub fn vec_dot_q4_1_q8_1_neon(abs: &[BlockQ4_1], bbs: &[BlockQ8_1]) -> f32 {
     let mut sumf = unsafe {
         let mut sumv0 = vdupq_n_f32(0.0);
         let mut sumv1 = vdupq_n_f32(0.0);
-        let mut summs = 0;
+        let mut summs = 0.0;
         let zerov = vdupq_n_s32(0);
 
         for i in (0..n_blocks_rounded).step_by(2) {
@@ -152,13 +152,12 @@ pub fn vec_dot_q4_1_q8_1_neon(abs: &[BlockQ4_1], bbs: &[BlockQ8_1]) -> f32 {
             let bb0 = bbs.get_unchecked(i);
             let bb1 = bbs.get_unchecked(i + 1);
 
-            summs +=
-                f16::to_f32(ab0.m) * f16::to_f32(bb0.s) + f16::to_f32(ab1.m) * f16::to_f32(bb1.s);
+            summs += f16::to_f32(ab0.m) * bb0.s + f16::to_f32(ab1.m) * bb1.s;
 
             let m4b = vdupq_n_u8(0x0F);
 
-            let v0_0 = vdu1q_u8(ab0.qs.as_ptr());
-            let v0_1 = vdu1q_u8(ab1.qs.as_ptr());
+            let v0_0 = vld1q_u8(ab0.qs.as_ptr());
+            let v0_1 = vld1q_u8(ab1.qs.as_ptr());
 
             // 4-bit -> 8-bit
             let v0_0l = vreinterpretq_s8_u8(vandq_u8(v0_0, m4b));
@@ -167,10 +166,10 @@ pub fn vec_dot_q4_1_q8_1_neon(abs: &[BlockQ4_1], bbs: &[BlockQ8_1]) -> f32 {
             let v0_1h = vreinterpretq_s8_u8(vshrq_n_u8(v0_1, 4));
 
             // load y
-            let v1_0l = v1d1q_s8(bb0.qs.as_ptr());
-            let v1_0h = v1d1q_s8(bb0.qs.as_prt().add(16));
-            let v1_1l = v1d1q_s8(bb1.qs.as_ptr());
-            let v1_1h = v1d1q_s8(bb1.qs.as_prt().add(16));
+            let v1_0l = vld1q_s8(bb0.qs.as_ptr());
+            let v1_0h = vld1q_s8(bb0.qs.as_ptr().add(16));
+            let v1_1l = vld1q_s8(bb1.qs.as_ptr());
+            let v1_1h = vld1q_s8(bb1.qs.as_ptr().add(16));
 
             // dot product into int32x4_t
             sumv0 = vmlaq_n_f32(
@@ -179,7 +178,7 @@ pub fn vec_dot_q4_1_q8_1_neon(abs: &[BlockQ4_1], bbs: &[BlockQ8_1]) -> f32 {
                     vdotq_s32(zerov, v0_0l, v1_0l),
                     vdotq_s32(zerov, v0_0h, v1_0h),
                 )),
-                f16::to_f32(ab0.d) * f16::to_f32(bb0.d),
+                f16::to_f32(ab0.d) * bb0.d,
             );
             sumv1 = vmlaq_n_f32(
                 sumv1,
@@ -187,7 +186,7 @@ pub fn vec_dot_q4_1_q8_1_neon(abs: &[BlockQ4_1], bbs: &[BlockQ8_1]) -> f32 {
                     vdotq_s32(zerov, v0_1l, v1_1l),
                     vdotq_s32(zerov, v0_1h, v1_1h),
                 )),
-                f16::to_f32(ab1.d) * f16::to_f32(bb1.d),
+                f16::to_f32(ab1.d) * bb1.d,
             );
         }
         vaddvq_f32(sumv0) + vaddvq_f32(sumv1) + summs

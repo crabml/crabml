@@ -43,7 +43,7 @@ For more information, you can visit [How to Get GGUF Models](https://github.com/
 | Q3_K | 3 bits | ✅         | WIP   | WIP    | WIP    |
 | Q2_K | 2 bits | ✅         | WIP   | WIP    | WIP    |
 
-As the table above suggests, WebGPU-accelerated quantizations are still under busy development, and `Q8_0` and `Q4_0` are currently the most recommended quantization methods on CPUs!
+As the table above suggests, WebGPU-accelerated quantizations are still under busy development, and `Q8_0`， `Q4_0`， `Q4_1` are currently the most recommended quantization methods on CPUs!
 
 ## Usage
 

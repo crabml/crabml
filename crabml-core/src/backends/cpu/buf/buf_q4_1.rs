@@ -252,7 +252,6 @@ pub fn vec_dot_q4_1_q8_1_avx2(abs: &[BlockQ4_1], bbs: &[BlockQ8_1]) -> f32 {
     sumf
 }
 
-#[allow(unused)]
 pub fn vec_dot_q4_1_q8_1_fallback(abs: &[BlockQ4_1], bbs: &[BlockQ8_1]) -> f32 {
     let mut sumf = 0f32;
     for i in 0..abs.len() {

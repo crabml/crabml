@@ -28,10 +28,7 @@ For more information, you can visit [How to Get GGUF Models](https://github.com/
 
 ## Supported Quantization Methods
 
-`crabml` supports the following quantization methods on the CPU with SIMD acceleration on ARM and x86 architectures.  Q8_0 and Q4_0 are the most suggested quantization methods yet!
-
-While the WebGPU accelerated quantizations are under development, still not available yet.
-
+`crabml` supports the following quantization methods on CPUs with SIMD acceleration for ARM (including Apple Silicon) and x86 architectures:
 
 |      | Bits   | Supported | NEON | AVX2 | WebGPU |
 | ---- | ------ | --------- | ---- | ---- | ------ |
@@ -45,6 +42,8 @@ While the WebGPU accelerated quantizations are under development, still not avai
 | Q4_K | 4 bits | ✅         | WIP   | WIP    | WIP    |
 | Q3_K | 3 bits | ✅         | WIP   | WIP    | WIP    |
 | Q2_K | 2 bits | ✅         | WIP   | WIP    | WIP    |
+
+As the table above suggests, WebGPU-accelerated quantizations are still under busy development, and `Q8_0` and `Q4_0` are currently the most recommended quantization methods!
 
 ## Usage
 

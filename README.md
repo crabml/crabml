@@ -32,7 +32,9 @@ For more information, you can visit [How to Get GGUF Models](https://github.com/
 
 While the WebGPU accelerated quantizations are under development, still not available yet.
 
+
 |      | Bits   | Supported | NEON | AVX2 | WebGPU |
+| ---- | ------ | --------- | ---- | ---- | ------ |
 | Q8_0 | 8 bits | ✅         | ✅   | ✅   | WIP    |
 | Q6_K | 6 bits | ✅         | WIP  | WIP   | WIP  |
 | Q5_0 | 5 bits | ✅         | WIP  | WIP   | WIP  |

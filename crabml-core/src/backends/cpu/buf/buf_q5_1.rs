@@ -148,7 +148,7 @@ pub fn vec_dot_q5_1_q8_1(abs: &[BlockQ5_1], bbs: &[BlockQ8_1]) -> f32 {
 
             sumi += (x0 * bbs[i].qs[j] as i32) + (x1 * bbs[i].qs[j + 16] as i32);
         }
-        sumf += sumi as f32 * f16::to_f32(abs[i].d) * bbs[i].d + f16::to_f32(abs[i].m) * bbs[i].s
+        sumf += sumi as f32 * (abs[i].d * bbs[i].d).to_f32() + (abs[i].m * bbs[i].s).to_f32();
     }
 
     sumf

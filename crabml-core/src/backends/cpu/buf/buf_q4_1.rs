@@ -152,7 +152,7 @@ pub fn vec_dot_q4_1_q8_1_neon(abs: &[BlockQ4_1], bbs: &[BlockQ8_1]) -> f32 {
             let bb0 = bbs.get_unchecked(i);
             let bb1 = bbs.get_unchecked(i + 1);
 
-            summs += f16::to_f32(ab0.m) * bb0.s + f16::to_f32(ab1.m) * bb1.s;
+            summs += (ab0.m * bb0.s + ab1.m * bb1.s).to_f32();
 
             let m4b = vdupq_n_u8(0x0F);
 
@@ -178,7 +178,7 @@ pub fn vec_dot_q4_1_q8_1_neon(abs: &[BlockQ4_1], bbs: &[BlockQ8_1]) -> f32 {
                     vdotq_s32(zerov, v0_0l, v1_0l),
                     vdotq_s32(zerov, v0_0h, v1_0h),
                 )),
-                f16::to_f32(ab0.d) * bb0.d,
+                (ab0.d * bb0.d).to_f32(),
             );
             sumv1 = vmlaq_n_f32(
                 sumv1,
@@ -186,23 +186,20 @@ pub fn vec_dot_q4_1_q8_1_neon(abs: &[BlockQ4_1], bbs: &[BlockQ8_1]) -> f32 {
                     vdotq_s32(zerov, v0_1l, v1_1l),
                     vdotq_s32(zerov, v0_1h, v1_1h),
                 )),
-                f16::to_f32(ab1.d) * bb1.d,
+                (ab1.d * bb1.d).to_f32(),
             );
         }
         vaddvq_f32(sumv0) + vaddvq_f32(sumv1) + summs
     };
 
     // handle the remaining blocks, it seems that only tinyllamas has the case where n_blocks % 2 != 0
-    for i in n_blocks_rounded..n_blocks {
-        let mut sumi = 0;
-        for j in 0..16 {
-            let v0 = (abs[i].qs[j] & 0x0F) as i32;
-            let v1 = ((abs[i].qs[j] >> 4) & 0x0F) as i32;
-
-            sumi += v0 * bbs[i].qs[j] as i32 + v1 * bbs[i].qs[j + 16] as i32;
-        }
-        sumf += (abs[i].d.to_f32() * bbs[i].d) * sumi as f32 + abs[i].m.to_f32() * bbs[i].s;
+    if n_blocks > n_blocks_rounded {
+        sumf += vec_dot_q4_1_q8_1_fallback(
+            &abs[n_blocks_rounded..n_blocks],
+            &bbs[n_blocks_rounded..n_blocks],
+        );
     }
+
     sumf
 }
 
@@ -245,20 +242,16 @@ pub fn vec_dot_q4_1_q8_1_avx2(abs: &[BlockQ4_1], bbs: &[BlockQ8_1]) -> f32 {
     };
 
     // handle the remaining blocks, it seems that only tinyllamas has the case where n_blocks % 2 != 0
-    for i in n_blocks_rounded..n_blocks {
-        let mut sumi = 0;
-        for j in 0..16 {
-            let v0 = (abs[i].qs[j] & 0x0F) as i32;
-            let v1 = ((abs[i].qs[j] >> 4) & 0x0F) as i32;
-
-            sumi += v0 * bbs[i].qs[j] as i32 + v1 * bbs[i].qs[j + 16] as i32;
-        }
-        sumf += (abs[i].d.to_f32() * bbs[i].d) * sumi as f32 + abs[i].m.to_f32() * bbs[i].s;
+    if n_blocks > n_blocks_rounded {
+        sumf += vec_dot_q4_1_q8_1_fallback(
+            &abs[n_blocks_rounded..n_blocks],
+            &bbs[n_blocks_rounded..n_blocks],
+        );
     }
+
     sumf
 }
 
-#[allow(unused)]
 pub fn vec_dot_q4_1_q8_1_fallback(abs: &[BlockQ4_1], bbs: &[BlockQ8_1]) -> f32 {
     let mut sumf = 0f32;
     for i in 0..abs.len() {
@@ -269,7 +262,7 @@ pub fn vec_dot_q4_1_q8_1_fallback(abs: &[BlockQ4_1], bbs: &[BlockQ8_1]) -> f32 {
 
             sumi += v0 * bbs[i].qs[j] as i32 + v1 * bbs[i].qs[j + 16] as i32;
         }
-        sumf += (abs[i].d.to_f32() * bbs[i].d) * sumi as f32 + abs[i].m.to_f32() * bbs[i].s;
+        sumf += (abs[i].d * bbs[i].d).to_f32() * sumi as f32 + (abs[i].m * bbs[i].s).to_f32();
     }
 
     sumf

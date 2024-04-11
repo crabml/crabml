@@ -188,19 +188,16 @@ pub fn vec_dot_q4_0_q8_0_neon(abs: &[BlockQ4_0], bbs: &[BlockQ8_0]) -> f32 {
     };
 
     // handle the remaining blocks, it seems that only tinyllamas has the case where n_blocks % 2 != 0
-    for i in n_blocks_rounded..n_blocks {
-        let mut sumi = 0;
-        for j in 0..16 {
-            let v0 = (abs[i].qs[j] & 0x0F) as i32 - 8;
-            let v1 = (abs[i].qs[j] >> 4) as i32 - 8;
-            sumi += v0 * bbs[i].qs[j] as i32 + v1 * bbs[i].qs[j + 16] as i32
-        }
-        sumf += sumi as f32 * f16::to_f32(abs[i].d) * f16::to_f32(bbs[i].d);
+    if n_blocks > n_blocks_rounded {
+        sumf += vec_dot_q4_0_q8_0_fallback(
+            &abs[n_blocks_rounded..n_blocks],
+            &bbs[n_blocks_rounded..n_blocks],
+        );
     }
+
     sumf
 }
 
-#[allow(unused)]
 pub fn vec_dot_q4_0_q8_0_fallback(abs: &[BlockQ4_0], bbs: &[BlockQ8_0]) -> f32 {
     let mut sumf: f32 = 0f32;
     for i in 0..bbs.len() {

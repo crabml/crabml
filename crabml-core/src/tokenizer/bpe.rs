@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 
 use crate::error::Result;
@@ -13,6 +14,7 @@ pub struct BpeTokenizer {
     eos_token: TokenID,
     // the state on decoding
     byte_pieces: [u8; 256],
+    decode_buf: RefCell<Vec<u8>>,
     token_buf_len: usize,
 }
 
@@ -38,6 +40,7 @@ impl BpeTokenizer {
             token_ids,
             token_scores,
             token_buf_len: 128,
+            decode_buf: RefCell::new(Vec::with_capacity(128)),
             byte_pieces,
             bos_token,
             eos_token,
@@ -62,19 +65,34 @@ impl BpeTokenizer {
         if prev_token == 1 && piece[0] == b' ' {
             piece = &piece[1..];
         }
-        // careful, some tokens designate raw bytes, and look like e.g. '<0x01>'
-        // parse this and convert and return the actual byte
-        if piece.starts_with(b"<0x") && piece[piece.len() - 1] == b'>' {
+        // careful, some tokens designate raw bytes, and look like e.g. '<0x01>', we need parse this and
+        // convert and return the actual byte.
+        // this is a bit of a hack, if the byte itself is a valid utf8 character, we will append it
+        // to the decode_buf until we have a valid utf8 string, then return that. before that, we
+        // return an empty string.
+        let is_byte = piece.starts_with(b"<0x") && piece[piece.len() - 1] == b'>';
+        if is_byte {
             let s = String::from_utf8_lossy(&piece[1..piece.len() - 1]);
             let s = s.trim_start_matches("0x");
-            if let Ok(byte) = u8::from_str_radix(s, 16) {
-                piece = &self.byte_pieces[(byte as usize)..(byte as usize) + 1]
+            let byte = u8::from_str_radix(s, 16).unwrap();
+            self.decode_buf.borrow_mut().push(byte);
+            if std::str::from_utf8(&self.decode_buf.borrow()).is_ok() {
+                let s = String::from_utf8_lossy(&self.decode_buf.borrow()).to_string();
+                self.decode_buf.borrow_mut().clear();
+                Ok(s)
+            } else {
+                Ok("".to_string())
             }
+        } else {
+            let mut s = String::with_capacity(128);
+            if self.decode_buf.borrow().len() > 0 {
+                s.push_str(&String::from_utf8_lossy(&self.decode_buf.borrow()));
+                self.decode_buf.borrow_mut().clear();
+            }
+            s.push_str(&String::from_utf8_lossy(piece));
+            s = s.replace('▁', " ");
+            Ok(s)
         }
-
-        let mut s = String::from_utf8_lossy(piece).to_string();
-        s = s.replace('▁', " ");
-        Ok(s)
     }
 
     // encode the string text (input) into an upper-bound preallocated tokens[] array

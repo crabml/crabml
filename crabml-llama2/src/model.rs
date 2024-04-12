@@ -24,6 +24,7 @@ use crate::Llama2Sampler;
 pub enum ModelArchitecture {
     Llama,
     Gemma,
+    Qwen2,
 }
 
 #[derive(Debug, Clone)]
@@ -62,6 +63,9 @@ pub struct Llama2Weights<T: Tensor> {
     pub wk: Vec<T>, // (layer, kv_dim, embedding_dim)
     pub wv: Vec<T>, // (layer, kv_dim, embedding_dim)
     pub wo: Vec<T>, // (layer, embedding_dim, embedding_dim)
+    pub bq: Vec<T>, // (layer, embedding_dim), bias for q, if not have bias, it's vec![]
+    pub bk: Vec<T>, // (layer, embedding_dim), bias for k
+    pub bv: Vec<T>, // (layer, embedding_dim), bias for v
     // weights for ffn
     pub ffn_gate_weight: Vec<T>, // (layer, hidden_dim, embedding_dim)
     pub ffn_down_weight: Vec<T>, // (layer, embedding_dim, hidden_dim)
@@ -203,6 +207,9 @@ impl CpuLlama2ModelLoader {
         let mut wk = vec![];
         let mut wv = vec![];
         let mut wo = vec![];
+        let mut bq = vec![];
+        let mut bk = vec![];
+        let mut bv = vec![];
         let mut ffn_gate_weight = vec![];
         let mut ffn_down_weight = vec![];
         let mut ffn_up_weight = vec![];
@@ -266,6 +273,26 @@ impl CpuLlama2ModelLoader {
             .load_tensor(gf, "output_norm.weight", device.clone())?
             .dequantize(GGMLType::F32)?;
 
+        if gf.architecture() == "qwen2" {
+            for layer in 0..n_layers {
+                bq.push(self.load_tensor(
+                    gf,
+                    &format!("blk.{}.attn_q.bias", layer),
+                    device.clone(),
+                )?);
+                bk.push(self.load_tensor(
+                    gf,
+                    &format!("blk.{}.attn_k.bias", layer),
+                    device.clone(),
+                )?);
+                bv.push(self.load_tensor(
+                    gf,
+                    &format!("blk.{}.attn_v.bias", layer),
+                    device.clone(),
+                )?);
+            }
+        }
+
         // in Gemma, the output weight is None
         let output_weight = self.load_tensor_optional(gf, "output.weight", device)?;
 
@@ -275,6 +302,9 @@ impl CpuLlama2ModelLoader {
             wk,
             wv,
             wo,
+            bq,
+            bk,
+            bv,
             ffn_gate_weight,
             ffn_down_weight,
             ffn_up_weight,
@@ -492,6 +522,21 @@ impl WgpuLlama2Model {
             .iter()
             .map(|t| Self::convert_cpu_tensor(t, device.clone()))
             .collect::<Result<Vec<_>>>()?;
+        let bq = weights
+            .bq
+            .iter()
+            .map(|t| Self::convert_cpu_tensor(t, device.clone()))
+            .collect::<Result<Vec<_>>>()?;
+        let bk = weights
+            .bk
+            .iter()
+            .map(|t| Self::convert_cpu_tensor(t, device.clone()))
+            .collect::<Result<Vec<_>>>()?;
+        let bv = weights
+            .bv
+            .iter()
+            .map(|t| Self::convert_cpu_tensor(t, device.clone()))
+            .collect::<Result<Vec<_>>>()?;
         let wo = weights
             .wo
             .iter()
@@ -533,6 +578,9 @@ impl WgpuLlama2Model {
             wk,
             wv,
             wo,
+            bq,
+            bk,
+            bv,
             ffn_gate_weight: w1,
             ffn_down_weight: w2,
             ffn_up_weight: w3,

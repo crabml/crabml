@@ -349,6 +349,8 @@ impl CpuLlama2ModelLoader {
     }
 
     fn load_tokenizer(&self, gf: &GGUFFile) -> BpeTokenizer {
+        println!("{:?}", gf.metadata().as_hashmap().keys());
+        println!("{:?}", gf.metadata().get_string("tokenizer.ggml.model"));
         let vocab = gf
             .metadata()
             .get_string_array("tokenizer.ggml.tokens")
@@ -383,6 +385,7 @@ impl CpuLlama2ModelLoader {
         {
             "llama" => (ModelArchitecture::Llama, "llama"),
             "gemma" => (ModelArchitecture::Gemma, "gemma"),
+            "qwen2" => (ModelArchitecture::Qwen2, "qwen2"),
             arch => {
                 return Err(Error {
                     kind: ErrorKind::ModelError,

@@ -30,18 +30,18 @@ For more information, you can visit [How to Get GGUF Models](https://github.com/
 
 `crabml` supports the following quantization methods on CPUs with SIMD acceleration for ARM (including Apple Silicon) and x86 architectures:
 
-|      | Bits   | Supported | NEON | AVX2 | WebGPU |
-| ---- | ------ | --------- | ---- | ---- | ------ |
-| Q8_0 | 8 bits | ✅         | ✅   | ✅   | WIP    |
-| Q6_K | 6 bits | ✅         | WIP  | WIP   | WIP  |
-| Q5_0 | 5 bits | ✅         | WIP  | WIP   | WIP  |
-| Q5_1 | 5 bits | ✅         | WIP  | WIP   | WIP  |
-| Q5_K | 5 bits | ✅         | WIP  | WIP   | WIP  |
-| Q4_0 | 4 bits | ✅         | ✅   | WIP   |  WIP  |
-| Q4_1 | 4 bits | ✅         | ✅   | ✅    | WIP    |
-| Q4_K | 4 bits | ✅         | WIP   | WIP    | WIP    |
-| Q3_K | 3 bits | ✅         | WIP   | WIP    | WIP    |
-| Q2_K | 2 bits | ✅         | WIP   | WIP    | WIP    |
+|      | Bits   | Supported | NEON | AVX2 | RISC-V SIMD | WebGPU |
+| ---- | ------ | --------- | ---- | ---- | ------ | -------｜
+| Q8_0 | 8 bits | ✅         | ✅   | ✅   | WIP    | WIP |
+| Q6_K | 6 bits | ✅         | WIP  | WIP   | WIP  | WIP |
+| Q5_0 | 5 bits | ✅         | WIP  | WIP   | WIP  | WIP |
+| Q5_1 | 5 bits | ✅         | WIP  | WIP   | WIP  | WIP |
+| Q5_K | 5 bits | ✅         | WIP  | WIP   | WIP  | WIP |
+| Q4_0 | 4 bits | ✅         | ✅   | WIP   |  WIP  | WIP |
+| Q4_1 | 4 bits | ✅         | ✅   | ✅    | WIP   | WIP  |
+| Q4_K | 4 bits | ✅         | WIP   | WIP  | WIP   | WIP |
+| Q3_K | 3 bits | ✅         | WIP   | WIP  | WIP    | WIP |
+| Q2_K | 2 bits | ✅         | WIP   | WIP  | WIP    | WIP |
 
 As the table above suggests, WebGPU-accelerated quantizations are still under busy development, and `Q8_0`， `Q4_0`， `Q4_1` are currently the most recommended quantization methods on CPUs!
 

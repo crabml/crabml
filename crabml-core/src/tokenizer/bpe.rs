@@ -72,7 +72,7 @@ impl BpeTokenizer {
             }
         }
 
-        let mut s = String::from_utf8(piece.to_vec()).unwrap();
+        let mut s = String::from_utf8_lossy(piece).to_string();
         s = s.replace('▁', " ");
         Ok(s)
     }

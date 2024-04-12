@@ -31,7 +31,7 @@ For more information, you can visit [How to Get GGUF Models](https://github.com/
 `crabml` supports the following quantization methods on CPUs with SIMD acceleration for ARM (including Apple Silicon) and x86 architectures:
 
 |      | Bits   | Supported | NEON | AVX2 | RISC-V SIMD | WebGPU |
-| ---- | ------ | --------- | ---- | ---- | ------ | -------｜
+| ---- | ------ | --------- | ---- | ---- | ------ | ------- |
 | Q8_0 | 8 bits | ✅         | ✅   | ✅   | WIP    | WIP |
 | Q6_K | 6 bits | ✅         | WIP  | WIP   | WIP  | WIP |
 | Q5_0 | 5 bits | ✅         | WIP  | WIP   | WIP  | WIP |

@@ -1,3 +1,4 @@
+use std::borrow::BorrowMut;
 use std::cell::RefCell;
 use std::collections::HashMap;
 
@@ -14,7 +15,7 @@ pub struct BpeTokenizer {
     eos_token: TokenID,
     // the state on decoding
     byte_pieces: [u8; 256],
-    decode_buf: RefCell<Vec<u8>>,
+    decode_buf: RefCell<Utf8Buf>,
     token_buf_len: usize,
 }
 
@@ -40,7 +41,7 @@ impl BpeTokenizer {
             token_ids,
             token_scores,
             token_buf_len: 128,
-            decode_buf: RefCell::new(Vec::with_capacity(128)),
+            decode_buf: RefCell::new(Utf8Buf::new()),
             byte_pieces,
             bos_token,
             eos_token,
@@ -60,36 +61,33 @@ impl BpeTokenizer {
     }
 
     pub fn decode(&self, prev_token: usize, token: usize) -> Result<Token> {
+        // get the token string from the tokens table
         let mut piece: &[u8] = self.tokens[token].as_bytes();
-        // following BOS (1) token, sentencepiece decoder strips any leading whitespace (see PR #89)
+
+        // following BOS (1) token, sentencepiece decoder strips any leading whitespace
         if prev_token == 1 && piece[0] == b' ' {
             piece = &piece[1..];
         }
-        // careful, some tokens designate raw bytes, and look like e.g. '<0x01>', we need parse this and
+
+        // some tokens designate raw bytes, and look like e.g. '<0x01>', we need parse this and
         // convert and return the actual byte.
-        // this is a bit of a hack, if the byte itself is a valid utf8 character, we will append it
-        // to the decode_buf until we have a valid utf8 string, then return that. before that, we
+        // this is a bit of a hack, the byte itself might not be a valid utf8 character, we need append
+        // it to the decode_buf until we have a valid utf8 string, then return that. before that, we
         // return an empty string.
         let is_byte = piece.starts_with(b"<0x") && piece[piece.len() - 1] == b'>';
         if is_byte {
             let s = String::from_utf8_lossy(&piece[1..piece.len() - 1]);
-            let s = s.trim_start_matches("0x");
-            let byte = u8::from_str_radix(s, 16).unwrap();
-            self.decode_buf.borrow_mut().push(byte);
-            if std::str::from_utf8(&self.decode_buf.borrow()).is_ok() {
-                let s = String::from_utf8_lossy(&self.decode_buf.borrow()).to_string();
-                self.decode_buf.borrow_mut().clear();
-                Ok(s)
-            } else {
-                Ok("".to_string())
+            let byte = u8::from_str_radix(s.trim_start_matches("0x"), 16).unwrap();
+            match self.decode_buf.borrow_mut().push(&[byte]) {
+                Some(s) => Ok(s),
+                None => Ok("".to_string()),
             }
         } else {
-            let mut s = String::with_capacity(128);
-            if self.decode_buf.borrow().len() > 0 {
-                s.push_str(&String::from_utf8_lossy(&self.decode_buf.borrow()));
-                self.decode_buf.borrow_mut().clear();
-            }
-            s.push_str(&String::from_utf8_lossy(piece));
+            // it's considered a normal token, if the decode_buf is not empty, we need to concatenate
+            // the charactors of the current token to the decode_buf, and then return the decode_buf
+            // in a utf8 string.
+            self.decode_buf.borrow_mut().push(piece);
+            let mut s = self.decode_buf.borrow_mut().take();
             s = s.replace('▁', " ");
             Ok(s)
         }
@@ -171,6 +169,35 @@ impl BpeTokenizer {
         }
 
         Ok(tokens)
+    }
+}
+
+struct Utf8Buf {
+    buf: Vec<u8>,
+}
+
+impl Utf8Buf {
+    fn new() -> Self {
+        Self {
+            buf: Vec::with_capacity(128),
+        }
+    }
+
+    fn push(&mut self, bytes: &[u8]) -> Option<String> {
+        self.buf.extend_from_slice(bytes);
+        if std::str::from_utf8(&self.buf).is_ok() {
+            let s = String::from_utf8(self.buf.clone()).unwrap();
+            self.buf.clear();
+            Some(s)
+        } else {
+            None
+        }
+    }
+
+    fn take(&mut self) -> String {
+        let s = String::from_utf8_lossy(&self.buf).to_string();
+        self.buf.clear();
+        s
     }
 }
 

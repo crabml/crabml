@@ -13,8 +13,6 @@ pub struct BpeTokenizer {
     token_ids: HashMap<String, TokenID>,
     bos_token: TokenID,
     eos_token: TokenID,
-    // the state on decoding
-    byte_pieces: [u8; 256],
     decode_buf: RefCell<Utf8Buf>,
     token_buf_len: usize,
 }
@@ -31,10 +29,6 @@ impl BpeTokenizer {
             .enumerate()
             .map(|(i, v)| (v.clone(), i))
             .collect();
-        let mut byte_pieces = [0u8; 256];
-        for (i, p) in byte_pieces.iter_mut().enumerate() {
-            *p = i as u8
-        }
 
         Self {
             tokens,
@@ -42,7 +36,6 @@ impl BpeTokenizer {
             token_scores,
             token_buf_len: 128,
             decode_buf: RefCell::new(Utf8Buf::new()),
-            byte_pieces,
             bos_token,
             eos_token,
         }
@@ -60,7 +53,7 @@ impl BpeTokenizer {
         self.tokens[token_id].clone()
     }
 
-    pub fn decode(&self, prev_token: usize, token: usize) -> Result<Token> {
+    pub fn decode(&self, prev_token: usize, token: usize) -> Result<String> {
         // get the token string from the tokens table
         let mut piece: &[u8] = self.tokens[token].as_bytes();
 
@@ -78,9 +71,10 @@ impl BpeTokenizer {
         if is_byte {
             let s = String::from_utf8_lossy(&piece[1..piece.len() - 1]);
             let byte = u8::from_str_radix(s.trim_start_matches("0x"), 16).unwrap();
-            match self.decode_buf.borrow_mut().push(&[byte]) {
-                Some(s) => Ok(s),
-                None => Ok("".to_string()),
+            if self.decode_buf.borrow_mut().push_with_check(&[byte]) {
+                Ok(self.decode_buf.borrow_mut().take())
+            } else {
+                Ok("".to_string())
             }
         } else {
             // it's considered a normal token, if the decode_buf is not empty, we need to concatenate
@@ -172,6 +166,8 @@ impl BpeTokenizer {
     }
 }
 
+/// on the cases that a utf-8 character is split into multiple tokens, we need to buffer the tokens
+/// until we have a valid utf-8 string, then return it.
 struct Utf8Buf {
     buf: Vec<u8>,
 }
@@ -183,15 +179,13 @@ impl Utf8Buf {
         }
     }
 
-    fn push(&mut self, bytes: &[u8]) -> Option<String> {
+    fn push(&mut self, bytes: &[u8]) {
+        self.buf.extend_from_slice(bytes)
+    }
+
+    fn push_with_check(&mut self, bytes: &[u8]) -> bool {
         self.buf.extend_from_slice(bytes);
-        if std::str::from_utf8(&self.buf).is_ok() {
-            let s = String::from_utf8(self.buf.clone()).unwrap();
-            self.buf.clear();
-            Some(s)
-        } else {
-            None
-        }
+        std::str::from_utf8(&self.buf).is_ok()
     }
 
     fn take(&mut self) -> String {

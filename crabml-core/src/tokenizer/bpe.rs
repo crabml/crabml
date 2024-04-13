@@ -199,7 +199,7 @@ impl LlamaTokenEncoder {
 struct Gpt2TokenEncoder {
     tokens: Rc<Vec<String>>,
     token_ids: Rc<HashMap<String, TokenID>>,
-    merges: Vec<(TokenID, TokenID)>,
+    merges: HashMap<(TokenID, TokenID), usize>,
     bos_token: TokenID,
     eos_token: TokenID,
 }
@@ -220,11 +220,12 @@ impl Gpt2TokenEncoder {
         );
         let merges = merges
             .iter()
-            .map(|s| {
+            .enumerate()
+            .map(|(i, s)| {
                 let parts = s.split(' ').collect::<Vec<_>>();
                 let first = token_ids.get(parts[0]).unwrap();
                 let second = token_ids.get(parts[1]).unwrap();
-                (*first, *second)
+                ((*first, *second), i)
             })
             .collect();
         Self {
@@ -279,22 +280,28 @@ impl Gpt2TokenEncoder {
 
         // merge the best consecutive pair each iteration, according the merges
         loop {
-            let mut merged = false;
+            let mut lowest_rank = usize::MAX;
+            let mut merging_pair: Option<(TokenID, TokenID)> = None;
+            let mut merging_idx = usize::MAX;
             for (idx, pair) in tokens.windows(2).enumerate() {
-                if self.merges.contains(&(pair[0], pair[1])) {
-                    let token1 = self.tokens[pair[0]].clone();
-                    let token2 = self.tokens[pair[1]].clone();
-                    tokens[idx] = self
-                        .token_ids
-                        .get(&format!("{}{}", token1, token2))
-                        .unwrap()
-                        .clone();
-                    tokens.remove(idx + 1);
-                    merged = true;
-                    break;
+                if let Some(rank) = self.merges.get(&(pair[0], pair[1])) {
+                    if *rank < lowest_rank {
+                        lowest_rank = *rank;
+                        merging_pair = Some((pair[0], pair[1]));
+                        merging_idx = idx;
+                    }
                 }
             }
-            if !merged {
+            if let Some((tok1, tok2)) = merging_pair {
+                let token1 = self.tokens[tok1].clone();
+                let token2 = self.tokens[tok2].clone();
+                tokens[merging_idx] = self
+                    .token_ids
+                    .get(&format!("{}{}", token1, token2))
+                    .unwrap()
+                    .clone();
+                tokens.remove(merging_idx + 1);
+            } else {
                 break;
             }
         }

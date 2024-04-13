@@ -141,7 +141,7 @@ fn run_generate<U: Tensor>(runner: &mut Llama2Runner<U>, args: &CommandArgs) -> 
     }
     runner.metrics.reset();
 
-    let mut output = runner.generate(prefill_pos, prev_token, token, Some(args.steps));
+    let mut output = runner.generate(prefill_pos, token, Some(args.steps));
     let mut generated_tokens = 0;
     let generation_started_at = Instant::now();
 

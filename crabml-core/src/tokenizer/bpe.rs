@@ -196,6 +196,86 @@ impl LlamaTokenEncoder {
     }
 }
 
+struct Gpt2TokenEncoder {
+    tokens: Rc<Vec<String>>,
+    token_ids: Rc<HashMap<String, TokenID>>,
+    merges: Vec<(String, String)>,
+    bos_token: TokenID,
+    eos_token: TokenID,
+}
+
+impl Gpt2TokenEncoder {
+    // encode the string text (input) into an upper-bound preallocated tokens[] array
+    // bos != 0 means prepend the BOS token (=1), eos != 0 means append the EOS token (=2)
+    pub fn encode(&self, text: &str, bos: bool, eos: bool) -> Vec<TokenID> {
+        // create a temporary buffer that will store merge candidates of always two consecutive tokens
+        // *2 for concat, +1 for null terminator +2 for UTF8 (in case max_token_length is 1)
+        let mut token_buf = String::with_capacity(128 * 2 + 1 + 2);
+        let mut tokens: Vec<TokenID> = vec![];
+
+        let text = text.replace(' ', "▁");
+
+        if bos {
+            tokens.push(self.bos_token);
+        }
+
+        // add_dummy_prefix is true by default
+        // so prepend a dummy prefix token to the input string, but only if text != ""
+        // TODO: pretty sure this isn't correct in the general case but I don't have the
+        // energy to read more of the sentencepiece code to figure out what it's doing
+        if text.len() > 0 {
+            if let Some(dummy_prefix) = self.token_ids.get("▁") {
+                tokens.push(*dummy_prefix);
+            }
+        }
+
+        let chars = text.chars();
+        for ch in chars {
+            token_buf.clear();
+            token_buf.push(ch);
+            if let Some(tok) = self.token_ids.get(&token_buf) {
+                // we found this codepoint in vocab, add it as a token
+                tokens.push(*tok);
+            } else {
+                // byte_fallback encoding: just encode each byte as a token
+                // +3 is here because the first 3 vocab elements are <unk>, <s>, </s>
+                // so the individual bytes only start at index 3
+                for byte in token_buf.bytes() {
+                    tokens.push(byte as usize + 3);
+                }
+            }
+        }
+
+        // merge the best consecutive pair each iteration, according the merges
+        loop {
+            let mut merged = false;
+            for (idx, pair) in tokens.windows(2).enumerate() {
+                let token1 = &self.tokens[pair[0]].to_string();
+                let token2 = &self.tokens[pair[1]].to_string();
+                if self.merges.contains(&(token1.clone(), token2.clone())) {
+                    tokens[idx] = self
+                        .token_ids
+                        .get(&format!("{}{}", token1, token2))
+                        .unwrap()
+                        .clone();
+                    tokens.remove(idx + 1);
+                    merged = true;
+                    break;
+                }
+            }
+            if !merged {
+                break;
+            }
+        }
+
+        if eos {
+            tokens.push(self.eos_token);
+        }
+
+        tokens
+    }
+}
+
 /// on the cases that a utf-8 character is split into multiple tokens, we need to buffer the tokens
 /// until we have a valid utf-8 string, then return it.
 struct Utf8Buf {

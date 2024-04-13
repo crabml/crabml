@@ -1,18 +1,16 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use crate::error::Result;
 
 type TokenID = usize;
 
 pub struct BpeTokenizer {
-    tokens: Vec<String>,
-    token_scores: Vec<f32>,
-    token_ids: HashMap<String, TokenID>,
-    bos_token: TokenID,
+    tokens: Rc<Vec<String>>,
     eos_token: TokenID,
     decode_buf: RefCell<Utf8Buf>,
-    token_buf_len: usize,
+    encoder: LlamaTokenEncoder,
 }
 
 impl BpeTokenizer {
@@ -22,20 +20,28 @@ impl BpeTokenizer {
         bos_token: TokenID,
         eos_token: TokenID,
     ) -> Self {
-        let token_ids = tokens
-            .iter()
-            .enumerate()
-            .map(|(i, v)| (v.clone(), i))
-            .collect();
-
-        Self {
-            tokens,
-            token_ids,
-            token_scores,
+        let token_ids = Rc::new(
+            tokens
+                .iter()
+                .enumerate()
+                .map(|(i, v)| (v.clone(), i))
+                .collect(),
+        );
+        let tokens = Rc::new(tokens);
+        let encoder = LlamaTokenEncoder {
+            tokens: tokens.clone(),
+            token_ids: token_ids,
+            token_scores: Rc::new(token_scores),
             token_buf_len: 128,
-            decode_buf: RefCell::new(Utf8Buf::new()),
             bos_token,
             eos_token,
+        };
+
+        Self {
+            tokens: tokens,
+            decode_buf: RefCell::new(Utf8Buf::new()),
+            eos_token,
+            encoder,
         }
     }
 
@@ -83,6 +89,32 @@ impl BpeTokenizer {
     // encode the string text (input) into an upper-bound preallocated tokens[] array
     // bos != 0 means prepend the BOS token (=1), eos != 0 means append the EOS token (=2)
     pub fn encode(&self, text: &str, bos: bool, eos: bool) -> Result<Vec<TokenID>> {
+        Ok(self.encoder.encode(text, bos, eos))
+    }
+}
+
+enum TokenDecoderKind {
+    Llama,
+    GPT2,
+}
+
+pub enum TokenDecoder {
+    Llama(LlamaTokenEncoder),
+}
+
+struct LlamaTokenEncoder {
+    tokens: Rc<Vec<String>>,
+    token_ids: Rc<HashMap<String, TokenID>>,
+    token_scores: Rc<Vec<f32>>,
+    token_buf_len: usize,
+    bos_token: TokenID,
+    eos_token: TokenID,
+}
+
+impl LlamaTokenEncoder {
+    // encode the string text (input) into an upper-bound preallocated tokens[] array
+    // bos != 0 means prepend the BOS token (=1), eos != 0 means append the EOS token (=2)
+    pub fn encode(&self, text: &str, bos: bool, eos: bool) -> Vec<TokenID> {
         // create a temporary buffer that will store merge candidates of always two consecutive tokens
         // *2 for concat, +1 for null terminator +2 for UTF8 (in case max_token_length is 1)
         let mut token_buf = String::with_capacity(self.token_buf_len * 2 + 1 + 2);
@@ -155,7 +187,7 @@ impl BpeTokenizer {
             tokens.push(self.eos_token);
         }
 
-        Ok(tokens)
+        tokens
     }
 }
 

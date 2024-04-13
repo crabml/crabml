@@ -199,7 +199,7 @@ impl LlamaTokenEncoder {
 struct Gpt2TokenEncoder {
     tokens: Rc<Vec<String>>,
     token_ids: Rc<HashMap<String, TokenID>>,
-    merges: Vec<(String, String)>,
+    merges: Vec<(TokenID, TokenID)>,
     bos_token: TokenID,
     eos_token: TokenID,
 }
@@ -211,7 +211,7 @@ impl Gpt2TokenEncoder {
         bos_token: TokenID,
         eos_token: TokenID,
     ) -> Self {
-        let token_ids = Rc::new(
+        let token_ids: Rc<HashMap<String, TokenID>> = Rc::new(
             tokens
                 .iter()
                 .enumerate()
@@ -221,10 +221,10 @@ impl Gpt2TokenEncoder {
         let merges = merges
             .iter()
             .map(|s| {
-                let mut parts = s.split(' ');
-                let first = parts.next().unwrap().to_string();
-                let second = parts.next().unwrap().to_string();
-                (first, second)
+                let parts = s.split(' ').collect::<Vec<_>>();
+                let first = token_ids.get(parts[0]).unwrap();
+                let second = token_ids.get(parts[1]).unwrap();
+                (*first, *second)
             })
             .collect();
         Self {
@@ -281,9 +281,9 @@ impl Gpt2TokenEncoder {
         loop {
             let mut merged = false;
             for (idx, pair) in tokens.windows(2).enumerate() {
-                let token1 = &self.tokens[pair[0]].to_string();
-                let token2 = &self.tokens[pair[1]].to_string();
-                if self.merges.contains(&(token1.clone(), token2.clone())) {
+                if self.merges.contains(&(pair[0], pair[1])) {
+                    let token1 = self.tokens[pair[0]].clone();
+                    let token2 = self.tokens[pair[1]].clone();
                     tokens[idx] = self
                         .token_ids
                         .get(&format!("{}{}", token1, token2))
@@ -358,6 +358,9 @@ mod tests {
             .get_f32_array("tokenizer.ggml.scores")
             .unwrap()
             .to_vec();
+        for (i, tok) in tokens.iter().enumerate().take(100) {
+            println!("{} {}", i, tok);
+        }
         let tk = BpeTokenizer::new(tokens, token_scores, 1, 2);
 
         let tests = vec![

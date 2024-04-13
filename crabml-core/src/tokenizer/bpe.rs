@@ -400,4 +400,53 @@ mod tests {
         }
         Ok(())
     }
+
+    #[test]
+    fn test_gpt2_tokenizer() -> Result<()> {
+        let gf_loader =
+            GGUFFileLoader::new("/Users/yazhou/llm/qwen1_5-0_5b-chat-q8_0.gguf", false)?;
+        let gf = gf_loader.open()?;
+
+        let tokens = Rc::new(
+            gf.metadata()
+                .get_string_array("tokenizer.ggml.tokens")
+                .unwrap()
+                .iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>(),
+        );
+        let merges = gf
+            .metadata()
+            .get_string_array("tokenizer.ggml.merges")
+            .unwrap()
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>();
+        let tk = Gpt2TokenEncoder::new(tokens.clone(), &merges, 1, 2);
+
+        let tests = vec![
+            (
+                "Captain America: ",
+                "<s> - ▁Captain - ▁America - : - ▁ - </s>",
+            ),
+            ("hello, world", "<s> - ▁hello - , - ▁world - </s>"),
+            ("tiktok", "<s> - ▁t - ik - tok - </s>"),
+            (
+                "i don't eat beaf.",
+                "<s> - ▁i - ▁don - ' - t - ▁eat - ▁be - af - . - </s>",
+            ),
+        ];
+
+        for tt in tests {
+            let outputs = tk.encode(tt.0, true, true);
+            let tokens_in_string = outputs
+                .iter()
+                .map(|t| tokens[*t].clone())
+                .collect::<Vec<String>>()
+                .join(" - ");
+            assert_eq!(tokens_in_string, tt.1, "failed to encode {}", tt.0);
+        }
+
+        Ok(())
+    }
 }

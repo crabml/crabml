@@ -235,6 +235,10 @@ mod tests {
             ),
             ("hello, world", "<s> - ▁hello - , - ▁world - </s>"),
             ("tiktok", "<s> - ▁t - ik - tok - </s>"),
+            (
+                "i don't eat beaf.",
+                "<s> - ▁i - ▁don - ' - t - ▁eat - ▁be - af - . - </s>",
+            ),
         ];
 
         for tt in tests {

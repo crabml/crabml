@@ -52,14 +52,9 @@ impl BpeTokenizer {
         self.tokens[token_id].clone()
     }
 
-    pub fn decode(&self, prev_token: usize, token: usize) -> Result<String> {
+    pub fn decode(&self, token: usize) -> Result<String> {
         // get the token string from the tokens table
-        let mut piece: &[u8] = self.tokens[token].as_bytes();
-
-        // following BOS (1) token, sentencepiece decoder strips any leading whitespace
-        if prev_token == 1 && piece[0] == b' ' {
-            piece = &piece[1..];
-        }
+        let piece: &[u8] = self.tokens[token].as_bytes();
 
         // some tokens designate raw bytes, and look like e.g. '<0x01>', we need parse this and
         // convert and return the actual byte.

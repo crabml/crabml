@@ -72,8 +72,11 @@ impl BpeTokenizer {
             }
         }
 
-        let mut s = String::from_utf8(piece.to_vec()).unwrap();
-        s = s.replace('▁', " ");
+        let result = String::from_utf8(piece.to_vec());
+        // if the token is not valid UTF-8, return a replacement character.
+        let s = result.unwrap_or_else(|_| "�".to_string());
+        let s = s.replace("▁", " ");
+
         Ok(s)
     }
 

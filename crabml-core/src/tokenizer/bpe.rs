@@ -205,6 +205,37 @@ struct Gpt2TokenEncoder {
 }
 
 impl Gpt2TokenEncoder {
+    fn new(
+        tokens: Rc<Vec<String>>,
+        merges: &[String],
+        bos_token: TokenID,
+        eos_token: TokenID,
+    ) -> Self {
+        let token_ids = Rc::new(
+            tokens
+                .iter()
+                .enumerate()
+                .map(|(i, v)| (v.clone(), i))
+                .collect(),
+        );
+        let merges = merges
+            .iter()
+            .map(|s| {
+                let mut parts = s.split(' ');
+                let first = parts.next().unwrap().to_string();
+                let second = parts.next().unwrap().to_string();
+                (first, second)
+            })
+            .collect();
+        Self {
+            tokens,
+            token_ids,
+            merges,
+            bos_token,
+            eos_token,
+        }
+    }
+
     // encode the string text (input) into an upper-bound preallocated tokens[] array
     // bos != 0 means prepend the BOS token (=1), eos != 0 means append the EOS token (=2)
     pub fn encode(&self, text: &str, bos: bool, eos: bool) -> Vec<TokenID> {

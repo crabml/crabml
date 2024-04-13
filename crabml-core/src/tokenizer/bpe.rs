@@ -3,11 +3,10 @@ use std::collections::HashMap;
 
 use crate::error::Result;
 
-type Token = String;
 type TokenID = usize;
 
 pub struct BpeTokenizer {
-    tokens: Vec<Token>,
+    tokens: Vec<String>,
     token_scores: Vec<f32>,
     token_ids: HashMap<String, TokenID>,
     bos_token: TokenID,
@@ -48,7 +47,7 @@ impl BpeTokenizer {
         self.eos_token
     }
 
-    pub fn token(&self, token_id: TokenID) -> Token {
+    pub fn token(&self, token_id: TokenID) -> String {
         self.tokens[token_id].clone()
     }
 

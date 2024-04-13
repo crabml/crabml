@@ -31,7 +31,12 @@ impl BpeTokenizer {
         let encoder = LlamaTokenEncoder {
             tokens: tokens.clone(),
             token_ids: token_ids,
-            token_scores: Rc::new(token_scores),
+            token_scores: Rc::new(
+                token_scores
+                    .into_iter()
+                    .enumerate()
+                    .collect::<HashMap<_, _>>(),
+            ),
             token_buf_len: 128,
             bos_token,
             eos_token,
@@ -105,7 +110,7 @@ pub enum TokenDecoder {
 struct LlamaTokenEncoder {
     tokens: Rc<Vec<String>>,
     token_ids: Rc<HashMap<String, TokenID>>,
-    token_scores: Rc<Vec<f32>>,
+    token_scores: Rc<HashMap<TokenID, f32>>,
     token_buf_len: usize,
     bos_token: TokenID,
     eos_token: TokenID,
@@ -130,7 +135,7 @@ impl LlamaTokenEncoder {
         // so prepend a dummy prefix token to the input string, but only if text != ""
         // TODO: pretty sure this isn't correct in the general case but I don't have the
         // energy to read more of the sentencepiece code to figure out what it's doing
-        if !text.starts_with('\u{0}') {
+        if text.len() > 0 {
             if let Some(dummy_prefix) = self.token_ids.get("▁") {
                 tokens.push(*dummy_prefix);
             }
@@ -165,7 +170,7 @@ impl LlamaTokenEncoder {
                 token_buf.push_str(&self.tokens[tokens[i]]);
                 token_buf.push_str(&self.tokens[tokens[i + 1]]);
                 if let Some(tok) = self.token_ids.get(&token_buf) {
-                    let new_score = self.token_scores[*tok];
+                    let new_score = *self.token_scores.get(tok).unwrap();
                     if new_score > best_score {
                         best_score = new_score;
                         best_idx = Some(i);

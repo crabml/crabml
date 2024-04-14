@@ -136,6 +136,7 @@ impl Utf8Buf {
         if is_utf8 {
             self.buf.extend(bytes);
             let s = String::from_utf8_lossy(&self.buf).to_string();
+            self.buf.clear();
             return s;
         }
 

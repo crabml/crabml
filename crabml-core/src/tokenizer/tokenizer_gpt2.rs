@@ -78,6 +78,16 @@ impl Gpt2TokenEncoder {
             }
         }
 
+        let mut tokens = self.bpe_merge(tokens);
+
+        if eos {
+            tokens.push(self.eos_token);
+        }
+
+        tokens
+    }
+
+    fn bpe_merge(&self, mut tokens: Vec<TokenID>) -> Vec<TokenID> {
         // merge the best consecutive pair each iteration, according the merges
         loop {
             let mut lowest_rank = usize::MAX;
@@ -103,15 +113,9 @@ impl Gpt2TokenEncoder {
                     .clone();
                 tokens.remove(merging_idx + 1);
             } else {
-                break;
+                return tokens;
             }
         }
-
-        if eos {
-            tokens.push(self.eos_token);
-        }
-
-        tokens
     }
 }
 

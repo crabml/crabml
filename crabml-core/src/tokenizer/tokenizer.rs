@@ -51,16 +51,11 @@ impl Tokenizer {
     }
 
     pub fn decode(&self, token: TokenID) -> Result<String> {
-        let mut buf = self.decode_buf.borrow_mut();
         let bytes = match &self.inner {
             TokenizerInner::Llama(inner) => inner.decode(token),
             TokenizerInner::GPT2(inner) => inner.decode(token),
         };
-        if buf.push_with_check(&bytes) {
-            return Ok(buf.take());
-        } else {
-            return Ok("".to_string());
-        }
+        Ok(self.decode_buf.borrow_mut().step(&bytes))
     }
 
     // encode the string text (input) into an upper-bound preallocated tokens[] array
@@ -78,6 +73,11 @@ enum TokenizerKind {
     GPT2,
 }
 
+fn is_utf8_start(byte: u8) -> bool {
+    // Check if the byte is not a continuation byte (10xxxxxx)
+    (byte & 0b11000000) != 0b10000000
+}
+
 /// on the cases that a utf-8 character is split into multiple tokens, we need to buffer the tokens
 /// until we have a valid utf-8 string, then return it.
 pub struct Utf8Buf {
@@ -91,18 +91,23 @@ impl Utf8Buf {
         }
     }
 
-    pub fn push(&mut self, bytes: &[u8]) {
-        self.buf.extend_from_slice(bytes)
-    }
-
-    pub fn push_with_check(&mut self, bytes: &[u8]) -> bool {
-        self.buf.extend_from_slice(bytes);
+    pub fn is_valid(&self) -> bool {
         std::str::from_utf8(&self.buf).is_ok()
     }
 
-    pub fn take(&mut self) -> String {
-        let s = String::from_utf8_lossy(&self.buf).to_string();
-        self.buf.clear();
-        s
+    pub fn step(&mut self, bytes: &[u8]) -> String {
+        let utf8 = std::str::from_utf8(bytes);
+        if utf8.is_ok() {
+            return utf8.unwrap().to_string();
+        }
+
+        self.buf.extend(bytes);
+        if self.is_valid() || self.buf.len() >= 4 {
+            let s = String::from_utf8_lossy(&self.buf).to_string();
+            self.buf.clear();
+            return s;
+        }
+
+        "".to_string()
     }
 }

@@ -19,22 +19,63 @@ pub enum TokenizerInner {
     GPT2(Gpt2Tokenizer),
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum TokenizerKind {
+    Llama,
+    GPT2,
+}
+
 impl Tokenizer {
-    pub fn new(
+    /// if TokenizerKind is Llama, we need to provide scores, if GPT2, we need to provide merges.
+    pub fn new_llama(
         tokens: Vec<String>,
-        token_scores: Vec<f32>,
+        scores: Vec<f32>,
         bos_token: TokenID,
         eos_token: TokenID,
     ) -> Self {
         let tokens = Rc::new(tokens);
-        let tokenizer = LlamaTokenizer::new(tokens.clone(), token_scores, bos_token, eos_token);
         let decode_buf = RefCell::new(Utf8Buf::new());
+        let inner = TokenizerInner::Llama(LlamaTokenizer::new(
+            tokens.clone(),
+            scores,
+            bos_token,
+            eos_token,
+        ));
 
         Self {
             tokens,
             eos_token,
             utf8_buf: decode_buf,
-            inner: TokenizerInner::Llama(tokenizer),
+            inner,
+        }
+    }
+
+    pub fn new_gpt2(
+        tokens: Vec<String>,
+        merges: Vec<String>,
+        bos_token: TokenID,
+        eos_token: TokenID,
+    ) -> Self {
+        let tokens = Rc::new(tokens);
+        let decode_buf = RefCell::new(Utf8Buf::new());
+        let inner = TokenizerInner::GPT2(Gpt2Tokenizer::new(
+            tokens.clone(),
+            &merges,
+            bos_token,
+            eos_token,
+        ));
+        Self {
+            tokens,
+            eos_token,
+            utf8_buf: decode_buf,
+            inner,
+        }
+    }
+
+    pub fn kind(&self) -> TokenizerKind {
+        match &self.inner {
+            TokenizerInner::Llama(_) => TokenizerKind::Llama,
+            TokenizerInner::GPT2(_) => TokenizerKind::GPT2,
         }
     }
 
@@ -66,11 +107,6 @@ impl Tokenizer {
             TokenizerInner::GPT2(inner) => Ok(inner.encode(text, bos, eos, true)),
         }
     }
-}
-
-enum TokenizerKind {
-    Llama,
-    GPT2,
 }
 
 fn is_utf8_start(byte: u8) -> bool {

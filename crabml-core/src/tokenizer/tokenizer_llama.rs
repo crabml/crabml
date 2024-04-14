@@ -149,6 +149,7 @@ mod tests {
     use super::super::Tokenizer;
     use crate::error::Result;
     use crate::gguf::GGUFFileLoader;
+    use crate::tokenizer::tokenizer::TokenizerKind;
 
     #[test]
     fn test_gguf_tokenizer() -> Result<()> {
@@ -170,7 +171,7 @@ mod tests {
         for (i, tok) in tokens.iter().enumerate().take(100) {
             println!("{} {}", i, tok);
         }
-        let tk = Tokenizer::new(tokens, token_scores, 1, 2);
+        let tk = Tokenizer::new_llama(tokens, token_scores, 1, 2);
 
         let tests = vec![
             (10842, "▁Captain"),

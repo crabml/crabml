@@ -13,11 +13,10 @@ pub struct Gpt2Tokenizer {
     byte_decodes: HashMap<char, u8>,
     bos_token: TokenID,
     eos_token: TokenID,
-    pattern: regex::Regex,
 }
 
 impl Gpt2Tokenizer {
-    fn new(
+    pub fn new(
         tokens: Rc<Vec<String>>,
         merges: &[String],
         bos_token: TokenID,
@@ -42,7 +41,8 @@ impl Gpt2Tokenizer {
             .collect();
         let byte_encodes = build_byte_encode_map();
         let byte_decodes = byte_encodes.iter().map(|(b, u)| (*u, *b)).collect();
-        let pattern =
+        // i still dunno what this regex is doing
+        let _pattern =
             Regex::new(r"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+")
                 .unwrap();
         Self {
@@ -53,7 +53,6 @@ impl Gpt2Tokenizer {
             byte_decodes,
             bos_token,
             eos_token,
-            pattern,
         }
     }
 

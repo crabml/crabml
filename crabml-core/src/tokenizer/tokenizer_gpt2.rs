@@ -50,36 +50,19 @@ impl Gpt2TokenEncoder {
     // encode the string text (input) into an upper-bound preallocated tokens[] array
     // bos != 0 means prepend the BOS token (=1), eos != 0 means append the EOS token (=2)
     pub fn encode(&self, text: &str, bos: bool, eos: bool) -> Vec<TokenID> {
-        // create a temporary buffer that will store merge candidates of always two consecutive tokens
-        // *2 for concat, +1 for null terminator +2 for UTF8 (in case max_token_length is 1)
-        let mut token_buf = String::with_capacity(128 * 2 + 1 + 2);
-        let mut tokens: Vec<TokenID> = vec![];
-
-        // let text = text.replace(' ', "▁");
-
-        if bos {
-            tokens.push(self.bos_token);
-        }
-
-        let chars = text.chars();
-        for ch in chars {
-            token_buf.clear();
-            token_buf.push(ch);
-            if let Some(tok) = self.token_ids.get(&token_buf) {
-                // we found this codepoint in vocab, add it as a token
-                tokens.push(*tok);
-            } else {
-                // byte_fallback encoding: just encode each byte as a token
-                // +3 is here because the first 3 vocab elements are <unk>, <s>, </s>
-                // so the individual bytes only start at index 3
-                for byte in token_buf.bytes() {
-                    tokens.push(byte as usize + 3);
-                }
-            }
-        }
-
+        let tokens = text
+            .bytes()
+            .map(|b| {
+                let ch = self.byte_encoder.get(&b).unwrap().to_string();
+                let token_id = self.token_ids.get(&ch).unwrap();
+                *token_id
+            })
+            .collect::<Vec<_>>();
         let mut tokens = self.bpe_merge(tokens);
 
+        if bos {
+            tokens.insert(0, self.bos_token);
+        }
         if eos {
             tokens.push(self.eos_token);
         }
@@ -100,7 +83,6 @@ impl Gpt2TokenEncoder {
                         merging_pair = Some((pair[0], pair[1]));
                         merging_idx = idx;
                     }
-                    println!("idx: {}", idx);
                 }
             }
             if let Some((tok1, tok2)) = merging_pair {
@@ -119,7 +101,8 @@ impl Gpt2TokenEncoder {
     }
 }
 
-///
+/// the merge map are all unicodes, we need convert the raw bytes into an encoded
+/// unicode character.
 fn build_byte_to_unicode_map() -> HashMap<u8, char> {
     let mut map = HashMap::new();
     let ranges = [
@@ -172,10 +155,7 @@ mod tests {
         let tk = Gpt2TokenEncoder::new(tokens.clone(), &merges, 1, 2);
 
         let tests = vec![
-            (
-                "Captain America: ",
-                "<s> - ▁Captain - ▁America - : - ▁ - </s>",
-            ),
+            ("Captain America: ", "Captain - ĠAmerica - : - Ġ"),
             ("hello, world", "<s> - ▁hello - , - ▁world - </s>"),
             ("tiktok", "<s> - ▁t - ik - tok - </s>"),
             (

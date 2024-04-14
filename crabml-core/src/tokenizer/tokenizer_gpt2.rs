@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use regex::Regex;
 
-use super::tokenizer::TokenID;
+use super::TokenID;
 
 pub struct Gpt2Tokenizer {
     tokens: Rc<Vec<String>>,

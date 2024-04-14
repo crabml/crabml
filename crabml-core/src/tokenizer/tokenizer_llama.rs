@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use super::tokenizer::TokenID;
+use super::TokenID;
 
 pub struct LlamaTokenizer {
     tokens: Rc<Vec<String>>,

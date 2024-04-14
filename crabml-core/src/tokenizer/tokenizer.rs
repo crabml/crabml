@@ -11,7 +11,7 @@ pub struct Tokenizer {
     tokens: Rc<Vec<String>>,
     eos_token: TokenID,
     inner: TokenizerInner,
-    decode_buf: RefCell<Utf8Buf>,
+    utf8_buf: RefCell<Utf8Buf>,
 }
 
 pub enum TokenizerInner {
@@ -33,7 +33,7 @@ impl Tokenizer {
         Self {
             tokens,
             eos_token,
-            decode_buf,
+            utf8_buf: decode_buf,
             inner: TokenizerInner::Llama(tokenizer),
         }
     }
@@ -55,7 +55,7 @@ impl Tokenizer {
             TokenizerInner::Llama(inner) => inner.decode(token),
             TokenizerInner::GPT2(inner) => inner.decode(token),
         };
-        Ok(self.decode_buf.borrow_mut().step(&bytes))
+        Ok(self.utf8_buf.borrow_mut().step(&bytes))
     }
 
     // encode the string text (input) into an upper-bound preallocated tokens[] array
@@ -96,9 +96,11 @@ impl Utf8Buf {
     }
 
     pub fn step(&mut self, bytes: &[u8]) -> String {
-        let utf8 = std::str::from_utf8(bytes);
-        if utf8.is_ok() {
-            return utf8.unwrap().to_string();
+        let is_utf8 = std::str::from_utf8(bytes).is_ok();
+        if is_utf8 {
+            self.buf.extend(bytes);
+            let s = String::from_utf8_lossy(&self.buf).to_string();
+            return s;
         }
 
         self.buf.extend(bytes);

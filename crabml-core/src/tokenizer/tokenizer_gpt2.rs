@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use super::tokenizer::TokenID;
 
-struct Gpt2TokenEncoder {
+struct Gpt2Tokenizer {
     tokens: Rc<Vec<String>>,
     token_ids: Rc<HashMap<String, TokenID>>,
     merges: HashMap<(TokenID, TokenID), usize>,
@@ -12,7 +12,7 @@ struct Gpt2TokenEncoder {
     eos_token: TokenID,
 }
 
-impl Gpt2TokenEncoder {
+impl Gpt2Tokenizer {
     fn new(
         tokens: Rc<Vec<String>>,
         merges: &[String],
@@ -152,7 +152,7 @@ mod tests {
             .iter()
             .map(|s| s.to_string())
             .collect::<Vec<_>>();
-        let tk = Gpt2TokenEncoder::new(tokens.clone(), &merges, 1, 2);
+        let tk = Gpt2Tokenizer::new(tokens.clone(), &merges, 1, 2);
 
         let tests = vec![
             ("Captain America: ", "Captain - ĠAmerica - : - Ġ"),

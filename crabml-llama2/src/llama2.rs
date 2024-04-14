@@ -8,7 +8,7 @@ use crabml::gguf::GGMLType;
 use crabml::tensor::RopeMode;
 use crabml::tensor::Tensor;
 use crabml::tensor::TensorMetrics;
-use crabml::tokenizer::BpeTokenizer;
+use crabml::tokenizer::Tokenizer;
 
 use crate::model::Llama2Config;
 use crate::model::Llama2Model;
@@ -25,7 +25,7 @@ pub enum Activation {
 pub struct Llama2Runner<T: Tensor> {
     conf: Llama2Config,
     weights: Rc<Llama2Weights<T>>,
-    tokenizer: Rc<BpeTokenizer>,
+    tokenizer: Rc<Tokenizer>,
     sampler: Rc<Llama2Sampler>,
     device: T::Device,
     logits: Vec<f32>,            // output logits (vocab_size, )

@@ -15,7 +15,7 @@ use crabml::gguf::GGMLType;
 use crabml::gguf::GGUFFile;
 use crabml::tensor::Tensor;
 use crabml::tensor::TensorMetrics;
-use crabml::tokenizer::BpeTokenizer;
+use crabml::tokenizer::Tokenizer;
 
 use crate::sampler::Llama2SamplerRef;
 use crate::Llama2Sampler;
@@ -81,7 +81,7 @@ pub trait Llama2Model {
 
     fn weights(&self) -> Rc<Llama2Weights<Self::T>>;
 
-    fn tokenizer(&self) -> Rc<BpeTokenizer>;
+    fn tokenizer(&self) -> Rc<Tokenizer>;
 
     fn sampler(&self) -> Llama2SamplerRef;
 
@@ -91,7 +91,7 @@ pub trait Llama2Model {
 pub struct CpuLlama2Model<'a> {
     pub conf: Llama2Config,
     pub weights: Rc<Llama2Weights<CpuTensor<'a>>>,
-    pub tokenizer: Rc<BpeTokenizer>,
+    pub tokenizer: Rc<Tokenizer>,
     pub device: CpuTensorDeviceRef<'a>,
     pub sampler: Llama2SamplerRef,
     pub metrics: TensorMetrics,
@@ -112,7 +112,7 @@ impl<'a> Llama2Model for &CpuLlama2Model<'a> {
         self.weights.clone()
     }
 
-    fn tokenizer(&self) -> Rc<BpeTokenizer> {
+    fn tokenizer(&self) -> Rc<Tokenizer> {
         self.tokenizer.clone()
     }
 
@@ -318,7 +318,7 @@ impl CpuLlama2ModelLoader {
         }
     }
 
-    fn load_tokenizer(&self, gf: &GGUFFile) -> BpeTokenizer {
+    fn load_tokenizer(&self, gf: &GGUFFile) -> Tokenizer {
         let vocab = gf
             .metadata()
             .get_string_array("tokenizer.ggml.tokens")
@@ -344,7 +344,7 @@ impl CpuLlama2ModelLoader {
             .metadata()
             .get_u32("tokenizer.ggml.bos_token_id")
             .unwrap() as usize;
-        BpeTokenizer::new(vocab, vocab_scores, bos_token, eos_token)
+        Tokenizer::new(vocab, vocab_scores, bos_token, eos_token)
     }
 
     fn load_config(&self, gf: &GGUFFile) -> Result<Llama2Config> {
@@ -425,7 +425,7 @@ impl CpuLlama2ModelLoader {
 pub struct WgpuLlama2Model {
     pub conf: Llama2Config,
     pub weights: Rc<Llama2Weights<WgpuTensor>>,
-    pub tokenizer: Rc<BpeTokenizer>,
+    pub tokenizer: Rc<Tokenizer>,
     pub device: WgpuTensorDeviceRef,
     pub sampler: Llama2SamplerRef,
     pub metrics: TensorMetrics,
@@ -446,7 +446,7 @@ impl Llama2Model for &WgpuLlama2Model {
         self.device.clone()
     }
 
-    fn tokenizer(&self) -> Rc<BpeTokenizer> {
+    fn tokenizer(&self) -> Rc<Tokenizer> {
         self.tokenizer.clone()
     }
 

@@ -1,18 +1,21 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
 use super::tokenizer::TokenID;
+use crate::error::Result;
 
-pub struct LlamaTokenEncoder {
+pub struct LlamaTokenizer {
     tokens: Rc<Vec<String>>,
     token_ids: HashMap<String, TokenID>,
     token_scores: HashMap<TokenID, f32>,
     token_buf_len: usize,
     bos_token: TokenID,
     eos_token: TokenID,
+    decode_buf: RefCell<Utf8Buf>,
 }
 
-impl LlamaTokenEncoder {
+impl LlamaTokenizer {
     pub fn new(
         tokens: Rc<Vec<String>>,
         scores: Vec<f32>,
@@ -25,13 +28,48 @@ impl LlamaTokenEncoder {
             .map(|(i, v)| (v.clone(), i))
             .collect();
         let token_scores = scores.into_iter().enumerate().collect::<HashMap<_, _>>();
+        let decode_buf = RefCell::new(Utf8Buf::new());
         Self {
             tokens: tokens.clone(),
             token_ids,
             token_scores,
             token_buf_len: 128,
+            decode_buf,
             bos_token,
             eos_token,
+        }
+    }
+
+    pub fn eos_token(&self) -> TokenID {
+        self.eos_token
+    }
+
+    pub fn decode(&self, token: usize) -> Result<String> {
+        // get the token string from the tokens table
+        let piece: &[u8] = self.tokens[token].as_bytes();
+
+        // some tokens designate raw bytes, and look like e.g. '<0x01>', we need parse this and
+        // convert and return the actual byte.
+        // this is a bit of a hack, the byte itself might not be a valid utf8 character, we need append
+        // it to the decode_buf until we have a valid utf8 string, then return that. before that, we
+        // return an empty string.
+        let is_byte = piece.starts_with(b"<0x") && piece[piece.len() - 1] == b'>';
+        if is_byte {
+            let s = String::from_utf8_lossy(&piece[1..piece.len() - 1]);
+            let byte = u8::from_str_radix(s.trim_start_matches("0x"), 16).unwrap();
+            if self.decode_buf.borrow_mut().push_with_check(&[byte]) {
+                Ok(self.decode_buf.borrow_mut().take())
+            } else {
+                Ok("".to_string())
+            }
+        } else {
+            // it's considered a normal token, if the decode_buf is not empty, we need to concatenate
+            // the charactors of the current token to the decode_buf, and then return the decode_buf
+            // in a utf8 string.
+            self.decode_buf.borrow_mut().push(piece);
+            let mut s = self.decode_buf.borrow_mut().take();
+            s = s.replace('▁', " ");
+            Ok(s)
         }
     }
 
@@ -114,21 +152,38 @@ impl LlamaTokenEncoder {
     }
 }
 
-fn is_cjk_char(character: &char) -> bool {
-    let u32_char = *character as u32;
-    (0x4E00..=0x9FFF).contains(&u32_char)
-        | (0x3400..=0x4DBF).contains(&u32_char)
-        | (0x20000..=0x2A6DF).contains(&u32_char)
-        | (0x2A700..=0x2B73F).contains(&u32_char)
-        | (0x2B740..=0x2B81F).contains(&u32_char)
-        | (0x2B820..=0x2CEAF).contains(&u32_char)
-        | (0xF900..=0xFAFF).contains(&u32_char)
-        | (0x2F800..=0x2FA1F).contains(&u32_char)
+/// on the cases that a utf-8 character is split into multiple tokens, we need to buffer the tokens
+/// until we have a valid utf-8 string, then return it.
+struct Utf8Buf {
+    buf: Vec<u8>,
+}
+
+impl Utf8Buf {
+    fn new() -> Self {
+        Self {
+            buf: Vec::with_capacity(128),
+        }
+    }
+
+    fn push(&mut self, bytes: &[u8]) {
+        self.buf.extend_from_slice(bytes)
+    }
+
+    fn push_with_check(&mut self, bytes: &[u8]) -> bool {
+        self.buf.extend_from_slice(bytes);
+        std::str::from_utf8(&self.buf).is_ok()
+    }
+
+    fn take(&mut self) -> String {
+        let s = String::from_utf8_lossy(&self.buf).to_string();
+        self.buf.clear();
+        s
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::super::BpeTokenizer;
+    use super::super::Tokenizer;
     use crate::error::Result;
     use crate::gguf::GGUFFileLoader;
 
@@ -152,7 +207,7 @@ mod tests {
         for (i, tok) in tokens.iter().enumerate().take(100) {
             println!("{} {}", i, tok);
         }
-        let tk = BpeTokenizer::new(tokens, token_scores, 1, 2);
+        let tk = Tokenizer::new(tokens, token_scores, 1, 2);
 
         let tests = vec![
             (10842, "▁Captain"),

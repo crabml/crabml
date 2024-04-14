@@ -86,7 +86,6 @@ impl Gpt2Tokenizer {
             .find_iter(&text)
             .map(|mat| mat.as_str().to_string())
             .flat_map(|s| {
-                println!("subword: {}", s);
                 let mut toks = vec![];
                 for b in s.bytes() {
                     let ch = self.byte_encodes.get(&b).unwrap().to_string();
@@ -162,6 +161,29 @@ fn build_byte_encode_map() -> HashMap<u8, char> {
     map
 }
 
+fn split_text_by_keyword(text: &str, keywords: &[&str]) -> Vec<String> {
+    // Escape the keywords and join them into a regular expression pattern
+    let escaped_keywords: Vec<String> = keywords.iter().map(|&k| regex::escape(k)).collect();
+    let pattern = format!("({})", escaped_keywords.join("|"));
+    let re = Regex::new(&pattern).unwrap();
+
+    let mut result = Vec::new();
+    let mut last = 0;
+
+    for mat in re.find_iter(text) {
+        if mat.start() > last {
+            result.push(text[last..mat.start()].to_string());
+        }
+        result.push(mat.as_str().to_string());
+        last = mat.end();
+    }
+    if last < text.len() {
+        result.push(text[last..].to_string());
+    }
+
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -193,6 +215,10 @@ mod tests {
 
         let tests = vec![
             ("Captain America: ", "Captain - ĠAmerica - : - Ġ"),
+            (
+                "<|im_start|> blah <|im_end|> ",
+                "Captain - ĠAmerica - : - Ġ",
+            ),
             ("hello, world", "hello - , - Ġworld"),
             ("tiktok", "t - ik - tok"),
             ("i don't eat beaf.", "i - Ġdon - 't - Ġeat - Ġbe - af - ."),
@@ -209,5 +235,21 @@ mod tests {
         }
 
         Ok(())
+    }
+
+    #[test]
+    fn test_split_words() {
+        let output: Vec<String> = split_text_by_keyword(
+            "<|im_start|>i don't eat beaf<|im_end|> <|im_start|> i don't eat beaf",
+            &["<|im_start|>", "<|im_end|>"],
+        );
+        assert_eq!(output, vec![
+            "<|im_start|>",
+            "i don't eat beaf",
+            "<|im_end|>",
+            " ",
+            "<|im_start|>",
+            " i don't eat beaf"
+        ]);
     }
 }

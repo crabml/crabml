@@ -57,21 +57,19 @@ impl Gpt2Tokenizer {
         }
     }
 
-    pub fn decode(&self, token_ids: &[TokenID]) -> String {
-        let mut buf = vec![];
-        for token_id in token_ids {
-            let token = &self.tokens[*token_id];
-            if token.len() > 1 {
-                buf.extend(token.bytes());
-            } else if token.len() == 1 {
-                let ch = token.chars().next().unwrap();
-                match self.byte_decodes.get(&ch) {
-                    Some(b) => buf.push(*b),
-                    None => buf.push(ch as u8),
-                }
+    pub fn decode(&self, token_id: TokenID) -> Vec<u8> {
+        let token = &self.tokens[token_id];
+        if token.len() > 1 {
+            token.as_bytes().to_vec()
+        } else if token.len() == 1 {
+            let ch = token.chars().next().unwrap();
+            match self.byte_decodes.get(&ch) {
+                Some(b) => vec![*b],
+                None => vec![ch as u8],
             }
+        } else {
+            vec![]
         }
-        String::from_utf8_lossy(&buf).to_string()
     }
 
     // encode the string text (input) into an upper-bound preallocated tokens[] array

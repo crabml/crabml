@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use super::tokenizer_gpt2::Gpt2Tokenizer;
@@ -10,6 +11,7 @@ pub struct Tokenizer {
     tokens: Rc<Vec<String>>,
     eos_token: TokenID,
     inner: TokenizerInner,
+    decode_buf: RefCell<Utf8Buf>,
 }
 
 pub enum TokenizerInner {
@@ -26,10 +28,12 @@ impl Tokenizer {
     ) -> Self {
         let tokens = Rc::new(tokens);
         let tokenizer = LlamaTokenizer::new(tokens.clone(), token_scores, bos_token, eos_token);
+        let decode_buf = RefCell::new(Utf8Buf::new());
 
         Self {
             tokens,
             eos_token,
+            decode_buf,
             inner: TokenizerInner::Llama(tokenizer),
         }
     }
@@ -46,10 +50,16 @@ impl Tokenizer {
         self.tokens[token_id].clone()
     }
 
-    pub fn decode(&self, token: usize) -> Result<String> {
-        match &self.inner {
+    pub fn decode(&self, token: TokenID) -> Result<String> {
+        let mut buf = self.decode_buf.borrow_mut();
+        let bytes = match &self.inner {
             TokenizerInner::Llama(inner) => inner.decode(token),
-            TokenizerInner::GPT2(inner) => Ok(inner.decode(&[token])),
+            TokenizerInner::GPT2(inner) => inner.decode(token),
+        };
+        if buf.push_with_check(&bytes) {
+            return Ok(buf.take());
+        } else {
+            return Ok("".to_string());
         }
     }
 

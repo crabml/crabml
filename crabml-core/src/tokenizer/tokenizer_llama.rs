@@ -41,7 +41,7 @@ impl LlamaTokenizer {
         }
     }
 
-    pub fn decode(&self, token: usize) -> Result<String> {
+    pub fn decode<'a>(&'a self, token: TokenID) -> Vec<u8> {
         // get the token string from the tokens table
         let piece: &[u8] = self.tokens[token].as_bytes();
 
@@ -54,19 +54,14 @@ impl LlamaTokenizer {
         if is_byte {
             let s = String::from_utf8_lossy(&piece[1..piece.len() - 1]);
             let byte = u8::from_str_radix(s.trim_start_matches("0x"), 16).unwrap();
-            if self.decode_buf.borrow_mut().push_with_check(&[byte]) {
-                Ok(self.decode_buf.borrow_mut().take())
-            } else {
-                Ok("".to_string())
-            }
+            vec![byte]
         } else {
-            // it's considered a normal token, if the decode_buf is not empty, we need to concatenate
-            // the charactors of the current token to the decode_buf, and then return the decode_buf
-            // in a utf8 string.
-            self.decode_buf.borrow_mut().push(piece);
-            let mut s = self.decode_buf.borrow_mut().take();
-            s = s.replace('▁', " ");
-            Ok(s)
+            if piece.starts_with(b"\xE2\x96\x81") {
+                let s = self.tokens[token].replace("▁", " ");
+                s.as_bytes().to_vec()
+            } else {
+                piece.to_vec()
+            }
         }
     }
 

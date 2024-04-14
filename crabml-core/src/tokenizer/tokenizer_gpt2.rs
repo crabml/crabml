@@ -87,7 +87,7 @@ impl Gpt2Tokenizer {
             .iter()
             .flat_map(|s| {
                 if special_tokens.contains(&s.as_str()) {
-                    return vec![self.token_ids.get(s).unwrap().clone()];
+                    return vec![*self.token_ids.get(s).unwrap()];
                 }
                 let mut toks = vec![];
                 for b in s.bytes() {
@@ -127,11 +127,10 @@ impl Gpt2Tokenizer {
             if let Some((tok1, tok2)) = merging_pair {
                 let token1 = self.tokens[tok1].clone();
                 let token2 = self.tokens[tok2].clone();
-                tokens[merging_idx] = self
+                tokens[merging_idx] = *self
                     .token_ids
                     .get(&format!("{}{}", token1, token2))
-                    .unwrap()
-                    .clone();
+                    .unwrap();
                 tokens.remove(merging_idx + 1);
             } else {
                 return tokens;
@@ -147,7 +146,7 @@ fn build_byte_encode_map() -> HashMap<u8, char> {
     let ranges = [('!', '~'), ('¡', '¬'), ('®', 'ÿ')];
     for (start, end) in ranges.iter() {
         for i in *start..=*end {
-            map.insert(i as u8, i as char);
+            map.insert(i as u8, i);
         }
     }
     let mut extra_unicode = 0x100;

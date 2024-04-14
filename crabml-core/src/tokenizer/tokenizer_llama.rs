@@ -35,7 +35,7 @@ impl LlamaTokenizer {
         }
     }
 
-    pub fn decode<'a>(&'a self, token: TokenID) -> Vec<u8> {
+    pub fn decode(&self, token: TokenID) -> Vec<u8> {
         // get the token string from the tokens table
         let piece: &[u8] = self.tokens[token].as_bytes();
 
@@ -50,7 +50,7 @@ impl LlamaTokenizer {
             let byte = u8::from_str_radix(s.trim_start_matches("0x"), 16).unwrap();
             vec![byte]
         } else if piece.starts_with("▁".as_bytes()) {
-            let s = self.tokens[token].replace("▁", " ");
+            let s = self.tokens[token].replace('▁', " ");
             s.as_bytes().to_vec()
         } else {
             piece.to_vec()
@@ -75,7 +75,7 @@ impl LlamaTokenizer {
         // so prepend a dummy prefix token to the input string, but only if text != ""
         // TODO: pretty sure this isn't correct in the general case but I don't have the
         // energy to read more of the sentencepiece code to figure out what it's doing
-        if add_prefix_space && text.len() > 0 {
+        if add_prefix_space && !text.is_empty() {
             if let Some(dummy_prefix) = self.token_ids.get("▁") {
                 tokens.push(*dummy_prefix);
             }

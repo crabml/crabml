@@ -54,7 +54,7 @@ impl Tokenizer {
     // bos != 0 means prepend the BOS token (=1), eos != 0 means append the EOS token (=2)
     pub fn encode(&self, text: &str, bos: bool, eos: bool) -> Result<Vec<TokenID>> {
         match &self.inner {
-            TokenizerInner::Llama(inner) => Ok(inner.encode(text, bos, eos)),
+            TokenizerInner::Llama(inner) => Ok(inner.encode(text, bos, eos, true)),
         }
     }
 }

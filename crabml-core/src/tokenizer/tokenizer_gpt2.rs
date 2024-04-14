@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use regex::Regex;
+
 use super::tokenizer::TokenID;
 
 struct Gpt2Tokenizer {
@@ -10,6 +12,7 @@ struct Gpt2Tokenizer {
     byte_encode_map: HashMap<u8, char>,
     bos_token: TokenID,
     eos_token: TokenID,
+    pattern: regex::Regex,
 }
 
 impl Gpt2Tokenizer {
@@ -37,6 +40,9 @@ impl Gpt2Tokenizer {
             })
             .collect();
         let byte_encode_map = build_byte_encode_map();
+        let pattern =
+            Regex::new(r"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+")
+                .unwrap();
         Self {
             tokens,
             token_ids,
@@ -44,21 +50,29 @@ impl Gpt2Tokenizer {
             byte_encode_map,
             bos_token,
             eos_token,
+            pattern,
         }
     }
 
     // encode the string text (input) into an upper-bound preallocated tokens[] array
     // bos != 0 means prepend the BOS token (=1), eos != 0 means append the EOS token (=2)
     pub fn encode(&self, text: &str, bos: bool, eos: bool) -> Vec<TokenID> {
-        let tokens = text
-            .bytes()
-            .map(|b| {
-                let ch = self.byte_encode_map.get(&b).unwrap().to_string();
-                let token_id = self.token_ids.get(&ch).unwrap();
-                *token_id
+        let mut tokens = self
+            .pattern
+            .find_iter(text)
+            .map(|mat| mat.as_str().to_string())
+            .flat_map(|s| {
+                println!("subword: {}", s);
+                let mut toks = vec![];
+                for b in s.bytes() {
+                    let ch = self.byte_encode_map.get(&b).unwrap().to_string();
+                    let token_id = self.token_ids.get(&ch).unwrap();
+                    toks.push(*token_id);
+                }
+                toks = self.bpe_merge(toks);
+                toks
             })
             .collect::<Vec<_>>();
-        let mut tokens = self.bpe_merge(tokens);
 
         if bos {
             tokens.insert(0, self.bos_token);

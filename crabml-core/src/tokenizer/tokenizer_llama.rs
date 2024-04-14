@@ -71,7 +71,7 @@ impl LlamaTokenizer {
 
     // encode the string text (input) into an upper-bound preallocated tokens[] array
     // bos != 0 means prepend the BOS token (=1), eos != 0 means append the EOS token (=2)
-    pub fn encode(&self, text: &str, bos: bool, eos: bool) -> Vec<TokenID> {
+    pub fn encode(&self, text: &str, bos: bool, eos: bool, add_prefix_space: bool) -> Vec<TokenID> {
         // create a temporary buffer that will store merge candidates of always two consecutive tokens
         // *2 for concat, +1 for null terminator +2 for UTF8 (in case max_token_length is 1)
         let mut token_buf = String::with_capacity(self.token_buf_len * 2 + 1 + 2);
@@ -87,7 +87,7 @@ impl LlamaTokenizer {
         // so prepend a dummy prefix token to the input string, but only if text != ""
         // TODO: pretty sure this isn't correct in the general case but I don't have the
         // energy to read more of the sentencepiece code to figure out what it's doing
-        if text.len() > 0 {
+        if add_prefix_space && text.len() > 0 {
             if let Some(dummy_prefix) = self.token_ids.get("▁") {
                 tokens.push(*dummy_prefix);
             }

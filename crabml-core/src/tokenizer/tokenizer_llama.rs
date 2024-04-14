@@ -1,25 +1,21 @@
-use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 
-use crate::error::Result;
+use super::TokenID;
 
-type Token = String;
-type TokenID = usize;
-
-pub struct BpeTokenizer {
-    tokens: Vec<Token>,
-    token_scores: Vec<f32>,
+pub struct LlamaTokenizer {
+    tokens: Rc<Vec<String>>,
     token_ids: HashMap<String, TokenID>,
+    token_scores: HashMap<TokenID, f32>,
+    token_buf_len: usize,
     bos_token: TokenID,
     eos_token: TokenID,
-    decode_buf: RefCell<Utf8Buf>,
-    token_buf_len: usize,
 }
 
-impl BpeTokenizer {
+impl LlamaTokenizer {
     pub fn new(
-        tokens: Vec<String>,
-        token_scores: Vec<f32>,
+        tokens: Rc<Vec<String>>,
+        scores: Vec<f32>,
         bos_token: TokenID,
         eos_token: TokenID,
     ) -> Self {
@@ -28,38 +24,20 @@ impl BpeTokenizer {
             .enumerate()
             .map(|(i, v)| (v.clone(), i))
             .collect();
-
+        let token_scores = scores.into_iter().enumerate().collect::<HashMap<_, _>>();
         Self {
-            tokens,
+            tokens: tokens.clone(),
             token_ids,
             token_scores,
             token_buf_len: 128,
-            decode_buf: RefCell::new(Utf8Buf::new()),
             bos_token,
             eos_token,
         }
     }
 
-    pub fn vocab(&self) -> &[String] {
-        &self.tokens
-    }
-
-    pub fn eos_token(&self) -> TokenID {
-        self.eos_token
-    }
-
-    pub fn token(&self, token_id: TokenID) -> Token {
-        self.tokens[token_id].clone()
-    }
-
-    pub fn decode(&self, prev_token: usize, token: usize) -> Result<String> {
+    pub fn decode(&self, token: TokenID) -> Vec<u8> {
         // get the token string from the tokens table
-        let mut piece: &[u8] = self.tokens[token].as_bytes();
-
-        // following BOS (1) token, sentencepiece decoder strips any leading whitespace
-        if prev_token == 1 && piece[0] == b' ' {
-            piece = &piece[1..];
-        }
+        let piece: &[u8] = self.tokens[token].as_bytes();
 
         // some tokens designate raw bytes, and look like e.g. '<0x01>', we need parse this and
         // convert and return the actual byte.
@@ -70,25 +48,18 @@ impl BpeTokenizer {
         if is_byte {
             let s = String::from_utf8_lossy(&piece[1..piece.len() - 1]);
             let byte = u8::from_str_radix(s.trim_start_matches("0x"), 16).unwrap();
-            if self.decode_buf.borrow_mut().push_with_check(&[byte]) {
-                Ok(self.decode_buf.borrow_mut().take())
-            } else {
-                Ok("".to_string())
-            }
+            vec![byte]
+        } else if piece.starts_with("▁".as_bytes()) {
+            let s = self.tokens[token].replace('▁', " ");
+            s.as_bytes().to_vec()
         } else {
-            // it's considered a normal token, if the decode_buf is not empty, we need to concatenate
-            // the charactors of the current token to the decode_buf, and then return the decode_buf
-            // in a utf8 string.
-            self.decode_buf.borrow_mut().push(piece);
-            let mut s = self.decode_buf.borrow_mut().take();
-            s = s.replace('▁', " ");
-            Ok(s)
+            piece.to_vec()
         }
     }
 
     // encode the string text (input) into an upper-bound preallocated tokens[] array
     // bos != 0 means prepend the BOS token (=1), eos != 0 means append the EOS token (=2)
-    pub fn encode(&self, text: &str, bos: bool, eos: bool) -> Result<Vec<TokenID>> {
+    pub fn encode(&self, text: &str, bos: bool, eos: bool, add_prefix_space: bool) -> Vec<TokenID> {
         // create a temporary buffer that will store merge candidates of always two consecutive tokens
         // *2 for concat, +1 for null terminator +2 for UTF8 (in case max_token_length is 1)
         let mut token_buf = String::with_capacity(self.token_buf_len * 2 + 1 + 2);
@@ -104,7 +75,7 @@ impl BpeTokenizer {
         // so prepend a dummy prefix token to the input string, but only if text != ""
         // TODO: pretty sure this isn't correct in the general case but I don't have the
         // energy to read more of the sentencepiece code to figure out what it's doing
-        if !text.starts_with('\u{0}') {
+        if add_prefix_space && !text.is_empty() {
             if let Some(dummy_prefix) = self.token_ids.get("▁") {
                 tokens.push(*dummy_prefix);
             }
@@ -139,7 +110,7 @@ impl BpeTokenizer {
                 token_buf.push_str(&self.tokens[tokens[i]]);
                 token_buf.push_str(&self.tokens[tokens[i + 1]]);
                 if let Some(tok) = self.token_ids.get(&token_buf) {
-                    let new_score = self.token_scores[*tok];
+                    let new_score = *self.token_scores.get(tok).unwrap();
                     if new_score > best_score {
                         best_score = new_score;
                         best_idx = Some(i);
@@ -161,42 +132,14 @@ impl BpeTokenizer {
             tokens.push(self.eos_token);
         }
 
-        Ok(tokens)
-    }
-}
-
-/// on the cases that a utf-8 character is split into multiple tokens, we need to buffer the tokens
-/// until we have a valid utf-8 string, then return it.
-struct Utf8Buf {
-    buf: Vec<u8>,
-}
-
-impl Utf8Buf {
-    fn new() -> Self {
-        Self {
-            buf: Vec::with_capacity(128),
-        }
-    }
-
-    fn push(&mut self, bytes: &[u8]) {
-        self.buf.extend_from_slice(bytes)
-    }
-
-    fn push_with_check(&mut self, bytes: &[u8]) -> bool {
-        self.buf.extend_from_slice(bytes);
-        std::str::from_utf8(&self.buf).is_ok()
-    }
-
-    fn take(&mut self) -> String {
-        let s = String::from_utf8_lossy(&self.buf).to_string();
-        self.buf.clear();
-        s
+        tokens
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::Tokenizer;
+    use crate::error::Result;
     use crate::gguf::GGUFFileLoader;
 
     #[test]
@@ -216,7 +159,10 @@ mod tests {
             .get_f32_array("tokenizer.ggml.scores")
             .unwrap()
             .to_vec();
-        let tk = BpeTokenizer::new(tokens, token_scores, 1, 2);
+        for (i, tok) in tokens.iter().enumerate().take(100) {
+            println!("{} {}", i, tok);
+        }
+        let tk = Tokenizer::new_llama(tokens, token_scores, 1, 2);
 
         let tests = vec![
             (10842, "▁Captain"),
@@ -241,6 +187,10 @@ mod tests {
             ),
             ("hello, world", "<s> - ▁hello - , - ▁world - </s>"),
             ("tiktok", "<s> - ▁t - ik - tok - </s>"),
+            (
+                "i don't eat beaf.",
+                "<s> - ▁i - ▁don - ' - t - ▁eat - ▁be - af - . - </s>",
+            ),
         ];
 
         for tt in tests {

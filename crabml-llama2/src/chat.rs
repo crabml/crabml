@@ -36,8 +36,8 @@ impl<'a, T: Tensor> Llama2Chat<'a, T> {
                 .apply(&self.prompt, self.system_prompt.as_deref(), true);
 
         let bos = self.inner.kv_cache_len() == 0;
-        let (pos, last_token, token) = self.inner.prefill(&templated_prompt, bos, false)?;
-        let iter = self.inner.generate(pos, last_token, token, None);
+        let (pos, _prev_token, token) = self.inner.prefill(&templated_prompt, bos, false)?;
+        let iter = self.inner.generate(pos, token, None);
         let chat_iter = Llama2ChatReplyIterator::new(
             Box::new(iter),
             vec![self.chat_template.stop_mark().to_string()],

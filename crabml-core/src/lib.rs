@@ -5,6 +5,8 @@
 #![feature(lazy_cell)]
 #![feature(iter_array_chunks)]
 #![feature(lint_reasons)]
+#![allow(clippy::map_entry)]
+#![allow(clippy::comparison_chain)]
 
 #[allow(unreachable_patterns)]
 pub mod backends;

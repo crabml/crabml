@@ -15,7 +15,7 @@ use crabml::gguf::GGMLType;
 use crabml::gguf::GGUFFile;
 use crabml::tensor::Tensor;
 use crabml::tensor::TensorMetrics;
-use crabml::tokenizer::BpeTokenizer;
+use crabml::tokenizer::Tokenizer;
 
 use crate::sampler::Llama2SamplerRef;
 use crate::Llama2Sampler;
@@ -81,7 +81,7 @@ pub trait Llama2Model {
 
     fn weights(&self) -> Rc<Llama2Weights<Self::T>>;
 
-    fn tokenizer(&self) -> Rc<BpeTokenizer>;
+    fn tokenizer(&self) -> Rc<Tokenizer>;
 
     fn sampler(&self) -> Llama2SamplerRef;
 
@@ -91,7 +91,7 @@ pub trait Llama2Model {
 pub struct CpuLlama2Model<'a> {
     pub conf: Llama2Config,
     pub weights: Rc<Llama2Weights<CpuTensor<'a>>>,
-    pub tokenizer: Rc<BpeTokenizer>,
+    pub tokenizer: Rc<Tokenizer>,
     pub device: CpuTensorDeviceRef<'a>,
     pub sampler: Llama2SamplerRef,
     pub metrics: TensorMetrics,
@@ -112,7 +112,7 @@ impl<'a> Llama2Model for &CpuLlama2Model<'a> {
         self.weights.clone()
     }
 
-    fn tokenizer(&self) -> Rc<BpeTokenizer> {
+    fn tokenizer(&self) -> Rc<Tokenizer> {
         self.tokenizer.clone()
     }
 
@@ -174,7 +174,7 @@ impl CpuLlama2ModelLoader {
         let metrics = device.metrics().clone();
         let conf = self.load_config(gf)?;
         let weights = self.load_weights(gf, conf.n_layers, device.clone())?;
-        let tokenizer = self.load_tokenizer(gf);
+        let tokenizer = self.load_tokenizer(gf)?;
         let sampler = Llama2Sampler::new(
             conf.vocab_size,
             self.temprature,
@@ -318,23 +318,13 @@ impl CpuLlama2ModelLoader {
         }
     }
 
-    fn load_tokenizer(&self, gf: &GGUFFile) -> BpeTokenizer {
+    fn load_tokenizer(&self, gf: &GGUFFile) -> Result<Tokenizer> {
         let vocab = gf
             .metadata()
             .get_string_array("tokenizer.ggml.tokens")
             .unwrap()
             .iter()
             .map(|s| s.to_string())
-            .collect::<Vec<_>>();
-        // it seems that .to_vec() will raise an memory issue but it's ok with
-        // iter().cloned().collect(), strange.
-        #[allow(clippy::iter_cloned_collect)]
-        let vocab_scores = gf
-            .metadata()
-            .get_f32_array("tokenizer.ggml.scores")
-            .unwrap()
-            .iter()
-            .cloned()
             .collect::<Vec<_>>();
         let eos_token = gf
             .metadata()
@@ -344,7 +334,45 @@ impl CpuLlama2ModelLoader {
             .metadata()
             .get_u32("tokenizer.ggml.bos_token_id")
             .unwrap() as usize;
-        BpeTokenizer::new(vocab, vocab_scores, bos_token, eos_token)
+        let tokenizer_kind = gf
+            .metadata()
+            .get_string("tokenizer.ggml.model")
+            .unwrap()
+            .to_string();
+        match tokenizer_kind.as_str() {
+            "llama" => {
+                // it seems that .to_vec() will raise an memory issue but it's ok with
+                // iter().cloned().collect(), strange.
+                #[allow(clippy::iter_cloned_collect)]
+                let vocab_scores = gf
+                    .metadata()
+                    .get_f32_array("tokenizer.ggml.scores")
+                    .unwrap()
+                    .iter()
+                    .cloned()
+                    .collect::<Vec<_>>();
+                Ok(Tokenizer::new_llama(
+                    vocab,
+                    vocab_scores,
+                    bos_token,
+                    eos_token,
+                ))
+            }
+            "gpt2" => {
+                let merges = gf
+                    .metadata()
+                    .get_string_array("tokenizer.ggml.merges")
+                    .unwrap()
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect::<Vec<_>>();
+                Ok(Tokenizer::new_gpt2(vocab, merges, bos_token, eos_token))
+            }
+            other => Err(Error::new(
+                ErrorKind::IOError,
+                format!("unsupported tokenizer {}", other),
+            )),
+        }
     }
 
     fn load_config(&self, gf: &GGUFFile) -> Result<Llama2Config> {
@@ -425,7 +453,7 @@ impl CpuLlama2ModelLoader {
 pub struct WgpuLlama2Model {
     pub conf: Llama2Config,
     pub weights: Rc<Llama2Weights<WgpuTensor>>,
-    pub tokenizer: Rc<BpeTokenizer>,
+    pub tokenizer: Rc<Tokenizer>,
     pub device: WgpuTensorDeviceRef,
     pub sampler: Llama2SamplerRef,
     pub metrics: TensorMetrics,
@@ -446,7 +474,7 @@ impl Llama2Model for &WgpuLlama2Model {
         self.device.clone()
     }
 
-    fn tokenizer(&self) -> Rc<BpeTokenizer> {
+    fn tokenizer(&self) -> Rc<Tokenizer> {
         self.tokenizer.clone()
     }
 

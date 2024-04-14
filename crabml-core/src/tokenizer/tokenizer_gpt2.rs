@@ -9,7 +9,8 @@ struct Gpt2Tokenizer {
     tokens: Rc<Vec<String>>,
     token_ids: Rc<HashMap<String, TokenID>>,
     bpe_ranks: HashMap<(TokenID, TokenID), usize>,
-    byte_encode_map: HashMap<u8, char>,
+    byte_encodes: HashMap<u8, char>,
+    byte_decodes: HashMap<char, u8>,
     bos_token: TokenID,
     eos_token: TokenID,
     pattern: regex::Regex,
@@ -39,7 +40,8 @@ impl Gpt2Tokenizer {
                 ((*first, *second), i)
             })
             .collect();
-        let byte_encode_map = build_byte_encode_map();
+        let byte_encodes = build_byte_encode_map();
+        let byte_decodes = byte_encodes.iter().map(|(b, u)| (*u, *b)).collect();
         let pattern =
             Regex::new(r"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+")
                 .unwrap();
@@ -47,11 +49,29 @@ impl Gpt2Tokenizer {
             tokens,
             token_ids,
             bpe_ranks: merges,
-            byte_encode_map,
+            byte_encodes,
+            byte_decodes,
             bos_token,
             eos_token,
             pattern,
         }
+    }
+
+    pub fn decode(&self, token_ids: &[TokenID]) -> String {
+        let mut buf = vec![];
+        for token_id in token_ids {
+            let token = &self.tokens[*token_id];
+            if token.len() > 1 {
+                buf.extend(token.bytes());
+            } else if token.len() == 1 {
+                let ch = token.chars().next().unwrap();
+                match self.byte_decodes.get(&ch) {
+                    Some(b) => buf.push(*b),
+                    None => buf.push(ch as u8),
+                }
+            }
+        }
+        String::from_utf8_lossy(&buf).to_string()
     }
 
     // encode the string text (input) into an upper-bound preallocated tokens[] array
@@ -65,7 +85,7 @@ impl Gpt2Tokenizer {
                 println!("subword: {}", s);
                 let mut toks = vec![];
                 for b in s.bytes() {
-                    let ch = self.byte_encode_map.get(&b).unwrap().to_string();
+                    let ch = self.byte_encodes.get(&b).unwrap().to_string();
                     let token_id = self.token_ids.get(&ch).unwrap();
                     toks.push(*token_id);
                 }

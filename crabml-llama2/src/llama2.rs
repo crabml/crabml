@@ -8,6 +8,7 @@ use crabml::gguf::GGMLType;
 use crabml::tensor::RopeMode;
 use crabml::tensor::Tensor;
 use crabml::tensor::TensorMetrics;
+use crabml::tokenizer::TokenID;
 use crabml::tokenizer::Tokenizer;
 
 use crate::model::Llama2Config;
@@ -131,9 +132,9 @@ impl<'a, T: Tensor> Llama2Runner<T> {
     pub fn generate(
         &'a mut self,
         pos: usize,
-        token: usize,
+        first_token: TokenID,
         steps: Option<usize>,
-    ) -> impl Iterator<Item = Result<String>> + '_ {
+    ) -> impl Iterator<Item = Result<TokenID>> + '_ {
         // the first token has already been generated in the prefill phase.
         let max_seq = self.conf.seq_len - pos - 1;
         let max_steps = match steps {
@@ -142,18 +143,16 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         };
 
         let sampler = self.sampler.clone();
-        let first_token = self.tokenizer.decode(token);
-        let tokens_iter = (pos..pos + max_steps).scan(token, move |current_token, pos| {
+        let tokens_iter = (pos..pos + max_steps).scan(first_token, move |current_token, pos| {
             let logits = self.forward(&[*current_token], pos).unwrap();
             let new_token = sampler.sample(logits).unwrap();
             if new_token == self.tokenizer.eos_token() {
                 return None;
             }
-            let r = self.tokenizer.decode(new_token).unwrap();
             *current_token = new_token;
-            Some(Ok(r))
+            Some(Ok(new_token))
         });
-        std::iter::once(first_token).chain(tokens_iter)
+        std::iter::once(Ok(first_token)).chain(tokens_iter)
     }
 
     // simplify the test cases
@@ -161,7 +160,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         &'a mut self,
         prompt: &str,
         steps: usize,
-    ) -> Result<impl Iterator<Item = Result<String>> + '_> {
+    ) -> Result<impl Iterator<Item = Result<TokenID>> + '_> {
         let (pos, _prev_token, token) = self.prefill(prompt, true, false)?;
         Ok(self.generate(pos, token, Some(steps)))
     }

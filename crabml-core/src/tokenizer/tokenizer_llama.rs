@@ -40,10 +40,6 @@ impl LlamaTokenizer {
         }
     }
 
-    pub fn eos_token(&self) -> TokenID {
-        self.eos_token
-    }
-
     pub fn decode(&self, token: usize) -> Result<String> {
         // get the token string from the tokens table
         let piece: &[u8] = self.tokens[token].as_bytes();

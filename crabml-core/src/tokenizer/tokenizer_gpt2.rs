@@ -66,7 +66,6 @@ impl Gpt2Tokenizer {
         if eos {
             tokens.push(self.eos_token);
         }
-
         tokens
     }
 
@@ -156,12 +155,9 @@ mod tests {
 
         let tests = vec![
             ("Captain America: ", "Captain - ĠAmerica - : - Ġ"),
-            ("hello, world", "<s> - ▁hello - , - ▁world - </s>"),
-            ("tiktok", "<s> - ▁t - ik - tok - </s>"),
-            (
-                "i don't eat beaf.",
-                "<s> - ▁i - ▁don - ' - t - ▁eat - ▁be - af - . - </s>",
-            ),
+            ("hello, world", "hello - , - Ġworld"),
+            ("tiktok", "t - ik - tok"),
+            ("i don't eat beaf.", "i - Ġdon - 't - Ġeat - Ġbe - af - ."),
         ];
 
         for tt in tests {

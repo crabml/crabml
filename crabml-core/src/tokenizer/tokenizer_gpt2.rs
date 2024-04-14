@@ -1,14 +1,13 @@
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
 use super::tokenizer::TokenID;
-use crate::error::Result;
 
 struct Gpt2TokenEncoder {
     tokens: Rc<Vec<String>>,
     token_ids: Rc<HashMap<String, TokenID>>,
     merges: HashMap<(TokenID, TokenID), usize>,
+    byte_encoder: HashMap<u8, char>,
     bos_token: TokenID,
     eos_token: TokenID,
 }
@@ -37,10 +36,12 @@ impl Gpt2TokenEncoder {
                 ((*first, *second), i)
             })
             .collect();
+        let byte_encoder = build_byte_to_unicode_map();
         Self {
             tokens,
             token_ids,
             merges,
+            byte_encoder,
             bos_token,
             eos_token,
         }
@@ -114,9 +115,33 @@ impl Gpt2TokenEncoder {
     }
 }
 
+///
+fn build_byte_to_unicode_map() -> HashMap<u8, char> {
+    let mut map = HashMap::new();
+    let ranges = [
+        ('!' as u8, '~' as u8),
+        ('¡' as u8, '¬' as u8),
+        ('®' as u8, 'ÿ' as u8),
+    ];
+    for (start, end) in ranges.iter() {
+        for i in *start..=*end {
+            map.insert(i, i as char);
+        }
+    }
+    let mut extra_unicode = 0x100;
+    for i in 0..=255 {
+        if !map.contains_key(&(i as u8)) {
+            map.insert(i as u8, std::char::from_u32(extra_unicode).unwrap());
+            extra_unicode += 1;
+        }
+    }
+    map
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::Result;
     use crate::gguf::GGUFFileLoader;
 
     #[test]

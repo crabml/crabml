@@ -245,20 +245,10 @@ impl Gpt2TokenEncoder {
         let mut token_buf = String::with_capacity(128 * 2 + 1 + 2);
         let mut tokens: Vec<TokenID> = vec![];
 
-        let text = text.replace(' ', "▁");
+        // let text = text.replace(' ', "▁");
 
         if bos {
             tokens.push(self.bos_token);
-        }
-
-        // add_dummy_prefix is true by default
-        // so prepend a dummy prefix token to the input string, but only if text != ""
-        // TODO: pretty sure this isn't correct in the general case but I don't have the
-        // energy to read more of the sentencepiece code to figure out what it's doing
-        if text.len() > 0 {
-            if let Some(dummy_prefix) = self.token_ids.get("▁") {
-                tokens.push(*dummy_prefix);
-            }
         }
 
         let chars = text.chars();
@@ -290,6 +280,7 @@ impl Gpt2TokenEncoder {
                         merging_pair = Some((pair[0], pair[1]));
                         merging_idx = idx;
                     }
+                    println!("idx: {}", idx);
                 }
             }
             if let Some((tok1, tok2)) = merging_pair {
@@ -313,6 +304,26 @@ impl Gpt2TokenEncoder {
         tokens
     }
 }
+
+fn is_cjk_char(character: &char) -> bool {
+    let u32_char = *character as u32;
+    (0x4E00..=0x9FFF).contains(&u32_char)
+        | (0x3400..=0x4DBF).contains(&u32_char)
+        | (0x20000..=0x2A6DF).contains(&u32_char)
+        | (0x2A700..=0x2B73F).contains(&u32_char)
+        | (0x2B740..=0x2B81F).contains(&u32_char)
+        | (0x2B820..=0x2CEAF).contains(&u32_char)
+        | (0xF900..=0xFAFF).contains(&u32_char)
+        | (0x2F800..=0x2FA1F).contains(&u32_char)
+}
+
+pub const WHITESPACE_CHARS: [u32; 20] = [
+    //        Standard whitespace characters (unicode category Zs)
+    0x0020, 0x00A0, 0x1680, 0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006, 0x2007, 0x2008,
+    0x2009, 0x200A, 0x202F, 0x205F, 0x3000,
+    //        Additional characters considered whitespace for BERT (tab, newline, carriage return)
+    0x0009, 0x000D, 0x00A,
+];
 
 /// on the cases that a utf-8 character is split into multiple tokens, we need to buffer the tokens
 /// until we have a valid utf-8 string, then return it.
@@ -448,7 +459,7 @@ mod tests {
         ];
 
         for tt in tests {
-            let outputs = tk.encode(tt.0, true, true);
+            let outputs = tk.encode(tt.0, false, false);
             let tokens_in_string = outputs
                 .iter()
                 .map(|t| tokens[*t].clone())

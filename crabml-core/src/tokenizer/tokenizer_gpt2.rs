@@ -6,8 +6,8 @@ use super::tokenizer::TokenID;
 struct Gpt2Tokenizer {
     tokens: Rc<Vec<String>>,
     token_ids: Rc<HashMap<String, TokenID>>,
-    merges: HashMap<(TokenID, TokenID), usize>,
-    byte_encoder: HashMap<u8, char>,
+    bpe_ranks: HashMap<(TokenID, TokenID), usize>,
+    byte_encode_map: HashMap<u8, char>,
     bos_token: TokenID,
     eos_token: TokenID,
 }
@@ -36,12 +36,12 @@ impl Gpt2Tokenizer {
                 ((*first, *second), i)
             })
             .collect();
-        let byte_encoder = build_byte_to_unicode_map();
+        let byte_encode_map = build_byte_encode_map();
         Self {
             tokens,
             token_ids,
-            merges,
-            byte_encoder,
+            bpe_ranks: merges,
+            byte_encode_map,
             bos_token,
             eos_token,
         }
@@ -53,7 +53,7 @@ impl Gpt2Tokenizer {
         let tokens = text
             .bytes()
             .map(|b| {
-                let ch = self.byte_encoder.get(&b).unwrap().to_string();
+                let ch = self.byte_encode_map.get(&b).unwrap().to_string();
                 let token_id = self.token_ids.get(&ch).unwrap();
                 *token_id
             })
@@ -76,7 +76,7 @@ impl Gpt2Tokenizer {
             let mut merging_pair: Option<(TokenID, TokenID)> = None;
             let mut merging_idx = usize::MAX;
             for (idx, pair) in tokens.windows(2).enumerate() {
-                if let Some(rank) = self.merges.get(&(pair[0], pair[1])) {
+                if let Some(rank) = self.bpe_ranks.get(&(pair[0], pair[1])) {
                     if *rank < lowest_rank {
                         lowest_rank = *rank;
                         merging_pair = Some((pair[0], pair[1]));
@@ -102,7 +102,7 @@ impl Gpt2Tokenizer {
 
 /// the merge map are all unicodes, we need convert the raw bytes into an encoded
 /// unicode character.
-fn build_byte_to_unicode_map() -> HashMap<u8, char> {
+fn build_byte_encode_map() -> HashMap<u8, char> {
     let mut map = HashMap::new();
     let ranges = [
         ('!' as u8, '~' as u8),

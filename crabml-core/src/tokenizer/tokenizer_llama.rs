@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use super::tokenizer::TokenID;
+use super::tokenizer::Utf8Buf;
 use crate::error::Result;
 
 pub struct LlamaTokenizer {
@@ -145,35 +146,6 @@ impl LlamaTokenizer {
         }
 
         tokens
-    }
-}
-
-/// on the cases that a utf-8 character is split into multiple tokens, we need to buffer the tokens
-/// until we have a valid utf-8 string, then return it.
-struct Utf8Buf {
-    buf: Vec<u8>,
-}
-
-impl Utf8Buf {
-    fn new() -> Self {
-        Self {
-            buf: Vec::with_capacity(128),
-        }
-    }
-
-    fn push(&mut self, bytes: &[u8]) {
-        self.buf.extend_from_slice(bytes)
-    }
-
-    fn push_with_check(&mut self, bytes: &[u8]) -> bool {
-        self.buf.extend_from_slice(bytes);
-        std::str::from_utf8(&self.buf).is_ok()
-    }
-
-    fn take(&mut self) -> String {
-        let s = String::from_utf8_lossy(&self.buf).to_string();
-        self.buf.clear();
-        s
     }
 }
 

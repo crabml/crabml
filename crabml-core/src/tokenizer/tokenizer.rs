@@ -67,3 +67,32 @@ enum TokenizerKind {
     Llama,
     GPT2,
 }
+
+/// on the cases that a utf-8 character is split into multiple tokens, we need to buffer the tokens
+/// until we have a valid utf-8 string, then return it.
+pub struct Utf8Buf {
+    buf: Vec<u8>,
+}
+
+impl Utf8Buf {
+    pub fn new() -> Self {
+        Self {
+            buf: Vec::with_capacity(128),
+        }
+    }
+
+    pub fn push(&mut self, bytes: &[u8]) {
+        self.buf.extend_from_slice(bytes)
+    }
+
+    pub fn push_with_check(&mut self, bytes: &[u8]) -> bool {
+        self.buf.extend_from_slice(bytes);
+        std::str::from_utf8(&self.buf).is_ok()
+    }
+
+    pub fn take(&mut self) -> String {
+        let s = String::from_utf8_lossy(&self.buf).to_string();
+        self.buf.clear();
+        s
+    }
+}

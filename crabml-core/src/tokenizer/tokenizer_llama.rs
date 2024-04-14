@@ -1,10 +1,7 @@
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
 use super::tokenizer::TokenID;
-use super::tokenizer::Utf8Buf;
-use crate::error::Result;
 
 pub struct LlamaTokenizer {
     tokens: Rc<Vec<String>>,
@@ -13,7 +10,6 @@ pub struct LlamaTokenizer {
     token_buf_len: usize,
     bos_token: TokenID,
     eos_token: TokenID,
-    decode_buf: RefCell<Utf8Buf>,
 }
 
 impl LlamaTokenizer {
@@ -29,13 +25,11 @@ impl LlamaTokenizer {
             .map(|(i, v)| (v.clone(), i))
             .collect();
         let token_scores = scores.into_iter().enumerate().collect::<HashMap<_, _>>();
-        let decode_buf = RefCell::new(Utf8Buf::new());
         Self {
             tokens: tokens.clone(),
             token_ids,
             token_scores,
             token_buf_len: 128,
-            decode_buf,
             bos_token,
             eos_token,
         }
@@ -149,7 +143,6 @@ mod tests {
     use super::super::Tokenizer;
     use crate::error::Result;
     use crate::gguf::GGUFFileLoader;
-    use crate::tokenizer::tokenizer::TokenizerKind;
 
     #[test]
     fn test_gguf_tokenizer() -> Result<()> {

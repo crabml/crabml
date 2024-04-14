@@ -91,6 +91,7 @@ impl Tokenizer {
         self.tokens[token_id].clone()
     }
 
+    /// TODO: make it consume an Interator<Item=Result<TokenID>>
     pub fn decode(&self, token: TokenID) -> Result<String> {
         let bytes = match &self.inner {
             TokenizerInner::Llama(inner) => inner.decode(token),
@@ -107,11 +108,6 @@ impl Tokenizer {
             TokenizerInner::GPT2(inner) => Ok(inner.encode(text, bos, eos, true)),
         }
     }
-}
-
-fn is_utf8_start(byte: u8) -> bool {
-    // Check if the byte is not a continuation byte (10xxxxxx)
-    (byte & 0b11000000) != 0b10000000
 }
 
 /// on the cases that a utf-8 character is split into multiple tokens, we need to buffer the tokens

@@ -5,7 +5,7 @@ use regex::Regex;
 
 use super::tokenizer::TokenID;
 
-struct Gpt2Tokenizer {
+pub struct Gpt2Tokenizer {
     tokens: Rc<Vec<String>>,
     token_ids: Rc<HashMap<String, TokenID>>,
     bpe_ranks: HashMap<(TokenID, TokenID), usize>,
@@ -76,10 +76,16 @@ impl Gpt2Tokenizer {
 
     // encode the string text (input) into an upper-bound preallocated tokens[] array
     // bos != 0 means prepend the BOS token (=1), eos != 0 means append the EOS token (=2)
-    pub fn encode(&self, text: &str, bos: bool, eos: bool) -> Vec<TokenID> {
+    pub fn encode(&self, text: &str, bos: bool, eos: bool, add_prefix_space: bool) -> Vec<TokenID> {
+        let text = if add_prefix_space {
+            format!(" {}", text)
+        } else {
+            text.to_string()
+        };
+
         let mut tokens = self
             .pattern
-            .find_iter(text)
+            .find_iter(&text)
             .map(|mat| mat.as_str().to_string())
             .flat_map(|s| {
                 println!("subword: {}", s);
@@ -195,7 +201,7 @@ mod tests {
         ];
 
         for tt in tests {
-            let outputs = tk.encode(tt.0, false, false);
+            let outputs = tk.encode(tt.0, false, false, false);
             let tokens_in_string = outputs
                 .iter()
                 .map(|t| tokens[*t].clone())

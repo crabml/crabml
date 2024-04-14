@@ -1,5 +1,6 @@
 use std::rc::Rc;
 
+use super::tokenizer_gpt2::Gpt2Tokenizer;
 use super::tokenizer_llama::LlamaTokenizer;
 use crate::error::Result;
 
@@ -13,6 +14,7 @@ pub struct Tokenizer {
 
 pub enum TokenizerInner {
     Llama(LlamaTokenizer),
+    GPT2(Gpt2Tokenizer),
 }
 
 impl Tokenizer {
@@ -47,6 +49,7 @@ impl Tokenizer {
     pub fn decode(&self, token: usize) -> Result<String> {
         match &self.inner {
             TokenizerInner::Llama(inner) => inner.decode(token),
+            TokenizerInner::GPT2(inner) => Ok(inner.decode(&[token])),
         }
     }
 
@@ -55,6 +58,7 @@ impl Tokenizer {
     pub fn encode(&self, text: &str, bos: bool, eos: bool) -> Result<Vec<TokenID>> {
         match &self.inner {
             TokenizerInner::Llama(inner) => Ok(inner.encode(text, bos, eos, true)),
+            TokenizerInner::GPT2(inner) => Ok(inner.encode(text, bos, eos, true)),
         }
     }
 }

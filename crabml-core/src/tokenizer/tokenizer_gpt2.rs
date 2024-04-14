@@ -81,11 +81,15 @@ impl Gpt2Tokenizer {
             text.to_string()
         };
 
-        let mut tokens = self
-            .pattern
-            .find_iter(&text)
-            .map(|mat| mat.as_str().to_string())
+        let special_tokens = vec!["<|im_start|>", "<|im_end|>", "<|endoftext|>"];
+        let parts = split_text_by_keyword(&text, &special_tokens);
+
+        let mut tokens = parts
+            .iter()
             .flat_map(|s| {
+                if special_tokens.contains(&s.as_str()) {
+                    return vec![self.token_ids.get(s).unwrap().clone()];
+                }
                 let mut toks = vec![];
                 for b in s.bytes() {
                     let ch = self.byte_encodes.get(&b).unwrap().to_string();
@@ -217,7 +221,7 @@ mod tests {
             ("Captain America: ", "Captain - ĠAmerica - : - Ġ"),
             (
                 "<|im_start|> blah <|im_end|> ",
-                "Captain - ĠAmerica - : - Ġ",
+                "<|im_start|> - Ġblah - Ġ - <|im_end|> - Ġ",
             ),
             ("hello, world", "hello - , - Ġworld"),
             ("tiktok", "t - ik - tok"),

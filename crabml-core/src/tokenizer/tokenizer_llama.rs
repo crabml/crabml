@@ -49,13 +49,11 @@ impl LlamaTokenizer {
             let s = String::from_utf8_lossy(&piece[1..piece.len() - 1]);
             let byte = u8::from_str_radix(s.trim_start_matches("0x"), 16).unwrap();
             vec![byte]
+        } else if piece.starts_with("▁".as_bytes()) {
+            let s = self.tokens[token].replace("▁", " ");
+            s.as_bytes().to_vec()
         } else {
-            if piece.starts_with(b"\xE2\x96\x81") {
-                let s = self.tokens[token].replace("▁", " ");
-                s.as_bytes().to_vec()
-            } else {
-                piece.to_vec()
-            }
+            piece.to_vec()
         }
     }
 

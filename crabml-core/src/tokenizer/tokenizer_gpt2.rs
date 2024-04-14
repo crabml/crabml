@@ -144,14 +144,10 @@ impl Gpt2Tokenizer {
 /// unicode character.
 fn build_byte_encode_map() -> HashMap<u8, char> {
     let mut map = HashMap::new();
-    let ranges = [
-        ('!' as u8, '~' as u8),
-        ('¡' as u8, '¬' as u8),
-        ('®' as u8, 'ÿ' as u8),
-    ];
+    let ranges = [('!', '~'), ('¡', '¬'), ('®', 'ÿ')];
     for (start, end) in ranges.iter() {
         for i in *start..=*end {
-            map.insert(i, i as char);
+            map.insert(i as u8, i as char);
         }
     }
     let mut extra_unicode = 0x100;

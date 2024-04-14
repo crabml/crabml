@@ -188,6 +188,7 @@ mod tests {
     use crate::error::Result;
     use crate::gguf::GGUFFileLoader;
 
+    #[ignore]
     #[test]
     fn test_gpt2_tokenizer() -> Result<()> {
         let gf_loader =

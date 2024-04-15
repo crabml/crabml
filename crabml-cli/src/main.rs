@@ -1,5 +1,3 @@
-extern crate jemallocator;
-
 use std::io::Write;
 use std::time::Instant;
 
@@ -20,8 +18,8 @@ use crabml_llama2::WgpuLlama2Model;
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 
-#[global_allocator]
-static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
+// #[global_allocator]
+// static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
 #[derive(Parser, Debug)]
 struct CommandArgs {

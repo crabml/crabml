@@ -1,0 +1,7 @@
+[target.riscv64gc-unknown-linux-gnu]
+linker = "riscv64-unknown-elf-gcc"
+rustflags = [
+    "-C", "link-arg=-no-pie",
+    "-C", "linker=lld",
+    "-C", "link-arg=-Wl,--eh-frame-hdr"
+]

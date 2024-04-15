@@ -1,25 +1,21 @@
 use std::collections::HashMap;
+use std::rc::Rc;
 
-use crate::error::Result;
+use super::TokenID;
 
-type Token = String;
-type TokenID = usize;
-
-pub struct BpeTokenizer {
-    tokens: Vec<Token>,
-    token_scores: Vec<f32>,
+pub struct LlamaTokenizer {
+    tokens: Rc<Vec<String>>,
     token_ids: HashMap<String, TokenID>,
+    token_scores: HashMap<TokenID, f32>,
+    token_buf_len: usize,
     bos_token: TokenID,
     eos_token: TokenID,
-    // the state on decoding
-    byte_pieces: [u8; 256],
-    token_buf_len: usize,
 }
 
-impl BpeTokenizer {
+impl LlamaTokenizer {
     pub fn new(
-        tokens: Vec<String>,
-        token_scores: Vec<f32>,
+        tokens: Rc<Vec<String>>,
+        scores: Vec<f32>,
         bos_token: TokenID,
         eos_token: TokenID,
     ) -> Self {
@@ -28,58 +24,42 @@ impl BpeTokenizer {
             .enumerate()
             .map(|(i, v)| (v.clone(), i))
             .collect();
-        let mut byte_pieces = [0u8; 256];
-        for (i, p) in byte_pieces.iter_mut().enumerate() {
-            *p = i as u8
-        }
-
+        let token_scores = scores.into_iter().enumerate().collect::<HashMap<_, _>>();
         Self {
-            tokens,
+            tokens: tokens.clone(),
             token_ids,
             token_scores,
             token_buf_len: 128,
-            byte_pieces,
             bos_token,
             eos_token,
         }
     }
 
-    pub fn vocab(&self) -> &[String] {
-        &self.tokens
-    }
+    pub fn decode(&self, token: TokenID) -> Vec<u8> {
+        // get the token string from the tokens table
+        let piece: &[u8] = self.tokens[token].as_bytes();
 
-    pub fn eos_token(&self) -> TokenID {
-        self.eos_token
-    }
-
-    pub fn token(&self, token_id: TokenID) -> Token {
-        self.tokens[token_id].clone()
-    }
-
-    pub fn decode(&self, prev_token: usize, token: usize) -> Result<Token> {
-        let mut piece: &[u8] = self.tokens[token].as_bytes();
-        // following BOS (1) token, sentencepiece decoder strips any leading whitespace (see PR #89)
-        if prev_token == 1 && piece[0] == b' ' {
-            piece = &piece[1..];
-        }
-        // careful, some tokens designate raw bytes, and look like e.g. '<0x01>'
-        // parse this and convert and return the actual byte
-        if piece.starts_with(b"<0x") && piece[piece.len() - 1] == b'>' {
+        // some tokens designate raw bytes, and look like e.g. '<0x01>', we need parse this and
+        // convert and return the actual byte.
+        // this is a bit of a hack, the byte itself might not be a valid utf8 character, we need append
+        // it to the decode_buf until we have a valid utf8 string, then return that. before that, we
+        // return an empty string.
+        let is_byte = piece.starts_with(b"<0x") && piece[piece.len() - 1] == b'>';
+        if is_byte {
             let s = String::from_utf8_lossy(&piece[1..piece.len() - 1]);
-            let s = s.trim_start_matches("0x");
-            if let Ok(byte) = u8::from_str_radix(s, 16) {
-                piece = &self.byte_pieces[(byte as usize)..(byte as usize) + 1]
-            }
+            let byte = u8::from_str_radix(s.trim_start_matches("0x"), 16).unwrap();
+            vec![byte]
+        } else if piece.starts_with("▁".as_bytes()) {
+            let s = self.tokens[token].replace('▁', " ");
+            s.as_bytes().to_vec()
+        } else {
+            piece.to_vec()
         }
-
-        let mut s = String::from_utf8(piece.to_vec()).unwrap();
-        s = s.replace('▁', " ");
-        Ok(s)
     }
 
     // encode the string text (input) into an upper-bound preallocated tokens[] array
     // bos != 0 means prepend the BOS token (=1), eos != 0 means append the EOS token (=2)
-    pub fn encode(&self, text: &str, bos: bool, eos: bool) -> Result<Vec<TokenID>> {
+    pub fn encode(&self, text: &str, bos: bool, eos: bool, add_prefix_space: bool) -> Vec<TokenID> {
         // create a temporary buffer that will store merge candidates of always two consecutive tokens
         // *2 for concat, +1 for null terminator +2 for UTF8 (in case max_token_length is 1)
         let mut token_buf = String::with_capacity(self.token_buf_len * 2 + 1 + 2);
@@ -95,7 +75,7 @@ impl BpeTokenizer {
         // so prepend a dummy prefix token to the input string, but only if text != ""
         // TODO: pretty sure this isn't correct in the general case but I don't have the
         // energy to read more of the sentencepiece code to figure out what it's doing
-        if !text.starts_with('\u{0}') {
+        if add_prefix_space && !text.is_empty() {
             if let Some(dummy_prefix) = self.token_ids.get("▁") {
                 tokens.push(*dummy_prefix);
             }
@@ -130,7 +110,7 @@ impl BpeTokenizer {
                 token_buf.push_str(&self.tokens[tokens[i]]);
                 token_buf.push_str(&self.tokens[tokens[i + 1]]);
                 if let Some(tok) = self.token_ids.get(&token_buf) {
-                    let new_score = self.token_scores[*tok];
+                    let new_score = *self.token_scores.get(tok).unwrap();
                     if new_score > best_score {
                         best_score = new_score;
                         best_idx = Some(i);
@@ -152,13 +132,14 @@ impl BpeTokenizer {
             tokens.push(self.eos_token);
         }
 
-        Ok(tokens)
+        tokens
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::Tokenizer;
+    use crate::error::Result;
     use crate::gguf::GGUFFileLoader;
 
     #[test]
@@ -178,7 +159,10 @@ mod tests {
             .get_f32_array("tokenizer.ggml.scores")
             .unwrap()
             .to_vec();
-        let tk = BpeTokenizer::new(tokens, token_scores, 1, 2);
+        for (i, tok) in tokens.iter().enumerate().take(100) {
+            println!("{} {}", i, tok);
+        }
+        let tk = Tokenizer::new_llama(tokens, token_scores, 1, 2);
 
         let tests = vec![
             (10842, "▁Captain"),
@@ -203,6 +187,10 @@ mod tests {
             ),
             ("hello, world", "<s> - ▁hello - , - ▁world - </s>"),
             ("tiktok", "<s> - ▁t - ik - tok - </s>"),
+            (
+                "i don't eat beaf.",
+                "<s> - ▁i - ▁don - ' - t - ▁eat - ▁be - af - . - </s>",
+            ),
         ];
 
         for tt in tests {

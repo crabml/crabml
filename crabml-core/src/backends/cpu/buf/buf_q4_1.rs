@@ -207,13 +207,16 @@ pub fn vec_dot_q4_1_q8_1_neon(abs: &[BlockQ4_1], bbs: &[BlockQ8_1]) -> f32 {
 pub fn vec_dot_q4_1_q8_1_avx2(abs: &[BlockQ4_1], bbs: &[BlockQ8_1]) -> f32 {
     use std::arch::x86_64::*;
 
+    use crate::backends::cpu::archutil::x86_64::*;
+    debug_assert_eq!(abs.len(), bbs.len());
+
     let n_blocks = abs.len();
     let n_blocks_rounded = n_blocks - n_blocks % 2;
 
     let mut sumf = unsafe {
         // Initialize accumulator with zeros
         let mut acc = _mm256_setzero_ps();
-        let summs = 0;
+        let mut summs = 0.0;
 
         for i in 0..n_blocks_rounded {
             let ab0 = abs.get_unchecked(i);
@@ -222,7 +225,7 @@ pub fn vec_dot_q4_1_q8_1_avx2(abs: &[BlockQ4_1], bbs: &[BlockQ8_1]) -> f32 {
             let d0 = f16::to_f32(ab0.d);
             let d1 = f16::to_f32(bb0.d);
 
-            summs += f16::to_f32(ab0.m) + f16::to_f32(bb0.m);
+            summs += f16::to_f32(ab0.m) + f16::to_f32(bb0.s);
 
             let d0v = _mm256_set1_ps(d0);
             let d1v = _mm256_set1_ps(d1);
@@ -232,10 +235,11 @@ pub fn vec_dot_q4_1_q8_1_avx2(abs: &[BlockQ4_1], bbs: &[BlockQ8_1]) -> f32 {
 
             // Load 16 bytes, and unpack 4 bit fields into bytes, making 32 bytes
             let qx = bytes_from_nibbles_32(ab0.qs.as_ptr());
-            let qy = _mm256_loadu_si256(bb0.qs.as_ptr());
+            let qy = _mm256_loadu_si256(bb0.qs.as_ptr() as *const _);
 
             let xy = mul_sum_us8_pairs_float(qx, qy);
 
+            // Accumulate d0*d1*x*y
             acc = _mm256_fmadd_ps(d0d1, xy, acc);
         }
         hsum_float_8(acc) + summs

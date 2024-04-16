@@ -294,6 +294,9 @@ impl<'a, T: Tensor> Llama2Runner<T> {
                 let q = self.weights.wq[l].matmul_vec(&x)?;
                 let k = self.weights.wk[l].matmul_vec(&x)?;
                 let v = self.weights.wv[l].matmul_vec(&x)?;
+                let q = q.add_inplace(&self.weights.bq[l])?;
+                let k = k.add_inplace(&self.weights.bk[l])?;
+                let v = v.add_inplace(&self.weights.bv[l])?;
                 (q, k, v)
             };
 
@@ -302,8 +305,8 @@ impl<'a, T: Tensor> Llama2Runner<T> {
                 let q = q.reshape(&[n_batch, n_heads, head_dim])?;
                 let k = k.reshape(&[n_batch, n_kv_heads, head_dim])?;
 
-                let q = q.rope_inplace(RopeMode::Llama, pos, rope_dim)?;
-                let k = k.rope_inplace(RopeMode::Llama, pos, rope_dim)?;
+                let q = q.rope_inplace(RopeMode::Neox, pos, rope_dim)?;
+                let k = k.rope_inplace(RopeMode::Neox, pos, rope_dim)?;
                 (q, k)
             };
 

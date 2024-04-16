@@ -45,7 +45,7 @@ pub fn rope_inplace(
 }
 
 fn rope_llama(buf: &mut [f32], pos: usize, head_dim: usize, rope_dim: usize) {
-    let theta_scale = 10000_f32.powf(-2.0 / head_dim as f32);
+    let theta_scale = 1000000_f32.powf(-2.0 / head_dim as f32);
     buf.chunks_exact_mut(head_dim).for_each(|chunk| {
         let mut theta: f32 = pos as f32;
         for i in (0..rope_dim).step_by(2) {

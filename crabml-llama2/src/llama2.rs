@@ -273,6 +273,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         // copy the token embedding into x
         let mut x = T::alloc(&[n_batch, embed_dim], GGMLType::F32, self.device.clone())?;
         x.copy_rows_from(&self.weights.token_embed, tokens)?;
+        // println!("tok: {:?}", tokens);
 
         // forward all the layers
         for l in 0..self.conf.n_layers {

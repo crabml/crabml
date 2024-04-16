@@ -134,14 +134,14 @@ fn run_generate<U: Tensor>(runner: &mut Llama2Runner<U>, args: &CommandArgs) -> 
     let metrics = runner.metrics.clone();
     let prefill_started_at = Instant::now();
     let prompt = args.prompt.clone().unwrap_or("".to_string());
-    let (prefill_pos, prev_token, token) = runner.prefill(&prompt, true, false)?;
+    let (prefill_pos, _prev_token, token) = runner.prefill(&prompt, true, false)?;
     let prefill_elapsed = prefill_started_at.elapsed();
     if args.verbose {
         dump_metrics(&runner.metrics);
     }
     runner.metrics.reset();
 
-    let mut output = runner.generate(prefill_pos, prev_token, token, Some(args.steps));
+    let mut output = runner.generate(prefill_pos, token, Some(args.steps));
     let mut generated_tokens = 0;
     let generation_started_at = Instant::now();
 

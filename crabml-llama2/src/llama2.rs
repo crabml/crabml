@@ -8,7 +8,7 @@ use crabml::gguf::GGMLType;
 use crabml::tensor::RopeMode;
 use crabml::tensor::Tensor;
 use crabml::tensor::TensorMetrics;
-use crabml::tokenizer::BpeTokenizer;
+use crabml::tokenizer::Tokenizer;
 
 use crate::model::Llama2Config;
 use crate::model::Llama2Model;
@@ -25,7 +25,7 @@ pub enum Activation {
 pub struct Llama2Runner<T: Tensor> {
     conf: Llama2Config,
     weights: Rc<Llama2Weights<T>>,
-    tokenizer: Rc<BpeTokenizer>,
+    tokenizer: Rc<Tokenizer>,
     sampler: Rc<Llama2Sampler>,
     device: T::Device,
     logits: Vec<f32>,            // output logits (vocab_size, )
@@ -131,7 +131,6 @@ impl<'a, T: Tensor> Llama2Runner<T> {
     pub fn generate(
         &'a mut self,
         pos: usize,
-        prev_token: usize,
         token: usize,
         steps: Option<usize>,
     ) -> impl Iterator<Item = Result<String>> + '_ {
@@ -143,14 +142,14 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         };
 
         let sampler = self.sampler.clone();
-        let first_token = self.tokenizer.decode(prev_token, token);
+        let first_token = self.tokenizer.decode(token);
         let tokens_iter = (pos..pos + max_steps).scan(token, move |current_token, pos| {
             let logits = self.forward(&[*current_token], pos).unwrap();
             let new_token = sampler.sample(logits).unwrap();
             if new_token == self.tokenizer.eos_token() {
                 return None;
             }
-            let r = self.tokenizer.decode(*current_token, new_token).unwrap();
+            let r = self.tokenizer.decode(new_token).unwrap();
             *current_token = new_token;
             Some(Ok(r))
         });
@@ -163,8 +162,8 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         prompt: &str,
         steps: usize,
     ) -> Result<impl Iterator<Item = Result<String>> + '_> {
-        let (pos, prev_token, token) = self.prefill(prompt, true, false)?;
-        Ok(self.generate(pos, prev_token, token, Some(steps)))
+        let (pos, _prev_token, token) = self.prefill(prompt, true, false)?;
+        Ok(self.generate(pos, token, Some(steps)))
     }
 
     pub fn forward(&mut self, tokens: &[usize], pos: usize) -> Result<&mut [f32]> {

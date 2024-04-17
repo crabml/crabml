@@ -42,12 +42,13 @@ pub fn softmax_inplace<'a>(
         for row in 0..rows {
             let buf_offset = depth * stride_0 + row * stride_1;
             let buf_row = &mut buf[buf_offset..buf_offset + cols];
-            let max = buf_row.iter().fold(0.0, |m, val| val.max(m));
+            let max = buf_row.iter().fold(f32::NEG_INFINITY, |m, val| val.max(m));
             let sum = buf_row.iter_mut().fold(0.0, |mut acc, val| {
                 *val = exp_f32_cached(*val - max, &device.exp_cache);
                 acc += *val;
                 acc
             });
+            assert!(sum > 0.0);
             buf_row.iter_mut().for_each(|val| {
                 *val /= sum;
             });

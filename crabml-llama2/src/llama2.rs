@@ -173,6 +173,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             ModelArchitecture::Llama => self.forward_llama(tokens, pos)?,
             ModelArchitecture::Gemma => self.forward_gemma(tokens, pos)?,
             ModelArchitecture::Qwen2 => self.forward_qwen2(tokens, pos)?,
+            ModelArchitecture::Phi2 => self.forward_phi2(tokens, pos)?,
         };
 
         let mut x_final = T::alloc(
@@ -278,7 +279,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         for l in 0..self.conf.n_layers {
             let x_attn_orig = x.dup()?;
 
-            // attention rnsnorm
+            // attention rmsnorm
             x = {
                 x = x.rms_norm_inplace(self.conf.rms_norm_eps)?;
                 x = x.mul_inplace(&self.weights.rms_att_weight[l])?;
@@ -320,6 +321,93 @@ impl<'a, T: Tensor> Llama2Runner<T> {
 
             // ffn
             x = self.forward_ffn(x, l, pos, Activation::SiLU)?;
+            x = x.with_name(format!("ffn_out:{}:{}", l, pos));
+        }
+
+        // final rmsnorm
+        x = {
+            x = x.rms_norm_inplace(self.conf.rms_norm_eps)?;
+            x = x.mul_inplace(&self.weights.rms_final_weight)?;
+            x.with_name(format!("final_rmsnorm:{}", pos))
+        };
+
+        Ok(x)
+    }
+
+    fn forward_phi2(&mut self, tokens: &[usize], pos: usize) -> Result<T> {
+        let embed_dim = self.conf.embedding_dim;
+        let n_heads = self.conf.n_heads;
+        let n_kv_heads = self.conf.n_kv_heads;
+        let head_dim = self.conf.head_size();
+        let rope_dim = self.conf.rope_dim.unwrap_or(head_dim);
+        let n_batch = tokens.len();
+        let n_embd_gqa = head_dim * n_kv_heads;
+
+        // copy the token embedding into x
+        let mut x = T::alloc(&[n_batch, embed_dim], GGMLType::F32, self.device.clone())?;
+        x.copy_rows_from(&self.weights.token_embed, tokens)?;
+
+        // forward all the layers
+        for l in 0..self.conf.n_layers {
+            let x_attn_orig = x.dup()?;
+
+            // attention norm
+            x = {
+                // diff between rms_norm_eps and norm_eps?
+                x = x.rms_norm_inplace(self.conf.rms_norm_eps)?;
+                x = x.mul_inplace(&self.weights.rms_att_weight[l])?;
+                x = x.add_inplace(&self.weights.rms_att_bias[l])?;
+                x = x.with_name(format!("attn_norm:{}:{}", l, pos));
+                x
+            };
+
+            // matmul qkv for every head
+            let (q, k, v) = {
+                let qkv = self.weights.wqkv[l].matmul_vec(&x)?;
+                let qkv = qkv.add_inplace(&self.weights.bqkv[l])?;
+
+                let mut q = T::alloc(&[embed_dim, n_batch], GGMLType::F32, self.device.clone())?;
+                q.copy_rows_from(&qkv, &[0])?;
+                q = q.reshape(&[embed_dim, n_batch])?.contiguous()?;
+                q = q.with_name("Qcur".to_string());
+
+                let mut k = T::alloc(&[embed_dim, n_batch], GGMLType::F32, self.device.clone())?;
+                k.copy_rows_from(&qkv, &[embed_dim])?;
+                k = k.reshape(&[embed_dim, n_batch])?.contiguous()?;
+                k = k.with_name("Kcur".to_string());
+
+                let mut v = T::alloc(&[embed_dim, n_batch], GGMLType::F32, self.device.clone())?;
+                v.copy_rows_from(&qkv, &[embed_dim + n_embd_gqa])?;
+                v = v.reshape(&[embed_dim, n_batch])?.contiguous()?;
+                v = v.with_name("Vcur".to_string());
+
+                (q, k, v)
+            };
+
+            // ROPE
+            let (q, k) = {
+                // reshape 3d
+                let q = q.reshape(&[n_batch, n_heads, head_dim])?;
+                let k = k.reshape(&[n_batch, n_kv_heads, head_dim])?;
+
+                let q = q.rope_inplace(RopeMode::Neox, pos, rope_dim)?;
+                let k = k.rope_inplace(RopeMode::Neox, pos, rope_dim)?;
+
+                // TODO ggml_scale
+
+                (q, k)
+            };
+
+            x = self.forward_multi_query_attention(
+                q, k, v, l, pos, n_kv_heads, n_heads, embed_dim, head_dim, n_batch,
+            )?;
+            x = x.with_name(format!("attn_out:{}:{}", l, pos));
+
+            // residual connection back into x
+            x = x.add_inplace(&x_attn_orig)?;
+
+            // ffn
+            x = self.forward_ffn(x, l, pos, Activation::GeLU)?;
             x = x.with_name(format!("ffn_out:{}:{}", l, pos));
         }
 
@@ -495,16 +583,29 @@ impl<'a, T: Tensor> Llama2Runner<T> {
 
         // ffn rmsnorm
         x = {
-            x = x.rms_norm_inplace(1e-5)?;
-            x = x.mul_inplace(&self.weights.rms_ffn_weight[l])?;
-            x
+            if !self.weights.rms_ffn_weight.is_empty() {
+                x = x.rms_norm_inplace(1e-5)?;
+                x = x.mul_inplace(&self.weights.rms_ffn_weight[l])?;
+                x
+            } else {
+                x
+            }
         };
+
+        if !self.weights.ffn_up_bias.is_empty() {
+            x = x.mul_inplace(&self.weights.ffn_up_weight[l])?;
+            x = x.add_inplace(&self.weights.ffn_up_bias[l])?;
+        }
 
         // Now for FFN in PyTorch we have: self.down_proj(F.silu(self.gate_proj(x)) * self.up_proj(x))
         // first calculate self.w1(x) and self.w3(x)
         // w1: (hidden_dim, embed_dim) @ x (n_batch, embed_dim, ) => (n_batch, hidden_dim, )
         // w3: (hidden_dim, embed_dim) @ x (n_batch, embed_dim, ) => (n_batch, hidden_dim, )
-        let mut h1 = self.weights.ffn_gate_weight[l].matmul_vec(&x)?;
+        let mut h1 = if !self.weights.ffn_gate_weight.is_empty() {
+            self.weights.ffn_gate_weight[l].matmul_vec(&x)?
+        } else {
+            x.clone()
+        };
         let h2 = self.weights.ffn_up_weight[l].matmul_vec(&x)?;
 
         // F.silu; silu(x)=x*σ(x),where σ(x) is the logistic sigmoid

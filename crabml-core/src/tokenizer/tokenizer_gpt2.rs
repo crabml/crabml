@@ -59,7 +59,16 @@ impl Gpt2Tokenizer {
     pub fn decode(&self, token_id: TokenID) -> Vec<u8> {
         let token = &self.tokens[token_id];
         if token.len() > 1 {
-            token.as_bytes().to_vec()
+            let s: Vec<u8> = token
+                .chars()
+                .flat_map(|c| {
+                    self.byte_decodes
+                        .get(&c)
+                        .map(|b| vec![*b])
+                        .unwrap_or(c.to_string().bytes().collect::<Vec<_>>())
+                })
+                .collect();
+            s
         } else if token.len() == 1 {
             let ch = token.chars().next().unwrap();
             match self.byte_decodes.get(&ch) {
@@ -69,6 +78,15 @@ impl Gpt2Tokenizer {
         } else {
             vec![]
         }
+    }
+
+    #[allow(unused)]
+    pub fn decode_tokens(&self, token_ids: &[TokenID]) -> String {
+        let bytes = token_ids
+            .iter()
+            .flat_map(|t| self.decode(*t))
+            .collect::<Vec<_>>();
+        String::from_utf8_lossy(&bytes).to_string()
     }
 
     // encode the string text (input) into an upper-bound preallocated tokens[] array
@@ -149,7 +167,7 @@ fn build_byte_encode_map() -> HashMap<u8, char> {
             map.insert(i as u8, i);
         }
     }
-    let mut extra_unicode = 0x100;
+    let mut extra_unicode = 256;
     for i in 0..=255 {
         if !map.contains_key(&(i as u8)) {
             map.insert(i as u8, std::char::from_u32(extra_unicode).unwrap());
@@ -212,24 +230,24 @@ mod tests {
             .collect::<Vec<_>>();
         let tk = Gpt2Tokenizer::new(tokens.clone(), &merges, 1, 2);
 
+        let token_ids = tk.encode("我不吃牛肉", false, false, false);
+        assert_eq!(tk.tokens[token_ids[0]], "æĪĳä¸į");
+        assert_eq!(tk.decode_tokens(&[token_ids[0]]), "我不");
+
         let tests = vec![
-            ("Captain America: ", "Captain - ĠAmerica - : - Ġ"),
+            ("Captain America: ", "Captain America: "),
             (
                 "<|im_start|> blah <|im_end|> ",
-                "<|im_start|> - Ġblah - Ġ - <|im_end|> - Ġ",
+                "<|im_start|> blah <|im_end|> ",
             ),
-            ("hello, world", "hello - , - Ġworld"),
-            ("tiktok", "t - ik - tok"),
-            ("i don't eat beaf.", "i - Ġdon - 't - Ġeat - Ġbe - af - ."),
+            ("tiktok", "tiktok"),
+            ("i don't eat beaf.", "i don't eat beaf."),
+            ("我不吃牛肉", "我不吃牛肉"),
         ];
 
         for tt in tests {
             let outputs = tk.encode(tt.0, false, false, false);
-            let tokens_in_string = outputs
-                .iter()
-                .map(|t| tokens[*t].clone())
-                .collect::<Vec<String>>()
-                .join(" - ");
+            let tokens_in_string = tk.decode_tokens(&outputs);
             assert_eq!(tokens_in_string, tt.1, "failed to encode {}", tt.0);
         }
 
@@ -250,5 +268,12 @@ mod tests {
             "<|im_start|>",
             " i don't eat beaf"
         ]);
+    }
+
+    #[test]
+    fn test_unicode_table() {
+        let encode_map = build_byte_encode_map();
+        let b = 230_u8;
+        assert_eq!(encode_map.get(&b).cloned(), Some('æ'));
     }
 }

@@ -273,7 +273,7 @@ mod tests {
     #[test]
     fn test_unicode_table() {
         let encode_map = build_byte_encode_map();
-        let b = 230 as u8;
+        let b = 230_u8;
         assert_eq!(encode_map.get(&b).cloned(), Some('æ'));
     }
 }

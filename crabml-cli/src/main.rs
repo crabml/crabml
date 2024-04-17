@@ -237,6 +237,8 @@ fn main() -> Result<()> {
 
     let model_cpu = CpuLlama2ModelLoader::new()
         .with_thread_num(thread_num)
+        .with_temperature(args.temperature)
+        .with_probability(args.probability)
         .load(&gf)?;
     let conf = model_cpu.conf.clone();
 

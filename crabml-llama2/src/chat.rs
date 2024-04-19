@@ -191,7 +191,7 @@ impl MarkMatcher {
 pub enum ChatTemplate {
     Llama2,
     Llama3,
-    Qwen2,
+    ChatML,
     Gemma,
 }
 
@@ -201,15 +201,15 @@ impl ChatTemplate {
     fn heuristic_guess(
         model_name: &str,
         model_arch: ModelArchitecture,
-        chat_tmpl_meta: &str,
+        chat_tmpl: &str,
     ) -> Result<Self> {
         if model_name.contains("gemma") || model_arch == ModelArchitecture::Gemma {
             Ok(ChatTemplate::Gemma)
         } else if model_name.contains("llama2") {
             Ok(ChatTemplate::Llama2)
-        } else if model_name.contains("qwen2") {
-            Ok(ChatTemplate::Qwen2)
-        } else if model_name.contains("llama3") || chat_tmpl_meta.contains("<|start_header_id|>") {
+        } else if chat_tmpl.contains("chatml") || chat_tmpl.contains("<|im_start|>") {
+            Ok(ChatTemplate::ChatML)
+        } else if model_name.contains("llama3") || chat_tmpl.contains("<|start_header_id|>") {
             Ok(ChatTemplate::Llama3)
         } else {
             // take llama2 as fallback.
@@ -222,7 +222,7 @@ impl ChatTemplate {
             ChatTemplate::Llama2 => "[/INST]",
             ChatTemplate::Gemma => "<end_of_turn>",
             ChatTemplate::Llama3 => "<|eot_id|>",
-            ChatTemplate::Qwen2 => "<|im_end|>",
+            ChatTemplate::ChatML => "<|im_end|>",
         }
     }
 
@@ -256,9 +256,14 @@ impl ChatTemplate {
                         )
                     })
                     .unwrap_or("".to_string());
+                let assitant_prefix = if append_assistant_prefix {
+                    "<|start_header_id|>assistant<|end_header_id|>\n\n"
+                } else {
+                    ""
+                };
                 format!(
-                    "{}<|start_header_id|>user<|end_header_id|>\n\n{}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n",
-                    system_prompt, prompt
+                    "{}<|start_header_id|>user<|end_header_id|>\n\n{}<|eot_id|>{}",
+                    system_prompt, prompt, assitant_prefix
                 )
             }
             ChatTemplate::Gemma => {
@@ -272,8 +277,18 @@ impl ChatTemplate {
                     system_prompt, prompt, assistant_prefix
                 )
             }
-            ChatTemplate::Qwen2 => {
-                todo!("")
+            ChatTemplate::ChatML => {
+                let system_prompt = system_prompt
+                    .map(|s| format!("<|im_start|>system\n{}<|im_end|>", s))
+                    .unwrap_or("".to_string());
+                let assistant_prefix = match append_assistant_prefix {
+                    true => "<im_start>assistant\n",
+                    false => "",
+                };
+                format!(
+                    "{}<|im_start|>user\n{}<|im_end|>{}",
+                    system_prompt, prompt, assistant_prefix
+                )
             }
         }
     }

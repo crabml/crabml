@@ -59,6 +59,7 @@ impl Tokenizer {
         merges: Vec<String>,
         bos_token: TokenID,
         eos_token: TokenID,
+        special_tokens: Vec<&'static str>,
     ) -> Self {
         let tokens = Rc::new(tokens);
         let decode_buf = RefCell::new(Utf8Buf::new());
@@ -67,6 +68,7 @@ impl Tokenizer {
             &merges,
             bos_token,
             eos_token,
+            special_tokens,
         ));
         Self {
             tokens,

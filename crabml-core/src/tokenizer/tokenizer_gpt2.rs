@@ -13,6 +13,7 @@ pub struct Gpt2Tokenizer {
     byte_decodes: HashMap<char, u8>,
     bos_token: TokenID,
     eos_token: TokenID,
+    special_tokens: Vec<&'static str>,
 }
 
 impl Gpt2Tokenizer {
@@ -21,6 +22,7 @@ impl Gpt2Tokenizer {
         merges: &[String],
         bos_token: TokenID,
         eos_token: TokenID,
+        special_tokens: Vec<&'static str>,
     ) -> Self {
         let token_ids: Rc<HashMap<String, TokenID>> = Rc::new(
             tokens
@@ -53,6 +55,7 @@ impl Gpt2Tokenizer {
             byte_decodes,
             bos_token,
             eos_token,
+            special_tokens,
         }
     }
 
@@ -98,13 +101,12 @@ impl Gpt2Tokenizer {
             text.to_string()
         };
 
-        let special_tokens = vec!["<|im_start|>", "<|im_end|>", "<|endoftext|>"];
-        let parts = split_text_by_keyword(&text, &special_tokens);
+        let parts = split_text_by_keyword(&text, &self.special_tokens);
 
         let mut tokens = parts
             .iter()
             .flat_map(|s| {
-                if special_tokens.contains(&s.as_str()) {
+                if self.special_tokens.contains(&s.as_str()) {
                     return vec![*self.token_ids.get(s).unwrap()];
                 }
                 let mut toks = vec![];
@@ -179,7 +181,7 @@ fn build_byte_encode_map() -> HashMap<u8, char> {
 
 fn split_text_by_keyword(text: &str, keywords: &[&str]) -> Vec<String> {
     // Escape the keywords and join them into a regular expression pattern
-    let escaped_keywords: Vec<String> = keywords.iter().map(|&k| regex::escape(k)).collect();
+    let escaped_keywords: Vec<String> = keywords.iter().map(|k| regex::escape(k)).collect();
     let pattern = format!("({})", escaped_keywords.join("|"));
     let re = Regex::new(&pattern).unwrap();
 
@@ -228,7 +230,11 @@ mod tests {
             .iter()
             .map(|s| s.to_string())
             .collect::<Vec<_>>();
-        let tk = Gpt2Tokenizer::new(tokens.clone(), &merges, 1, 2);
+        let tk = Gpt2Tokenizer::new(tokens.clone(), &merges, 1, 2, vec![
+            "<|im_start|>",
+            "<|im_end|>",
+            "<|endoftext|>",
+        ]);
 
         let token_ids = tk.encode("我不吃牛肉", false, false, false);
         assert_eq!(tk.tokens[token_ids[0]], "æĪĳä¸į");

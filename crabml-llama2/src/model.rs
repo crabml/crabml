@@ -398,7 +398,13 @@ impl CpuLlama2ModelLoader {
                     .iter()
                     .map(|s| s.to_string())
                     .collect::<Vec<_>>();
-                Ok(Tokenizer::new_gpt2(vocab, merges, bos_token, eos_token))
+                Ok(Tokenizer::new_gpt2(
+                    vocab,
+                    merges,
+                    bos_token,
+                    eos_token,
+                    vec!["<|im_start|>", "<|im_end|>", "<|endoftext|>"],
+                ))
             }
             other => Err(Error::new(
                 ErrorKind::IOError,

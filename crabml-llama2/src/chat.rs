@@ -189,6 +189,7 @@ impl MarkMatcher {
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum ChatTemplate {
     Llama2,
+    Llama3,
     Gemma,
 }
 
@@ -204,6 +205,8 @@ impl ChatTemplate {
             Ok(ChatTemplate::Gemma)
         } else if model_name.contains("llama2") {
             Ok(ChatTemplate::Llama2)
+        } else if model_name.contains("llama3") {
+            Ok(ChatTemplate::Llama3)
         } else {
             // take llama2 as fallback.
             Ok(ChatTemplate::Llama2)
@@ -214,6 +217,7 @@ impl ChatTemplate {
         match self {
             ChatTemplate::Llama2 => "[/INST]",
             ChatTemplate::Gemma => "<end_of_turn>",
+            ChatTemplate::Llama3 => "<|eot_id|>",
         }
     }
 
@@ -236,6 +240,20 @@ impl ChatTemplate {
                 format!(
                     "[INST] {} {} [/INST]{}",
                     system_prompt, prompt, assistant_prefix
+                )
+            }
+            ChatTemplate::Llama3 => {
+                let system_prompt = system_prompt
+                    .map(|s| {
+                        format!(
+                            "<|start_header_id|>system<|end_header_id|>\n\n{}<|eot_id|>",
+                            s
+                        )
+                    })
+                    .unwrap_or("".to_string());
+                format!(
+                    "{}<|start_header_id|>user<|end_header_id|>\n\n{}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n",
+                    system_prompt, prompt
                 )
             }
             ChatTemplate::Gemma => {

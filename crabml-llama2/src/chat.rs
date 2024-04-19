@@ -203,7 +203,6 @@ impl ChatTemplate {
         model_arch: ModelArchitecture,
         chat_tmpl_meta: &str,
     ) -> Result<Self> {
-        println!("model_name: {} model_arch: {:?}", model_name, model_arch);
         if model_name.contains("gemma") || model_arch == ModelArchitecture::Gemma {
             Ok(ChatTemplate::Gemma)
         } else if model_name.contains("llama2") {

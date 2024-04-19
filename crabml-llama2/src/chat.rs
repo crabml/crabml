@@ -20,7 +20,8 @@ impl<'a, T: Tensor> Llama2Chat<'a, T> {
     ) -> Result<Self> {
         let model_name = &runner.conf().model_name;
         let model_arch = runner.conf().architecture;
-        let chat_template = ChatTemplate::heuristic_guess(model_name, model_arch, "")?;
+        let chat_template = &runner.conf().chat_template;
+        let chat_template = ChatTemplate::heuristic_guess(model_name, model_arch, chat_template)?;
         Ok(Self {
             inner: runner,
             prompt: prompt.into(),
@@ -189,6 +190,8 @@ impl MarkMatcher {
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum ChatTemplate {
     Llama2,
+    Llama3,
+    Qwen2,
     Gemma,
 }
 
@@ -198,12 +201,16 @@ impl ChatTemplate {
     fn heuristic_guess(
         model_name: &str,
         model_arch: ModelArchitecture,
-        _chat_tmpl_meta: &str,
+        chat_tmpl_meta: &str,
     ) -> Result<Self> {
         if model_name.contains("gemma") || model_arch == ModelArchitecture::Gemma {
             Ok(ChatTemplate::Gemma)
         } else if model_name.contains("llama2") {
             Ok(ChatTemplate::Llama2)
+        } else if model_name.contains("qwen2") {
+            Ok(ChatTemplate::Qwen2)
+        } else if model_name.contains("llama3") || chat_tmpl_meta.contains("<|start_header_id|>") {
+            Ok(ChatTemplate::Llama3)
         } else {
             // take llama2 as fallback.
             Ok(ChatTemplate::Llama2)
@@ -214,6 +221,8 @@ impl ChatTemplate {
         match self {
             ChatTemplate::Llama2 => "[/INST]",
             ChatTemplate::Gemma => "<end_of_turn>",
+            ChatTemplate::Llama3 => "<|eot_id|>",
+            ChatTemplate::Qwen2 => "<|im_end|>",
         }
     }
 
@@ -238,6 +247,20 @@ impl ChatTemplate {
                     system_prompt, prompt, assistant_prefix
                 )
             }
+            ChatTemplate::Llama3 => {
+                let system_prompt = system_prompt
+                    .map(|s| {
+                        format!(
+                            "<|start_header_id|>system<|end_header_id|>\n\n{}<|eot_id|>",
+                            s
+                        )
+                    })
+                    .unwrap_or("".to_string());
+                format!(
+                    "{}<|start_header_id|>user<|end_header_id|>\n\n{}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n",
+                    system_prompt, prompt
+                )
+            }
             ChatTemplate::Gemma => {
                 let system_prompt = system_prompt.unwrap_or("");
                 let assistant_prefix = match append_assistant_prefix {
@@ -248,6 +271,9 @@ impl ChatTemplate {
                     "<start_of_turn>user\n{} {}<end_of_turn>{}",
                     system_prompt, prompt, assistant_prefix
                 )
+            }
+            ChatTemplate::Qwen2 => {
+                todo!("")
             }
         }
     }

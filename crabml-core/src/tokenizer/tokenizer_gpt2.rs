@@ -98,7 +98,23 @@ impl Gpt2Tokenizer {
             text.to_string()
         };
 
-        let special_tokens = vec!["<|im_start|>", "<|im_end|>", "<|endoftext|>"];
+        let special_tokens = vec![
+            // for qwen2
+            "<|im_start|>",
+            "<|im_end|>",
+            "<|endoftext|>",
+            // for llama3
+            "<|begin_of_text|>",
+            "<|end_of_text|>",
+            "<|reserved_special_token_0|>",
+            "<|reserved_special_token_1|>",
+            "<|reserved_special_token_2|>",
+            "<|reserved_special_token_3|>",
+            "<|start_header_id|>",
+            "<|end_header_id|>",
+            "<|reserved_special_token_4|>",
+            "<|eot_id|>",
+        ];
         let parts = split_text_by_keyword(&text, &special_tokens);
 
         let mut tokens = parts
@@ -179,7 +195,7 @@ fn build_byte_encode_map() -> HashMap<u8, char> {
 
 fn split_text_by_keyword(text: &str, keywords: &[&str]) -> Vec<String> {
     // Escape the keywords and join them into a regular expression pattern
-    let escaped_keywords: Vec<String> = keywords.iter().map(|&k| regex::escape(k)).collect();
+    let escaped_keywords: Vec<String> = keywords.iter().map(|k| regex::escape(k)).collect();
     let pattern = format!("({})", escaped_keywords.join("|"));
     let re = Regex::new(&pattern).unwrap();
 

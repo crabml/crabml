@@ -31,6 +31,7 @@ pub enum ModelArchitecture {
 pub struct Llama2Config {
     pub architecture: ModelArchitecture,
     pub model_name: String,
+    pub chat_template: String,
     pub embedding_dim: usize, // the dim of embedding
     pub hidden_dim: usize,
     pub n_layers: usize,
@@ -453,6 +454,11 @@ impl CpuLlama2ModelLoader {
             .get_string_array("tokenizer.ggml.tokens")
             .unwrap()
             .len();
+        let chat_template = gf
+            .metadata()
+            .get_string("tokenizer.chat_template")
+            .map(|s| s.to_string())
+            .unwrap_or("".to_string());
         let embedding_dim = gf
             .metadata()
             .get_u32(&format!("{}.embedding_length", prefix))
@@ -478,6 +484,7 @@ impl CpuLlama2ModelLoader {
             vocab_size,
             rms_norm_eps,
             rope_dim: n_rot,
+            chat_template,
         })
     }
 }

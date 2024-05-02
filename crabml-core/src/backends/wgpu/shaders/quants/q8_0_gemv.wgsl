@@ -6,7 +6,7 @@ struct Meta {
 };
 
 struct BlockQ8_0 {
-    d: f16,
+    d: u16,
     qs: array<i8, 32>,
 };
 
@@ -25,6 +25,9 @@ var<storage, read> md: Meta;
 // (B, M, K) * (B, K, 1) = (B, M, 1)
 // split the work into (B, M)
 // each thread is responsible for one element in the output
+
+fn f16_bits_to_f32(n: u16) -> f32 {}
+fn f32_to_f16_bits(v: f32) -> u16 {}
 
 @compute @workgroup_size(1, 1, 32)
 fn main(
@@ -47,6 +50,8 @@ fn main(
         for (var j = 0u; j < 32u; j = j + 1u) {
             sum += u32(blkA.qs[j]) * u32(blkB.qs[j]);
         }
-        C[bi * M + mi] += f32(sum) * f32(blkA.d) * f32(blkB.d);
+        let dA = f16_bits_to_f32(blkA.d);
+        let dB = f16_bits_to_f32(blkB.d);
+        C[bi * M + mi] += f32(sum) * dA * dB;
     }
 }

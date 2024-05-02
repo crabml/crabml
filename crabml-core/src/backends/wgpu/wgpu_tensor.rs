@@ -1,5 +1,6 @@
 use std::rc::Rc;
 
+use bytemuck::AnyBitPattern;
 use wgpu::util::DeviceExt;
 
 use super::meta::ConcatenateMeta;
@@ -82,7 +83,6 @@ impl WgpuTensor {
         self.strider.shape()
     }
 
-    // only used in test?
     pub fn quantize(&self, dtype: GGMLType) -> Result<Self> {
         let (output, shader) = match dtype {
             GGMLType::Q8_0 => {
@@ -109,6 +109,50 @@ impl WgpuTensor {
         );
         self.device.queue.submit(Some(encoder.finish()));
         Ok(output)
+    }
+
+    fn export_generic<T: Copy + AnyBitPattern>(&self, dst: &mut [T]) -> Result<()> {
+        let buf_size = std::mem::size_of_val(dst);
+        if buf_size > self.device.opts.staging_buf_bytes {
+            return Err((
+                ErrorKind::TensorError,
+                format!(
+                    "buffer size exceeded staging buffer limit: {}, got: {}",
+                    self.device.opts.staging_buf_bytes, buf_size,
+                ),
+            )
+                .into());
+        }
+
+        // enqueue copy from self.buf to staging buffer
+        let mut encoder = self
+            .device
+            .inner
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        encoder.copy_buffer_to_buffer(&self.buf, 0, &self.device.staging_buf, 0, buf_size as u64);
+        self.device.queue.submit(Some(encoder.finish()));
+
+        // await from the staging buf
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        let staging_slice = self.device.staging_buf.slice(..);
+        staging_slice.map_async(wgpu::MapMode::Read, move |v| tx.send(v).unwrap());
+        self.device.inner.poll(wgpu::Maintain::Wait);
+
+        if let Ok(Ok(())) = rx.recv() {
+            // Gets contents of buffer
+            let data = staging_slice.get_mapped_range();
+            // Since contents are got in bytes, this converts these bytes back to u32
+            dst.copy_from_slice(&bytemuck::cast_slice(&data)[0..dst.len()]);
+
+            // With the current interface, we have to make sure all mapped views are
+            // dropped before we unmap the buffer.
+            drop(data);
+            self.device.staging_buf.unmap();
+        } else {
+            panic!("failed to run compute on gpu!")
+        }
+
+        Ok(())
     }
 }
 
@@ -336,47 +380,7 @@ impl Tensor for WgpuTensor {
     }
 
     fn export(&self, dst: &mut [f32]) -> Result<()> {
-        let buf_size = std::mem::size_of_val(dst);
-        if buf_size > self.device.opts.staging_buf_bytes {
-            return Err((
-                ErrorKind::TensorError,
-                format!(
-                    "buffer size exceeded staging buffer limit: {}, got: {}",
-                    self.device.opts.staging_buf_bytes, buf_size,
-                ),
-            )
-                .into());
-        }
-
-        // enqueue copy from self.buf to staging buffer
-        let mut encoder = self
-            .device
-            .inner
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        encoder.copy_buffer_to_buffer(&self.buf, 0, &self.device.staging_buf, 0, buf_size as u64);
-        self.device.queue.submit(Some(encoder.finish()));
-
-        // await from the staging buf
-        let (tx, rx) = std::sync::mpsc::sync_channel(1);
-        let staging_slice = self.device.staging_buf.slice(..);
-        staging_slice.map_async(wgpu::MapMode::Read, move |v| tx.send(v).unwrap());
-        self.device.inner.poll(wgpu::Maintain::Wait);
-
-        if let Ok(Ok(())) = rx.recv() {
-            // Gets contents of buffer
-            let data = staging_slice.get_mapped_range();
-            // Since contents are got in bytes, this converts these bytes back to u32
-            dst.copy_from_slice(&bytemuck::cast_slice(&data)[0..dst.len()]);
-
-            // With the current interface, we have to make sure all mapped views are
-            // dropped before we unmap the buffer.
-            drop(data);
-            self.device.staging_buf.unmap();
-        } else {
-            panic!("failed to run compute on gpu!")
-        }
-
-        Ok(())
+        self.export_generic(dst)
     }
 
     fn dup(&self) -> Result<Self> {
@@ -1169,6 +1173,20 @@ mod tests {
             &[1.0, 4.0, 2.0, 5.0, 3.0, 6.0][..],
             epsilon = 1e-5
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_quantize() -> Result<()> {
+        // 1, 2, 3
+        // 4, 5, 6
+        let v1 = (0..64).map(|i| i as f32).collect::<Vec<_>>();
+        let t1 = WgpuTensor::new(&v1, &[64], DEVICE.clone())?;
+        let t2 = t1.quantize(GGMLType::Q8_0)?;
+
+        let mut dst1 = vec![0 as i8; 68];
+        t2.export_generic(&mut dst1)?;
 
         Ok(())
     }

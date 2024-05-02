@@ -9,6 +9,7 @@ use super::WgpuTensorDeviceRef;
 use crate::backends::wgpu::meta::BatchMatmulMeta;
 use crate::backends::wgpu::meta::ContiguousMeta;
 use crate::backends::wgpu::meta::RopeMeta;
+use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::error::Result;
 use crate::gguf::GGMLType;
@@ -80,16 +81,36 @@ impl WgpuTensor {
     pub fn shape(&self) -> &[usize] {
         self.strider.shape()
     }
+
+    // only used in test?
+    pub fn quantize(&self, dtype: GGMLType) -> Result<Self> {
+        match dtype {
+            GGMLType::Q8_0 => {
+                let output = Self::alloc(self.shape(), dtype, self.device.clone())?;
+                Ok(output)
+            }
+            _ => unreachable!("unsupported quantize type: {:?}", dtype),
+        }
+    }
 }
 
 impl Tensor for WgpuTensor {
     type Device = WgpuTensorDeviceRef;
 
     fn alloc(shape: &[usize], dtype: GGMLType, device: Self::Device) -> Result<Self> {
-        assert!(dtype == GGMLType::F32, "wgpu tensor only support F32 yet");
         let n_elms = shape.iter().product::<usize>();
 
-        let buf_bytes = n_elms * std::mem::size_of::<f32>();
+        let buf_bytes = match dtype {
+            GGMLType::F32 => n_elms * std::mem::size_of::<f32>(),
+            GGMLType::Q8_0 => (n_elms / 32) * 34,
+            _ => {
+                return Err(Error::new(
+                    ErrorKind::TensorError,
+                    format!("unsupported dtype on alloc tensor on wgpu: {}", dtype),
+                ));
+            }
+        };
+
         let buf = device.inner.create_buffer(&wgpu::BufferDescriptor {
             label: Some("tensor storage buffer"),
             size: buf_bytes as u64,
@@ -101,7 +122,7 @@ impl Tensor for WgpuTensor {
         let strider = TensorStrider::new(shape.to_vec());
         Ok(Self {
             buf: Rc::new(buf),
-            dtype: GGMLType::F32,
+            dtype,
             capacity: n_elms,
             strider,
             device,

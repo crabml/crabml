@@ -26,6 +26,9 @@ pub enum ErrorKind {
     /// raised on chat template is not found
     ChatTemplateNotFound,
 
+    /// Device error
+    UnsupportedDevice,
+
     /// unimplemented yet
     NotImplemented,
 }

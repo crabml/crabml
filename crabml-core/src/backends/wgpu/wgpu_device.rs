@@ -5,6 +5,8 @@ use std::rc::Rc;
 
 use wgpu::util::DeviceExt;
 
+use crate::error::Error;
+use crate::error::ErrorKind;
 use crate::error::Result;
 use crate::tensor::Tensor;
 pub struct WgpuTensorDeviceOptions {
@@ -53,7 +55,7 @@ pub type WgpuTensorDeviceRef = Rc<WgpuTensorDevice>;
 
 impl WgpuTensorDevice {
     pub fn new(opts: WgpuTensorDeviceOptions) -> Result<WgpuTensorDeviceRef> {
-        let (device, queue) = pollster::block_on(Self::init_wgpu());
+        let (device, queue) = pollster::block_on(Self::init_wgpu())?;
         let staging_buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("staging buffer"),
             size: opts.staging_buf_bytes as u64,
@@ -123,12 +125,19 @@ impl WgpuTensorDevice {
             })
     }
 
-    async fn init_wgpu() -> (wgpu::Device, wgpu::Queue) {
+    async fn init_wgpu() -> Result<(wgpu::Device, wgpu::Queue)> {
         let instance = wgpu::Instance::default();
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions::default())
             .await
             .unwrap();
+
+        if !adapter.features().contains(wgpu::Features::SHADER_F16) {
+            return Err(Error::new(
+                ErrorKind::UnsupportedDevice,
+                "SHADER_F16 is not supported by the device.",
+            ));
+        }
 
         // `request_device` instantiates the feature specific connection to the GPU, defining some parameters,
         //  `features` being the available features.
@@ -136,7 +145,7 @@ impl WgpuTensorDevice {
             .request_device(&wgpu::DeviceDescriptor::default(), None)
             .await
             .unwrap();
-        (device, queue)
+        Ok((device, queue))
     }
 
     pub fn encode_pipeline_commnad(

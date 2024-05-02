@@ -91,6 +91,10 @@ impl WgpuTensorDevice {
                 include_str!("shaders/concatenate.wgsl"),
             ),
             ("contiguous", include_str!("shaders/contiguous.wgsl")),
+            (
+                "quantize_q8_0",
+                include_str!("shaders/quants/q8_0_quantize.wgsl"),
+            ),
         ];
         let mut modules = HashMap::new();
         for (module_name, module_source) in module_sources {

@@ -84,13 +84,31 @@ impl WgpuTensor {
 
     // only used in test?
     pub fn quantize(&self, dtype: GGMLType) -> Result<Self> {
-        match dtype {
+        let (output, shader) = match dtype {
             GGMLType::Q8_0 => {
                 let output = Self::alloc(self.shape(), dtype, self.device.clone())?;
-                Ok(output)
+                (output, "quantize_q8_0")
             }
             _ => unreachable!("unsupported quantize type: {:?}", dtype),
-        }
+        };
+
+        let entries = &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: output.buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: self.buf.as_entire_binding(),
+            },
+        ];
+        let encoder = self.device.encode_pipeline_commnad(
+            shader,
+            entries,
+            (self.strider.len() as u32 / 32, 1, 1),
+        );
+        self.device.queue.submit(Some(encoder.finish()));
+        Ok(output)
     }
 }
 

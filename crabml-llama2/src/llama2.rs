@@ -635,7 +635,7 @@ mod tests {
             WgpuTensorDeviceOptions::new()
                 .with_staging_buf_bytes(model_cpu.conf.vocab_size * 4)
                 .with_debug_named_tensor(true),
-        );
+        )?;
         let model_wgpu = WgpuLlama2Model::from_cpu(&model_cpu, device_wgpu.clone())?;
 
         let mut runner_cpu = Llama2Runner::new(&model_cpu, 200, false)?;

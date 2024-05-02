@@ -251,7 +251,7 @@ fn main() -> Result<()> {
         DeviceType::Wgpu => {
             let device_wgpu = WgpuTensorDevice::new(
                 WgpuTensorDeviceOptions::new().with_staging_buf_bytes(conf.vocab_size * 4),
-            );
+            )?;
             let model_wgpu = WgpuLlama2Model::from_cpu(&model_cpu, device_wgpu)?;
 
             let mut runner = Llama2Runner::new(&model_wgpu, conf.seq_len, false)?;

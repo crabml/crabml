@@ -794,7 +794,7 @@ mod tests {
 
     #[thread_local]
     static DEVICE: LazyLock<WgpuTensorDeviceRef> = LazyLock::new(|| {
-        WgpuTensorDevice::new(WgpuTensorDeviceOptions::new().with_debug_named_tensor(true))
+        WgpuTensorDevice::new(WgpuTensorDeviceOptions::new().with_debug_named_tensor(true)).unwrap()
     });
 
     #[test]

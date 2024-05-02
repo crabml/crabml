@@ -5,6 +5,7 @@ use std::rc::Rc;
 
 use wgpu::util::DeviceExt;
 
+use crate::error::Result;
 use crate::tensor::Tensor;
 pub struct WgpuTensorDeviceOptions {
     pub staging_buf_bytes: usize,
@@ -51,7 +52,7 @@ pub struct WgpuTensorDevice {
 pub type WgpuTensorDeviceRef = Rc<WgpuTensorDevice>;
 
 impl WgpuTensorDevice {
-    pub fn new(opts: WgpuTensorDeviceOptions) -> WgpuTensorDeviceRef {
+    pub fn new(opts: WgpuTensorDeviceOptions) -> Result<WgpuTensorDeviceRef> {
         let (device, queue) = pollster::block_on(Self::init_wgpu());
         let staging_buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("staging buffer"),
@@ -59,6 +60,7 @@ impl WgpuTensorDevice {
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+
         let mut d = Self {
             inner: device,
             opts,
@@ -68,7 +70,7 @@ impl WgpuTensorDevice {
             debug_tensors: RefCell::new(HashMap::new()),
         };
         d.load_modules();
-        Rc::new(d)
+        Ok(Rc::new(d))
     }
 
     pub(crate) fn load_modules(&mut self) {

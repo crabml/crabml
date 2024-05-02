@@ -1,6 +1,13 @@
 struct BlockQ8_0 {
-    d: u16,
-    qs: array<i8, 32>,
+    // f16 is supposed to be supported in webgpu spec, but is still wip in
+    // the webgpu-rs implementation. We have to use vec<u8> to represent f16.
+    // (u16 is not supported in webgpu-rs either, so we have to use array of
+    // u8 instead).
+    d: vec2<u8>,
+    // webgpu doesn't support i8 array, we have to pack them into a u32
+    // by pack4xi8(e: vec4<i32>) -> u32, and unpack them by unpack4xi8(u32)
+    // -> vec4<i32>.
+    qs: array<u32, 4>,
 };
 
 @group(0) @binding(0)
@@ -10,46 +17,16 @@ var<storage, write> dstBuf: array<BlockQ8_0>;
 var<storage, read> srcBuf: array<f32>;
 
 var<workgroup> sharedMax: array<f32, 32>;
+var<workgroup> sharedQs: array<i32, 32>;
 
 // each thread group handle a block of 32 elems
 
-fn f32_to_f16_bits(v: f32) -> u16 {
-    let sign = (half >> 15) & 0x1;
-    let exponent = (half >> 10) & 0x1F;
-    let mantissa = half & 0x3FF;
-
-    var exponent32: u32 = 0u;
-    var mantissa32: u32 = mantissa << 13;
-
-    if (exponent == 0u) {
-        // Subnormal or zero
-        if (mantissa != 0u) {
-            // It is a subnormal
-            var m = mantissa;
-            var e = i32(-15);
-
-            // Normalize the mantissa
-            while ((m & 0x400) == 0) {
-                m <<= 1;
-                e -= 1;
-            }
-            mantissa32 = m << 13;
-            exponent32 = u32(e + 127) << 23;
-        }
-    } else if (exponent == 0x1F) {
-        // Infinity or NaN
-        exponent32 = 0xFFu << 23;
-        if (mantissa != 0u) {
-            // NaN
-            mantissa32 = 0x400000u; // Preserve the signaling NaN bit if necessary
-        }
-    } else {
-        // Normalized number
-        exponent32 = u32(i32(exponent) - 15 + 127) << 23;
-    }
-
-    let result_bits = (sign << 31) | exponent32 | mantissa32;
-    return bitcast<f32>(result_bits);
+fn f32_to_f16_bits(v: f32) -> vec2<u8> {
+    // pack2x16float: vec2<float32> -> u32
+    var pack = pack2x16float(vec2(v, 0.0f)) >> 16;
+    let bits_h = u8(pack >> 8);
+    let bits_l = u8(pack & 0xFFFFu);
+    return vec2(bits_h, bits_l);
 }
 
 @compute @workgroup_size(32, 1, 1)
@@ -76,8 +53,19 @@ fn main(
     let d = f32(sharedMax[0]) / 127.0;
 
     // quantize
-    dstBuf[dstIdx].qs[blkIdx] = i8(srcBuf[srcIdx] / d);
     if blkIdx == 0 {
         dstBuf[dstIdx].d = f32_to_f16_bits(d);
+    }
+    sharedQs[blkIdx] = i32(srcBuf[srcIdx] / d);
+
+    // pack the quantized values into qs
+    if blkIdx % 4 == 0 {
+        let qpack = pack4xi8Clamp(vec4<i32>(
+            sharedQs[blkIdx],
+            sharedQs[blkIdx + 1],
+            sharedQs[blkIdx + 2],
+            sharedQs[blkIdx + 3]
+        ));
+        dstBuf[dstIdx].qs[blkIdx / 4] = qpack;
     }
 }

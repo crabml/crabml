@@ -1,9 +1,7 @@
 struct BlockQ8_0 {
     // f16 is supposed to be supported in webgpu spec, but is still wip in
-    // the webgpu-rs implementation. We have to use vec<u8> to represent f16.
-    // (u16 is not supported in webgpu-rs either, so we have to use array of
-    // u8 instead).
-    d: vec2<u8>,
+    // the webgpu-rs implementation. 
+    d: f32,
     // webgpu doesn't support i8 array, we have to pack them into a u32
     // by pack4xi8(e: vec4<i32>) -> u32, and unpack them by unpack4xi8(u32)
     // -> vec4<i32>.
@@ -20,14 +18,6 @@ var<workgroup> sharedMax: array<f32, 32>;
 var<workgroup> sharedQs: array<i32, 32>;
 
 // each thread group handle a block of 32 elems
-
-fn f32_to_f16_bits(v: f32) -> vec2<u8> {
-    // pack2x16float: vec2<float32> -> u32
-    var pack = pack2x16float(vec2(v, 0.0f)) >> 16;
-    let bits_h = u8(pack >> 8);
-    let bits_l = u8(pack & 0xFFFFu);
-    return vec2(bits_h, bits_l);
-}
 
 @compute @workgroup_size(32, 1, 1)
 fn main(
@@ -52,15 +42,14 @@ fn main(
     }
     let d = f32(sharedMax[0]) / 127.0;
 
-    // quantize
     if blkIdx == 0 {
-        dstBuf[dstIdx].d = f32_to_f16_bits(d);
+        dstBuf[dstIdx].d = d;
     }
-    sharedQs[blkIdx] = i32(srcBuf[srcIdx] / d);
 
-    // pack the quantized values into qs
+    // quantize and pack the quantized values into qs
+    sharedQs[blkIdx] = i32(srcBuf[srcIdx] / d);
     if blkIdx % 4 == 0 {
-        let qpack = pack4xi8Clamp(vec4<i32>(
+        let qpack = pack4xI8(vec4<i32>(
             sharedQs[blkIdx],
             sharedQs[blkIdx + 1],
             sharedQs[blkIdx + 2],

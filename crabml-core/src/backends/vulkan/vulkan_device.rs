@@ -277,12 +277,18 @@ impl VulkanTensorDeviceInner {
     }
 
     pub fn dispatch_compute(
-        &mut self,
+        &self,
         pipeline_name: &str,
-        write_descriptor_set: Vec<WriteDescriptorSet>,
+        buffers: Vec<Subbuffer<[u8]>>,
         dispatch_group: [u32; 3],
     ) {
         let pipeline = self.pipelines.get(pipeline_name).unwrap();
+
+        let write_descriptor_set = buffers
+            .into_iter()
+            .enumerate()
+            .map(|(i, buffer)| WriteDescriptorSet::buffer(i as u32, buffer))
+            .collect::<Vec<_>>();
 
         let layout = pipeline.layout().set_layouts().get(0).unwrap();
         let set = PersistentDescriptorSet::new(

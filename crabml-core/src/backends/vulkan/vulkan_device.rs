@@ -9,6 +9,7 @@ use vulkano::buffer::Subbuffer;
 use vulkano::command_buffer::allocator::CommandBufferAllocator;
 use vulkano::command_buffer::allocator::StandardCommandBufferAllocator;
 use vulkano::command_buffer::AutoCommandBufferBuilder;
+use vulkano::command_buffer::CommandBufferExecFuture;
 use vulkano::command_buffer::CommandBufferUsage;
 use vulkano::command_buffer::CopyBufferInfo;
 use vulkano::command_buffer::PrimaryAutoCommandBuffer;
@@ -36,6 +37,7 @@ use vulkano::pipeline::PipelineBindPoint;
 use vulkano::pipeline::PipelineLayout;
 use vulkano::pipeline::PipelineShaderStageCreateInfo;
 use vulkano::shader;
+use vulkano::sync::future::NowFuture;
 use vulkano::sync::GpuFuture;
 use vulkano::sync::{self};
 use vulkano::VulkanLibrary;
@@ -110,10 +112,15 @@ impl VulkanTensorDevice {
 
 // Vulkan has a lot of boilerplate code, put it them a stand-alone struct to deal with it.
 // I believe the complexity of Vulkan mostly comes from the fact that it is graphics-oriented.
+//
 // For compute, all we need is:
+//
 // 1. Create some buffers
 // 2. Pass the buffers to the compute pipeline
 // 3. Await the result, and read the buffer back to CPU with staging buffer.
+//
+// This struct is expected to be able to be used elsewhere, so it is not expected to tied to the
+// Tensor struct.
 pub(crate) struct VulkanTensorDeviceInner {
     device: Arc<Device>,
     queue: Arc<Queue>,
@@ -200,7 +207,7 @@ impl VulkanTensorDeviceInner {
         )
         .unwrap();
 
-        // this buffer is to be used in the compute pipeline
+        // the newly created buffer
         let device_buffer = Buffer::new_slice(
             self.memory_allocator.clone(),
             BufferCreateInfo {
@@ -240,12 +247,51 @@ impl VulkanTensorDeviceInner {
         device_buffer
     }
 
-    pub fn dispatch(
+    // copy the buffer to staging buffer, then read the data from staging buffer to CPU.
+    // this method is used to read the result of the compute operation.
+    pub fn copy_device_buffer_to_cpu(&self, src: Subbuffer<[u8]>, dst: &mut [u8]) {
+        let mut builder = AutoCommandBufferBuilder::primary(
+            &self.command_buffer_allocator,
+            self.queue.queue_family_index(),
+            CommandBufferUsage::OneTimeSubmit,
+        )
+        .unwrap();
+        builder
+            .copy_buffer(CopyBufferInfo::buffers(src, self.output_buffer.clone()))
+            .unwrap();
+        let command_buffer = builder.build().expect("Failed to build command buffer");
+
+        // await the command buffer to finish
+        let finished = sync::now(self.device.clone())
+            .then_execute(self.queue.clone(), command_buffer)
+            .expect("Failed to execute command buffer")
+            // This line instructs the GPU to signal a *fence* once the command buffer has finished
+            // execution. A fence is a Vulkan object that allows the CPU to know when the GPU has
+            // reached a certain point. We need to signal a fence here because below we want to block
+            // the CPU until the GPU has reached that point in the execution.
+            .then_signal_fence_and_flush()
+            .expect("Failed to signal fence and flush");
+        // Blocks execution until the GPU has finished the operation. This method only exists on the
+        // future that corresponds to a signalled fence. In other words, this method wouldn't be
+        // available if we didn't call `.then_signal_fence_and_flush()` earlier. The `None` parameter
+        // is an optional timeout.
+        finished.wait(None).expect("Failed to wait for fence");
+
+        // copy the data from staging buffer to CPU
+        self.output_buffer
+            .read()
+            .unwrap()
+            .iter()
+            .zip(dst.iter_mut())
+            .for_each(|(s, d)| *d = *s);
+    }
+
+    pub fn dispatch_compute(
         &mut self,
         pipeline_name: &str,
         write_descriptor_set: Vec<WriteDescriptorSet>,
         dispatch_group: [u32; 3],
-    ) {
+    ) -> CommandBufferExecFuture<NowFuture> {
         let pipeline = self.pipelines.get(pipeline_name).unwrap();
 
         let layout = pipeline.layout().set_layouts().get(0).unwrap();
@@ -258,17 +304,14 @@ impl VulkanTensorDeviceInner {
         .unwrap();
 
         // In order to execute our operation, we have to build a command buffer.
+        let mut builder = AutoCommandBufferBuilder::primary(
+            &self.command_buffer_allocator,
+            self.queue.queue_family_index(),
+            CommandBufferUsage::OneTimeSubmit,
+        )
+        .unwrap();
 
-        self.command_buffer_builder
-            // The command buffer only does one thing: execute the compute pipeline. This is called a
-            // *dispatch* operation.
-            //
-            // Note that we clone the pipeline and the set. Since they are both wrapped in an `Arc`,
-            // this only clones the `Arc` and not the whole pipeline or set (which aren't cloneable
-            // anyway). In this example we would avoid cloning them since this is the last time we use
-            // them, but in real code you would probably need to clone them.
-            .as_mut()
-            .unwrap()
+        builder
             .bind_pipeline_compute(pipeline.clone())
             .unwrap()
             .bind_descriptor_sets(
@@ -280,34 +323,13 @@ impl VulkanTensorDeviceInner {
             .unwrap()
             .dispatch(dispatch_group)
             .unwrap();
-    }
 
-    pub fn finish(&mut self) {
-        // Finish building the command buffer by calling `build`.
-        let command_buffer_builder = self.command_buffer_builder.take().unwrap();
-        let command_buffer = command_buffer_builder.build().unwrap();
+        // send the command buffer to GPU
+        let command_buffer = builder.build().unwrap();
         let future = sync::now(self.device.clone())
             .then_execute(self.queue.clone(), command_buffer)
-            .unwrap()
-            // This line instructs the GPU to signal a *fence* once the command buffer has finished
-            // execution. A fence is a Vulkan object that allows the CPU to know when the GPU has
-            // reached a certain point. We need to signal a fence here because below we want to block
-            // the CPU until the GPU has reached that point in the execution.
-            .then_signal_fence_and_flush()
             .unwrap();
-
-        // Blocks execution until the GPU has finished the operation. This method only exists on the
-        // future that corresponds to a signalled fence. In other words, this method wouldn't be
-        // available if we didn't call `.then_signal_fence_and_flush()` earlier. The `None` parameter
-        // is an optional timeout.
-        //
-        // Note however that dropping the `future` variable (with `drop(future)` for example) would
-        // block execution as well, and this would be the case even if we didn't call
-        // `.then_signal_fence_and_flush()`. Therefore the actual point of calling
-        // `.then_signal_fence_and_flush()` and `.wait()` is to make things more explicit. In the
-        // future, if the Rust language gets linear types vulkano may get modified so that only
-        // fence-signalled futures can get destroyed like this.
-        future.wait(None).unwrap();
+        future
     }
 
     pub fn init_device() -> (Arc<Device>, Arc<Queue>) {

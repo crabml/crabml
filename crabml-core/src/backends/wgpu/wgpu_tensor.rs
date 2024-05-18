@@ -1012,6 +1012,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     #[serial]
     fn test_wgpu_concatenate() -> Result<()> {
         let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());

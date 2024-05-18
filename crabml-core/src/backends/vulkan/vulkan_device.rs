@@ -77,14 +77,33 @@ pub struct VulkanTensorDevice {
 
 pub type VulkanTensorDeviceRef = Arc<VulkanTensorDevice>;
 
+macro_rules! load_shader_entry_point {
+    ($shader_mod:ident, $device:expr, $entry_point:expr) => {
+        $shader_mod::load($device)
+            .unwrap()
+            .entry_point($entry_point)
+            .unwrap()
+    };
+}
+
 impl VulkanTensorDevice {
     pub fn new(opts: VulkanTensorDeviceOptions) -> VulkanTensorDeviceRef {
         let inner = VulkanTensorDeviceInner::new();
-        Self { opts, inner }.into()
+        let mut device = Self { opts, inner };
+        device.load_shaders();
+        device.into()
     }
 
     fn load_shaders(&mut self) {
-        
+        mod add {
+            vulkano_shaders::shader! { ty: "compute", path: "./src/backends/vulkan/shaders/add.comp" }
+        }
+
+        let device = self.inner.device.clone();
+        let entry_points = [("add", load_shader_entry_point!(add, device.clone(), "main"))];
+        for (name, entry_point) in entry_points.into_iter() {
+            self.inner.load_compute_pipeline(name, entry_point);
+        }
     }
 }
 

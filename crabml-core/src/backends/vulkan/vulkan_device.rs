@@ -127,12 +127,6 @@ pub(crate) struct VulkanTensorDeviceInner {
     memory_allocator: Arc<StandardMemoryAllocator>,
     descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
     command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
-    command_buffer_builder: Option<
-        AutoCommandBufferBuilder<
-            PrimaryAutoCommandBuffer<Arc<StandardCommandBufferAllocator>>,
-            Arc<StandardCommandBufferAllocator>,
-        >,
-    >,
     pipelines: HashMap<String, Arc<ComputePipeline>>,
     output_buffer: Subbuffer<[u8; 1024 * 1024]>,
 }
@@ -150,12 +144,6 @@ impl VulkanTensorDeviceInner {
             device.clone(),
             Default::default(),
         ));
-        let command_buffer_builder = AutoCommandBufferBuilder::primary(
-            &command_buffer_allocator,
-            queue.queue_family_index(),
-            CommandBufferUsage::MultipleSubmit,
-        )
-        .unwrap();
 
         // We start by creating the buffer that will store the data.
         let output_buffer = Buffer::new_sized(
@@ -179,7 +167,6 @@ impl VulkanTensorDeviceInner {
             memory_allocator,
             command_buffer_allocator,
             descriptor_set_allocator,
-            command_buffer_builder: Some(command_buffer_builder),
             pipelines,
             output_buffer,
         }
@@ -291,7 +278,7 @@ impl VulkanTensorDeviceInner {
         pipeline_name: &str,
         write_descriptor_set: Vec<WriteDescriptorSet>,
         dispatch_group: [u32; 3],
-    ) -> CommandBufferExecFuture<NowFuture> {
+    ) {
         let pipeline = self.pipelines.get(pipeline_name).unwrap();
 
         let layout = pipeline.layout().set_layouts().get(0).unwrap();
@@ -303,33 +290,36 @@ impl VulkanTensorDeviceInner {
         )
         .unwrap();
 
-        // In order to execute our operation, we have to build a command buffer.
-        let mut builder = AutoCommandBufferBuilder::primary(
-            &self.command_buffer_allocator,
-            self.queue.queue_family_index(),
-            CommandBufferUsage::OneTimeSubmit,
-        )
-        .unwrap();
-
-        builder
-            .bind_pipeline_compute(pipeline.clone())
-            .unwrap()
-            .bind_descriptor_sets(
-                PipelineBindPoint::Compute,
-                pipeline.layout().clone(),
-                0,
-                set,
+        // build the command buffer for the compute operation
+        let command_buffer = {
+            // In order to execute our operation, we have to build a command buffer.
+            let mut builder = AutoCommandBufferBuilder::primary(
+                &self.command_buffer_allocator,
+                self.queue.queue_family_index(),
+                CommandBufferUsage::OneTimeSubmit,
             )
-            .unwrap()
-            .dispatch(dispatch_group)
             .unwrap();
+            builder
+                .bind_pipeline_compute(pipeline.clone())
+                .unwrap()
+                .bind_descriptor_sets(
+                    PipelineBindPoint::Compute,
+                    pipeline.layout().clone(),
+                    0,
+                    set,
+                )
+                .unwrap()
+                .dispatch(dispatch_group)
+                .unwrap();
+            builder.build().unwrap()
+        };
 
-        // send the command buffer to GPU
-        let command_buffer = builder.build().unwrap();
-        let future = sync::now(self.device.clone())
+        // flush the command buffer to GPU queue
+        sync::now(self.device.clone())
             .then_execute(self.queue.clone(), command_buffer)
+            .unwrap()
+            .flush()
             .unwrap();
-        future
     }
 
     pub fn init_device() -> (Arc<Device>, Arc<Queue>) {

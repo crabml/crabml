@@ -782,25 +782,22 @@ mod tests {
     use std::sync::LazyLock;
 
     use approx::assert_relative_eq;
+    use serial_test::serial;
 
     use super::WgpuTensor;
     use crate::backends::wgpu::WgpuTensorDevice;
     use crate::backends::wgpu::WgpuTensorDeviceOptions;
-    use crate::backends::wgpu::WgpuTensorDeviceRef;
     use crate::error::Result;
     use crate::gguf::GGMLType;
     use crate::tensor::RopeMode;
     use crate::tensor::Tensor;
 
-    #[thread_local]
-    static DEVICE: LazyLock<WgpuTensorDeviceRef> = LazyLock::new(|| {
-        WgpuTensorDevice::new(WgpuTensorDeviceOptions::new().with_debug_named_tensor(true))
-    });
-
     #[test]
+    #[serial]
     fn test_wgpu_tensor_new_and_export() -> Result<()> {
         // let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
-        let t1 = WgpuTensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], DEVICE.clone())?;
+        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
+        let t1 = WgpuTensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], device)?;
         let mut dst = vec![0.0; 6];
 
         t1.export(&mut dst)?;
@@ -810,9 +807,11 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_wgpu_tensor_add() -> Result<()> {
-        let t1 = WgpuTensor::new(&[2.0; 64], &[16, 4], DEVICE.clone())?;
-        let t2 = WgpuTensor::new(&[3.0; 64], &[16, 4], DEVICE.clone())?;
+        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
+        let t1 = WgpuTensor::new(&[2.0; 64], &[16, 4], device.clone())?;
+        let t2 = WgpuTensor::new(&[3.0; 64], &[16, 4], device.clone())?;
         let t1 = t1.add_inplace(&t2)?;
 
         let mut dst = vec![0.0; 64];
@@ -823,17 +822,20 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_wgpu_tensor_mul() -> Result<()> {
-        let t1 = WgpuTensor::new(&[3.0; 1024], &[512, 2], DEVICE.clone())?;
-        let t2 = WgpuTensor::new(&[2.0; 1024], &[512, 2], DEVICE.clone())?;
+        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
+
+        let t1 = WgpuTensor::new(&[3.0; 1024], &[512, 2], device.clone())?;
+        let t2 = WgpuTensor::new(&[2.0; 1024], &[512, 2], device.clone())?;
         let t1 = t1.mul_inplace(&t2)?;
         let mut dst = vec![0.0; 1024];
         t1.export(&mut dst)?;
         assert_eq!(&dst[0..6], [6.0, 6.0, 6.0, 6.0, 6.0, 6.0]);
         assert!(dst.iter().all(|v| *v == 6.0));
 
-        let t1 = WgpuTensor::new(&[3.0; 6], &[3, 2], DEVICE.clone())?;
-        let t2 = WgpuTensor::new(&[2.0; 6], &[3, 2], DEVICE.clone())?;
+        let t1 = WgpuTensor::new(&[3.0; 6], &[3, 2], device.clone())?;
+        let t2 = WgpuTensor::new(&[2.0; 6], &[3, 2], device.clone())?;
         let t1 = t1.mul_inplace(&t2)?;
 
         let mut dst = vec![0.0; 6];
@@ -844,8 +846,11 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_wgpu_tensor_div_scalar() -> Result<()> {
-        let t1 = WgpuTensor::new(&[6.0; 1024], &[512, 2], DEVICE.clone())?;
+        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
+
+        let t1 = WgpuTensor::new(&[6.0; 1024], &[512, 2], device.clone())?;
         let t1 = t1.div_scalar_inplace(2.0)?;
 
         let mut dst = vec![0.0; 1024];
@@ -856,9 +861,12 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_wgpu_tensor_alloc() -> Result<()> {
-        let t1 = WgpuTensor::alloc(&[512, 2], GGMLType::F32, DEVICE.clone())?;
-        let t2 = WgpuTensor::new(&[1.0; 1024], &[512, 2], DEVICE.clone())?;
+        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
+
+        let t1 = WgpuTensor::alloc(&[512, 2], GGMLType::F32, device.clone())?;
+        let t2 = WgpuTensor::new(&[1.0; 1024], &[512, 2], device.clone())?;
         let t1 = t1.add_inplace(&t2)?;
 
         let mut dst = vec![0.0; 1024];
@@ -869,24 +877,31 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_wgpu_tensor_with_name() -> Result<()> {
-        let t1 = WgpuTensor::new(&[0.0; 1024], &[512, 2], DEVICE.clone())?;
-        let t2 = WgpuTensor::new(&[1.0; 1024], &[512, 2], DEVICE.clone())?;
+        let device =
+            WgpuTensorDevice::new(WgpuTensorDeviceOptions::new().with_debug_named_tensor(true));
+
+        let t1 = WgpuTensor::new(&[0.0; 1024], &[512, 2], device.clone())?;
+        let t2 = WgpuTensor::new(&[1.0; 1024], &[512, 2], device.clone())?;
         let t1 = t1.add_inplace(&t2)?;
         let _ = t1.with_name("t1".to_string());
 
-        let dst = DEVICE.dump_debug_tensor("t1").unwrap();
+        let dst = device.dump_debug_tensor("t1").unwrap();
         assert_eq!(dst, vec![1.0; 1024]);
         Ok(())
     }
 
     #[test]
+    #[serial]
     fn test_wgpu_copy_from() -> Result<()> {
-        let mut t1 = WgpuTensor::alloc(&[256, 4], GGMLType::F32, DEVICE.clone())?;
+        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
+
+        let mut t1 = WgpuTensor::alloc(&[256, 4], GGMLType::F32, device.clone())?;
         let t2 = WgpuTensor::new(
             &(0..1024).map(|d| d as f32).collect::<Vec<f32>>(),
             &[256, 4],
-            DEVICE.clone(),
+            device.clone(),
         )?;
 
         assert_eq!(t2.strider.at(&[1, 0])?, 4);
@@ -899,7 +914,10 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_wgpu_tensor_rms_norm() -> Result<()> {
+        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
+
         // it seems that webgpu have a different rounding method on dividing f32:
         // https://stackoverflow.com/questions/73674463/does-rust-f64-f32-round-correctly
         pub fn simple_rmsnorm(x: &mut [f32]) {
@@ -914,7 +932,7 @@ mod tests {
 
         let v1 = (1..129).map(|i| i as f32).collect::<Vec<_>>();
 
-        let t1 = WgpuTensor::new(&v1.clone(), &[128], DEVICE.clone())?;
+        let t1 = WgpuTensor::new(&v1.clone(), &[128], device.clone())?;
         let t1 = t1.rms_norm_inplace(1e-5)?;
         let mut dst1 = vec![0.0; 128];
         t1.export(&mut dst1)?;
@@ -927,11 +945,14 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_wgpu_matmul() -> Result<()> {
+        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
+
         let v1 = (0..256).map(|i| i as f32).collect::<Vec<_>>();
 
-        let t1 = WgpuTensor::new(&v1, &[32, 8], DEVICE.clone())?;
-        let t2 = WgpuTensor::new(&[2.0; 8], &[8], DEVICE.clone())?;
+        let t1 = WgpuTensor::new(&v1, &[32, 8], device.clone())?;
+        let t2 = WgpuTensor::new(&[2.0; 8], &[8], device.clone())?;
         let t3 = t1.matmul_vec(&t2)?;
         let mut dst1 = vec![0.0; 32];
         t3.export(&mut dst1)?;
@@ -944,7 +965,10 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_wgpu_batch_matmul() -> Result<()> {
+        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
+
         let v1 = (0..6).map(|i| i as f32).collect::<Vec<_>>();
         // 0.0, 1.0,
         // 2.0, 3.0,
@@ -953,8 +977,8 @@ mod tests {
         // 2.0, 2.0
         // => 2.0, 10.0, 18.0
 
-        let t1 = WgpuTensor::new(&v1, &[1, 3, 2], DEVICE.clone())?;
-        let t2 = WgpuTensor::new(&[2.0; 2], &[1, 2, 1], DEVICE.clone())?;
+        let t1 = WgpuTensor::new(&v1, &[1, 3, 2], device.clone())?;
+        let t2 = WgpuTensor::new(&[2.0; 2], &[1, 2, 1], device.clone())?;
         let t3 = t1.batch_matmul(&t2)?;
         let mut dst1 = vec![0.0; 3]; // 1 x 3 x 1
         t3.export(&mut dst1)?;
@@ -965,9 +989,12 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_wgpu_rope() -> Result<()> {
+        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
+
         let v1 = (0..32).map(|i| i as f32).collect::<Vec<_>>();
-        let t1 = WgpuTensor::new(&v1, &[2, 16], DEVICE.clone())?;
+        let t1 = WgpuTensor::new(&v1, &[2, 16], device.clone())?;
         let t1 = t1.rope_inplace(RopeMode::Llama, 1, 2)?;
 
         let mut dst1 = vec![0.0; 32];
@@ -987,15 +1014,18 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_wgpu_concatenate() -> Result<()> {
+        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
+
         // TODO: fix this test later
-        let mut t1 = WgpuTensor::alloc(&[2, 2, 16], GGMLType::F32, DEVICE.clone())?.resize(0, 0)?;
+        let mut t1 = WgpuTensor::alloc(&[2, 2, 16], GGMLType::F32, device.clone())?.resize(0, 0)?;
 
         let v2 = (0..32).map(|i| i as f32).collect::<Vec<_>>();
-        let t2 = WgpuTensor::new(&v2, &[1, 2, 16], DEVICE.clone())?;
+        let t2 = WgpuTensor::new(&v2, &[1, 2, 16], device.clone())?;
 
         let v3 = (32..64).map(|i| i as f32).collect::<Vec<_>>();
-        let t3 = WgpuTensor::new(&v3, &[1, 2, 16], DEVICE.clone())?;
+        let t3 = WgpuTensor::new(&v3, &[1, 2, 16], device.clone())?;
 
         t1.concatenate(&t2, 0)?;
         t1.concatenate(&t3, 0)?;
@@ -1019,15 +1049,18 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_wgpu_concatenate2() -> Result<()> {
+        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
+
         // TODO: fix this test later
-        let mut t1 = WgpuTensor::alloc(&[2, 2, 16], GGMLType::F32, DEVICE.clone())?.resize(1, 0)?;
+        let mut t1 = WgpuTensor::alloc(&[2, 2, 16], GGMLType::F32, device.clone())?.resize(1, 0)?;
 
         let v2 = (0..32).map(|i| i as f32).collect::<Vec<_>>();
-        let t2 = WgpuTensor::new(&v2, &[2, 1, 16], DEVICE.clone())?;
+        let t2 = WgpuTensor::new(&v2, &[2, 1, 16], device.clone())?;
 
         let v3 = (32..64).map(|i| i as f32).collect::<Vec<_>>();
-        let t3 = WgpuTensor::new(&v3, &[2, 1, 16], DEVICE.clone())?;
+        let t3 = WgpuTensor::new(&v3, &[2, 1, 16], device.clone())?;
 
         t1.concatenate(&t2, 1)?;
         t1.concatenate(&t3, 1)?;
@@ -1051,9 +1084,12 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_wgpu_softmax() -> Result<()> {
+        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
+
         let v1 = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let t1 = WgpuTensor::new(&v1, &[2, 3], DEVICE.clone())?;
+        let t1 = WgpuTensor::new(&v1, &[2, 3], device.clone())?;
         let t1 = t1.softmax_inplace(1)?;
 
         let mut dst1 = vec![0.0; 6];
@@ -1071,9 +1107,12 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_wgpu_silu() -> Result<()> {
+        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
+
         let v1 = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let t1 = WgpuTensor::new(&v1, &[6], DEVICE.clone())?;
+        let t1 = WgpuTensor::new(&v1, &[6], device.clone())?;
         let t1 = t1.silu_inplace()?;
 
         let mut dst1 = vec![0.0; 6];
@@ -1091,9 +1130,12 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_dup() -> Result<()> {
+        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
+
         let v1 = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let t1 = WgpuTensor::new(&v1, &[2, 3], DEVICE.clone())?;
+        let t1 = WgpuTensor::new(&v1, &[2, 3], device.clone())?;
         let t2 = t1.dup()?;
 
         let mut dst1 = vec![0.0; 6];
@@ -1109,11 +1151,14 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_congiguous() -> Result<()> {
+        let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
+
         // 1, 2, 3
         // 4, 5, 6
         let v1 = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let t1 = WgpuTensor::new(&v1, &[2, 3], DEVICE.clone())?;
+        let t1 = WgpuTensor::new(&v1, &[2, 3], device.clone())?;
         let t1 = t1.transpose(&[1, 0])?;
         let t2 = t1.contiguous()?;
         // 1, 4

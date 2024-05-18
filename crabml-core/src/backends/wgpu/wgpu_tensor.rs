@@ -780,7 +780,6 @@ impl Tensor for WgpuTensor {
 #[cfg(test)]
 mod tests {
     use approx::assert_relative_eq;
-    use serial_test::serial;
 
     use super::WgpuTensor;
     use crate::backends::wgpu::WgpuTensorDevice;
@@ -791,7 +790,6 @@ mod tests {
     use crate::tensor::Tensor;
 
     #[test]
-    #[serial]
     fn test_wgpu_tensor_new_and_export() -> Result<()> {
         // let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
         let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
@@ -805,7 +803,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn test_wgpu_tensor_add() -> Result<()> {
         let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
         let t1 = WgpuTensor::new(&[2.0; 64], &[16, 4], device.clone())?;
@@ -820,7 +817,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn test_wgpu_tensor_mul() -> Result<()> {
         let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
 
@@ -844,7 +840,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn test_wgpu_tensor_div_scalar() -> Result<()> {
         let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
 
@@ -859,7 +854,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn test_wgpu_tensor_alloc() -> Result<()> {
         let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
 
@@ -875,7 +869,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn test_wgpu_tensor_with_name() -> Result<()> {
         let device =
             WgpuTensorDevice::new(WgpuTensorDeviceOptions::new().with_debug_named_tensor(true));
@@ -891,7 +884,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn test_wgpu_copy_from() -> Result<()> {
         let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
 
@@ -912,7 +904,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn test_wgpu_tensor_rms_norm() -> Result<()> {
         let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
 
@@ -943,7 +934,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn test_wgpu_matmul() -> Result<()> {
         let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
 
@@ -963,7 +953,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn test_wgpu_batch_matmul() -> Result<()> {
         let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
 
@@ -987,7 +976,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn test_wgpu_rope() -> Result<()> {
         let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
 
@@ -1012,8 +1000,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
-    #[serial]
     fn test_wgpu_concatenate() -> Result<()> {
         let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
 
@@ -1048,8 +1034,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
-    #[serial]
     fn test_wgpu_concatenate2() -> Result<()> {
         let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
 
@@ -1084,7 +1068,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn test_wgpu_softmax() -> Result<()> {
         let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
 
@@ -1107,7 +1090,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn test_wgpu_silu() -> Result<()> {
         let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
 
@@ -1130,7 +1112,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn test_dup() -> Result<()> {
         let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
 
@@ -1151,7 +1132,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn test_congiguous() -> Result<()> {
         let device = WgpuTensorDevice::new(WgpuTensorDeviceOptions::new());
 

@@ -1,6 +1,4 @@
-use std::sync::Arc;
-
-use vulkano::descriptor_set::WriteDescriptorSet;
+#![allow(dead_code, unused_variables)]
 
 use super::vulkan_device::VulkanTensorDeviceRef;
 use crate::error::Error;

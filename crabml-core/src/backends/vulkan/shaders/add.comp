@@ -1,0 +1,20 @@
+#version 450
+
+layout(local_size_x = 32) in;
+
+layout(set = 0, binding = 0) buffer InputBufferA {
+    float a[];
+};
+
+layout(set = 0, binding = 1) buffer InputBufferB {
+    float b[];
+};
+
+layout(set = 0, binding = 2) buffer OutputBuffer {
+    float result[];
+};
+
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+    result[idx] = a[idx] + b[idx];
+}

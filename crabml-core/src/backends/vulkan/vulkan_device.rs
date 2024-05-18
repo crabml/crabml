@@ -39,7 +39,62 @@ use vulkano::sync::GpuFuture;
 use vulkano::sync::{self};
 use vulkano::VulkanLibrary;
 
-struct VulkanDeviceInner {
+pub struct VulkanTensorDeviceOptions {
+    pub staging_buf_bytes: usize,
+
+    pub debug_named_tensor: bool,
+}
+
+impl VulkanTensorDeviceOptions {
+    pub fn new() -> Self {
+        Self {
+            staging_buf_bytes: 1024 * 4,
+            debug_named_tensor: false,
+        }
+    }
+
+    pub fn with_staging_buf_bytes(mut self, v: usize) -> Self {
+        self.staging_buf_bytes = v;
+        self
+    }
+
+    pub fn with_debug_named_tensor(mut self, v: bool) -> Self {
+        self.debug_named_tensor = v;
+        self
+    }
+}
+
+impl Default for VulkanTensorDeviceOptions {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+pub struct VulkanTensorDevice {
+    opts: VulkanTensorDeviceOptions,
+    inner: VulkanTensorDeviceInner,
+}
+
+pub type VulkanTensorDeviceRef = Arc<VulkanTensorDevice>;
+
+impl VulkanTensorDevice {
+    pub fn new(opts: VulkanTensorDeviceOptions) -> VulkanTensorDeviceRef {
+        let inner = VulkanTensorDeviceInner::new();
+        Self { opts, inner }.into()
+    }
+
+    fn load_shaders(&mut self) {
+        
+    }
+}
+
+// Vulkan has a lot of boilerplate code, put it them a stand-alone struct to deal with it.
+// I believe the complexity of Vulkan mostly comes from the fact that it is graphics-oriented.
+// For compute, all we need is:
+// 1. Create some buffers
+// 2. Pass the buffers to the compute pipeline
+// 3. Await the result, and read the buffer back to CPU with staging buffer.
+struct VulkanTensorDeviceInner {
     device: Arc<Device>,
     queue: Arc<Queue>,
     memory_allocator: Arc<StandardMemoryAllocator>,
@@ -55,7 +110,7 @@ struct VulkanDeviceInner {
     output_buffer: Subbuffer<[u8; 1024 * 1024]>,
 }
 
-impl VulkanDeviceInner {
+impl VulkanTensorDeviceInner {
     fn new() -> Self {
         let (device, queue) = Self::init_device();
 

@@ -51,7 +51,7 @@ pub struct VulkanTensorDeviceOptions {
 impl VulkanTensorDeviceOptions {
     pub fn new() -> Self {
         Self {
-            staging_buf_bytes: 1024 * 4,
+            staging_buf_bytes: 1024 * 1024 * 2,
             debug_named_tensor: false,
         }
     }
@@ -91,7 +91,7 @@ macro_rules! load_shader_entry_point {
 
 impl VulkanTensorDevice {
     pub fn new(opts: VulkanTensorDeviceOptions) -> VulkanTensorDeviceRef {
-        let inner = VulkanTensorDeviceInner::new();
+        let inner = VulkanTensorDeviceInner::new(opts.staging_buf_bytes);
         let mut device = Self { opts, inner };
         device.load_shaders();
         device.into()
@@ -128,11 +128,11 @@ pub(crate) struct VulkanTensorDeviceInner {
     descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
     command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
     pipelines: HashMap<String, Arc<ComputePipeline>>,
-    output_buffer: Subbuffer<[u8; 1024 * 1024]>,
+    output_buffer: Subbuffer<[u8]>,
 }
 
 impl VulkanTensorDeviceInner {
-    pub fn new() -> Self {
+    pub fn new(output_buffer_bytes: usize) -> Self {
         let (device, queue) = Self::init_device();
 
         let memory_allocator = Arc::new(StandardMemoryAllocator::new_default(device.clone()));
@@ -146,7 +146,7 @@ impl VulkanTensorDeviceInner {
         ));
 
         // We start by creating the buffer that will store the data.
-        let output_buffer = Buffer::new_sized(
+        let output_buffer = Buffer::new_slice(
             memory_allocator.clone(),
             BufferCreateInfo {
                 usage: BufferUsage::STORAGE_BUFFER,
@@ -157,6 +157,7 @@ impl VulkanTensorDeviceInner {
                     | MemoryTypeFilter::HOST_RANDOM_ACCESS,
                 ..Default::default()
             },
+            output_buffer_bytes as u64,
         )
         .unwrap();
 

@@ -153,6 +153,7 @@ impl Tensor for VulkanTensor {
         assert!(self.strider.is_contiguous());
         assert!(rhs.strider.is_contiguous());
 
+        // TODO: pass n_elm as meta
         let n_elms = self.strider.len() as u32;
         let bufs = vec![self.buf.clone(), rhs.buf.clone()];
         let dispatches = [n_elms / 32 + 1, 1, 1];
@@ -174,5 +175,15 @@ impl Tensor for VulkanTensor {
 
     fn batch_matmul(&self, y: &Self) -> Result<Self> {
         todo!()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::backends::vulkan::vulkan_device::{VulkanTensorDevice, VulkanTensorDeviceOptions};
+
+    #[test]
+    fn test_add() {
+        let d = VulkanTensorDevice::new(VulkanTensorDeviceOptions::default());
     }
 }

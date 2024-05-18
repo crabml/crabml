@@ -42,4 +42,4 @@ jobs:
           sudo apt install vulkan-validationlayers
 
       - name: Run tests
-        run: cargo test --workspace
+        run: RUST_TEST_THREADS=1 cargo test --workspace

@@ -180,10 +180,32 @@ impl Tensor for VulkanTensor {
 
 #[cfg(test)]
 mod tests {
-    use crate::backends::vulkan::vulkan_device::{VulkanTensorDevice, VulkanTensorDeviceOptions};
+    use super::VulkanTensor;
+    use crate::backends::vulkan::vulkan_device::VulkanTensorDevice;
+    use crate::backends::vulkan::vulkan_device::VulkanTensorDeviceOptions;
+    use crate::error::Result;
+    use crate::tensor::Tensor;
 
     #[test]
-    fn test_add() {
+    fn test_add() -> Result<()> {
         let d = VulkanTensorDevice::new(VulkanTensorDeviceOptions::default());
+
+        let buf1 = (0..32).into_iter().map(|v| v as f32).collect::<Vec<_>>();
+        let buf2 = vec![2.0; 32];
+
+        let t1 = VulkanTensor::new(&buf1, &[32], d.clone()).unwrap();
+        let t2 = VulkanTensor::new(&buf2, &[32], d.clone()).unwrap();
+
+        let t1 = t1.add_inplace(&t2).unwrap();
+        let t1 = t1.add_inplace(&t2).unwrap();
+        let mut bufo = vec![0.0; 32];
+        t1.export(&mut bufo)?;
+
+        assert_eq!(bufo, vec![
+            4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0,
+            19.0, 20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 27.0, 28.0, 29.0, 30.0, 31.0, 32.0,
+            33.0, 34.0, 35.0
+        ]);
+        Ok(())
     }
 }

@@ -188,7 +188,7 @@ mod tests {
     fn test_add() -> Result<()> {
         let d = VulkanTensorDevice::new(VulkanTensorDeviceOptions::default());
 
-        let buf1 = (0..32).into_iter().map(|v| v as f32).collect::<Vec<_>>();
+        let buf1 = (0..32).map(|v| v as f32).collect::<Vec<_>>();
         let buf2 = vec![2.0; 32];
 
         let t1 = VulkanTensor::new(&buf1, &[32], d.clone()).unwrap();

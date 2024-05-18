@@ -291,11 +291,11 @@ impl VulkanTensorDeviceInner {
             .map(|(i, buffer)| WriteDescriptorSet::buffer(i as u32, buffer))
             .collect::<Vec<_>>();
 
-        let layout = pipeline.layout().set_layouts().get(0).unwrap();
+        let layout = pipeline.layout().set_layouts().first().unwrap();
         let set = PersistentDescriptorSet::new(
             &self.descriptor_set_allocator,
             layout.clone(),
-            write_descriptor_set.into_iter(),
+            write_descriptor_set,
             [],
         )
         .unwrap();

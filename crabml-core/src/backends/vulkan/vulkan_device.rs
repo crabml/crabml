@@ -237,19 +237,21 @@ impl VulkanTensorDeviceInner {
     // copy the buffer to staging buffer, then read the data from staging buffer to CPU.
     // this method is used to read the result of the compute operation.
     pub fn copy_device_buffer_to_cpu(&self, src: Subbuffer<[u8]>, dst: &mut [u8]) {
-        let mut builder = AutoCommandBufferBuilder::primary(
-            &self.command_buffer_allocator,
-            self.queue.queue_family_index(),
-            CommandBufferUsage::OneTimeSubmit,
-        )
-        .unwrap();
-        builder
-            .copy_buffer(CopyBufferInfo::buffers(src, self.output_buffer.clone()))
+        let command_buffer = {
+            let mut builder = AutoCommandBufferBuilder::primary(
+                &self.command_buffer_allocator,
+                self.queue.queue_family_index(),
+                CommandBufferUsage::OneTimeSubmit,
+            )
             .unwrap();
-        let command_buffer = builder.build().expect("Failed to build command buffer");
+            builder
+                .copy_buffer(CopyBufferInfo::buffers(src, self.output_buffer.clone()))
+                .unwrap();
+            builder.build().expect("Failed to build command buffer")
+        };
 
         // await the command buffer to finish
-        let finished = sync::now(self.device.clone())
+        sync::now(self.device.clone())
             .then_execute(self.queue.clone(), command_buffer)
             .expect("Failed to execute command buffer")
             // This line instructs the GPU to signal a *fence* once the command buffer has finished
@@ -257,12 +259,13 @@ impl VulkanTensorDeviceInner {
             // reached a certain point. We need to signal a fence here because below we want to block
             // the CPU until the GPU has reached that point in the execution.
             .then_signal_fence_and_flush()
-            .expect("Failed to signal fence and flush");
-        // Blocks execution until the GPU has finished the operation. This method only exists on the
-        // future that corresponds to a signalled fence. In other words, this method wouldn't be
-        // available if we didn't call `.then_signal_fence_and_flush()` earlier. The `None` parameter
-        // is an optional timeout.
-        finished.wait(None).expect("Failed to wait for fence");
+            .expect("Failed to signal fence and flush")
+            // Blocks execution until the GPU has finished the operation. This method only exists on the
+            // future that corresponds to a signalled fence. In other words, this method wouldn't be
+            // available if we didn't call `.then_signal_fence_and_flush()` earlier. The `None` parameter
+            // is an optional timeout.
+            .wait(None)
+            .expect("Failed to wait for fence");
 
         // copy the data from staging buffer to CPU
         self.output_buffer

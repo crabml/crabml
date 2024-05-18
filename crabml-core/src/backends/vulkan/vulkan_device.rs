@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use bytemuck::NoUninit;
 use vulkano::buffer::Buffer;
 use vulkano::buffer::BufferCreateInfo;
 use vulkano::buffer::BufferUsage;
@@ -71,8 +72,8 @@ impl Default for VulkanTensorDeviceOptions {
 }
 
 pub struct VulkanTensorDevice {
-    opts: VulkanTensorDeviceOptions,
-    inner: VulkanTensorDeviceInner,
+    pub(crate) opts: VulkanTensorDeviceOptions,
+    pub(crate) inner: VulkanTensorDeviceInner,
 }
 
 pub type VulkanTensorDeviceRef = Arc<VulkanTensorDevice>;
@@ -113,7 +114,7 @@ impl VulkanTensorDevice {
 // 1. Create some buffers
 // 2. Pass the buffers to the compute pipeline
 // 3. Await the result, and read the buffer back to CPU with staging buffer.
-struct VulkanTensorDeviceInner {
+pub(crate) struct VulkanTensorDeviceInner {
     device: Arc<Device>,
     queue: Arc<Queue>,
     memory_allocator: Arc<StandardMemoryAllocator>,
@@ -130,7 +131,7 @@ struct VulkanTensorDeviceInner {
 }
 
 impl VulkanTensorDeviceInner {
-    fn new() -> Self {
+    pub fn new() -> Self {
         let (device, queue) = Self::init_device();
 
         let memory_allocator = Arc::new(StandardMemoryAllocator::new_default(device.clone()));
@@ -177,8 +178,13 @@ impl VulkanTensorDeviceInner {
         }
     }
 
+    pub fn make_device_buffer_from<T: NoUninit>(&self, data: &[T]) -> Subbuffer<[u8]> {
+        let buf = bytemuck::cast_slice(data);
+        self.make_device_buffer_from_bytes(buf)
+    }
+
     /// create a buffer and copy the data from CPU to this buffer
-    fn make_device_buffer_from(&self, data: &[u8]) -> Subbuffer<[u8]> {
+    pub fn make_device_buffer_from_bytes(&self, data: &[u8]) -> Subbuffer<[u8]> {
         // this buffer is expected to be recycled after this function
         let staging_buffer = Buffer::from_iter(
             self.memory_allocator.clone(),
@@ -234,7 +240,7 @@ impl VulkanTensorDeviceInner {
         device_buffer
     }
 
-    fn dispatch(
+    pub fn dispatch(
         &mut self,
         pipeline_name: &str,
         write_descriptor_set: Vec<WriteDescriptorSet>,
@@ -276,7 +282,7 @@ impl VulkanTensorDeviceInner {
             .unwrap();
     }
 
-    fn finish(&mut self) {
+    pub fn finish(&mut self) {
         // Finish building the command buffer by calling `build`.
         let command_buffer_builder = self.command_buffer_builder.take().unwrap();
         let command_buffer = command_buffer_builder.build().unwrap();
@@ -304,7 +310,7 @@ impl VulkanTensorDeviceInner {
         future.wait(None).unwrap();
     }
 
-    fn init_device() -> (Arc<Device>, Arc<Queue>) {
+    pub fn init_device() -> (Arc<Device>, Arc<Queue>) {
         // As with other examples, the first step is to create an instance.
         let library = VulkanLibrary::new().unwrap();
         let instance = Instance::new(library, InstanceCreateInfo {
@@ -364,7 +370,7 @@ impl VulkanTensorDeviceInner {
         (device, queue)
     }
 
-    fn load_compute_pipeline(
+    pub fn load_compute_pipeline(
         &mut self,
         pipeline_name: &str,
         shader_entry_point: shader::EntryPoint,

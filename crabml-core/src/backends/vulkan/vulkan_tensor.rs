@@ -178,6 +178,8 @@ impl Tensor for VulkanTensor {
 
 #[cfg(test)]
 mod tests {
+    use serial_test::serial;
+
     use super::VulkanTensor;
     use crate::backends::vulkan::vulkan_device::VulkanTensorDevice;
     use crate::backends::vulkan::vulkan_device::VulkanTensorDeviceOptions;
@@ -185,6 +187,7 @@ mod tests {
     use crate::tensor::Tensor;
 
     #[test]
+    #[serial]
     fn test_add() -> Result<()> {
         let d = VulkanTensorDevice::new(VulkanTensorDeviceOptions::default());
 
@@ -208,6 +211,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_add2() -> Result<()> {
         let d = VulkanTensorDevice::new(VulkanTensorDeviceOptions::default());
 

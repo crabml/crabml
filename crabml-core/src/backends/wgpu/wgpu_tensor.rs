@@ -779,8 +779,6 @@ impl Tensor for WgpuTensor {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::LazyLock;
-
     use approx::assert_relative_eq;
     use serial_test::serial;
 

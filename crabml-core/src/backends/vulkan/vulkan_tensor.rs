@@ -186,7 +186,6 @@ mod tests {
     use crate::error::Result;
     use crate::tensor::Tensor;
 
-    #[test]
     #[serial]
     fn test_add() -> Result<()> {
         let d = VulkanTensorDevice::new(VulkanTensorDeviceOptions::default());

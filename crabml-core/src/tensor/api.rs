@@ -1,5 +1,3 @@
-use bytemuck::NoUninit;
-
 use super::strider::TensorStrider;
 use crate::error::Result;
 use crate::gguf::GGMLType;
@@ -12,14 +10,6 @@ pub enum RopeMode {
 
 pub trait Tensor: Sized + Clone {
     type DeviceRef: Clone;
-
-    /// create a tensor from a raw buffer.
-    fn from_buf(
-        buf: &[u8],
-        shape: &[usize],
-        dtype: GGMLType,
-        device: Self::DeviceRef,
-    ) -> Result<Self>;
 
     /// alloc an owned tensor, only used on storing activations and kv caches.
     /// only F32 and F16 are supported.

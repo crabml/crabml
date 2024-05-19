@@ -109,7 +109,6 @@ impl<'a> CpuTensorBuf<'a> {
             CpuTensorBuf::Q4_0(buf) => buf.len(),
             CpuTensorBuf::Q4_1(buf) => buf.len(),
             CpuTensorBuf::Q4K(buf) => buf.len(),
-            CpuTensorBuf::Q5_1(buf) => buf.len(),
             CpuTensorBuf::Q5K(buf) => buf.len(),
             CpuTensorBuf::Q6K(buf) => buf.len(),
         }
@@ -152,7 +151,6 @@ impl<'a> CpuTensorBuf<'a> {
             CpuTensorBuf::Q4_0(_) => GGMLType::Q8_0,
             CpuTensorBuf::Q4_1(_) => GGMLType::Q8_1,
             CpuTensorBuf::Q4K(_) => GGMLType::Q8K,
-            CpuTensorBuf::Q5_1(_) => GGMLType::Q8_1,
             CpuTensorBuf::Q5K(_) => GGMLType::Q8K,
             CpuTensorBuf::Q6K(_) => GGMLType::Q8K,
         }
@@ -395,7 +393,6 @@ impl Clone for CpuTensorBuf<'_> {
             CpuTensorBuf::Q4_0(buf) => Self::Q4_0(buf.clone()),
             CpuTensorBuf::Q4_1(buf) => Self::Q4_1(buf.clone()),
             CpuTensorBuf::Q4K(buf) => Self::Q4K(buf.clone()),
-            CpuTensorBuf::Q5_1(buf) => Self::Q5_1(buf.clone()),
             CpuTensorBuf::Q5K(buf) => Self::Q5K(buf.clone()),
             CpuTensorBuf::Q6K(buf) => Self::Q6K(buf.clone()),
         }

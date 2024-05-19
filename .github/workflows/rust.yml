@@ -42,7 +42,11 @@ jobs:
           sudo apt install vulkan-validationlayers
 
       - name: Run tests about llama
-        run: cargo test --workspace --exclude crabml-vulkan
+        run: cargo test --workspace --exclude crabml-vulkan --exclude crabml-wgpu
 
       - name: Run tests about vulkan
         run: cargo test -p crabml-vulkan
+
+      - name: Run tests about wgpu
+        run: cargo test -p crabml-wgpu
+

@@ -1,5 +1,7 @@
 use std::borrow::Cow;
 
+use bytemuck::Pod;
+use bytemuck::Zeroable;
 use half::f16;
 
 /// Q8_1 is only used as intermediate format for matmul on Q4_1, Q5_1 quantization. There's no need to implement
@@ -36,6 +38,10 @@ impl<'a> QuantBufQ8_1<'_> {
         Self { blocks: bs.into() }
     }
 
+    pub fn as_bytes(&self) -> &[u8] {
+        bytemuck::cast_slice(&self.blocks)
+    }
+
     fn blocks(&self) -> &[BlockQ8_1] {
         &self.blocks
     }
@@ -65,7 +71,7 @@ impl<'a> QuantBufQ8_1<'_> {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Zeroable, Pod, Copy)]
 pub struct BlockQ8_1 {
     pub d: f16,       // delta
     pub s: f16,       // d * sum(qs[i])

@@ -62,6 +62,15 @@ impl VulkanTensor {
 impl Tensor for VulkanTensor {
     type DeviceRef = VulkanTensorDeviceRef;
 
+    fn from_cpu(
+        buf: &[u8],
+        shape: &[usize],
+        dtype: GGMLType,
+        device: Self::DeviceRef,
+    ) -> Result<Self> {
+        todo!()
+    }
+
     fn alloc(shape: &[usize], dtype: GGMLType, device: Self::DeviceRef) -> Result<Self> {
         todo!()
     }

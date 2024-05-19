@@ -1,12 +1,14 @@
 use std::borrow::Cow;
 
+use bytemuck::Pod;
+use bytemuck::Zeroable;
 use half::f16;
 
 use super::QuantBufQ8_0;
 use crate::backends::cpu::buf::buf_q8_0::BlockQ8_0;
 
 #[repr(C, packed)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct BlockQ4_0 {
     d: f16,       // delta
     qs: [u8; 16], // quants
@@ -48,6 +50,10 @@ impl<'a> QuantBufQ4_0<'_> {
     pub fn quantize(data: &[f32]) -> Self {
         let bs = quantize_f32_q4_0(data);
         Self { blocks: bs.into() }
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        bytemuck::cast_slice(&self.blocks)
     }
 
     fn blocks(&self) -> &[BlockQ4_0] {

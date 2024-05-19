@@ -643,7 +643,7 @@ impl<T: Tensor> GpuLlamaModel<T> {
             }
         };
 
-        let wgpu_tensor = WgpuTensor::new(buf, tensor.shape(), device.clone())?;
+        let wgpu_tensor = WgpuTensor::from_cpu(, tensor.shape(), GGMLType::F32, device.clone())?;
         Ok(wgpu_tensor)
     }
 }

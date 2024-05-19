@@ -3,9 +3,9 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use crabml::tensor::Tensor;
 use wgpu::util::DeviceExt;
 
-use crate::tensor::Tensor;
 pub struct WgpuTensorDeviceOptions {
     pub staging_buf_bytes: usize,
 

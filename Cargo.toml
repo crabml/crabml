@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crabml-core",
+    "crabml-wgpu",
     "crabml-llama2",
     "crabml-cli",
 ]
@@ -18,3 +19,4 @@ repository = "https://github.com/crabml/crabml"
 [workspace.dependencies]
 crabml = { version = "0.1.0", path = "crabml-core" }
 crabml-llama2 = { version = "0.1.0", path = "crabml-llama2" }
+crabml-wgpu = { version = "0.1.0", path = "crabml-wgpu" }

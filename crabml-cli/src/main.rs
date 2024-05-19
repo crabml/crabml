@@ -5,9 +5,6 @@ use std::time::Instant;
 
 use clap::Parser;
 use clap::ValueEnum;
-use crabml::backends::wgpu::WgpuTensor;
-use crabml::backends::wgpu::WgpuTensorDevice;
-use crabml::backends::wgpu::WgpuTensorDeviceOptions;
 use crabml::error::Result;
 use crabml::gguf::GGUFFile;
 use crabml::gguf::GGUFFileLoader;
@@ -18,6 +15,9 @@ use crabml_llama2::llama2::Llama2Runner;
 use crabml_llama2::model::CpuLlamaModelLoader;
 use crabml_llama2::GpuLlamaModel;
 use crabml_llama2::Llama2Chat;
+use crabml_wgpu::WgpuTensor;
+use crabml_wgpu::WgpuTensorDevice;
+use crabml_wgpu::WgpuTensorDeviceOptions;
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 

@@ -16,7 +16,7 @@ pub fn add_inplace<'a>(
     if buf2.len() == 1 {
         let ib = buf2.iter_f32().next().unwrap();
         buf1.iter_f32_mut().for_each(|ia| {
-            *ia *= ib;
+            *ia += ib;
         });
         return Ok(());
     }
@@ -32,16 +32,6 @@ pub fn add_inplace<'a>(
             va.copy_to_slice(ia);
         });
     Ok(())
-}
-
-#[allow(dead_code)]
-pub fn sub_inplace<'a>(
-    buf1: &mut CpuTensorBuf<'a>,
-    buf2: &CpuTensorBuf<'a>,
-    strider1: &TensorStrider,
-    strider2: &TensorStrider,
-) -> Result<()> {
-    binary_inplace::<_>(buf1, buf2, strider1, strider2, |ia, ib| *ia -= ib)
 }
 
 pub fn mul_inplace<'a>(
@@ -77,6 +67,7 @@ pub fn mul_inplace<'a>(
     Ok(())
 }
 
+#[allow(dead_code)]
 pub fn div_inplace<'a>(
     buf1: &mut CpuTensorBuf<'a>,
     buf2: &CpuTensorBuf<'a>,

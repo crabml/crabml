@@ -10,7 +10,6 @@ mod silu;
 mod softmax;
 
 pub use arithmetic::add_inplace;
-pub use arithmetic::div_inplace;
 pub use arithmetic::mul_inplace;
 pub use batch_matmul::batch_matmul;
 pub use concatenate::concatenate_inplace;

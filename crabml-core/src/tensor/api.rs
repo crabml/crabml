@@ -66,9 +66,10 @@ pub trait Tensor: Sized + Clone {
 
     fn mul_inplace(self, rhs: &Self) -> Result<Self>;
 
+    /// there're two cases:
+    /// 1. both self and rhs have the same shape, it's an element-wise operation.
+    /// 2. self are 2d tensor, rhs is 1d tensor, it's a broadcast element-wise operation.
     fn add_inplace(self, rhs: &Self) -> Result<Self>;
-
-    fn div_scalar_inplace(self, rhs: f32) -> Result<Self>;
 
     fn scale_inplace(self, rhs: f32) -> Result<Self>;
 

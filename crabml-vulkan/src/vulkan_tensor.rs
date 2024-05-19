@@ -164,11 +164,14 @@ impl Tensor for VulkanTensor {
 
         let n_elms = self.strider.len() as u32;
         let bufs = vec![self.buf.clone(), rhs.buf.clone()];
-        let pcs = ArithmeticPushConstants { n_elms };
+        let pcs = ArithmeticPushConstants {
+            n_elms,
+            op: '+' as u32,
+        };
         let dispatches = [n_elms / 32 + 1, 1, 1];
         self.device
             .inner
-            .dispatch_compute("add", bufs, pcs, dispatches);
+            .dispatch_compute("arithmetic", bufs, pcs, dispatches);
         Ok(self)
     }
 

@@ -65,6 +65,25 @@ impl<'a> CpuTensorBuf<'a> {
         }
     }
 
+    pub fn as_bytes(&'a self) -> &'a [u8] {
+        match self {
+            Self::F32(buf) => bytemuck::cast_slice(buf),
+            Self::F16(buf) => bytemuck::cast_slice(buf),
+            Self::Q2K(buf) => buf.as_bytes(),
+            Self::Q3K(buf) => buf.as_bytes(),
+            Self::Q4_0(buf) => buf.as_bytes(),
+            Self::Q4_1(buf) => buf.as_bytes(),
+            Self::Q4K(buf) => buf.as_bytes(),
+            Self::Q5_0(buf) => buf.as_bytes(),
+            Self::Q5_1(buf) => buf.as_bytes(),
+            Self::Q5K(buf) => buf.as_bytes(),
+            Self::Q6K(buf) => buf.as_bytes(),
+            Self::Q8_0(buf) => buf.as_bytes(),
+            Self::Q8_1(buf) => buf.as_bytes(),
+            Self::Q8K(buf) => buf.as_bytes(),
+        }
+    }
+
     pub fn is_owned(&self) -> bool {
         matches!(
             self,

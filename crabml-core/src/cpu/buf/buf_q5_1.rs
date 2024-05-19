@@ -1,12 +1,14 @@
 use std::borrow::Cow;
 
+use bytemuck::Pod;
+use bytemuck::Zeroable;
 use byteorder::ByteOrder;
 use byteorder::LittleEndian;
 use half::f16;
 
 use super::QuantBufQ8_1;
 #[repr(C)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct BlockQ5_1 {
     pub d: f16, // delta
     pub m: f16, // min
@@ -61,6 +63,10 @@ impl<'a> QuantBufQ5_1<'a> {
 
     fn blocks(&self) -> &[BlockQ5_1] {
         &self.blocks
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        bytemuck::cast_slice(&self.blocks)
     }
 
     pub fn len(&self) -> usize {

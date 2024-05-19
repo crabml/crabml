@@ -301,7 +301,7 @@ mod tests {
 
     use crate::chat::Llama2Chat;
     use crate::llama2::Llama2Runner;
-    use crate::model::CpuLlama2ModelLoader;
+    use crate::model::CpuLlamaModelLoader;
 
     #[test]
     #[ignore]
@@ -309,7 +309,7 @@ mod tests {
         let gl = GGUFFileLoader::new("../testdata/gemma-2b-it-q8_0.gguf", false)?;
         let gf = gl.open()?;
 
-        let lm = CpuLlama2ModelLoader::new().load(&gf)?;
+        let lm = CpuLlamaModelLoader::new().load(&gf)?;
 
         let mut runner = Llama2Runner::new(&lm, 200, false)?;
         let mut chat = Llama2Chat::new(&mut runner, "what's 1+1?", None)?;

@@ -1,5 +1,7 @@
 use std::borrow::Cow;
 
+use bytemuck::Pod;
+use bytemuck::Zeroable;
 use half::f16;
 
 use super::util::get_scale_min_k4;
@@ -10,7 +12,7 @@ use crate::cpu::buf::util::make_qkx1_quants;
 use crate::cpu::buf::util::nearest_i32;
 
 #[repr(C)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Pod, Zeroable, Copy)]
 pub struct BlockQ4K {
     pub d: f16,
     pub dmin: f16,
@@ -69,6 +71,10 @@ impl<'a> QuantBufQ4K<'_> {
     pub fn quantize(data: &[f32]) -> Self {
         let bs = quantize_f32_q4_k(data);
         Self { blocks: bs.into() }
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        bytemuck::cast_slice(&self.blocks)
     }
 
     pub fn blocks(&self) -> &[BlockQ4K] {

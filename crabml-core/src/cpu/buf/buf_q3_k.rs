@@ -1,6 +1,8 @@
 use std::borrow::Cow;
 use std::ptr;
 
+use bytemuck::Pod;
+use bytemuck::Zeroable;
 use half::f16;
 
 use crate::cpu::buf::buf_q8_k::BlockQ8K;
@@ -15,7 +17,7 @@ use crate::cpu::buf::util::*;
 ///
 /// Effectively 3.4375 bits per weight
 #[repr(C)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct BlockQ3K {
     /// quants - high bit
     pub hmask: [u8; QK_K / 8],
@@ -111,6 +113,10 @@ impl<'a> QuantBufQ3K<'a> {
         Self {
             blocks: blocks.into(),
         }
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        bytemuck::cast_slice(&self.blocks)
     }
 
     pub fn quantize(data: &[f32]) -> Self {

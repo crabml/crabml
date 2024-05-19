@@ -1,7 +1,15 @@
 use std::borrow::Cow;
 
+use bytemuck::Pod;
+use bytemuck::Zeroable;
+use half::f16;
+
+use crate::cpu::buf::buf_q8_k::BlockQ8K;
+use crate::cpu::buf::util::make_qx_quants;
+use crate::cpu::buf::util::nearest_i32;
+
 #[repr(C)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Zeroable, Copy, Pod)]
 pub struct BlockQ6K {
     ql: [u8; 128],    // quants, lower 4 bits
     qh: [u8; 64],     // quants, upper 2 bits
@@ -59,9 +67,14 @@ impl<'a> QuantBufQ6K<'_> {
             blocks: blocks.into(),
         }
     }
+
     pub fn quantize(data: &[f32]) -> Self {
         let bs = quantize_f32_q6_k(data);
         Self { blocks: bs.into() }
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        bytemuck::cast_slice(&self.blocks)
     }
 
     fn blocks(&self) -> &[BlockQ6K] {
@@ -94,12 +107,6 @@ impl<'a> QuantBufQ6K<'_> {
         vec_dot_q6_k_q8_k(abs, bbs)
     }
 }
-
-use half::f16;
-
-use crate::cpu::buf::buf_q8_k::BlockQ8K;
-use crate::cpu::buf::util::make_qx_quants;
-use crate::cpu::buf::util::nearest_i32;
 
 pub fn quantize_f32_q6_k(data: &[f32]) -> Vec<BlockQ6K> {
     let mut bs = Vec::with_capacity(data.len() / 256);

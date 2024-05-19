@@ -5,6 +5,7 @@ use std::time::Instant;
 
 use clap::Parser;
 use clap::ValueEnum;
+use crabml::backends::wgpu::WgpuTensor;
 use crabml::backends::wgpu::WgpuTensorDevice;
 use crabml::backends::wgpu::WgpuTensorDeviceOptions;
 use crabml::error::Result;
@@ -14,9 +15,9 @@ use crabml::gguf::GGUFMetadataValueType;
 use crabml::tensor::Tensor;
 use crabml::tensor::TensorMetrics;
 use crabml_llama2::llama2::Llama2Runner;
-use crabml_llama2::model::CpuLlama2ModelLoader;
+use crabml_llama2::model::CpuLlamaModelLoader;
+use crabml_llama2::GpuLlamaModel;
 use crabml_llama2::Llama2Chat;
-use crabml_llama2::WgpuLlama2Model;
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 
@@ -235,7 +236,7 @@ fn main() -> Result<()> {
         dump_gguf_metadata(&gf);
     }
 
-    let model_cpu = CpuLlama2ModelLoader::new()
+    let model_cpu = CpuLlamaModelLoader::new()
         .with_thread_num(thread_num)
         .with_temperature(args.temperature)
         .with_probability(args.probability)
@@ -252,7 +253,7 @@ fn main() -> Result<()> {
             let device_wgpu = WgpuTensorDevice::new(
                 WgpuTensorDeviceOptions::new().with_staging_buf_bytes(conf.vocab_size * 4),
             );
-            let model_wgpu = WgpuLlama2Model::from_cpu(&model_cpu, device_wgpu)?;
+            let model_wgpu = GpuLlamaModel::<WgpuTensor>::from_cpu(&model_cpu, device_wgpu)?;
 
             let mut runner = Llama2Runner::new(&model_wgpu, conf.seq_len, false)?;
             run(&mut runner, &args)?;

@@ -155,7 +155,22 @@ impl Tensor for VulkanTensor {
     }
 
     fn mul_inplace(self, rhs: &Self) -> Result<Self> {
-        todo!()
+        assert!(self.strider.is_contiguous());
+        assert!(rhs.strider.is_contiguous());
+
+        let n_elms = self.strider.len() as u32;
+        let bufs = vec![self.buf.clone(), rhs.buf.clone()];
+        let pcs = ArithmeticPushConstants {
+            n_elms,
+            op: '*' as u32,
+            use_scalar_rhs: 0,
+            scalar_rhs: 0.0,
+        };
+        let dispatches = [n_elms / 32 + 1, 1, 1];
+        self.device
+            .inner
+            .dispatch_compute("arithmetic", bufs, pcs, dispatches);
+        Ok(self)
     }
 
     fn add_inplace(self, rhs: &Self) -> Result<Self> {
@@ -167,6 +182,8 @@ impl Tensor for VulkanTensor {
         let pcs = ArithmeticPushConstants {
             n_elms,
             op: '+' as u32,
+            use_scalar_rhs: 0,
+            scalar_rhs: 0.0,
         };
         let dispatches = [n_elms / 32 + 1, 1, 1];
         self.device
@@ -176,11 +193,39 @@ impl Tensor for VulkanTensor {
     }
 
     fn div_scalar_inplace(self, rhs: f32) -> Result<Self> {
-        todo!()
+        assert!(self.strider.is_contiguous());
+
+        let n_elms = self.strider.len() as u32;
+        let bufs = vec![self.buf.clone(), self.buf.clone()];
+        let pcs = ArithmeticPushConstants {
+            n_elms,
+            op: '/' as u32,
+            use_scalar_rhs: 1,
+            scalar_rhs: rhs,
+        };
+        let dispatches = [n_elms / 32 + 1, 1, 1];
+        self.device
+            .inner
+            .dispatch_compute("arithmetic", bufs, pcs, dispatches);
+        Ok(self)
     }
 
     fn scale_inplace(self, rhs: f32) -> Result<Self> {
-        todo!()
+        assert!(self.strider.is_contiguous());
+
+        let n_elms = self.strider.len() as u32;
+        let bufs = vec![self.buf.clone(), self.buf.clone()];
+        let pcs = ArithmeticPushConstants {
+            n_elms,
+            op: '*' as u32,
+            use_scalar_rhs: 1,
+            scalar_rhs: rhs,
+        };
+        let dispatches = [n_elms / 32 + 1, 1, 1];
+        self.device
+            .inner
+            .dispatch_compute("arithmetic", bufs, pcs, dispatches);
+        Ok(self)
     }
 
     fn matmul_vec(&self, y: &Self) -> Result<Self> {

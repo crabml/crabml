@@ -95,14 +95,14 @@ impl VulkanTensorDevice {
     }
 
     fn load_shaders(&mut self) {
-        mod arithmetic {
+        mod arithmetic_shader {
             vulkano_shaders::shader! { ty: "compute", path: "./src/shaders/arithmetic.comp" }
         }
 
         let device = self.inner.device.clone();
         let entry_points = [(
             "arithmetic",
-            load_shader_entry_point!(arithmetic, device.clone(), "main"),
+            load_shader_entry_point!(arithmetic_shader, device.clone(), "main"),
         )];
 
         for (name, entry_point) in entry_points.into_iter() {

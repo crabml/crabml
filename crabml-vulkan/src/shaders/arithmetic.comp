@@ -13,6 +13,8 @@ layout(set = 0, binding = 1) buffer InputBufferB {
 layout(push_constant) uniform PushConstants {
     uint nElems;
     uint op;
+    uint use_scalar_rhs;
+    float scalar_rhs;
 } pcs;
 
 const int OP_ADD = 43;
@@ -26,20 +28,27 @@ void main() {
     if (idxA >= pcs.nElems) {
         return;
     }
-    uint idxB = idxA % bufB.length();
+
+    float rhs = 0.0;
+    if (pcs.use_scalar_rhs > 0) {
+        rhs = pcs.scalar_rhs;
+    } else {
+        uint idxB = idxA % bufB.length();
+        rhs = bufB[idxB];
+    }
 
     switch (pcs.op) {
         case OP_ADD:
-            bufA[idxA] += bufB[idxB];
+            bufA[idxA] += rhs;
             break;
         case OP_SUB:
-            bufA[idxA] -= bufB[idxB];
+            bufA[idxA] -= rhs;
             break;
         case OP_MUL:
-            bufB[idxA] *= bufB[idxB];
+            bufB[idxA] *= rhs;
             break;
         case OP_DIV:
-            bufB[idxA] /= bufB[idxB];
+            bufB[idxA] /= rhs;
             break;
     }
 }

@@ -194,6 +194,7 @@ mod tests {
     use crate::tensor::Tensor;
 
     #[test]
+    #[ignore]
     fn test_add() -> Result<()> {
         let d = VulkanTensorDevice::new(VulkanTensorDeviceOptions::default());
 

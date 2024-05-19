@@ -5,9 +5,9 @@ use bytemuck::Pod;
 use bytemuck::Zeroable;
 use half::f16;
 
-use crate::backends::cpu::buf::buf_q8_k::BlockQ8K;
-use crate::backends::cpu::buf::buf_q8_k::QuantBufQ8K;
-use crate::backends::cpu::buf::util::*;
+use crate::cpu::buf::buf_q8_k::BlockQ8K;
+use crate::cpu::buf::buf_q8_k::QuantBufQ8K;
+use crate::cpu::buf::util::*;
 
 /// A q3_k super block of 3-bit quantization
 ///
@@ -330,7 +330,7 @@ pub fn vec_dot_q3_k_q8_k(q3k_bs: &[BlockQ3K], q8k_bs: &[BlockQ8K]) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::backends::cpu::buf::util::tests::*;
+    use crate::cpu::buf::util::tests::*;
 
     const TEST_SIZE: usize = 256;
     const _MAX_Q3K_PRODUCT_ERROR: f32 = 0.02;

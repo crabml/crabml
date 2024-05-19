@@ -1,10 +1,10 @@
 use std::rc::Rc;
 use std::vec;
 
-use crabml::backends::cpu::CpuTensor;
-use crabml::backends::cpu::CpuTensorDevice;
-use crabml::backends::cpu::CpuTensorDeviceOptions;
-use crabml::backends::cpu::CpuTensorDeviceRef;
+use crabml::cpu::CpuTensor;
+use crabml::cpu::CpuTensorDevice;
+use crabml::cpu::CpuTensorDeviceOptions;
+use crabml::cpu::CpuTensorDeviceRef;
 use crabml::error::Error;
 use crabml::error::ErrorKind;
 use crabml::error::Result;

@@ -1,10 +1,10 @@
 use half::f16;
 
-use crate::backends::cpu::buf::buf_f16::quantize_f32_f16;
-use crate::backends::cpu::buf::buf_f16::vec_dot_f16_f16;
-use crate::backends::cpu::buf::buf_f16::vec_fma_f16_f16;
-use crate::backends::cpu::buf::CpuTensorBuf;
-use crate::backends::cpu::CpuTensorDeviceRef;
+use crate::cpu::buf::buf_f16::quantize_f32_f16;
+use crate::cpu::buf::buf_f16::vec_dot_f16_f16;
+use crate::cpu::buf::buf_f16::vec_fma_f16_f16;
+use crate::cpu::buf::CpuTensorBuf;
+use crate::cpu::CpuTensorDeviceRef;
 use crate::gguf::GGMLType;
 use crate::tensor::TensorStrider;
 

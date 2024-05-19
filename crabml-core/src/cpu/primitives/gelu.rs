@@ -1,7 +1,7 @@
 use half::f16;
 
-use crate::backends::cpu::buf::CpuTensorBuf;
-use crate::backends::cpu::CpuTensorDeviceRef;
+use crate::cpu::buf::CpuTensorBuf;
+use crate::cpu::CpuTensorDeviceRef;
 use crate::error::Result;
 
 const COEF_A: f32 = 0.044715;

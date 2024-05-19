@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use crate::backends::cpu::CpuTensorBuf;
+use crate::cpu::CpuTensorBuf;
 use crate::tensor::TensorStrider;
 
 pub fn contiguous(bufa: &CpuTensorBuf, stride_a: &TensorStrider, bufb: &mut CpuTensorBuf) {

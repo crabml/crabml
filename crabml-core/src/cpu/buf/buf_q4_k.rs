@@ -7,9 +7,9 @@ use half::f16;
 use super::util::get_scale_min_k4;
 use super::util::QK_K;
 use super::QuantBufQ8K;
-use crate::backends::cpu::buf::buf_q8_k::BlockQ8K;
-use crate::backends::cpu::buf::util::make_qkx1_quants;
-use crate::backends::cpu::buf::util::nearest_i32;
+use crate::cpu::buf::buf_q8_k::BlockQ8K;
+use crate::cpu::buf::util::make_qkx1_quants;
+use crate::cpu::buf::util::nearest_i32;
 
 #[repr(C)]
 #[derive(Debug, Clone, Pod, Zeroable, Copy)]
@@ -278,12 +278,12 @@ pub fn vec_dot_q4_k_q8_k(abs: &[BlockQ4K], bbs: &[BlockQ8K]) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use crate::backends::cpu::buf::buf_q4_k::vec_dot_q4_k_q8_k;
-    use crate::backends::cpu::buf::buf_q4_k::QuantBufQ4K;
-    use crate::backends::cpu::buf::util::tests::array_rmse;
-    use crate::backends::cpu::buf::util::tests::dot_product;
-    use crate::backends::cpu::buf::util::tests::generate_data;
-    use crate::backends::cpu::buf::QuantBufQ8K;
+    use crate::cpu::buf::buf_q4_k::vec_dot_q4_k_q8_k;
+    use crate::cpu::buf::buf_q4_k::QuantBufQ4K;
+    use crate::cpu::buf::util::tests::array_rmse;
+    use crate::cpu::buf::util::tests::dot_product;
+    use crate::cpu::buf::util::tests::generate_data;
+    use crate::cpu::buf::QuantBufQ8K;
 
     const TEST_SIZE: usize = 256;
     const MAX_Q4K_PRODUCT_ERROR: f32 = 0.02;

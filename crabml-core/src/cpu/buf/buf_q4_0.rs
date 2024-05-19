@@ -5,7 +5,7 @@ use bytemuck::Zeroable;
 use half::f16;
 
 use super::QuantBufQ8_0;
-use crate::backends::cpu::buf::buf_q8_0::BlockQ8_0;
+use crate::cpu::buf::buf_q8_0::BlockQ8_0;
 
 #[repr(C, packed)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]

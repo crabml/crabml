@@ -96,7 +96,7 @@ impl<'a> QuantBufQ5_1<'a> {
     }
 }
 
-use crate::backends::cpu::buf::buf_q8_1::BlockQ8_1;
+use crate::cpu::buf::buf_q8_1::BlockQ8_1;
 
 pub fn quantize_f32_q5_1(data: &[f32]) -> Vec<BlockQ5_1> {
     let mut bs = Vec::with_capacity(data.len() / 32);

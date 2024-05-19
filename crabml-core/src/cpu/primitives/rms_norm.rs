@@ -1,7 +1,7 @@
 use std::simd::f32x32;
 use std::simd::num::SimdFloat;
 
-use crate::backends::cpu::buf::CpuTensorBuf;
+use crate::cpu::buf::CpuTensorBuf;
 use crate::error::Result;
 use crate::gguf::GGMLType;
 use crate::tensor::TensorStrider;

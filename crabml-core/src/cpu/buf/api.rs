@@ -7,19 +7,19 @@ use super::buf_f16::f16_buf_from_bytes;
 use super::buf_f16::quantize_f32_f16;
 use super::buf_f32::f32_buf_from_bytes;
 use super::buf_f32::vec_dot_f32_f32;
-use crate::backends::cpu::buf::buf_f16::vec_dot_f16_f16;
-use crate::backends::cpu::buf::QuantBufQ2K;
-use crate::backends::cpu::buf::QuantBufQ3K;
-use crate::backends::cpu::buf::QuantBufQ4K;
-use crate::backends::cpu::buf::QuantBufQ4_0;
-use crate::backends::cpu::buf::QuantBufQ4_1;
-use crate::backends::cpu::buf::QuantBufQ5K;
-use crate::backends::cpu::buf::QuantBufQ5_0;
-use crate::backends::cpu::buf::QuantBufQ5_1;
-use crate::backends::cpu::buf::QuantBufQ6K;
-use crate::backends::cpu::buf::QuantBufQ8K;
-use crate::backends::cpu::buf::QuantBufQ8_0;
-use crate::backends::cpu::buf::QuantBufQ8_1;
+use crate::cpu::buf::buf_f16::vec_dot_f16_f16;
+use crate::cpu::buf::QuantBufQ2K;
+use crate::cpu::buf::QuantBufQ3K;
+use crate::cpu::buf::QuantBufQ4K;
+use crate::cpu::buf::QuantBufQ4_0;
+use crate::cpu::buf::QuantBufQ4_1;
+use crate::cpu::buf::QuantBufQ5K;
+use crate::cpu::buf::QuantBufQ5_0;
+use crate::cpu::buf::QuantBufQ5_1;
+use crate::cpu::buf::QuantBufQ6K;
+use crate::cpu::buf::QuantBufQ8K;
+use crate::cpu::buf::QuantBufQ8_0;
+use crate::cpu::buf::QuantBufQ8_1;
 use crate::error::ErrorKind;
 use crate::error::Result;
 use crate::gguf::GGMLType;
@@ -109,7 +109,6 @@ impl<'a> CpuTensorBuf<'a> {
             CpuTensorBuf::Q4_0(buf) => buf.len(),
             CpuTensorBuf::Q4_1(buf) => buf.len(),
             CpuTensorBuf::Q4K(buf) => buf.len(),
-            CpuTensorBuf::Q5_1(buf) => buf.len(),
             CpuTensorBuf::Q5K(buf) => buf.len(),
             CpuTensorBuf::Q6K(buf) => buf.len(),
         }
@@ -152,7 +151,6 @@ impl<'a> CpuTensorBuf<'a> {
             CpuTensorBuf::Q4_0(_) => GGMLType::Q8_0,
             CpuTensorBuf::Q4_1(_) => GGMLType::Q8_1,
             CpuTensorBuf::Q4K(_) => GGMLType::Q8K,
-            CpuTensorBuf::Q5_1(_) => GGMLType::Q8_1,
             CpuTensorBuf::Q5K(_) => GGMLType::Q8K,
             CpuTensorBuf::Q6K(_) => GGMLType::Q8K,
         }
@@ -395,7 +393,6 @@ impl Clone for CpuTensorBuf<'_> {
             CpuTensorBuf::Q4_0(buf) => Self::Q4_0(buf.clone()),
             CpuTensorBuf::Q4_1(buf) => Self::Q4_1(buf.clone()),
             CpuTensorBuf::Q4K(buf) => Self::Q4K(buf.clone()),
-            CpuTensorBuf::Q5_1(buf) => Self::Q5_1(buf.clone()),
             CpuTensorBuf::Q5K(buf) => Self::Q5K(buf.clone()),
             CpuTensorBuf::Q6K(buf) => Self::Q6K(buf.clone()),
         }

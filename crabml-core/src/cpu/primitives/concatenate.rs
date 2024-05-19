@@ -2,8 +2,8 @@ use std::borrow::Cow;
 
 use half::f16;
 
-use crate::backends::cpu::buf::buf_f16::vec_convert_f16_f32;
-use crate::backends::cpu::CpuTensorBuf;
+use crate::cpu::buf::buf_f16::vec_convert_f16_f32;
+use crate::cpu::CpuTensorBuf;
 use crate::error::ErrorKind;
 use crate::error::Result;
 use crate::tensor::TensorStrider;

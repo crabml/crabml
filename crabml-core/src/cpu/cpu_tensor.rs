@@ -1,9 +1,9 @@
 use std::borrow::Cow;
 
-use crate::backends::cpu::buf::buf_f16::alloc_f16_buf;
-use crate::backends::cpu::buf::CpuTensorBuf;
-use crate::backends::cpu::primitives;
-use crate::backends::cpu::CpuTensorDeviceRef;
+use crate::cpu::buf::buf_f16::alloc_f16_buf;
+use crate::cpu::buf::CpuTensorBuf;
+use crate::cpu::primitives;
+use crate::cpu::CpuTensorDeviceRef;
 use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::error::Result;
@@ -468,7 +468,7 @@ mod tests {
     use approx::assert_relative_eq;
 
     use super::*;
-    use crate::backends::cpu::CpuTensorDevice;
+    use crate::cpu::CpuTensorDevice;
 
     #[test]
     fn test_tensor_view() -> Result<()> {

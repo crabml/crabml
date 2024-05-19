@@ -5,7 +5,7 @@ use bytemuck::Zeroable;
 use half::f16;
 
 use super::QuantBufQ8K;
-use crate::backends::cpu::buf::util::*;
+use crate::cpu::buf::util::*;
 
 /// A q2_k super block of 2-bit quantization
 ///
@@ -141,7 +141,7 @@ impl<'a> QuantBufQ2K<'a> {
     }
 }
 
-use crate::backends::cpu::buf::buf_q8_k::BlockQ8K;
+use crate::cpu::buf::buf_q8_k::BlockQ8K;
 
 pub fn quantize_f32_q2_k(data: &[f32]) -> Vec<BlockQ2K> {
     let mut bs = Vec::with_capacity(data.len() / QK_K);
@@ -259,7 +259,7 @@ pub fn vec_dot_q2_k_q8_k(q2k_bs: &[BlockQ2K], q8k_bs: &[BlockQ8K]) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::backends::cpu::buf::util::tests::*;
+    use crate::cpu::buf::util::tests::*;
 
     const TEST_SIZE: usize = 256;
     const MAX_Q2K_PRODUCT_ERROR: f32 = 0.02;

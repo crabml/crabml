@@ -506,7 +506,7 @@ impl LlamaModel for &GpuLlamaModel {
         self.conf.clone()
     }
 
-    fn weights(&self) -> Rc<LlamaWeights<WgpuTensor>> {
+    fn weights(&self) -> Rc<LlamaWeights<Self::T>> {
         self.weights.clone()
     }
 

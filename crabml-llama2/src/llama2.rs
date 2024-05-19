@@ -529,6 +529,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
 mod tests {
     use approx::assert_relative_eq;
     use crabml::backends::cpu::CpuTensorDeviceOptions;
+    use crabml::backends::wgpu::WgpuTensor;
     use crabml::backends::wgpu::WgpuTensorDevice;
     use crabml::backends::wgpu::WgpuTensorDeviceOptions;
     use crabml::gguf::GGUFFileLoader;
@@ -636,7 +637,7 @@ mod tests {
                 .with_staging_buf_bytes(model_cpu.conf.vocab_size * 4)
                 .with_debug_named_tensor(true),
         );
-        let model_wgpu = GpuLlamaModel::from_cpu(&model_cpu, device_wgpu.clone())?;
+        let model_wgpu = GpuLlamaModel::<WgpuTensor>::from_cpu(&model_cpu, device_wgpu.clone())?;
 
         let mut runner_cpu = Llama2Runner::new(&model_cpu, 200, false)?;
         let mut runner_wgpu = Llama2Runner::new(&model_wgpu, 200, false)?;

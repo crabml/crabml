@@ -630,10 +630,10 @@ impl<T: Tensor> GpuLlamaModel<T> {
         Ok(weights)
     }
 
-    fn convert_cpu_tensor(tensor: &CpuTensor, device: T::DeviceRef) -> Result<WgpuTensor> {
+    fn convert_cpu_tensor(tensor: &CpuTensor, device: T::DeviceRef) -> Result<T> {
         let buf = tensor.buf();
-        let buf = match buf {
-            CpuTensorBuf::F32(buf) => buf,
+        match tensor.dtype() {
+            GGMLType::F32 => (),
             _ => {
                 return Err(Error {
                     kind: ErrorKind::TensorError,
@@ -643,8 +643,13 @@ impl<T: Tensor> GpuLlamaModel<T> {
             }
         };
 
-        let wgpu_tensor = WgpuTensor::from_cpu(, tensor.shape(), GGMLType::F32, device.clone())?;
-        Ok(wgpu_tensor)
+        let gpu_tensor = T::from_cpu(
+            buf.as_bytes(),
+            tensor.shape(),
+            GGMLType::F32,
+            device.clone(),
+        )?;
+        Ok(gpu_tensor)
     }
 }
 

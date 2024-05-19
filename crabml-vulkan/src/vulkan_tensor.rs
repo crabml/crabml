@@ -39,26 +39,6 @@ impl VulkanTensor {
             name: None,
         })
     }
-
-    pub fn export(&self, dst: &mut [f32]) -> Result<()> {
-        let buf_size = std::mem::size_of_val(dst);
-        if buf_size > self.device.opts.staging_buf_bytes {
-            return Err((
-                ErrorKind::TensorError,
-                format!(
-                    "buffer size exceeded staging buffer limit: {}, got: {}",
-                    self.device.opts.staging_buf_bytes, buf_size,
-                ),
-            )
-                .into());
-        }
-
-        let dst_bytes = bytemuck::cast_slice_mut(dst);
-        self.device
-            .inner
-            .copy_device_buffer_to_cpu(self.buf.clone(), dst_bytes);
-        Ok(())
-    }
 }
 
 impl Tensor for VulkanTensor {
@@ -121,8 +101,24 @@ impl Tensor for VulkanTensor {
         todo!()
     }
 
-    fn export(&self, buf: &mut [f32]) -> Result<()> {
-        todo!()
+    fn export(&self, dst: &mut [f32]) -> Result<()> {
+        let buf_size = std::mem::size_of_val(dst);
+        if buf_size > self.device.opts.staging_buf_bytes {
+            return Err((
+                ErrorKind::TensorError,
+                format!(
+                    "buffer size exceeded staging buffer limit: {}, got: {}",
+                    self.device.opts.staging_buf_bytes, buf_size,
+                ),
+            )
+                .into());
+        }
+
+        let dst_bytes = bytemuck::cast_slice_mut(dst);
+        self.device
+            .inner
+            .copy_device_buffer_to_cpu(self.buf.clone(), dst_bytes);
+        Ok(())
     }
 
     fn dup(&self) -> Result<Self> {

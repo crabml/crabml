@@ -97,9 +97,9 @@ impl<'a> QuantBufQ6K<'_> {
 
 use half::f16;
 
-use crate::backends::cpu::buf::buf_q8_k::BlockQ8K;
-use crate::backends::cpu::buf::util::make_qx_quants;
-use crate::backends::cpu::buf::util::nearest_i32;
+use crate::cpu::buf::buf_q8_k::BlockQ8K;
+use crate::cpu::buf::util::make_qx_quants;
+use crate::cpu::buf::util::nearest_i32;
 
 pub fn quantize_f32_q6_k(data: &[f32]) -> Vec<BlockQ6K> {
     let mut bs = Vec::with_capacity(data.len() / 256);
@@ -232,7 +232,7 @@ use super::QuantBufQ8K;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::backends::cpu::buf::util::tests::*;
+    use crate::cpu::buf::util::tests::*;
     const _MAX_QUANTIZATION_TOTAL_ERROR_6BITS: f32 = 0.002;
     const TEST_SIZE: usize = 1024;
 

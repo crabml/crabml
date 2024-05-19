@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crabml::backends::cpu::buf::buf_f32::exp_f32_cached;
+use crabml::cpu::buf::buf_f32::exp_f32_cached;
 use crabml::error::Error;
 use crabml::error::ErrorKind;
 use crabml::error::Result;

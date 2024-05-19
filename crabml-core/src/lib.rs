@@ -10,6 +10,7 @@
 
 #[allow(unreachable_patterns)]
 pub mod backends;
+pub mod cpu;
 pub mod error;
 pub mod gguf;
 pub mod tensor;

@@ -1,4 +1,4 @@
-use crate::backends::cpu::buf::CpuTensorBuf;
+use crate::cpu::buf::CpuTensorBuf;
 use crate::error::Result;
 use crate::tensor::TensorStrider;
 

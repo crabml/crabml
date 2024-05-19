@@ -111,9 +111,9 @@ impl<'a> QuantBufQ5K<'_> {
 
 use half::f16;
 
-use crate::backends::cpu::buf::buf_q8_k::BlockQ8K;
-use crate::backends::cpu::buf::util::make_qkx1_quants;
-use crate::backends::cpu::buf::util::nearest_i32;
+use crate::cpu::buf::buf_q8_k::BlockQ8K;
+use crate::cpu::buf::util::make_qkx1_quants;
+use crate::cpu::buf::util::nearest_i32;
 
 pub fn quantize_f32_q5_k(data: &[f32]) -> Vec<BlockQ5K> {
     assert!(data.len() % QK_K == 0);
@@ -318,7 +318,7 @@ use super::QuantBufQ8K;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::backends::cpu::buf::util::tests::*;
+    use crate::cpu::buf::util::tests::*;
     const MAX_QUANTIZATION_ERROR: f32 = 0.002;
     const MAX_DOT_PRODUCT_ERROR: f32 = 0.02;
     const TEST_SIZE: usize = 1024;

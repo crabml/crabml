@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use half::f16;
 
 use super::QuantBufQ8_1;
-use crate::backends::cpu::buf::buf_q8_1::BlockQ8_1;
+use crate::cpu::buf::buf_q8_1::BlockQ8_1;
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub struct BlockQ4_1 {
@@ -207,7 +207,7 @@ pub fn vec_dot_q4_1_q8_1_neon(abs: &[BlockQ4_1], bbs: &[BlockQ8_1]) -> f32 {
 pub fn vec_dot_q4_1_q8_1_avx2(abs: &[BlockQ4_1], bbs: &[BlockQ8_1]) -> f32 {
     use std::arch::x86_64::*;
 
-    use crate::backends::cpu::archutil::x86_64::*;
+    use crate::cpu::archutil::x86_64::*;
     debug_assert_eq!(abs.len(), bbs.len());
 
     let n_blocks = abs.len();

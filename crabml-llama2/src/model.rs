@@ -1,13 +1,13 @@
 use std::rc::Rc;
 use std::vec;
 
-use crabml::backends::cpu::CpuTensor;
-use crabml::backends::cpu::CpuTensorBuf;
-use crabml::backends::cpu::CpuTensorDevice;
-use crabml::backends::cpu::CpuTensorDeviceOptions;
-use crabml::backends::cpu::CpuTensorDeviceRef;
 use crabml::backends::wgpu::WgpuTensor;
 use crabml::backends::wgpu::WgpuTensorDeviceRef;
+use crabml::cpu::CpuTensor;
+use crabml::cpu::CpuTensorBuf;
+use crabml::cpu::CpuTensorDevice;
+use crabml::cpu::CpuTensorDeviceOptions;
+use crabml::cpu::CpuTensorDeviceRef;
 use crabml::error::Error;
 use crabml::error::ErrorKind;
 use crabml::error::Result;

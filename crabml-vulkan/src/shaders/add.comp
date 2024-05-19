@@ -3,14 +3,22 @@
 layout(local_size_x = 32) in;
 
 layout(set = 0, binding = 0) buffer InputBufferA {
-    float a[];
+    float bufA[];
 };
 
 layout(set = 0, binding = 1) buffer InputBufferB {
-    float b[];
+    float bufB[];
 };
+
+layout(push_constant) uniform PushConstants {
+    uint nElems;
+} pcs;
 
 void main() {
     uint idx = gl_GlobalInvocationID.x;
-    a[idx] += b[idx];
+
+    if (idx >= pcs.nElems) {
+        return;
+    }
+    bufA[idx] += bufB[idx % bufB.length()];
 }

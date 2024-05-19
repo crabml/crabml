@@ -8,6 +8,7 @@ use crabml::tensor::Tensor;
 use crabml::tensor::TensorStrider;
 
 use super::vulkan_device::VulkanTensorDeviceRef;
+use crate::push_constants::ArithmeticPushConstants;
 
 #[derive(Clone)]
 pub struct VulkanTensor {
@@ -161,11 +162,13 @@ impl Tensor for VulkanTensor {
         assert!(self.strider.is_contiguous());
         assert!(rhs.strider.is_contiguous());
 
-        // TODO: pass n_elm as meta
         let n_elms = self.strider.len() as u32;
         let bufs = vec![self.buf.clone(), rhs.buf.clone()];
+        let pcs = ArithmeticPushConstants { n_elms };
         let dispatches = [n_elms / 32 + 1, 1, 1];
-        self.device.inner.dispatch_compute("add", bufs, dispatches);
+        self.device
+            .inner
+            .dispatch_compute("add", bufs, pcs, dispatches);
         Ok(self)
     }
 

@@ -41,12 +41,5 @@ jobs:
           # Refer to https://github.com/gfx-rs/wgpu/issues/5086
           sudo apt install vulkan-validationlayers
 
-      - name: Run tests about llama
-        run: cargo test --workspace --exclude crabml-vulkan --exclude crabml-wgpu
-
-      - name: Run tests about vulkan
-        run: RUST_TEST_THREADS=1 cargo test -p crabml-vulkan
-
-      - name: Run tests about wgpu
-        run: RUST_TEST_THREADS=1 cargo test -p crabml-wgpu
-
+      - name: Run tests
+        run: RUST_TEST_THREADS=1 cargo test --workspace

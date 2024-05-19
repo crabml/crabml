@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use bytemuck::NoUninit;
 use vulkano::buffer::Buffer;
+use vulkano::buffer::BufferContents;
 use vulkano::buffer::BufferCreateInfo;
 use vulkano::buffer::BufferUsage;
 use vulkano::buffer::Subbuffer;
@@ -94,12 +95,16 @@ impl VulkanTensorDevice {
     }
 
     fn load_shaders(&mut self) {
-        mod add {
-            vulkano_shaders::shader! { ty: "compute", path: "./src/shaders/add.comp" }
+        mod arithmetic_shader {
+            vulkano_shaders::shader! { ty: "compute", path: "./src/shaders/arithmetic.comp" }
         }
 
         let device = self.inner.device.clone();
-        let entry_points = [("add", load_shader_entry_point!(add, device.clone(), "main"))];
+        let entry_points = [(
+            "arithmetic",
+            load_shader_entry_point!(arithmetic_shader, device.clone(), "main"),
+        )];
+
         for (name, entry_point) in entry_points.into_iter() {
             self.inner.load_compute_pipeline(name, entry_point);
         }
@@ -277,10 +282,11 @@ impl VulkanTensorDeviceInner {
             .for_each(|(s, d)| *d = *s);
     }
 
-    pub fn dispatch_compute(
+    pub fn dispatch_compute<Pc: BufferContents>(
         &self,
         pipeline_name: &str,
         buffers: Vec<Subbuffer<[u8]>>,
+        push_constants: Pc,
         dispatch_group: [u32; 3],
     ) {
         let pipeline = self.pipelines.get(pipeline_name).unwrap();
@@ -318,9 +324,11 @@ impl VulkanTensorDeviceInner {
                     0,
                     set,
                 )
-                .unwrap()
-                .dispatch(dispatch_group)
                 .unwrap();
+            builder
+                .push_constants(pipeline.layout().clone(), 0, push_constants)
+                .unwrap();
+            builder.dispatch(dispatch_group).unwrap();
             builder.build().unwrap()
         };
 

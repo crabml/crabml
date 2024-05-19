@@ -592,36 +592,6 @@ impl Tensor for WgpuTensor {
         Ok(self)
     }
 
-    fn div_scalar_inplace(self, rhs: f32) -> Result<Self> {
-        assert!(self.is_contiguous());
-        let n_elms = self.strider.len();
-        let meta_buf = self
-            .device
-            .make_storage_buffer("meta", bytemuck::cast_slice(&[n_elms as u32]));
-        let rhs_buf = self
-            .device
-            .make_storage_buffer("rhs", bytemuck::cast_slice(&[rhs]));
-        let entries = &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: self.buf.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: rhs_buf.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 2,
-                resource: meta_buf.as_entire_binding(),
-            },
-        ];
-        let encoder =
-            self.device
-                .encode_pipeline_commnad("div_inplace", entries, (n_elms as u32 / 32, 1, 1));
-        self.device.queue.submit(Some(encoder.finish()));
-        Ok(self)
-    }
-
     // (m, k) @ (b, k) => (b, m)
     fn matmul_vec(&self, rhs: &Self) -> Result<Self> {
         assert!(self.shape().len() == 2);
@@ -840,18 +810,6 @@ mod tests {
         t1.export(&mut dst)?;
         assert_eq!(dst, vec![6.0, 6.0, 6.0, 6.0, 6.0, 6.0]);
 
-        Ok(())
-    }
-
-    #[test]
-    fn test_wgpu_tensor_div_scalar() -> Result<()> {
-        let t1 = WgpuTensor::new(&[6.0; 1024], &[512, 2], DEVICE.clone())?;
-        let t1 = t1.div_scalar_inplace(2.0)?;
-
-        let mut dst = vec![0.0; 1024];
-        t1.export(&mut dst)?;
-
-        assert_eq!(&dst[0..3], [3.0, 3.0, 3.0]);
         Ok(())
     }
 

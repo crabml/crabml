@@ -450,7 +450,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
                 .reshape(&[n_batch, n_heads, head_dim])?
                 .transpose(&[1, 0, 2])?
                 .contiguous()?
-                .div_scalar_inplace((head_dim as f32).sqrt())?;
+                .scale_inplace(1.0 / (head_dim as f32).sqrt())?;
 
             // get attention scores:
             // - key_cache: [n_kv_head, seq, head_size].transpose(0, 2, 1) => [n_kv_head, head_size, seq]

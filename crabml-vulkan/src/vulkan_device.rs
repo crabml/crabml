@@ -95,7 +95,7 @@ impl VulkanTensorDevice {
 
     fn load_shaders(&mut self) {
         mod add {
-            vulkano_shaders::shader! { ty: "compute", path: "./src/backends/vulkan/shaders/add.comp" }
+            vulkano_shaders::shader! { ty: "compute", path: "./src/shaders/add.comp" }
         }
 
         let device = self.inner.device.clone();

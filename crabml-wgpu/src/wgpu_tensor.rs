@@ -1,20 +1,20 @@
 use std::rc::Rc;
 
+use crabml::error::ErrorKind;
+use crabml::error::Result;
+use crabml::gguf::GGMLType;
+use crabml::tensor::RopeMode;
+use crabml::tensor::Tensor;
+use crabml::tensor::TensorStrider;
 use wgpu::util::DeviceExt;
 
 use super::meta::ConcatenateMeta;
 use super::meta::MatmulMeta;
 use super::meta::RmsNormMeta;
 use super::WgpuTensorDeviceRef;
-use crate::backends::wgpu::meta::BatchMatmulMeta;
-use crate::backends::wgpu::meta::ContiguousMeta;
-use crate::backends::wgpu::meta::RopeMeta;
-use crate::error::ErrorKind;
-use crate::error::Result;
-use crate::gguf::GGMLType;
-use crate::tensor::RopeMode;
-use crate::tensor::Tensor;
-use crate::tensor::TensorStrider;
+use crate::meta::BatchMatmulMeta;
+use crate::meta::ContiguousMeta;
+use crate::meta::RopeMeta;
 
 #[derive(Clone)]
 pub struct WgpuTensor {
@@ -782,15 +782,15 @@ mod tests {
     use std::sync::LazyLock;
 
     use approx::assert_relative_eq;
+    use crabml::error::Result;
+    use crabml::gguf::GGMLType;
+    use crabml::tensor::RopeMode;
+    use crabml::tensor::Tensor;
 
     use super::WgpuTensor;
-    use crate::backends::wgpu::WgpuTensorDevice;
-    use crate::backends::wgpu::WgpuTensorDeviceOptions;
-    use crate::backends::wgpu::WgpuTensorDeviceRef;
-    use crate::error::Result;
-    use crate::gguf::GGMLType;
-    use crate::tensor::RopeMode;
-    use crate::tensor::Tensor;
+    use crate::WgpuTensorDevice;
+    use crate::WgpuTensorDeviceOptions;
+    use crate::WgpuTensorDeviceRef;
 
     #[thread_local]
     static DEVICE: LazyLock<WgpuTensorDeviceRef> = LazyLock::new(|| {

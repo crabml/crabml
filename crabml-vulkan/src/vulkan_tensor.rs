@@ -1,12 +1,13 @@
 #![allow(dead_code, unused_variables)]
 
+use crabml::error::Error;
+use crabml::error::ErrorKind;
+use crabml::error::Result;
+use crabml::gguf::GGMLType;
+use crabml::tensor::Tensor;
+use crabml::tensor::TensorStrider;
+
 use super::vulkan_device::VulkanTensorDeviceRef;
-use crate::error::Error;
-use crate::error::ErrorKind;
-use crate::error::Result;
-use crate::gguf::GGMLType;
-use crate::tensor::Tensor;
-use crate::tensor::TensorStrider;
 
 #[derive(Clone)]
 pub struct VulkanTensor {
@@ -129,7 +130,7 @@ impl Tensor for VulkanTensor {
 
     fn rope_inplace(
         self,
-        mode: crate::tensor::RopeMode,
+        mode: crabml::tensor::RopeMode,
         pos: usize,
         rope_dims: usize,
     ) -> Result<Self> {
@@ -187,14 +188,14 @@ impl Tensor for VulkanTensor {
 
 #[cfg(test)]
 mod tests {
+    use crabml::error::Result;
+    use crabml::tensor::Tensor;
+
     use super::VulkanTensor;
-    use crate::backends::vulkan::vulkan_device::VulkanTensorDevice;
-    use crate::backends::vulkan::vulkan_device::VulkanTensorDeviceOptions;
-    use crate::error::Result;
-    use crate::tensor::Tensor;
+    use crate::vulkan_device::VulkanTensorDevice;
+    use crate::vulkan_device::VulkanTensorDeviceOptions;
 
     #[test]
-    #[ignore]
     fn test_add() -> Result<()> {
         let d = VulkanTensorDevice::new(VulkanTensorDeviceOptions::default());
 

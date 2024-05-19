@@ -528,11 +528,11 @@ impl<'a, T: Tensor> Llama2Runner<T> {
 #[cfg(test)]
 mod tests {
     use approx::assert_relative_eq;
-    use crabml::backends::wgpu::WgpuTensor;
-    use crabml::backends::wgpu::WgpuTensorDevice;
-    use crabml::backends::wgpu::WgpuTensorDeviceOptions;
     use crabml::cpu::CpuTensorDeviceOptions;
     use crabml::gguf::GGUFFileLoader;
+    use crabml_wgpu::WgpuTensor;
+    use crabml_wgpu::WgpuTensorDevice;
+    use crabml_wgpu::WgpuTensorDeviceOptions;
 
     use super::*;
     use crate::model::CpuLlamaModelLoader;

@@ -60,9 +60,9 @@ impl VulkanTensor {
 }
 
 impl Tensor for VulkanTensor {
-    type Device = VulkanTensorDeviceRef;
+    type DeviceRef = VulkanTensorDeviceRef;
 
-    fn alloc(shape: &[usize], dtype: GGMLType, device: Self::Device) -> Result<Self> {
+    fn alloc(shape: &[usize], dtype: GGMLType, device: Self::DeviceRef) -> Result<Self> {
         todo!()
     }
 

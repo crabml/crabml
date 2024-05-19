@@ -27,7 +27,7 @@ pub struct Llama2Runner<T: Tensor> {
     weights: Rc<LlamaWeights<T>>,
     tokenizer: Rc<Tokenizer>,
     sampler: Rc<Llama2Sampler>,
-    device: T::Device,
+    device: T::DeviceRef,
     logits: Vec<f32>,            // output logits (vocab_size, )
     key_cache: Vec<Option<T>>,   // (layer, n_kv_head, seq_len, kv_dim)
     value_cache: Vec<Option<T>>, // (layer, n_kv_head, seq_len, kv_dim)

@@ -123,9 +123,9 @@ impl<'a> CpuTensor<'a> {
 }
 
 impl<'a> Tensor for CpuTensor<'a> {
-    type Device = CpuTensorDeviceRef<'a>;
+    type DeviceRef = CpuTensorDeviceRef<'a>;
 
-    fn alloc(shape: &[usize], dtype: GGMLType, device: Self::Device) -> Result<Self> {
+    fn alloc(shape: &[usize], dtype: GGMLType, device: Self::DeviceRef) -> Result<Self> {
         if dtype != GGMLType::F32 && dtype != GGMLType::F16 {
             return Err((ErrorKind::TensorError, "only f32/f16 is supported").into());
         }

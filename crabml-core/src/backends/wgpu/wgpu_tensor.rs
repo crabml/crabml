@@ -83,9 +83,9 @@ impl WgpuTensor {
 }
 
 impl Tensor for WgpuTensor {
-    type Device = WgpuTensorDeviceRef;
+    type DeviceRef = WgpuTensorDeviceRef;
 
-    fn alloc(shape: &[usize], dtype: GGMLType, device: Self::Device) -> Result<Self> {
+    fn alloc(shape: &[usize], dtype: GGMLType, device: Self::DeviceRef) -> Result<Self> {
         assert!(dtype == GGMLType::F32, "wgpu tensor only support F32 yet");
         let n_elms = shape.iter().product::<usize>();
 

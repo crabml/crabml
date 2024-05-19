@@ -82,7 +82,7 @@ pub trait LlamaModel {
 
     fn conf(&self) -> LlamaConfig;
 
-    fn device(&self) -> <Self::T as Tensor>::Device;
+    fn device(&self) -> <Self::T as Tensor>::DeviceRef;
 
     fn weights(&self) -> Rc<LlamaWeights<Self::T>>;
 
@@ -490,17 +490,17 @@ impl CpuLlamaModelLoader {
 }
 
 #[derive(Clone)]
-pub struct GpuLlamaModel {
+pub struct GpuLlamaModel<T: Tensor> {
     pub conf: LlamaConfig,
-    pub weights: Rc<LlamaWeights<WgpuTensor>>,
+    pub weights: Rc<LlamaWeights<T>>,
     pub tokenizer: Rc<Tokenizer>,
-    pub device: WgpuTensorDeviceRef,
+    pub device: T::DeviceRef,
     pub sampler: Llama2SamplerRef,
     pub metrics: TensorMetrics,
 }
 
-impl LlamaModel for &GpuLlamaModel {
-    type T = WgpuTensor;
+impl<T: Tensor> LlamaModel for &GpuLlamaModel<T> {
+    type T = T;
 
     fn conf(&self) -> LlamaConfig {
         self.conf.clone()
@@ -510,7 +510,7 @@ impl LlamaModel for &GpuLlamaModel {
         self.weights.clone()
     }
 
-    fn device(&self) -> WgpuTensorDeviceRef {
+    fn device(&self) -> T::DeviceRef {
         self.device.clone()
     }
 
@@ -527,8 +527,8 @@ impl LlamaModel for &GpuLlamaModel {
     }
 }
 
-impl GpuLlamaModel {
-    pub fn from_cpu(cpu_model: &CpuLlamaModel, device: WgpuTensorDeviceRef) -> Result<Self> {
+impl<T: Tensor> GpuLlamaModel<T> {
+    pub fn from_cpu(cpu_model: &CpuLlamaModel, device: T::DeviceRef) -> Result<Self> {
         let weights = Self::convert_cpu_weights(&cpu_model.weights, device.clone())?;
         Ok(Self {
             conf: cpu_model.conf.clone(),
@@ -542,8 +542,8 @@ impl GpuLlamaModel {
 
     fn convert_cpu_weights(
         weights: &LlamaWeights<CpuTensor>,
-        device: WgpuTensorDeviceRef,
-    ) -> Result<LlamaWeights<WgpuTensor>> {
+        device: T::DeviceRef,
+    ) -> Result<LlamaWeights<T>> {
         let token_embedding_table = Self::convert_cpu_tensor(&weights.token_embed, device.clone())?;
         let wq = weights
             .wq
@@ -630,7 +630,7 @@ impl GpuLlamaModel {
         Ok(weights)
     }
 
-    fn convert_cpu_tensor(tensor: &CpuTensor, device: WgpuTensorDeviceRef) -> Result<WgpuTensor> {
+    fn convert_cpu_tensor(tensor: &CpuTensor, device: T::DeviceRef) -> Result<WgpuTensor> {
         let buf = tensor.buf();
         let buf = match buf {
             CpuTensorBuf::F32(buf) => buf,

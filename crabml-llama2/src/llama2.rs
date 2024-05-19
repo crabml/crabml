@@ -10,9 +10,9 @@ use crabml::tensor::Tensor;
 use crabml::tensor::TensorMetrics;
 use crabml::tokenizer::Tokenizer;
 
-use crate::model::Llama2Config;
-use crate::model::Llama2Model;
-use crate::model::Llama2Weights;
+use crate::model::LlamaConfig;
+use crate::model::LlamaModel;
+use crate::model::LlamaWeights;
 use crate::model::ModelArchitecture;
 use crate::sampler::Llama2Sampler;
 
@@ -23,11 +23,11 @@ pub enum Activation {
 }
 
 pub struct Llama2Runner<T: Tensor> {
-    conf: Llama2Config,
-    weights: Rc<Llama2Weights<T>>,
+    conf: LlamaConfig,
+    weights: Rc<LlamaWeights<T>>,
     tokenizer: Rc<Tokenizer>,
     sampler: Rc<Llama2Sampler>,
-    device: T::Device,
+    device: T::DeviceRef,
     logits: Vec<f32>,            // output logits (vocab_size, )
     key_cache: Vec<Option<T>>,   // (layer, n_kv_head, seq_len, kv_dim)
     value_cache: Vec<Option<T>>, // (layer, n_kv_head, seq_len, kv_dim)
@@ -36,7 +36,7 @@ pub struct Llama2Runner<T: Tensor> {
 
 impl<'a, T: Tensor> Llama2Runner<T> {
     pub fn new(
-        model: impl Llama2Model<T = T>,
+        model: impl LlamaModel<T = T>,
         seq_len: usize,
         use_f16_kv_cache: bool,
     ) -> Result<Self> {
@@ -88,7 +88,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         })
     }
 
-    pub fn conf(&self) -> &Llama2Config {
+    pub fn conf(&self) -> &LlamaConfig {
         &self.conf
     }
 
@@ -529,13 +529,14 @@ impl<'a, T: Tensor> Llama2Runner<T> {
 mod tests {
     use approx::assert_relative_eq;
     use crabml::backends::cpu::CpuTensorDeviceOptions;
+    use crabml::backends::wgpu::WgpuTensor;
     use crabml::backends::wgpu::WgpuTensorDevice;
     use crabml::backends::wgpu::WgpuTensorDeviceOptions;
     use crabml::gguf::GGUFFileLoader;
 
     use super::*;
-    use crate::model::CpuLlama2ModelLoader;
-    use crate::WgpuLlama2Model;
+    use crate::model::CpuLlamaModelLoader;
+    use crate::GpuLlamaModel;
 
     #[test]
     fn test_generate_f32() -> Result<()> {
@@ -543,7 +544,7 @@ mod tests {
             GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-f32.gguf", false)?;
         let gf = gl.open()?;
 
-        let lm = CpuLlama2ModelLoader::new().load(&gf)?;
+        let lm = CpuLlamaModelLoader::new().load(&gf)?;
 
         let mut runner = Llama2Runner::new(&lm, 200, false)?;
         let output = runner.prefill_and_generate("Lily is a cat", 31)?;
@@ -561,7 +562,7 @@ mod tests {
         let gl = GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-q8_0.gguf", false)?;
         let gf = gl.open()?;
 
-        let lm = CpuLlama2ModelLoader::new().load(&gf)?;
+        let lm = CpuLlamaModelLoader::new().load(&gf)?;
         assert_eq!(lm.conf.rope_dim, Some(48));
         assert_eq!(lm.conf.head_size(), 48);
 
@@ -577,7 +578,7 @@ mod tests {
         let gl = GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-q4_0.gguf", false)?;
         let gf = gl.open()?;
 
-        let lm = CpuLlama2ModelLoader::new().load(&gf)?;
+        let lm = CpuLlamaModelLoader::new().load(&gf)?;
         assert_eq!(lm.conf.rope_dim, Some(48));
         assert_eq!(lm.conf.head_size(), 48);
 
@@ -593,7 +594,7 @@ mod tests {
         let gl = GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-q8_0.gguf", false)?;
         let gf = gl.open()?;
 
-        let lm = CpuLlama2ModelLoader::new().load(&gf)?;
+        let lm = CpuLlamaModelLoader::new().load(&gf)?;
         assert_eq!(lm.conf.rope_dim, Some(48));
         assert_eq!(lm.conf.head_size(), 48);
 
@@ -609,7 +610,7 @@ mod tests {
         let gl = GGUFFileLoader::new("../testdata/TinyLLama-v0-5M-F16.gguf", false)?;
         let gf = gl.open()?;
 
-        let lm = CpuLlama2ModelLoader::new().load(&gf)?;
+        let lm = CpuLlamaModelLoader::new().load(&gf)?;
         assert_eq!(lm.conf.rope_dim, Some(4));
         assert_eq!(lm.conf.head_size(), 4);
 
@@ -626,7 +627,7 @@ mod tests {
             GGUFFileLoader::new("../testdata/tinyllamas-stories-15m-f32.gguf", false)?;
         let gf = gl.open()?;
 
-        let model_cpu = CpuLlama2ModelLoader::new()
+        let model_cpu = CpuLlamaModelLoader::new()
             .with_device_options(CpuTensorDeviceOptions::default().with_debug_named_tensors(true))
             .load(&gf)?;
         let device_cpu = model_cpu.device.clone();
@@ -636,7 +637,7 @@ mod tests {
                 .with_staging_buf_bytes(model_cpu.conf.vocab_size * 4)
                 .with_debug_named_tensor(true),
         );
-        let model_wgpu = WgpuLlama2Model::from_cpu(&model_cpu, device_wgpu.clone())?;
+        let model_wgpu = GpuLlamaModel::<WgpuTensor>::from_cpu(&model_cpu, device_wgpu.clone())?;
 
         let mut runner_cpu = Llama2Runner::new(&model_cpu, 200, false)?;
         let mut runner_wgpu = Llama2Runner::new(&model_wgpu, 200, false)?;

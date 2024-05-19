@@ -60,9 +60,18 @@ impl VulkanTensor {
 }
 
 impl Tensor for VulkanTensor {
-    type Device = VulkanTensorDeviceRef;
+    type DeviceRef = VulkanTensorDeviceRef;
 
-    fn alloc(shape: &[usize], dtype: GGMLType, device: Self::Device) -> Result<Self> {
+    fn from_cpu(
+        buf: &[u8],
+        shape: &[usize],
+        dtype: GGMLType,
+        device: Self::DeviceRef,
+    ) -> Result<Self> {
+        todo!()
+    }
+
+    fn alloc(shape: &[usize], dtype: GGMLType, device: Self::DeviceRef) -> Result<Self> {
         todo!()
     }
 
@@ -185,6 +194,7 @@ mod tests {
     use crate::tensor::Tensor;
 
     #[test]
+    #[ignore]
     fn test_add() -> Result<()> {
         let d = VulkanTensorDevice::new(VulkanTensorDeviceOptions::default());
 

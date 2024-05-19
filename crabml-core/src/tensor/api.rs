@@ -9,11 +9,18 @@ pub enum RopeMode {
 }
 
 pub trait Tensor: Sized + Clone {
-    type Device: Clone;
+    type DeviceRef: Clone;
+
+    fn from_cpu(
+        buf: &[u8],
+        shape: &[usize],
+        dtype: GGMLType,
+        device: Self::DeviceRef,
+    ) -> Result<Self>;
 
     /// alloc an owned tensor, only used on storing activations and kv caches.
     /// only F32 and F16 are supported.
-    fn alloc(shape: &[usize], dtype: GGMLType, device: Self::Device) -> Result<Self>;
+    fn alloc(shape: &[usize], dtype: GGMLType, device: Self::DeviceRef) -> Result<Self>;
 
     /// resize the tensor to a smaller size, the underlying storage is not changed,
     /// it's useful on pre-allocated tensors, such as kv caches, which is the only

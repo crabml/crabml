@@ -1,7 +1,10 @@
 use std::borrow::Cow;
 
+use bytemuck::Pod;
+use bytemuck::Zeroable;
+
 #[repr(C)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Zeroable, Pod, Copy)]
 pub struct BlockQ8K {
     pub d: f32,        // delta
     pub qs: [i8; 256], // quants
@@ -37,9 +40,14 @@ impl<'a> QuantBufQ8K<'_> {
             blocks: blocks.into(),
         }
     }
+
     pub fn quantize(data: &[f32]) -> Self {
         let bs = quantize_f32_q8_k(data);
         Self { blocks: bs.into() }
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        bytemuck::cast_slice(&self.blocks)
     }
 
     fn blocks(&self) -> &[BlockQ8K] {

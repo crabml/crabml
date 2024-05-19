@@ -123,9 +123,18 @@ impl<'a> CpuTensor<'a> {
 }
 
 impl<'a> Tensor for CpuTensor<'a> {
-    type Device = CpuTensorDeviceRef<'a>;
+    type DeviceRef = CpuTensorDeviceRef<'a>;
 
-    fn alloc(shape: &[usize], dtype: GGMLType, device: Self::Device) -> Result<Self> {
+    fn from_cpu(
+        _buf: &[u8],
+        _shape: &[usize],
+        _dtype: GGMLType,
+        _device: Self::DeviceRef,
+    ) -> Result<Self> {
+        unreachable!("no need to implement from_cpu for CpuTensor")
+    }
+
+    fn alloc(shape: &[usize], dtype: GGMLType, device: Self::DeviceRef) -> Result<Self> {
         if dtype != GGMLType::F32 && dtype != GGMLType::F16 {
             return Err((ErrorKind::TensorError, "only f32/f16 is supported").into());
         }

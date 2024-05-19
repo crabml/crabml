@@ -49,11 +49,23 @@ impl WgpuTensor {
         })
     }
 
-    pub fn from_buf(
+    pub fn is_contiguous(&self) -> bool {
+        self.strider.is_contiguous()
+    }
+
+    pub fn shape(&self) -> &[usize] {
+        self.strider.shape()
+    }
+}
+
+impl Tensor for WgpuTensor {
+    type DeviceRef = WgpuTensorDeviceRef;
+
+    fn from_cpu(
         buf: &[u8],
-        dtype: GGMLType,
         shape: &[usize],
-        device: WgpuTensorDeviceRef,
+        dtype: GGMLType,
+        device: Self::DeviceRef,
     ) -> Result<Self> {
         let buf = device
             .inner
@@ -73,19 +85,7 @@ impl WgpuTensor {
         })
     }
 
-    pub fn is_contiguous(&self) -> bool {
-        self.strider.is_contiguous()
-    }
-
-    pub fn shape(&self) -> &[usize] {
-        self.strider.shape()
-    }
-}
-
-impl Tensor for WgpuTensor {
-    type Device = WgpuTensorDeviceRef;
-
-    fn alloc(shape: &[usize], dtype: GGMLType, device: Self::Device) -> Result<Self> {
+    fn alloc(shape: &[usize], dtype: GGMLType, device: Self::DeviceRef) -> Result<Self> {
         assert!(dtype == GGMLType::F32, "wgpu tensor only support F32 yet");
         let n_elms = shape.iter().product::<usize>();
 

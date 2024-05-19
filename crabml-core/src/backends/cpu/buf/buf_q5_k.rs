@@ -1,10 +1,17 @@
 use std::borrow::Cow;
 
+use bytemuck::Pod;
+use bytemuck::Zeroable;
+use half::f16;
+
 use super::util::get_scale_min_k4;
 use super::util::QK_K;
+use crate::backends::cpu::buf::buf_q8_k::BlockQ8K;
+use crate::backends::cpu::buf::util::make_qkx1_quants;
+use crate::backends::cpu::buf::util::nearest_i32;
 
 #[repr(C)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Pod, Zeroable, Copy)]
 pub struct BlockQ5K {
     qs: [u8; QK_K / 2], // quants, lower 4 bits
     qh: [u8; QK_K / 8], // quants, high bit
@@ -78,6 +85,10 @@ impl<'a> QuantBufQ5K<'_> {
         Self { blocks: bs.into() }
     }
 
+    pub fn as_bytes(&self) -> &[u8] {
+        bytemuck::cast_slice(&self.blocks)
+    }
+
     fn blocks(&self) -> &[BlockQ5K] {
         &self.blocks
     }
@@ -108,12 +119,6 @@ impl<'a> QuantBufQ5K<'_> {
         vec_dot_q5_k_q8_k(abs, bbs)
     }
 }
-
-use half::f16;
-
-use crate::backends::cpu::buf::buf_q8_k::BlockQ8K;
-use crate::backends::cpu::buf::util::make_qkx1_quants;
-use crate::backends::cpu::buf::util::nearest_i32;
 
 pub fn quantize_f32_q5_k(data: &[f32]) -> Vec<BlockQ5K> {
     assert!(data.len() % QK_K == 0);

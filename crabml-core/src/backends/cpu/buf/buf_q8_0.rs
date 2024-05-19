@@ -1,10 +1,12 @@
 use std::borrow::Cow;
 use std::simd::num::SimdFloat;
 
+use bytemuck::Pod;
+use bytemuck::Zeroable;
 use half::f16;
 
 #[repr(C, packed)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, Zeroable, Pod)]
 pub struct BlockQ8_0 {
     pub d: f16,       // delta
     pub qs: [i8; 32], // quants
@@ -45,6 +47,10 @@ impl<'a> QuantBufQ8_0<'a> {
     pub fn quantize(data: &[f32]) -> Self {
         let bs = quantize_f32_q8_0(data);
         Self { blocks: bs.into() }
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        bytemuck::cast_slice(&self.blocks)
     }
 
     fn blocks(&self) -> &[BlockQ8_0] {

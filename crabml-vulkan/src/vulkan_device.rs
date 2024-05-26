@@ -96,14 +96,14 @@ impl VulkanTensorDevice {
 
     fn load_shaders(&mut self) {
         mod arithmetic_shader {
-            vulkano_shaders::shader! { ty: "compute", path: "./src/shaders/arithmetic.comp" }
+            vulkano_shaders::shader! { ty: "compute", path: "./src/shaders/arithmetic.glsl" }
         }
         mod silu_shader {
-            vulkano_shaders::shader! { ty: "compute", path: "./src/shaders/silu.comp" }
+            vulkano_shaders::shader! { ty: "compute", path: "./src/shaders/silu.glsl" }
         }
 
         mod gelu_shader {
-            vulkano_shaders::shader! { ty: "compute", path: "./src/shaders/gelu.comp" }
+            vulkano_shaders::shader! { ty: "compute", path: "./src/shaders/gelu.glsl" }
         }
 
         let device = self.inner.device.clone();

@@ -204,7 +204,7 @@ impl Tensor for VulkanTensor {
     fn rms_norm_inplace(self, eps: f32) -> Result<Self> {
         assert!(self.strider.is_contiguous());
         assert!(self.shape().last().unwrap() % 32 == 0);
-        assert!(self.shape().len() <= 3 || self.shape().len() >= 1);
+        assert!([1, 2, 3].contains(&self.shape().len()));
 
         let (n_rows, n_cols) = match self.shape().len() {
             3 => (self.shape()[0] * self.shape()[1], self.shape()[2]),

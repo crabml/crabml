@@ -153,7 +153,13 @@ impl Tensor for VulkanTensor {
     }
 
     fn gelu_inplace(self) -> Result<Self> {
-        todo!()
+        let n_elms = self.strider.len() as u32;
+        let bufs = vec![self.buf.clone()];
+        let dispatches = [n_elms / 32 + 1, 1, 1];
+        self.device
+            .inner
+            .dispatch_compute("gelu", bufs, (), dispatches);
+        Ok(self)
     }
 
     fn mul_inplace(self, rhs: &Self) -> Result<Self> {
@@ -283,6 +289,22 @@ mod tests {
         t1.export(&mut dst1)?;
         assert_eq!(dst1, vec![
             0.7310586, 1.7615943, 2.8577223, 3.928055, 4.966536, 5.9851646
+        ]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_gelu_inplace() -> Result<()> {
+        let d = VulkanTensorDevice::new(VulkanTensorDeviceOptions::default());
+        let v1 = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let t1 = VulkanTensor::new(&v1, &[6], d.clone()).unwrap();
+        let t1 = t1.gelu_inplace()?;
+
+        let mut dst1 = vec![0.0; 6];
+        t1.export(&mut dst1)?;
+        assert_eq!(dst1, vec![
+            0.4750867, 0.99373245, 1.4995073, 1.9999906, 2.5, 3.0
         ]);
 
         Ok(())

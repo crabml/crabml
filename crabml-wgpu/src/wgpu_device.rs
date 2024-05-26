@@ -81,6 +81,7 @@ impl WgpuTensorDevice {
             ("rope_inplace", include_str!("shaders/rope.wgsl")),
             ("softmax_inplace", include_str!("shaders/softmax.wgsl")),
             ("silu_inplace", include_str!("shaders/silu.wgsl")),
+            ("gelu_inplace", include_str!("shaders/gelu.wgsl")),
             ("batch_matmul", include_str!("shaders/batch_matmul.wgsl")),
             (
                 "concatenate_inplace",

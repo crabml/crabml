@@ -102,6 +102,10 @@ impl VulkanTensorDevice {
             vulkano_shaders::shader! { ty: "compute", path: "./src/shaders/silu.comp" }
         }
 
+        mod gelu_shader {
+            vulkano_shaders::shader! { ty: "compute", path: "./src/shaders/gelu.comp" }
+        }
+
         let device = self.inner.device.clone();
         let entry_points = [
             (
@@ -111,6 +115,10 @@ impl VulkanTensorDevice {
             (
                 "silu",
                 load_shader_entry_point!(silu_shader, device.clone(), "main"),
+            ),
+            (
+                "gelu",
+                load_shader_entry_point!(gelu_shader, device.clone(), "main"),
             ),
         ];
 

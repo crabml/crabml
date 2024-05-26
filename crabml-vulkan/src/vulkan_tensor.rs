@@ -9,6 +9,7 @@ use crabml::tensor::TensorStrider;
 
 use super::vulkan_device::VulkanTensorDeviceRef;
 use crate::push_constants::ArithmeticPushConstants;
+use crate::push_constants::SoftmaxPushConstants;
 
 #[derive(Clone)]
 pub struct VulkanTensor {
@@ -86,11 +87,11 @@ impl Tensor for VulkanTensor {
     }
 
     fn shape(&self) -> &[usize] {
-        todo!()
+        self.strider.shape()
     }
 
     fn strider(&self) -> &TensorStrider {
-        todo!()
+        &self.strider
     }
 
     fn concatenate(&mut self, rhs: &Self, axis: usize) -> Result<()> {
@@ -139,7 +140,28 @@ impl Tensor for VulkanTensor {
     }
 
     fn softmax_inplace(self, axis: usize) -> Result<Self> {
-        todo!()
+        assert!(axis == self.strider.dims() - 1);
+        assert!(self.strider.is_contiguous());
+        assert!(self.shape().len() == 3 || self.shape().len() == 2);
+
+        let (n_rows, n_cols) = if self.shape().len() == 3 {
+            (self.shape()[0] * self.shape()[1], self.shape()[2])
+        } else {
+            (self.shape()[0], self.shape()[1])
+        };
+        let bufs = vec![self.buf.clone()];
+        let pcs = SoftmaxPushConstants {
+            n_rows: n_rows as u32,
+            n_cols: n_cols as u32,
+        };
+        // each thread block processes a row
+        let dispatches = [n_rows as u32 / 32 + 1, 1, 1];
+
+        self.device
+            .inner
+            .dispatch_compute("softmax", bufs, pcs, dispatches);
+
+        Ok(self)
     }
 
     fn silu_inplace(self) -> Result<Self> {
@@ -305,6 +327,22 @@ mod tests {
         t1.export(&mut dst1)?;
         assert_eq!(dst1, vec![
             0.4750867, 0.99373245, 1.4995073, 1.9999906, 2.5, 3.0
+        ]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_softmax() -> Result<()> {
+        let d = VulkanTensorDevice::new(VulkanTensorDeviceOptions::default());
+        let v1 = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let t1 = VulkanTensor::new(&v1, &[2, 3], d.clone()).unwrap();
+        let t1 = t1.softmax_inplace(1)?;
+
+        let mut dst1 = vec![0.0; 6];
+        t1.export(&mut dst1)?;
+        assert_eq!(dst1, vec![
+            0.09003057, 0.24472848, 0.66524094, 0.09003057, 0.24472848, 0.66524094
         ]);
 
         Ok(())

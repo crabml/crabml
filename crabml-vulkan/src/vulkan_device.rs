@@ -110,6 +110,9 @@ impl VulkanTensorDevice {
         mod rms_norm_shader {
             vulkano_shaders::shader! { ty: "compute", path: "./src/shaders/rms_norm.glsl" }
         }
+        mod rope_shader {
+            vulkano_shaders::shader! { ty: "compute", path: "./src/shaders/rope.glsl" }
+        }
 
         let device = self.inner.device.clone();
         let entry_points = [
@@ -132,6 +135,10 @@ impl VulkanTensorDevice {
             (
                 "rms_norm",
                 load_shader_entry_point!(rms_norm_shader, device.clone(), "main"),
+            ),
+            (
+                "rope",
+                load_shader_entry_point!(rope_shader, device.clone(), "main"),
             ),
         ];
 

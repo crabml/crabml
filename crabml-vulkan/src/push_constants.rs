@@ -23,3 +23,13 @@ pub struct RmsNormPushConstants {
     pub n_cols: u32,
     pub eps: f32,
 }
+
+#[derive(BufferContents)]
+#[repr(C)]
+pub struct RopePushConstants {
+    pub n_batch: u32,
+    pub n_dims: u32,
+    pub pos: u32,
+    pub n_heads: u32,
+    pub n_rope_dims: u32,
+}

@@ -4,12 +4,14 @@ use crabml::error::Error;
 use crabml::error::ErrorKind;
 use crabml::error::Result;
 use crabml::gguf::GGMLType;
+use crabml::tensor::RopeMode;
 use crabml::tensor::Tensor;
 use crabml::tensor::TensorStrider;
 
 use super::vulkan_device::VulkanTensorDeviceRef;
 use crate::push_constants::ArithmeticPushConstants;
 use crate::push_constants::RmsNormPushConstants;
+use crate::push_constants::RopePushConstants;
 use crate::push_constants::SoftmaxPushConstants;
 
 #[derive(Clone)]
@@ -172,7 +174,31 @@ impl Tensor for VulkanTensor {
         pos: usize,
         rope_dims: usize,
     ) -> Result<Self> {
-        todo!()
+        assert!(self.shape().len() == 3 || self.shape().len() == 2);
+        assert!(self.strider.is_contiguous());
+        assert!(mode == RopeMode::Llama, "TODO: only support Llama mode yet");
+
+        let (rows, n_head, m) = if self.strider.dims() == 3 {
+            (
+                self.shape()[0],
+                self.shape()[1],
+                self.shape()[1] * self.shape()[2],
+            )
+        } else {
+            (1, self.shape()[0], self.shape()[0] * self.shape()[1])
+        };
+        let pcs = RopePushConstants {
+            n_batch: rows as u32,
+            n_dims: m as u32,
+            pos: pos as u32,
+            n_heads: n_head as u32,
+            n_rope_dims: rope_dims as u32,
+        };
+        let dispatches = [rows as u32 / 32 + 1, 1, 1];
+        self.device
+            .inner
+            .dispatch_compute("rope", vec![self.buf.clone()], pcs, dispatches);
+        Ok(self)
     }
 
     fn rms_norm_inplace(self, eps: f32) -> Result<Self> {
@@ -317,6 +343,7 @@ impl Tensor for VulkanTensor {
 mod tests {
     use approx::assert_relative_eq;
     use crabml::error::Result;
+    use crabml::tensor::RopeMode;
     use crabml::tensor::Tensor;
 
     use super::VulkanTensor;
@@ -440,6 +467,29 @@ mod tests {
         simple_rmsnorm(&mut dst2);
 
         assert_relative_eq!(&dst1[0..10], &dst2[0..10], epsilon = 1e-4);
+        Ok(())
+    }
+
+    #[test]
+    fn test_rope() -> Result<()> {
+        let d = VulkanTensorDevice::new(VulkanTensorDeviceOptions::default());
+        let v1 = (0..32).map(|i| i as f32).collect::<Vec<_>>();
+        let t1 = VulkanTensor::new(&v1, &[2, 16], d.clone())?;
+        let t1 = t1.rope_inplace(RopeMode::Llama, 1, 2)?;
+
+        let mut dst1 = vec![0.0; 32];
+        t1.export(&mut dst1)?;
+
+        assert_relative_eq!(
+            &dst1[..],
+            &[
+                -0.841471, 0.54030234, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+                13.0, 14.0, 15.0, -5.6601696, 22.648676, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0,
+                25.0, 26.0, 27.0, 28.0, 29.0, 30.0, 31.0
+            ][..],
+            epsilon = 1e-5
+        );
+
         Ok(())
     }
 }

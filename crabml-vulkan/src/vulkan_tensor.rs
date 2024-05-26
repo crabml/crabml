@@ -143,7 +143,13 @@ impl Tensor for VulkanTensor {
     }
 
     fn silu_inplace(self) -> Result<Self> {
-        todo!()
+        let n_elms = self.strider.len() as u32;
+        let bufs = vec![self.buf.clone()];
+        let dispatches = [n_elms / 32 + 1, 1, 1];
+        self.device
+            .inner
+            .dispatch_compute("silu", bufs, (), dispatches);
+        Ok(self)
     }
 
     fn gelu_inplace(self) -> Result<Self> {
@@ -252,11 +258,8 @@ mod tests {
     #[test]
     fn test_scale_inplace() -> Result<()> {
         let d = VulkanTensorDevice::new(VulkanTensorDeviceOptions::default());
-
         let buf1 = (0..34).map(|v| v as f32).collect::<Vec<_>>();
-
         let t1 = VulkanTensor::new(&buf1, &[34], d.clone()).unwrap();
-
         let t1 = t1.scale_inplace(2.0).unwrap();
         let mut bufo = vec![0.0; 34];
         t1.export(&mut bufo)?;
@@ -266,6 +269,22 @@ mod tests {
             30.0, 32.0, 34.0, 36.0, 38.0, 40.0, 42.0, 44.0, 46.0, 48.0, 50.0, 52.0, 54.0, 56.0,
             58.0, 60.0, 62.0, 64.0, 66.0
         ]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_silu_inplace() -> Result<()> {
+        let d = VulkanTensorDevice::new(VulkanTensorDeviceOptions::default());
+        let v1 = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let t1 = VulkanTensor::new(&v1, &[6], d.clone()).unwrap();
+        let t1 = t1.silu_inplace()?;
+
+        let mut dst1 = vec![0.0; 6];
+        t1.export(&mut dst1)?;
+        assert_eq!(dst1, vec![
+            0.7310586, 1.7615943, 2.8577223, 3.928055, 4.966536, 5.9851646
+        ]);
+
         Ok(())
     }
 }

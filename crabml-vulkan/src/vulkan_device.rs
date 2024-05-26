@@ -98,12 +98,21 @@ impl VulkanTensorDevice {
         mod arithmetic_shader {
             vulkano_shaders::shader! { ty: "compute", path: "./src/shaders/arithmetic.comp" }
         }
+        mod silu_shader {
+            vulkano_shaders::shader! { ty: "compute", path: "./src/shaders/silu.comp" }
+        }
 
         let device = self.inner.device.clone();
-        let entry_points = [(
-            "arithmetic",
-            load_shader_entry_point!(arithmetic_shader, device.clone(), "main"),
-        )];
+        let entry_points = [
+            (
+                "arithmetic",
+                load_shader_entry_point!(arithmetic_shader, device.clone(), "main"),
+            ),
+            (
+                "silu",
+                load_shader_entry_point!(silu_shader, device.clone(), "main"),
+            ),
+        ];
 
         for (name, entry_point) in entry_points.into_iter() {
             self.inner.load_compute_pipeline(name, entry_point);

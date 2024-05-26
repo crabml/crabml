@@ -12,7 +12,7 @@ layout(push_constant) uniform PushConstants {
 layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
 
 void main() {
-    uint row = gl_WorkGroupID.x;
+    uint row = gl_GlobalInvocationID.x;
 
     if (row >= pcs.numRows) {
         return;

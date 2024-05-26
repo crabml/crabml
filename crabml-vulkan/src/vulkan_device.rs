@@ -101,9 +101,11 @@ impl VulkanTensorDevice {
         mod silu_shader {
             vulkano_shaders::shader! { ty: "compute", path: "./src/shaders/silu.glsl" }
         }
-
         mod gelu_shader {
             vulkano_shaders::shader! { ty: "compute", path: "./src/shaders/gelu.glsl" }
+        }
+        mod softmax_shader {
+            vulkano_shaders::shader! { ty: "compute", path: "./src/shaders/softmax.glsl" }
         }
 
         let device = self.inner.device.clone();
@@ -119,6 +121,10 @@ impl VulkanTensorDevice {
             (
                 "gelu",
                 load_shader_entry_point!(gelu_shader, device.clone(), "main"),
+            ),
+            (
+                "softmax",
+                load_shader_entry_point!(softmax_shader, device.clone(), "main"),
             ),
         ];
 

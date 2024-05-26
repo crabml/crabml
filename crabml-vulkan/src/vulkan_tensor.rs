@@ -59,15 +59,52 @@ impl Tensor for VulkanTensor {
     }
 
     fn resize(self, axis: usize, n: usize) -> Result<Self> {
-        todo!()
+        if axis >= self.shape().len() {
+            return Err((
+                ErrorKind::TensorError,
+                format!(
+                    "resize: axis {} is larger than the current shape {:?}",
+                    axis,
+                    self.shape()
+                ),
+            )
+                .into());
+        }
+
+        let mut new_shape = self.shape().to_vec();
+        new_shape[axis] = n;
+
+        let new_len: usize = new_shape.iter().product();
+        if new_len > self.capacity {
+            return Err((
+                ErrorKind::TensorError,
+                format!(
+                    "resize: new shape {:?} is larger than the current shape {:?}",
+                    new_shape,
+                    self.shape()
+                ),
+            )
+                .into());
+        }
+
+        let new_strider = self.strider.resize(&new_shape)?;
+        Ok(Self {
+            buf: self.buf,
+            capacity: self.capacity,
+            dtype: self.dtype,
+            strider: new_strider,
+            device: self.device.clone(),
+            name: None,
+        })
     }
 
     fn dtype(&self) -> GGMLType {
-        todo!()
+        self.dtype
     }
 
-    fn with_strider(self, strider: TensorStrider) -> Result<Self> {
-        todo!()
+    fn with_strider(mut self, strider: TensorStrider) -> Result<Self> {
+        self.strider = strider;
+        Ok(self)
     }
 
     fn with_name(self, name: String) -> Self {
@@ -75,11 +112,13 @@ impl Tensor for VulkanTensor {
     }
 
     fn reshape(self, shape: &[usize]) -> Result<Self> {
-        todo!()
+        let strider = self.strider.reshape(shape.to_vec())?;
+        self.with_strider(strider)
     }
 
-    fn transpose(self, shape: &[usize]) -> Result<Self> {
-        todo!()
+    fn transpose(self, dims: &[usize]) -> Result<Self> {
+        let strider = self.strider.transpose(dims)?;
+        self.with_strider(strider)
     }
 
     fn contiguous(self) -> Result<Self> {

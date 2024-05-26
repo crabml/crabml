@@ -9,6 +9,7 @@ use crabml::tensor::TensorStrider;
 
 use super::vulkan_device::VulkanTensorDeviceRef;
 use crate::push_constants::ArithmeticPushConstants;
+use crate::push_constants::RmsNormPushConstants;
 use crate::push_constants::SoftmaxPushConstants;
 
 #[derive(Clone)]
@@ -175,7 +176,29 @@ impl Tensor for VulkanTensor {
     }
 
     fn rms_norm_inplace(self, eps: f32) -> Result<Self> {
-        todo!()
+        assert!(self.strider.is_contiguous());
+        assert!(self.shape().last().unwrap() % 32 == 0);
+        assert!(self.shape().len() <= 3 || self.shape().len() >= 1);
+
+        let (n_rows, n_cols) = match self.shape().len() {
+            3 => (self.shape()[0] * self.shape()[1], self.shape()[2]),
+            2 => (self.shape()[0], self.shape()[1]),
+            1 => (1, self.shape()[0]),
+            _ => unreachable!(),
+        };
+
+        let bufs = vec![self.buf.clone()];
+        let pcs = RmsNormPushConstants {
+            n_rows: n_rows as u32,
+            n_cols: n_cols as u32,
+            eps,
+        };
+        // each thread block processes a row
+        let dispatches = [n_rows as u32, 1, 1];
+        self.device
+            .inner
+            .dispatch_compute("rms_norm", bufs, pcs, dispatches);
+        Ok(self)
     }
 
     fn softmax_inplace(self, axis: usize) -> Result<Self> {
@@ -292,6 +315,7 @@ impl Tensor for VulkanTensor {
 
 #[cfg(test)]
 mod tests {
+    use approx::assert_relative_eq;
     use crabml::error::Result;
     use crabml::tensor::Tensor;
 
@@ -389,6 +413,33 @@ mod tests {
             0.665241
         ]);
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_tensor_rms_norm() -> Result<()> {
+        let d = VulkanTensorDevice::new(VulkanTensorDeviceOptions::default());
+
+        pub fn simple_rmsnorm(x: &mut [f32]) {
+            let ss = x.iter().fold(0.0, |s, n| s + n * n);
+            let rms = ((ss / x.len() as f32) + 1e-5).sqrt();
+            let scale = 1.0 / rms;
+            // normalize and scale
+            for i in x {
+                *i *= scale;
+            }
+        }
+        let v1 = (1..129).map(|i| i as f32).collect::<Vec<_>>();
+
+        let t1 = VulkanTensor::new(&v1.clone(), &[128], d.clone())?;
+        let t1 = t1.rms_norm_inplace(1e-5)?;
+        let mut dst1 = vec![0.0; 128];
+        t1.export(&mut dst1)?;
+
+        let mut dst2 = v1.clone();
+        simple_rmsnorm(&mut dst2);
+
+        assert_relative_eq!(&dst1[0..10], &dst2[0..10], epsilon = 1e-4);
         Ok(())
     }
 }

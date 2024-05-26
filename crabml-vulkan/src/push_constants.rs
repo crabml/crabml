@@ -15,3 +15,11 @@ pub struct SoftmaxPushConstants {
     pub n_rows: u32,
     pub n_cols: u32,
 }
+
+#[derive(BufferContents)]
+#[repr(C)]
+pub struct RmsNormPushConstants {
+    pub n_rows: u32,
+    pub n_cols: u32,
+    pub eps: f32,
+}

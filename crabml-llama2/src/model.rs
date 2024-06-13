@@ -77,6 +77,7 @@ pub struct LlamaWeights<T: Tensor> {
     pub ffn_up_bias: Vec<T>,
     // final rmsnorm
     pub rms_final_weight: T, // (dim, )
+    pub rms_final_bias: Option<T>,
     // (optional) classifier weights for the logits, on the last layer
     pub output_weight: Option<T>, // (vocab_size, dim)
 }
@@ -428,6 +429,14 @@ impl CpuLlamaModelLoader {
         let rms_final_weight = self
             .load_tensor(gf, "output_norm.weight", device.clone())?
             .dequantize(GGMLType::F32)?;
+        let rms_final_bias = if gf.architecture() == "phi2" {
+            Some(
+                self.load_tensor(gf, "output_norm.bias", device.clone())?
+                    .dequantize(GGMLType::F32)?,
+            )
+        } else {
+            None
+        };
 
         // in Gemma, the output weight is None
         let output_weight = self.load_tensor_optional(gf, "output.weight", device)?;
@@ -453,6 +462,7 @@ impl CpuLlamaModelLoader {
             rms_ffn_weight,
             rms_att_bias,
             rms_final_weight,
+            rms_final_bias,
             output_weight,
         })
     }
@@ -783,6 +793,9 @@ impl<T: Tensor> GpuLlamaModel<T> {
             .map(|t| Self::convert_cpu_tensor(t, device.clone()))
             .collect::<Result<Vec<_>>>()?;
         let rms_final_weight = Self::convert_cpu_tensor(&weights.rms_final_weight, device.clone())?;
+        let rms_final_bias = weights.rms_final_bias.as_ref().map(|rms_final_bias| {
+            Self::convert_cpu_tensor(rms_final_bias, device.clone()).unwrap()
+        });
         let wcls = weights
             .output_weight
             .as_ref()
@@ -808,6 +821,7 @@ impl<T: Tensor> GpuLlamaModel<T> {
             rms_ffn_weight,
             rms_att_bias,
             rms_final_weight,
+            rms_final_bias,
             output_weight: wcls,
         };
         Ok(weights)

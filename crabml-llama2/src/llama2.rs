@@ -352,18 +352,15 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             let x_attn_orig = x.dup()?;
 
             // attention norm
-            x = {
-                // diff between rms_norm_eps and norm_eps?
-                x = x.rms_norm_inplace(self.conf.rms_norm_eps)?;
-                x = x.mul_inplace(&self.weights.rms_att_weight[l])?;
-                x = x.add_inplace(&self.weights.rms_att_bias[l])?;
-                x = x.with_name(format!("attn_norm:{}:{}", l, pos));
-                x
-            };
+            let mut x_attn_norm = x.dup()?;
+            x_attn_norm = x_attn_norm.rms_norm_inplace(self.conf.rms_norm_eps)?;
+            x_attn_norm = x_attn_norm.mul_inplace(&self.weights.rms_att_weight[l])?;
+            x_attn_norm = x_attn_norm.add_inplace(&self.weights.rms_att_bias[l])?;
+            x_attn_norm = x_attn_norm.with_name(format!("attn_norm:{}:{}", l, pos));
 
             // matmul qkv for every head
             let (q, k, v) = {
-                let qkv = self.weights.wqkv[l].matmul_vec(&x)?;
+                let qkv = self.weights.wqkv[l].matmul_vec(&x_attn_norm)?;
                 let qkv = qkv.add_inplace(&self.weights.bqkv[l])?;
 
                 let mut q = T::alloc(&[embed_dim, n_batch], GGMLType::F32, self.device.clone())?;
@@ -393,7 +390,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
                 let q = q.rope_inplace(RopeMode::Neox, pos, rope_dim)?;
                 let k = k.rope_inplace(RopeMode::Neox, pos, rope_dim)?;
 
-                // TODO ggml_scale
+                let q = q.scale_inplace(1.0 / (head_dim as f32).sqrt())?;
 
                 (q, k)
             };
@@ -403,11 +400,20 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             )?;
             x = x.with_name(format!("attn_out:{}:{}", l, pos));
 
-            // residual connection back into x
-            x = x.add_inplace(&x_attn_orig)?;
-
             // ffn
-            x = self.forward_ffn(x, l, pos, Activation::GeLU)?;
+            let x_ffn = {
+                let mut x_ffn = self.weights.ffn_up_weight[l].matmul_vec(&x_attn_norm)?;
+                x_ffn = x_ffn.add_inplace(&self.weights.ffn_up_bias[l])?;
+
+                x_ffn = x_ffn.gelu_inplace()?;
+
+                x_ffn = self.weights.ffn_down_weight[l].matmul_vec(&x_ffn)?;
+                x_ffn = x_ffn.add_inplace(&self.weights.ffn_down_bias[l])?;
+                x_ffn
+            };
+
+            x = x.add_inplace(&x_ffn)?;
+            x = x.add_inplace(&x_attn_orig)?;
             x = x.with_name(format!("ffn_out:{}:{}", l, pos));
         }
 
@@ -415,6 +421,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         x = {
             x = x.rms_norm_inplace(self.conf.rms_norm_eps)?;
             x = x.mul_inplace(&self.weights.rms_final_weight)?;
+            x = x.add_inplace(self.weights.rms_final_bias.as_ref().unwrap())?;
             x.with_name(format!("final_rmsnorm:{}", pos))
         };
 
@@ -583,29 +590,16 @@ impl<'a, T: Tensor> Llama2Runner<T> {
 
         // ffn rmsnorm
         x = {
-            if !self.weights.rms_ffn_weight.is_empty() {
-                x = x.rms_norm_inplace(1e-5)?;
-                x = x.mul_inplace(&self.weights.rms_ffn_weight[l])?;
-                x
-            } else {
-                x
-            }
+            x = x.rms_norm_inplace(1e-5)?;
+            x = x.mul_inplace(&self.weights.rms_ffn_weight[l])?;
+            x
         };
-
-        if !self.weights.ffn_up_bias.is_empty() {
-            x = x.mul_inplace(&self.weights.ffn_up_weight[l])?;
-            x = x.add_inplace(&self.weights.ffn_up_bias[l])?;
-        }
 
         // Now for FFN in PyTorch we have: self.down_proj(F.silu(self.gate_proj(x)) * self.up_proj(x))
         // first calculate self.w1(x) and self.w3(x)
         // w1: (hidden_dim, embed_dim) @ x (n_batch, embed_dim, ) => (n_batch, hidden_dim, )
         // w3: (hidden_dim, embed_dim) @ x (n_batch, embed_dim, ) => (n_batch, hidden_dim, )
-        let mut h1 = if !self.weights.ffn_gate_weight.is_empty() {
-            self.weights.ffn_gate_weight[l].matmul_vec(&x)?
-        } else {
-            x.clone()
-        };
+        let mut h1 = self.weights.ffn_gate_weight[l].matmul_vec(&x)?;
         let h2 = self.weights.ffn_up_weight[l].matmul_vec(&x)?;
 
         // F.silu; silu(x)=x*σ(x),where σ(x) is the logistic sigmoid

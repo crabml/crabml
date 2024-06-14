@@ -173,6 +173,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             ModelArchitecture::Llama => self.forward_llama(tokens, pos)?,
             ModelArchitecture::Gemma => self.forward_gemma(tokens, pos)?,
             ModelArchitecture::Qwen2 => self.forward_qwen2(tokens, pos)?,
+            ModelArchitecture::Phi2 => self.forward_phi2(tokens, pos)?,
         };
 
         let mut x_final = T::alloc(
@@ -278,7 +279,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         for l in 0..self.conf.n_layers {
             let x_attn_orig = x.dup()?;
 
-            // attention rnsnorm
+            // attention rmsnorm
             x = {
                 x = x.rms_norm_inplace(self.conf.rms_norm_eps)?;
                 x = x.mul_inplace(&self.weights.rms_att_weight[l])?;
@@ -327,6 +328,100 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         x = {
             x = x.rms_norm_inplace(self.conf.rms_norm_eps)?;
             x = x.mul_inplace(&self.weights.rms_final_weight)?;
+            x.with_name(format!("final_rmsnorm:{}", pos))
+        };
+
+        Ok(x)
+    }
+
+    fn forward_phi2(&mut self, tokens: &[usize], pos: usize) -> Result<T> {
+        let embed_dim = self.conf.embedding_dim;
+        let n_heads = self.conf.n_heads;
+        let n_kv_heads = self.conf.n_kv_heads;
+        let head_dim = self.conf.head_size();
+        let rope_dim = self.conf.rope_dim.unwrap_or(head_dim);
+        let n_batch = tokens.len();
+        let n_embd_gqa = head_dim * n_kv_heads;
+
+        // copy the token embedding into x
+        let mut x = T::alloc(&[n_batch, embed_dim], GGMLType::F32, self.device.clone())?;
+        x.copy_rows_from(&self.weights.token_embed, tokens)?;
+
+        // forward all the layers
+        for l in 0..self.conf.n_layers {
+            let x_attn_orig = x.dup()?;
+
+            // attention norm
+            let mut x_attn_norm = x.dup()?;
+            x_attn_norm = x_attn_norm.rms_norm_inplace(self.conf.rms_norm_eps)?;
+            x_attn_norm = x_attn_norm.mul_inplace(&self.weights.rms_att_weight[l])?;
+            x_attn_norm = x_attn_norm.add_inplace(&self.weights.rms_att_bias[l])?;
+            x_attn_norm = x_attn_norm.with_name(format!("attn_norm:{}:{}", l, pos));
+
+            // matmul qkv for every head
+            let (q, k, v) = {
+                let qkv = self.weights.wqkv[l].matmul_vec(&x_attn_norm)?;
+                let qkv = qkv.add_inplace(&self.weights.bqkv[l])?;
+
+                let mut q = T::alloc(&[embed_dim, n_batch], GGMLType::F32, self.device.clone())?;
+                q.copy_rows_from(&qkv, &[0])?;
+                q = q.reshape(&[embed_dim, n_batch])?.contiguous()?;
+                q = q.with_name("Qcur".to_string());
+
+                let mut k = T::alloc(&[embed_dim, n_batch], GGMLType::F32, self.device.clone())?;
+                k.copy_rows_from(&qkv, &[embed_dim])?;
+                k = k.reshape(&[embed_dim, n_batch])?.contiguous()?;
+                k = k.with_name("Kcur".to_string());
+
+                let mut v = T::alloc(&[embed_dim, n_batch], GGMLType::F32, self.device.clone())?;
+                v.copy_rows_from(&qkv, &[embed_dim + n_embd_gqa])?;
+                v = v.reshape(&[embed_dim, n_batch])?.contiguous()?;
+                v = v.with_name("Vcur".to_string());
+
+                (q, k, v)
+            };
+
+            // ROPE
+            let (q, k) = {
+                // reshape 3d
+                let q = q.reshape(&[n_batch, n_heads, head_dim])?;
+                let k = k.reshape(&[n_batch, n_kv_heads, head_dim])?;
+
+                let q = q.rope_inplace(RopeMode::Neox, pos, rope_dim)?;
+                let k = k.rope_inplace(RopeMode::Neox, pos, rope_dim)?;
+
+                let q = q.scale_inplace(1.0 / (head_dim as f32).sqrt())?;
+
+                (q, k)
+            };
+
+            x = self.forward_multi_query_attention(
+                q, k, v, l, pos, n_kv_heads, n_heads, embed_dim, head_dim, n_batch,
+            )?;
+            x = x.with_name(format!("attn_out:{}:{}", l, pos));
+
+            // ffn
+            let x_ffn = {
+                let mut x_ffn = self.weights.ffn_up_weight[l].matmul_vec(&x_attn_norm)?;
+                x_ffn = x_ffn.add_inplace(&self.weights.ffn_up_bias[l])?;
+
+                x_ffn = x_ffn.gelu_inplace()?;
+
+                x_ffn = self.weights.ffn_down_weight[l].matmul_vec(&x_ffn)?;
+                x_ffn = x_ffn.add_inplace(&self.weights.ffn_down_bias[l])?;
+                x_ffn
+            };
+
+            x = x.add_inplace(&x_ffn)?;
+            x = x.add_inplace(&x_attn_orig)?;
+            x = x.with_name(format!("ffn_out:{}:{}", l, pos));
+        }
+
+        // final rmsnorm
+        x = {
+            x = x.rms_norm_inplace(self.conf.rms_norm_eps)?;
+            x = x.mul_inplace(&self.weights.rms_final_weight)?;
+            x = x.add_inplace(self.weights.rms_final_bias.as_ref().unwrap())?;
             x.with_name(format!("final_rmsnorm:{}", pos))
         };
 

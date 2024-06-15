@@ -8,12 +8,14 @@ layout(set = 0, binding = 1) buffer BufSrc {
     float bufSrc[];
 };
 
-layout(push_constant) buffer PushConstants {
+layout(push_constant) uniform PushConstants {
     uvec4 shape;
     uvec4 strides;
     uint nDims;
     uint nElms;
 } pcs;
+
+layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
 
 void contiguous2D(uint dstOffset) {
     uint y = dstOffset % pcs.shape.y;
@@ -32,7 +34,7 @@ void contiguous3D(uint dstOffset) {
     bufDst[dstOffset] = bufSrc[srcOffset];
 }
 
-layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
+
 void main() {
     uint dstOffset = gl_GlobalInvocationID.x;
 

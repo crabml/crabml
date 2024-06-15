@@ -114,6 +114,9 @@ impl VulkanTensorDevice {
         mod rope_shader {
             vulkano_shaders::shader! { ty: "compute", path: "./src/shaders/rope.glsl" }
         }
+        mod contiguous_shader {
+            vulkano_shaders::shader! { ty: "compute", path: "./src/shaders/contiguous.glsl" }
+        }
 
         let device = self.inner.device.clone();
         let entry_points = [
@@ -139,6 +142,10 @@ impl VulkanTensorDevice {
             ),
             (
                 "rope",
+                load_shader_entry_point!(rope_shader, device.clone(), "main"),
+            ),
+            (
+                "contiguous",
                 load_shader_entry_point!(rope_shader, device.clone(), "main"),
             ),
         ];

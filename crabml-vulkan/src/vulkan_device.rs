@@ -146,7 +146,7 @@ impl VulkanTensorDevice {
             ),
             (
                 "contiguous",
-                load_shader_entry_point!(rope_shader, device.clone(), "main"),
+                load_shader_entry_point!(contiguous_shader, device.clone(), "main"),
             ),
         ];
 

@@ -626,4 +626,29 @@ mod tests {
         );
         Ok(())
     }
+
+    #[test]
+    fn test_contiguous() -> Result<()> {
+        let d = VulkanTensorDevice::new(VulkanTensorDeviceOptions::default());
+        // 4, 5, 6
+        let v1 = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let t1 = VulkanTensor::new(&v1, &[2, 3], d)?;
+        let t1 = t1.transpose(&[1, 0])?;
+        let t2 = t1.contiguous()?;
+        // 1, 4
+        // 2, 5
+        // 3, 6
+
+        let mut dst1 = vec![0.0; 6];
+        t2.export(&mut dst1)?;
+
+        assert_eq!(t2.strider.shape(), &[3, 2]);
+        assert_eq!(t2.strider.dims(), 2);
+        assert_relative_eq!(
+            &dst1[..],
+            &[1.0, 4.0, 2.0, 5.0, 3.0, 6.0][..],
+            epsilon = 1e-5
+        );
+        Ok(())
+    }
 }

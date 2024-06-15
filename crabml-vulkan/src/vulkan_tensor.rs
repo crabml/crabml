@@ -10,6 +10,7 @@ use crabml::tensor::TensorStrider;
 
 use super::vulkan_device::VulkanTensorDeviceRef;
 use crate::push_constants::ArithmeticPushConstants;
+use crate::push_constants::ContiguousPushConstants;
 use crate::push_constants::RmsNormPushConstants;
 use crate::push_constants::RopePushConstants;
 use crate::push_constants::SoftmaxPushConstants;
@@ -146,7 +147,29 @@ impl Tensor for VulkanTensor {
     }
 
     fn contiguous(self) -> Result<Self> {
-        todo!()
+        assert!(self.strider.dims() == 3 || self.strider.dims() == 2);
+        if self.strider.is_contiguous() {
+            return Ok(self);
+        }
+
+        let n_elms = self.strider.len();
+        let output = Self::alloc(self.strider.shape(), self.dtype, self.device.clone())?;
+        let pcs = {
+            let mut pcs = ContiguousPushConstants::default();
+            pcs.n_dims = self.strider.dims() as u32;
+            pcs.n_elms = n_elms as u32;
+            for i in 0..self.strider.dims() {
+                pcs.shape[i] = self.strider.shape()[i] as u32;
+                pcs.strides[i] = self.strider.strides()[i] as u32;
+            }
+            pcs
+        };
+        let bufs = vec![output.buf.clone(), self.buf.clone()];
+        let dispatches = [n_elms as u32 / 32 + 1, 1, 1];
+        self.device
+            .inner
+            .dispatch_compute("contiguous", bufs, pcs, dispatches);
+        Ok(output)
     }
 
     fn shape(&self) -> &[usize] {

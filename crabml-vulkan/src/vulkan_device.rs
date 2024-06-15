@@ -9,6 +9,7 @@ use vulkano::buffer::BufferUsage;
 use vulkano::buffer::Subbuffer;
 use vulkano::command_buffer::allocator::StandardCommandBufferAllocator;
 use vulkano::command_buffer::AutoCommandBufferBuilder;
+use vulkano::command_buffer::BufferCopy;
 use vulkano::command_buffer::CommandBufferUsage;
 use vulkano::command_buffer::CopyBufferInfo;
 use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocator;
@@ -297,7 +298,23 @@ impl VulkanTensorDeviceInner {
         device_buffer
     }
 
-    pub fn copy_device_buffer(&self, src: Subbuffer<[u8]>, dst: Subbuffer<[u8]>) {
+    pub fn copy_device_buffer(
+        &self,
+        src: Subbuffer<[u8]>,
+        src_offset: usize,
+        dst: Subbuffer<[u8]>,
+        dst_offset: usize,
+        size: usize,
+    ) {
+        let copy_buffer_info = {
+            let mut region = BufferCopy::default();
+            region.src_offset = src_offset as u64;
+            region.dst_offset = dst_offset as u64;
+            region.size = size as u64;
+            let mut copy_buffer_info = CopyBufferInfo::buffers(src.clone(), dst.clone());
+            copy_buffer_info.regions = smallvec::smallvec![region];
+            copy_buffer_info
+        };
         let command_buffer = {
             let mut builder = AutoCommandBufferBuilder::primary(
                 &self.command_buffer_allocator,
@@ -305,9 +322,7 @@ impl VulkanTensorDeviceInner {
                 CommandBufferUsage::OneTimeSubmit,
             )
             .unwrap();
-            builder
-                .copy_buffer(CopyBufferInfo::buffers(src, dst))
-                .unwrap();
+            builder.copy_buffer(copy_buffer_info).unwrap();
             builder.build().expect("Failed to build command buffer")
         };
 

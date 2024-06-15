@@ -151,8 +151,21 @@ impl Tensor for VulkanTensor {
         todo!()
     }
 
-    fn copy_rows_from(&mut self, rhs: &Self, rows: &[usize]) -> Result<()> {
-        todo!()
+    fn copy_rows_from(&mut self, src: &Self, src_rows: &[usize]) -> Result<()> {
+        assert!(self.strider.is_contiguous());
+        assert!(src.strider.is_contiguous());
+        assert!(src.strider.dims() == 2);
+        assert!(src.dtype == GGMLType::F32); // we need support quantized tensor here, live it as a TODO
+
+        let row_dims = src.shape().last().unwrap();
+
+        for (dst_row, src_row) in src_rows.iter().enumerate() {
+            let dst_offset = dst_row * row_dims * std::mem::size_of::<f32>();
+            let src_offset = src_row * row_dims * std::mem::size_of::<f32>();
+            let row_bytes = row_dims * std::mem::size_of::<f32>();
+        }
+
+        Ok(())
     }
 
     fn export(&self, dst: &mut [f32]) -> Result<()> {
@@ -176,10 +189,17 @@ impl Tensor for VulkanTensor {
     }
 
     fn dup(&self) -> Result<Self> {
+        assert!(self.dtype == GGMLType::F32, "only support F32 yet");
+
         let new_tensor = Self::alloc(self.strider.shape(), self.dtype, self.device.clone())?;
-        self.device
-            .inner
-            .copy_device_buffer(self.buf.clone(), new_tensor.buf.clone());
+        let bytes_size = std::mem::size_of::<f32>() * self.strider.len();
+        self.device.inner.copy_device_buffer(
+            self.buf.clone(),
+            0,
+            new_tensor.buf.clone(),
+            0,
+            bytes_size,
+        );
         Ok(new_tensor)
     }
 

@@ -58,7 +58,18 @@ impl Tensor for VulkanTensor {
     }
 
     fn alloc(shape: &[usize], dtype: GGMLType, device: Self::DeviceRef) -> Result<Self> {
-        todo!()
+        assert!(dtype == GGMLType::F32, "wgpu tensor only support F32 yet");
+        let strider = TensorStrider::new(shape.to_vec());
+        let bytes_size = std::mem::size_of::<f32>() * strider.len();
+        let buf = device.inner.make_device_buffer(bytes_size);
+        Ok(Self {
+            buf,
+            dtype,
+            capacity: bytes_size,
+            strider,
+            device,
+            name: None,
+        })
     }
 
     fn resize(self, axis: usize, n: usize) -> Result<Self> {
@@ -165,7 +176,11 @@ impl Tensor for VulkanTensor {
     }
 
     fn dup(&self) -> Result<Self> {
-        todo!()
+        let new_tensor = Self::alloc(self.strider.shape(), self.dtype, self.device.clone())?;
+        self.device
+            .inner
+            .copy_device_buffer(self.buf.clone(), new_tensor.buf.clone());
+        Ok(new_tensor)
     }
 
     fn rope_inplace(

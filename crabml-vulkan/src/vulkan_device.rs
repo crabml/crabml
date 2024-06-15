@@ -213,6 +213,26 @@ impl VulkanTensorDeviceInner {
         }
     }
 
+    pub fn make_device_buffer(&self, bytes_size: usize) -> Subbuffer<[u8]> {
+        // the newly created buffer
+        let device_buffer = Buffer::new_slice(
+            self.memory_allocator.clone(),
+            BufferCreateInfo {
+                usage: BufferUsage::STORAGE_BUFFER
+                    | BufferUsage::TRANSFER_SRC
+                    | BufferUsage::TRANSFER_DST,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
+                ..Default::default()
+            },
+            bytes_size as u64,
+        )
+        .unwrap();
+        device_buffer
+    }
+
     pub fn make_device_buffer_from<T: NoUninit>(&self, data: &[T]) -> Subbuffer<[u8]> {
         let buf = bytemuck::cast_slice(data);
         self.make_device_buffer_from_bytes(buf)
@@ -275,6 +295,28 @@ impl VulkanTensorDeviceInner {
         finished.wait(None).expect("Failed to wait for fence");
 
         device_buffer
+    }
+
+    pub fn copy_device_buffer(&self, src: Subbuffer<[u8]>, dst: Subbuffer<[u8]>) {
+        let command_buffer = {
+            let mut builder = AutoCommandBufferBuilder::primary(
+                &self.command_buffer_allocator,
+                self.queue.queue_family_index(),
+                CommandBufferUsage::OneTimeSubmit,
+            )
+            .unwrap();
+            builder
+                .copy_buffer(CopyBufferInfo::buffers(src, dst))
+                .unwrap();
+            builder.build().expect("Failed to build command buffer")
+        };
+
+        // do not need to wait for the command buffer to finish
+        sync::now(self.device.clone())
+            .then_execute(self.queue.clone(), command_buffer)
+            .expect("Failed to execute command buffer")
+            .flush()
+            .unwrap();
     }
 
     // copy the buffer to staging buffer, then read the data from staging buffer to CPU.

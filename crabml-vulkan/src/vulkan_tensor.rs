@@ -163,6 +163,13 @@ impl Tensor for VulkanTensor {
             let dst_offset = dst_row * row_dims * std::mem::size_of::<f32>();
             let src_offset = src_row * row_dims * std::mem::size_of::<f32>();
             let row_bytes = row_dims * std::mem::size_of::<f32>();
+            self.device.inner.copy_device_buffer(
+                src.buf.clone(),
+                src_offset,
+                self.buf.clone(),
+                dst_offset,
+                row_bytes,
+            );
         }
 
         Ok(())
@@ -559,6 +566,28 @@ mod tests {
                 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0,
                 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 27.0, 28.0,
                 29.0, 30.0, 31.0
+            ][..],
+            epsilon = 1e-5
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_copy_rows_from() -> Result<()> {
+        let d = VulkanTensorDevice::new(VulkanTensorDeviceOptions::default());
+        let v1 = (0..32).map(|i| i as f32).collect::<Vec<_>>();
+        let t1 = VulkanTensor::new(&v1, &[2, 16], d.clone())?;
+        let mut t2 = VulkanTensor::alloc(&[16], crabml::gguf::GGMLType::F32, d)?;
+        t2.copy_rows_from(&t1, &[1])?;
+
+        let mut dst1 = vec![0.0; 16];
+        t2.export(&mut dst1)?;
+
+        assert_relative_eq!(
+            &dst1[..],
+            &[
+                16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 27.0, 28.0, 29.0,
+                30.0, 31.0
             ][..],
             epsilon = 1e-5
         );

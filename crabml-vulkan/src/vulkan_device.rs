@@ -96,14 +96,51 @@ impl VulkanTensorDevice {
 
     fn load_shaders(&mut self) {
         mod arithmetic_shader {
-            vulkano_shaders::shader! { ty: "compute", path: "./src/shaders/arithmetic.comp" }
+            vulkano_shaders::shader! { ty: "compute", path: "./src/shaders/arithmetic.glsl" }
+        }
+        mod silu_shader {
+            vulkano_shaders::shader! { ty: "compute", path: "./src/shaders/silu.glsl" }
+        }
+        mod gelu_shader {
+            vulkano_shaders::shader! { ty: "compute", path: "./src/shaders/gelu.glsl" }
+        }
+        mod softmax_shader {
+            vulkano_shaders::shader! { ty: "compute", path: "./src/shaders/softmax.glsl" }
+        }
+        mod rms_norm_shader {
+            vulkano_shaders::shader! { ty: "compute", path: "./src/shaders/rms_norm.glsl" }
+        }
+        mod rope_shader {
+            vulkano_shaders::shader! { ty: "compute", path: "./src/shaders/rope.glsl" }
         }
 
         let device = self.inner.device.clone();
-        let entry_points = [(
-            "arithmetic",
-            load_shader_entry_point!(arithmetic_shader, device.clone(), "main"),
-        )];
+        let entry_points = [
+            (
+                "arithmetic",
+                load_shader_entry_point!(arithmetic_shader, device.clone(), "main"),
+            ),
+            (
+                "silu",
+                load_shader_entry_point!(silu_shader, device.clone(), "main"),
+            ),
+            (
+                "gelu",
+                load_shader_entry_point!(gelu_shader, device.clone(), "main"),
+            ),
+            (
+                "softmax",
+                load_shader_entry_point!(softmax_shader, device.clone(), "main"),
+            ),
+            (
+                "rms_norm",
+                load_shader_entry_point!(rms_norm_shader, device.clone(), "main"),
+            ),
+            (
+                "rope",
+                load_shader_entry_point!(rope_shader, device.clone(), "main"),
+            ),
+        ];
 
         for (name, entry_point) in entry_points.into_iter() {
             self.inner.load_compute_pipeline(name, entry_point);

@@ -1049,6 +1049,24 @@ mod tests {
     }
 
     #[test]
+    fn test_wgpu_gelu() -> Result<()> {
+        let v1 = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let t1 = WgpuTensor::new(&v1, &[6], DEVICE.clone())?;
+        let t1 = t1.gelu_inplace()?;
+
+        let mut dst1 = vec![0.0; 6];
+        t1.export(&mut dst1)?;
+
+        assert_relative_eq!(
+            &dst1[..],
+            &[0.4750867, 0.99373245, 1.4995073, 1.9999905, 2.5, 3.0000005][..],
+            epsilon = 1e-5
+        );
+
+        Ok(())
+    }
+
+    #[test]
     fn test_dup() -> Result<()> {
         let v1 = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
         let t1 = WgpuTensor::new(&v1, &[2, 3], DEVICE.clone())?;

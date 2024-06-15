@@ -54,7 +54,17 @@ impl Tensor for VulkanTensor {
         dtype: GGMLType,
         device: Self::DeviceRef,
     ) -> Result<Self> {
-        todo!()
+        let bytes_size = buf.len();
+        let buf = device.inner.make_device_buffer_from(buf);
+        let strider = TensorStrider::new(shape.to_vec());
+        Ok(Self {
+            buf,
+            dtype: GGMLType::F32,
+            capacity: bytes_size,
+            strider,
+            device,
+            name: None,
+        })
     }
 
     fn alloc(shape: &[usize], dtype: GGMLType, device: Self::DeviceRef) -> Result<Self> {

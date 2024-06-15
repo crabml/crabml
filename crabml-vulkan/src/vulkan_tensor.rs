@@ -155,9 +155,12 @@ impl Tensor for VulkanTensor {
         let n_elms = self.strider.len();
         let output = Self::alloc(self.strider.shape(), self.dtype, self.device.clone())?;
         let pcs = {
-            let mut pcs = ContiguousPushConstants::default();
-            pcs.n_dims = self.strider.dims() as u32;
-            pcs.n_elms = n_elms as u32;
+            let mut pcs = ContiguousPushConstants {
+                n_dims: self.strider.dims() as u32,
+                n_elms: n_elms as u32,
+                shape: [0; 4],
+                strides: [0; 4],
+            };
             for i in 0..self.strider.dims() {
                 pcs.shape[i] = self.strider.shape()[i] as u32;
                 pcs.strides[i] = self.strider.strides()[i] as u32;

@@ -223,7 +223,7 @@ impl VulkanTensorDeviceInner {
 
     pub fn make_device_buffer(&self, bytes_size: usize) -> Subbuffer<[u8]> {
         // the newly created buffer
-        let device_buffer = Buffer::new_slice(
+        Buffer::new_slice(
             self.memory_allocator.clone(),
             BufferCreateInfo {
                 usage: BufferUsage::STORAGE_BUFFER
@@ -237,8 +237,7 @@ impl VulkanTensorDeviceInner {
             },
             bytes_size as u64,
         )
-        .unwrap();
-        device_buffer
+        .unwrap()
     }
 
     pub fn make_device_buffer_from<T: NoUninit>(&self, data: &[T]) -> Subbuffer<[u8]> {
@@ -314,10 +313,12 @@ impl VulkanTensorDeviceInner {
         size: usize,
     ) {
         let copy_buffer_info = {
-            let mut region = BufferCopy::default();
-            region.src_offset = src_offset as u64;
-            region.dst_offset = dst_offset as u64;
-            region.size = size as u64;
+            let region = BufferCopy {
+                src_offset: src_offset as u64,
+                dst_offset: dst_offset as u64,
+                size: size as u64,
+                ..Default::default()
+            };
             let mut copy_buffer_info = CopyBufferInfo::buffers(src.clone(), dst.clone());
             copy_buffer_info.regions = smallvec::smallvec![region];
             copy_buffer_info

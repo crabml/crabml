@@ -33,3 +33,12 @@ pub struct RopePushConstants {
     pub n_heads: u32,
     pub n_rope_dims: u32,
 }
+
+#[derive(BufferContents, Default)]
+#[repr(C)]
+pub struct ContiguousPushConstants {
+    pub shape: [u32; 4],
+    pub strides: [u32; 4],
+    pub n_dims: u32,
+    pub n_elms: u32,
+}

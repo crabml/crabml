@@ -9,6 +9,7 @@ use vulkano::buffer::BufferUsage;
 use vulkano::buffer::Subbuffer;
 use vulkano::command_buffer::allocator::StandardCommandBufferAllocator;
 use vulkano::command_buffer::AutoCommandBufferBuilder;
+use vulkano::command_buffer::BufferCopy;
 use vulkano::command_buffer::CommandBufferUsage;
 use vulkano::command_buffer::CopyBufferInfo;
 use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocator;
@@ -113,6 +114,9 @@ impl VulkanTensorDevice {
         mod rope_shader {
             vulkano_shaders::shader! { ty: "compute", path: "./src/shaders/rope.glsl" }
         }
+        mod contiguous_shader {
+            vulkano_shaders::shader! { ty: "compute", path: "./src/shaders/contiguous.glsl" }
+        }
 
         let device = self.inner.device.clone();
         let entry_points = [
@@ -139,6 +143,10 @@ impl VulkanTensorDevice {
             (
                 "rope",
                 load_shader_entry_point!(rope_shader, device.clone(), "main"),
+            ),
+            (
+                "contiguous",
+                load_shader_entry_point!(contiguous_shader, device.clone(), "main"),
             ),
         ];
 
@@ -213,6 +221,25 @@ impl VulkanTensorDeviceInner {
         }
     }
 
+    pub fn make_device_buffer(&self, bytes_size: usize) -> Subbuffer<[u8]> {
+        // the newly created buffer
+        Buffer::new_slice(
+            self.memory_allocator.clone(),
+            BufferCreateInfo {
+                usage: BufferUsage::STORAGE_BUFFER
+                    | BufferUsage::TRANSFER_SRC
+                    | BufferUsage::TRANSFER_DST,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
+                ..Default::default()
+            },
+            bytes_size as u64,
+        )
+        .unwrap()
+    }
+
     pub fn make_device_buffer_from<T: NoUninit>(&self, data: &[T]) -> Subbuffer<[u8]> {
         let buf = bytemuck::cast_slice(data);
         self.make_device_buffer_from_bytes(buf)
@@ -275,6 +302,44 @@ impl VulkanTensorDeviceInner {
         finished.wait(None).expect("Failed to wait for fence");
 
         device_buffer
+    }
+
+    pub fn copy_device_buffer(
+        &self,
+        src: Subbuffer<[u8]>,
+        src_offset: usize,
+        dst: Subbuffer<[u8]>,
+        dst_offset: usize,
+        size: usize,
+    ) {
+        let copy_buffer_info = {
+            let region = BufferCopy {
+                src_offset: src_offset as u64,
+                dst_offset: dst_offset as u64,
+                size: size as u64,
+                ..Default::default()
+            };
+            let mut copy_buffer_info = CopyBufferInfo::buffers(src.clone(), dst.clone());
+            copy_buffer_info.regions = smallvec::smallvec![region];
+            copy_buffer_info
+        };
+        let command_buffer = {
+            let mut builder = AutoCommandBufferBuilder::primary(
+                &self.command_buffer_allocator,
+                self.queue.queue_family_index(),
+                CommandBufferUsage::OneTimeSubmit,
+            )
+            .unwrap();
+            builder.copy_buffer(copy_buffer_info).unwrap();
+            builder.build().expect("Failed to build command buffer")
+        };
+
+        // do not need to wait for the command buffer to finish
+        sync::now(self.device.clone())
+            .then_execute(self.queue.clone(), command_buffer)
+            .expect("Failed to execute command buffer")
+            .flush()
+            .unwrap();
     }
 
     // copy the buffer to staging buffer, then read the data from staging buffer to CPU.

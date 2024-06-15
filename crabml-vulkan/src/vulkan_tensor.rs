@@ -10,6 +10,7 @@ use crabml::tensor::TensorStrider;
 
 use super::vulkan_device::VulkanTensorDeviceRef;
 use crate::push_constants::ArithmeticPushConstants;
+use crate::push_constants::ContiguousPushConstants;
 use crate::push_constants::RmsNormPushConstants;
 use crate::push_constants::RopePushConstants;
 use crate::push_constants::SoftmaxPushConstants;
@@ -54,11 +55,32 @@ impl Tensor for VulkanTensor {
         dtype: GGMLType,
         device: Self::DeviceRef,
     ) -> Result<Self> {
-        todo!()
+        let bytes_size = buf.len();
+        let buf = device.inner.make_device_buffer_from(buf);
+        let strider = TensorStrider::new(shape.to_vec());
+        Ok(Self {
+            buf,
+            dtype: GGMLType::F32,
+            capacity: bytes_size,
+            strider,
+            device,
+            name: None,
+        })
     }
 
     fn alloc(shape: &[usize], dtype: GGMLType, device: Self::DeviceRef) -> Result<Self> {
-        todo!()
+        assert!(dtype == GGMLType::F32, "wgpu tensor only support F32 yet");
+        let strider = TensorStrider::new(shape.to_vec());
+        let bytes_size = std::mem::size_of::<f32>() * strider.len();
+        let buf = device.inner.make_device_buffer(bytes_size);
+        Ok(Self {
+            buf,
+            dtype,
+            capacity: bytes_size,
+            strider,
+            device,
+            name: None,
+        })
     }
 
     fn resize(self, axis: usize, n: usize) -> Result<Self> {
@@ -125,7 +147,32 @@ impl Tensor for VulkanTensor {
     }
 
     fn contiguous(self) -> Result<Self> {
-        todo!()
+        assert!(self.strider.dims() == 3 || self.strider.dims() == 2);
+        if self.strider.is_contiguous() {
+            return Ok(self);
+        }
+
+        let n_elms = self.strider.len();
+        let output = Self::alloc(self.strider.shape(), self.dtype, self.device.clone())?;
+        let pcs = {
+            let mut pcs = ContiguousPushConstants {
+                n_dims: self.strider.dims() as u32,
+                n_elms: n_elms as u32,
+                shape: [0; 4],
+                strides: [0; 4],
+            };
+            for i in 0..self.strider.dims() {
+                pcs.shape[i] = self.strider.shape()[i] as u32;
+                pcs.strides[i] = self.strider.strides()[i] as u32;
+            }
+            pcs
+        };
+        let bufs = vec![output.buf.clone(), self.buf.clone()];
+        let dispatches = [n_elms as u32 / 32 + 1, 1, 1];
+        self.device
+            .inner
+            .dispatch_compute("contiguous", bufs, pcs, dispatches);
+        Ok(output)
     }
 
     fn shape(&self) -> &[usize] {
@@ -140,8 +187,28 @@ impl Tensor for VulkanTensor {
         todo!()
     }
 
-    fn copy_rows_from(&mut self, rhs: &Self, rows: &[usize]) -> Result<()> {
-        todo!()
+    fn copy_rows_from(&mut self, src: &Self, src_rows: &[usize]) -> Result<()> {
+        assert!(self.strider.is_contiguous());
+        assert!(src.strider.is_contiguous());
+        assert!(src.strider.dims() == 2);
+        assert!(src.dtype == GGMLType::F32); // we need support quantized tensor here, live it as a TODO
+
+        let row_dims = src.shape().last().unwrap();
+
+        for (dst_row, src_row) in src_rows.iter().enumerate() {
+            let dst_offset = dst_row * row_dims * std::mem::size_of::<f32>();
+            let src_offset = src_row * row_dims * std::mem::size_of::<f32>();
+            let row_bytes = row_dims * std::mem::size_of::<f32>();
+            self.device.inner.copy_device_buffer(
+                src.buf.clone(),
+                src_offset,
+                self.buf.clone(),
+                dst_offset,
+                row_bytes,
+            );
+        }
+
+        Ok(())
     }
 
     fn export(&self, dst: &mut [f32]) -> Result<()> {
@@ -165,7 +232,18 @@ impl Tensor for VulkanTensor {
     }
 
     fn dup(&self) -> Result<Self> {
-        todo!()
+        assert!(self.dtype == GGMLType::F32, "only support F32 yet");
+
+        let new_tensor = Self::alloc(self.strider.shape(), self.dtype, self.device.clone())?;
+        let bytes_size = std::mem::size_of::<f32>() * self.strider.len();
+        self.device.inner.copy_device_buffer(
+            self.buf.clone(),
+            0,
+            new_tensor.buf.clone(),
+            0,
+            bytes_size,
+        );
+        Ok(new_tensor)
     }
 
     fn rope_inplace(
@@ -505,6 +583,75 @@ mod tests {
             epsilon = 1e-5
         );
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_dup() -> Result<()> {
+        let d = VulkanTensorDevice::new(VulkanTensorDeviceOptions::default());
+        let v1 = (0..32).map(|i| i as f32).collect::<Vec<_>>();
+        let t1 = VulkanTensor::new(&v1, &[2, 16], d.clone())?;
+        let t2 = t1.dup()?;
+
+        let mut dst1 = vec![0.0; 32];
+        t2.export(&mut dst1)?;
+
+        assert_relative_eq!(
+            &dst1[..],
+            &[
+                0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0,
+                15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 27.0, 28.0,
+                29.0, 30.0, 31.0
+            ][..],
+            epsilon = 1e-5
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_copy_rows_from() -> Result<()> {
+        let d = VulkanTensorDevice::new(VulkanTensorDeviceOptions::default());
+        let v1 = (0..32).map(|i| i as f32).collect::<Vec<_>>();
+        let t1 = VulkanTensor::new(&v1, &[2, 16], d.clone())?;
+        let mut t2 = VulkanTensor::alloc(&[16], crabml::gguf::GGMLType::F32, d)?;
+        t2.copy_rows_from(&t1, &[1])?;
+
+        let mut dst1 = vec![0.0; 16];
+        t2.export(&mut dst1)?;
+
+        assert_relative_eq!(
+            &dst1[..],
+            &[
+                16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 27.0, 28.0, 29.0,
+                30.0, 31.0
+            ][..],
+            epsilon = 1e-5
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_contiguous() -> Result<()> {
+        let d = VulkanTensorDevice::new(VulkanTensorDeviceOptions::default());
+        // 4, 5, 6
+        let v1 = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let t1 = VulkanTensor::new(&v1, &[2, 3], d)?;
+        let t1 = t1.transpose(&[1, 0])?;
+        let t2 = t1.contiguous()?;
+        // 1, 4
+        // 2, 5
+        // 3, 6
+
+        let mut dst1 = vec![0.0; 6];
+        t2.export(&mut dst1)?;
+
+        assert_eq!(t2.strider.shape(), &[3, 2]);
+        assert_eq!(t2.strider.dims(), 2);
+        assert_relative_eq!(
+            &dst1[..],
+            &[1.0, 4.0, 2.0, 5.0, 3.0, 6.0][..],
+            epsilon = 1e-5
+        );
         Ok(())
     }
 }

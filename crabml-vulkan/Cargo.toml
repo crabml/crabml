@@ -15,6 +15,7 @@ bytemuck = { version = "1.14.0", features = ["derive"] }
 vulkano = "0.34.1"
 vulkano-shaders = "0.34.0"
 crabml = { workspace = true }
+smallvec = "1.13.2"
 
 [dev-dependencies]
 pretty_assertions = "1.2.1"

@@ -120,6 +120,9 @@ impl VulkanTensorDevice {
         mod concatenate_shader {
             vulkano_shaders::shader! { ty: "compute", path: "./src/shaders/concatenate.glsl" }
         }
+        mod sgemv_shader {
+            vulkano_shaders::shader! { ty: "compute", path: "./src/shaders/sgemv.glsl" }
+        }
 
         let device = self.inner.device.clone();
         let entry_points = [
@@ -154,6 +157,10 @@ impl VulkanTensorDevice {
             (
                 "concatenate",
                 load_shader_entry_point!(concatenate_shader, device.clone(), "main"),
+            ),
+            (
+                "sgemv",
+                load_shader_entry_point!(sgemv_shader, device.clone(), "main"),
             ),
         ];
 

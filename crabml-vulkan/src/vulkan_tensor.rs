@@ -441,7 +441,7 @@ impl Tensor for VulkanTensor {
 }
 
 fn convert_u32_vec4(v: &[usize]) -> [u32; 4] {
-    let mut vec4 = [0 as u32; 4];
+    let mut vec4 = [0_u32; 4];
     for i in 0..v.len() {
         vec4[i] = v[i] as u32;
     }

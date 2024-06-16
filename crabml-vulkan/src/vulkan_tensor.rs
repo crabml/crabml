@@ -135,8 +135,13 @@ impl Tensor for VulkanTensor {
         Ok(self)
     }
 
-    fn with_name(self, name: String) -> Self {
-        todo!()
+    fn with_name(mut self, name: String) -> Self {
+        if self.device.opts.debug_named_tensor {
+            self.device.record_debug_tensor(name.clone(), &self);
+        }
+
+        self.name = Some(name);
+        self
     }
 
     fn reshape(self, shape: &[usize]) -> Result<Self> {

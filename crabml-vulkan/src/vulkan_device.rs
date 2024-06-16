@@ -123,6 +123,9 @@ impl VulkanTensorDevice {
         mod sgemv_shader {
             vulkano_shaders::shader! { ty: "compute", path: "./src/shaders/sgemv.glsl" }
         }
+        mod batch_matmul_shader {
+            vulkano_shaders::shader! { ty: "compute", path: "./src/shaders/batch_matmul.glsl" }
+        }
 
         let device = self.inner.device.clone();
         let entry_points = [
@@ -161,6 +164,10 @@ impl VulkanTensorDevice {
             (
                 "sgemv",
                 load_shader_entry_point!(sgemv_shader, device.clone(), "main"),
+            ),
+            (
+                "batch_matmul",
+                load_shader_entry_point!(batch_matmul_shader, device.clone(), "main"),
             ),
         ];
 

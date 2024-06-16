@@ -628,7 +628,6 @@ mod tests {
     use crabml_vulkan::vulkan_device::VulkanTensorDevice;
     use crabml_vulkan::vulkan_device::VulkanTensorDeviceOptions;
     use crabml_vulkan::vulkan_tensor::VulkanTensor;
-    use crabml_wgpu::WgpuTensor;
 
     use super::*;
     use crate::model::CpuLlamaModelLoader;

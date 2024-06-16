@@ -10,8 +10,10 @@ use crabml::tensor::TensorStrider;
 
 use super::vulkan_device::VulkanTensorDeviceRef;
 use crate::push_constants::ArithmeticPushConstants;
+use crate::push_constants::BatchMatmuPushConstants;
 use crate::push_constants::ConcatenatePushConstants;
 use crate::push_constants::ContiguousPushConstants;
+use crate::push_constants::MatmulPushConstants;
 use crate::push_constants::RmsNormPushConstants;
 use crate::push_constants::RopePushConstants;
 use crate::push_constants::SoftmaxPushConstants;
@@ -431,12 +433,63 @@ impl Tensor for VulkanTensor {
         Ok(self)
     }
 
-    fn matmul_vec(&self, y: &Self) -> Result<Self> {
-        todo!()
+    fn matmul_vec(&self, rhs: &Self) -> Result<Self> {
+        assert!(self.shape().len() == 2);
+        assert!(self.shape().last() == rhs.shape().last());
+        assert!(self.strider.is_contiguous());
+        assert!(rhs.strider.is_contiguous());
+
+        let output = Self::alloc(
+            &[rhs.strider.shape()[0], self.strider.shape()[0]],
+            GGMLType::F32,
+            self.device.clone(),
+        )?;
+        let pcs = MatmulPushConstants {
+            b: rhs.strider.shape()[0] as u32,
+            m: self.strider.shape()[0] as u32,
+            k: self.strider.shape()[1] as u32,
+        };
+        let bufs = vec![self.buf.clone(), rhs.buf.clone(), output.buf.clone()];
+        assert!(pcs.m / 32 < 65535); // vulkan limit each dimension to 65535
+        let dispatches = [pcs.b, pcs.m / 32, 1];
+        self.device
+            .inner
+            .dispatch_compute("sgemv", bufs, pcs, dispatches);
+        Ok(output)
     }
 
-    fn batch_matmul(&self, y: &Self) -> Result<Self> {
-        todo!()
+    fn batch_matmul(&self, rhs: &Self) -> Result<Self> {
+        assert!(self.shape().len() == 3);
+        assert!(rhs.shape().len() == 3);
+        assert!(self.shape()[0] == rhs.shape()[0]);
+        assert!(self.shape()[2] == rhs.shape()[1]);
+        assert!(self.strider.is_contiguous());
+
+        // (b, m, k) @ (b, k, n) => (b, m, n)
+        let output = Self::alloc(
+            &[rhs.shape()[0], self.shape()[1], rhs.shape()[2]],
+            GGMLType::F32,
+            self.device.clone(),
+        )?;
+
+        let pcs = BatchMatmuPushConstants {
+            b: rhs.shape()[0] as u32,
+            m: self.shape()[1] as u32,
+            k: self.shape()[2] as u32,
+            n: rhs.shape()[2] as u32,
+            strides_b: [
+                rhs.strider.strides()[0] as u32,
+                rhs.strider.strides()[1] as u32,
+                rhs.strider.strides()[2] as u32,
+            ],
+        };
+        let bufs = vec![self.buf.clone(), rhs.buf.clone(), output.buf.clone()];
+        let dispatches = [pcs.b * pcs.m * pcs.n / 32 + 1, 1, 1];
+        self.device
+            .inner
+            .dispatch_compute("batch_matmul", bufs, pcs, dispatches);
+
+        Ok(output)
     }
 }
 
@@ -716,6 +769,46 @@ mod tests {
             ][..],
             epsilon = 1e-5
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_matmul_vec() -> Result<()> {
+        let d = VulkanTensorDevice::new(VulkanTensorDeviceOptions::default());
+        let v1 = (0..256).map(|i| i as f32).collect::<Vec<_>>();
+
+        let t1 = VulkanTensor::new(&v1, &[32, 8], d.clone())?;
+        let t2 = VulkanTensor::new(&[2.0; 8], &[8], d.clone())?;
+        let t3 = t1.matmul_vec(&t2)?;
+        let mut dst1 = vec![0.0; 32];
+        t3.export(&mut dst1)?;
+        assert_eq!(dst1[0..32], vec![
+            56.0, 184.0, 312.0, 440.0, 568.0, 696.0, 824.0, 952.0, 1080.0, 1208.0, 1336.0, 1464.0,
+            1592.0, 1720.0, 1848.0, 1976.0, 2104.0, 2232.0, 2360.0, 2488.0, 2616.0, 2744.0, 2872.0,
+            3000.0, 3128.0, 3256.0, 3384.0, 3512.0, 3640.0, 3768.0, 3896.0, 4024.0
+        ]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_batch_matmul() -> Result<()> {
+        let d = VulkanTensorDevice::new(VulkanTensorDeviceOptions::default());
+        let v1 = (0..6).map(|i| i as f32).collect::<Vec<_>>();
+        // 0.0, 1.0,
+        // 2.0, 3.0,
+        // 4.0, 5.0
+        // @
+        // 2.0, 2.0
+        // => 2.0, 10.0, 18.0
+
+        let t1 = VulkanTensor::new(&v1, &[1, 3, 2], d.clone())?;
+        let t2 = VulkanTensor::new(&[2.0; 2], &[1, 2, 1], d.clone())?;
+        let t3 = t1.batch_matmul(&t2)?;
+        let mut dst1 = vec![0.0; 3]; // 1 x 3 x 1
+        t3.export(&mut dst1)?;
+        assert_eq!(t1.strider().strides(), &[6, 2, 1]);
+        assert_eq!(dst1, vec![2.0, 10.0, 18.0]);
+
         Ok(())
     }
 }

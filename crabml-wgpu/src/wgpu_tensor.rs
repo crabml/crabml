@@ -946,7 +946,6 @@ mod tests {
 
     #[test]
     fn test_wgpu_concatenate() -> Result<()> {
-        // TODO: fix this test later
         let mut t1 = WgpuTensor::alloc(&[2, 2, 16], GGMLType::F32, DEVICE.clone())?.resize(0, 0)?;
 
         let v2 = (0..32).map(|i| i as f32).collect::<Vec<_>>();

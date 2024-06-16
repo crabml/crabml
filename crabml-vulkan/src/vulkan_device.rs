@@ -117,6 +117,9 @@ impl VulkanTensorDevice {
         mod contiguous_shader {
             vulkano_shaders::shader! { ty: "compute", path: "./src/shaders/contiguous.glsl" }
         }
+        mod concatenate_shader {
+            vulkano_shaders::shader! { ty: "compute", path: "./src/shaders/concatenate.glsl" }
+        }
 
         let device = self.inner.device.clone();
         let entry_points = [
@@ -147,6 +150,10 @@ impl VulkanTensorDevice {
             (
                 "contiguous",
                 load_shader_entry_point!(contiguous_shader, device.clone(), "main"),
+            ),
+            (
+                "concatenate",
+                load_shader_entry_point!(concatenate_shader, device.clone(), "main"),
             ),
         ];
 

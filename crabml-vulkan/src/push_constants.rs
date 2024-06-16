@@ -42,3 +42,15 @@ pub struct ContiguousPushConstants {
     pub n_dims: u32,
     pub n_elms: u32,
 }
+
+#[derive(BufferContents)]
+#[repr(C, align(16))]
+pub struct ConcatenatePushConstants {
+    pub shape1: [u32; 4],
+    pub shape2: [u32; 4],
+    pub strides1: [u32; 4],
+    pub strides2: [u32; 4],
+    pub axis: u32,
+    pub dims: u32,
+    pub n_elems: u32,
+}

@@ -1,5 +1,7 @@
 #![allow(dead_code, unused_variables)]
 
+use std::convert;
+
 use crabml::error::Error;
 use crabml::error::ErrorKind;
 use crabml::error::Result;
@@ -10,6 +12,7 @@ use crabml::tensor::TensorStrider;
 
 use super::vulkan_device::VulkanTensorDeviceRef;
 use crate::push_constants::ArithmeticPushConstants;
+use crate::push_constants::ConcatenatePushConstants;
 use crate::push_constants::ContiguousPushConstants;
 use crate::push_constants::RmsNormPushConstants;
 use crate::push_constants::RopePushConstants;
@@ -184,7 +187,32 @@ impl Tensor for VulkanTensor {
     }
 
     fn concatenate(&mut self, rhs: &Self, axis: usize) -> Result<()> {
-        todo!()
+        if self.shape().len() != 3 {
+            return Err((
+                ErrorKind::TensorError,
+                "only support 3D tensor concatenation yet",
+            )
+                .into());
+        }
+        if self.dtype != GGMLType::F32 || rhs.dtype != GGMLType::F32 {
+            return Err((ErrorKind::TensorError, "concatenate: only support f32 yet").into());
+        }
+
+        let pcs = ConcatenatePushConstants {
+            shape1: convert_u32_vec4(self.strider.shape()),
+            shape2: convert_u32_vec4(rhs.shape()),
+            strides1: convert_u32_vec4(self.strider.strides()),
+            strides2: convert_u32_vec4(rhs.strider.strides()),
+            axis: axis as u32,
+            dims: 3,
+            n_elems: rhs.strider.len() as u32,
+        };
+        let dispatches = [rhs.strider.len() as u32 / 32 + 1, 1, 1];
+        let bufs = vec![self.buf.clone(), rhs.buf.clone()];
+        self.device
+            .inner
+            .dispatch_compute("concatenate", bufs, pcs, dispatches);
+        Ok(())
     }
 
     fn copy_rows_from(&mut self, src: &Self, src_rows: &[usize]) -> Result<()> {
@@ -415,6 +443,14 @@ impl Tensor for VulkanTensor {
     fn batch_matmul(&self, y: &Self) -> Result<Self> {
         todo!()
     }
+}
+
+fn convert_u32_vec4(v: &[usize]) -> [u32; 4] {
+    let mut vec4 = [0 as u32; 4];
+    for i in 0..v.len() {
+        vec4[i] = v[i] as u32;
+    }
+    vec4
 }
 
 #[cfg(test)]

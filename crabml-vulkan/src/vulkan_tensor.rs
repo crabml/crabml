@@ -12,6 +12,7 @@ use super::vulkan_device::VulkanTensorDeviceRef;
 use crate::push_constants::ArithmeticPushConstants;
 use crate::push_constants::ConcatenatePushConstants;
 use crate::push_constants::ContiguousPushConstants;
+use crate::push_constants::MatmulPushConstants;
 use crate::push_constants::RmsNormPushConstants;
 use crate::push_constants::RopePushConstants;
 use crate::push_constants::SoftmaxPushConstants;
@@ -431,8 +432,29 @@ impl Tensor for VulkanTensor {
         Ok(self)
     }
 
-    fn matmul_vec(&self, y: &Self) -> Result<Self> {
-        todo!()
+    fn matmul_vec(&self, rhs: &Self) -> Result<Self> {
+        assert!(self.shape().len() == 2);
+        assert!(self.shape().last() == rhs.shape().last());
+        assert!(self.strider.is_contiguous());
+        assert!(rhs.strider.is_contiguous());
+
+        let output = Self::alloc(
+            &[rhs.strider.shape()[0], self.strider.shape()[0]],
+            GGMLType::F32,
+            self.device.clone(),
+        )?;
+        let pcs = MatmulPushConstants {
+            b: rhs.strider.shape()[0] as u32,
+            m: self.strider.shape()[0] as u32,
+            k: self.strider.shape()[1] as u32,
+        };
+        let bufs = vec![self.buf.clone(), rhs.buf.clone(), output.buf.clone()];
+        assert!(pcs.m / 32 < 65535); // vulkan limit each dimension to 65535
+        let dispatches = [pcs.b, pcs.m / 32, 1];
+        self.device
+            .inner
+            .dispatch_compute("sgemv", bufs, pcs, dispatches);
+        Ok(output)
     }
 
     fn batch_matmul(&self, y: &Self) -> Result<Self> {

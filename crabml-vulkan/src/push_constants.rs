@@ -54,3 +54,12 @@ pub struct ConcatenatePushConstants {
     pub dims: u32,
     pub n_elms: u32,
 }
+
+// (M, N) x (N, K) = (M, K), now we only support K = 1
+#[derive(BufferContents)]
+#[repr(C)]
+pub struct MatmulPushConstants {
+    pub b: u32,
+    pub m: u32,
+    pub k: u32,
+}

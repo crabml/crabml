@@ -1,7 +1,5 @@
 #![allow(dead_code, unused_variables)]
 
-use std::convert;
-
 use crabml::error::Error;
 use crabml::error::ErrorKind;
 use crabml::error::Result;
@@ -157,18 +155,11 @@ impl Tensor for VulkanTensor {
 
         let n_elms = self.strider.len();
         let output = Self::alloc(self.strider.shape(), self.dtype, self.device.clone())?;
-        let pcs = {
-            let mut pcs = ContiguousPushConstants {
-                n_dims: self.strider.dims() as u32,
-                n_elms: n_elms as u32,
-                shape: [0; 4],
-                strides: [0; 4],
-            };
-            for i in 0..self.strider.dims() {
-                pcs.shape[i] = self.strider.shape()[i] as u32;
-                pcs.strides[i] = self.strider.strides()[i] as u32;
-            }
-            pcs
+        let pcs = ContiguousPushConstants {
+            n_dims: self.strider.dims() as u32,
+            n_elms: n_elms as u32,
+            shape: convert_u32_vec4(self.strider.shape()),
+            strides: convert_u32_vec4(self.strider.strides()),
         };
         let bufs = vec![output.buf.clone(), self.buf.clone()];
         let dispatches = [n_elms as u32 / 32 + 1, 1, 1];
@@ -205,13 +196,17 @@ impl Tensor for VulkanTensor {
             strides2: convert_u32_vec4(rhs.strider.strides()),
             axis: axis as u32,
             dims: 3,
-            n_elems: rhs.strider.len() as u32,
+            n_elms: rhs.strider.len() as u32,
         };
         let dispatches = [rhs.strider.len() as u32 / 32 + 1, 1, 1];
         let bufs = vec![self.buf.clone(), rhs.buf.clone()];
         self.device
             .inner
             .dispatch_compute("concatenate", bufs, pcs, dispatches);
+
+        let mut new_shape = self.strider.shape().to_vec();
+        new_shape[axis] += rhs.strider.shape()[axis];
+        self.strider = self.strider.resize(&new_shape)?;
         Ok(())
     }
 
@@ -457,6 +452,7 @@ fn convert_u32_vec4(v: &[usize]) -> [u32; 4] {
 mod tests {
     use approx::assert_relative_eq;
     use crabml::error::Result;
+    use crabml::gguf::GGMLType;
     use crabml::tensor::RopeMode;
     use crabml::tensor::Tensor;
 
@@ -686,6 +682,38 @@ mod tests {
         assert_relative_eq!(
             &dst1[..],
             &[1.0, 4.0, 2.0, 5.0, 3.0, 6.0][..],
+            epsilon = 1e-5
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_concatenate() -> Result<()> {
+        let d = VulkanTensorDevice::new(VulkanTensorDeviceOptions::default());
+        let mut t1 = VulkanTensor::alloc(&[2, 2, 16], GGMLType::F32, d.clone())?.resize(0, 0)?;
+
+        let v2 = (0..32).map(|i| i as f32).collect::<Vec<_>>();
+        let t2 = VulkanTensor::new(&v2, &[1, 2, 16], d.clone())?;
+
+        let v3 = (32..64).map(|i| i as f32).collect::<Vec<_>>();
+        let t3 = VulkanTensor::new(&v3, &[1, 2, 16], d.clone())?;
+
+        t1.concatenate(&t2, 0)?;
+        t1.concatenate(&t3, 0)?;
+
+        let mut dst1 = vec![0.0; 64];
+        t1.export(&mut dst1)?;
+
+        assert_eq!(t1.shape(), &[2, 2, 16]);
+        assert_relative_eq!(
+            &dst1[..],
+            &[
+                0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0,
+                15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 27.0, 28.0,
+                29.0, 30.0, 31.0, 32.0, 33.0, 34.0, 35.0, 36.0, 37.0, 38.0, 39.0, 40.0, 41.0, 42.0,
+                43.0, 44.0, 45.0, 46.0, 47.0, 48.0, 49.0, 50.0, 51.0, 52.0, 53.0, 54.0, 55.0, 56.0,
+                57.0, 58.0, 59.0, 60.0, 61.0, 62.0, 63.0
+            ][..],
             epsilon = 1e-5
         );
         Ok(())

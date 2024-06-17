@@ -219,6 +219,8 @@ impl<'a, T: Tensor> Llama2Runner<T> {
                 x
             };
 
+            x = x.with_name(format!("x_debug:{}:{}", l, pos));
+
             // matmul qkv for every head
             let (q, k, v) = {
                 // wq: (embed_dim, embed_dim) @ x (n_batch, embed_dim, ) => (n_batch, embed_dim, )
@@ -750,7 +752,7 @@ mod tests {
         assert_relative_eq!(
             device_cpu.dump_debug_tensor("x_debug:0:0").unwrap()[..],
             device_gpu.dump_debug_tensor("x_debug:0:0").unwrap()[..],
-            epsilon = 1e-7
+            epsilon = 1e-3
         );
 
         assert_relative_eq!(

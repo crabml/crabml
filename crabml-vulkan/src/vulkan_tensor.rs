@@ -225,15 +225,10 @@ impl Tensor for VulkanTensor {
 
         let row_dims = src.shape().last().unwrap();
 
-        println!("src_rows: {:?}, row_dims: {}", src_rows, row_dims);
         for (dst_row, src_row) in src_rows.iter().enumerate() {
             let dst_offset = dst_row * row_dims * std::mem::size_of::<f32>();
             let src_offset = src_row * row_dims * std::mem::size_of::<f32>();
             let row_bytes = row_dims * std::mem::size_of::<f32>();
-            println!(
-                "copy_rows_from: dst_offset: {}, src_offset: {}, row_bytes: {}",
-                dst_offset, src_offset, row_bytes
-            );
             self.device.inner.copy_device_buffer(
                 src.buf.clone(),
                 src_offset,

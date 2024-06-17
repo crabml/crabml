@@ -45,10 +45,10 @@ void main() {
             bufA[idxA] -= rhs;
             break;
         case OP_MUL:
-            bufB[idxA] *= rhs;
+            bufA[idxA] *= rhs;
             break;
         case OP_DIV:
-            bufB[idxA] /= rhs;
+            bufA[idxA] /= rhs;
             break;
     }
 }

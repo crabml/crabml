@@ -729,7 +729,7 @@ mod tests {
 
         let device_gpu = VulkanTensorDevice::new(
             VulkanTensorDeviceOptions::new()
-                .with_staging_buf_bytes(model_cpu.conf.vocab_size * 4)
+                .with_staging_buf_bytes(36864000)
                 .with_debug_named_tensor(true),
         );
         let model_gpu = GpuLlamaModel::<VulkanTensor>::from_cpu(&model_cpu, device_gpu.clone())?;
@@ -746,6 +746,12 @@ mod tests {
             .prefill_and_generate("Lily is a cat", 16)?
             .collect::<Result<Vec<String>>>()?
             .join("");
+
+        assert_relative_eq!(
+            device_cpu.dump_debug_tensor("x_debug:0:0").unwrap()[..],
+            device_gpu.dump_debug_tensor("x_debug:0:0").unwrap()[..],
+            epsilon = 1e-7
+        );
 
         assert_relative_eq!(
             device_cpu.dump_debug_tensor("attn_rmsnorm:0:0").unwrap()[0..10],

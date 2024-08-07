@@ -219,6 +219,8 @@ impl<'a, T: Tensor> Llama2Runner<T> {
                 x
             };
 
+            x = x.with_name(format!("x_debug:{}:{}", l, pos));
+
             // matmul qkv for every head
             let (q, k, v) = {
                 // wq: (embed_dim, embed_dim) @ x (n_batch, embed_dim, ) => (n_batch, embed_dim, )
@@ -625,9 +627,9 @@ mod tests {
     use approx::assert_relative_eq;
     use crabml::cpu::CpuTensorDeviceOptions;
     use crabml::gguf::GGUFFileLoader;
-    use crabml_wgpu::WgpuTensor;
-    use crabml_wgpu::WgpuTensorDevice;
-    use crabml_wgpu::WgpuTensorDeviceOptions;
+    use crabml_vulkan::vulkan_device::VulkanTensorDevice;
+    use crabml_vulkan::vulkan_device::VulkanTensorDeviceOptions;
+    use crabml_vulkan::vulkan_tensor::VulkanTensor;
 
     use super::*;
     use crate::model::CpuLlamaModelLoader;
@@ -727,35 +729,41 @@ mod tests {
             .load(&gf)?;
         let device_cpu = model_cpu.device.clone();
 
-        let device_wgpu = WgpuTensorDevice::new(
-            WgpuTensorDeviceOptions::new()
-                .with_staging_buf_bytes(model_cpu.conf.vocab_size * 4)
+        let device_gpu = VulkanTensorDevice::new(
+            VulkanTensorDeviceOptions::new()
+                .with_staging_buf_bytes(36864000)
                 .with_debug_named_tensor(true),
         );
-        let model_wgpu = GpuLlamaModel::<WgpuTensor>::from_cpu(&model_cpu, device_wgpu.clone())?;
+        let model_gpu = GpuLlamaModel::<VulkanTensor>::from_cpu(&model_cpu, device_gpu.clone())?;
 
         let mut runner_cpu = Llama2Runner::new(&model_cpu, 200, false)?;
-        let mut runner_wgpu = Llama2Runner::new(&model_wgpu, 200, false)?;
+        let mut runner_gpu = Llama2Runner::new(&model_gpu, 200, false)?;
 
         let output_cpu = runner_cpu
             .prefill_and_generate("Lily is a cat", 16)?
             .collect::<Result<Vec<String>>>()?
             .join("");
 
-        let output_wgpu = runner_wgpu
+        let output_gpu = runner_gpu
             .prefill_and_generate("Lily is a cat", 16)?
             .collect::<Result<Vec<String>>>()?
             .join("");
 
         assert_relative_eq!(
+            device_cpu.dump_debug_tensor("x_debug:0:0").unwrap()[..],
+            device_gpu.dump_debug_tensor("x_debug:0:0").unwrap()[..],
+            epsilon = 1e-3
+        );
+
+        assert_relative_eq!(
             device_cpu.dump_debug_tensor("attn_rmsnorm:0:0").unwrap()[0..10],
-            device_wgpu.dump_debug_tensor("attn_rmsnorm:0:0").unwrap()[0..10],
+            device_gpu.dump_debug_tensor("attn_rmsnorm:0:0").unwrap()[0..10],
             epsilon = 1e-7
         );
 
         assert_relative_eq!(
             device_cpu.dump_debug_tensor("final_rmsnorm:0").unwrap()[..],
-            device_wgpu.dump_debug_tensor("final_rmsnorm:0").unwrap()[..],
+            device_gpu.dump_debug_tensor("final_rmsnorm:0").unwrap()[..],
             epsilon = 1e-2
         );
 
@@ -765,7 +773,7 @@ mod tests {
         );
 
         assert_eq!(
-            output_wgpu,
+            output_gpu,
             " who likes to play with yarn. She has many colors of yarn"
         );
 

@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::sync::Mutex;
 
 use crabml::tensor::Tensor;
 use wgpu::util::DeviceExt;

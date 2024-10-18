@@ -1,8 +1,8 @@
 mod tokenizer_gpt2;
 mod tokenizer_llama;
 
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::sync::Arc;
+use std::sync::Mutex;
 
 use tokenizer_gpt2::Gpt2Tokenizer;
 use tokenizer_llama::LlamaTokenizer;
@@ -12,10 +12,10 @@ use crate::error::Result;
 pub type TokenID = usize;
 
 pub struct Tokenizer {
-    tokens: Rc<Vec<String>>,
+    tokens: Arc<Vec<String>>,
     eos_token: TokenID,
     inner: TokenizerInner,
-    utf8_buf: RefCell<Utf8Buf>,
+    utf8_buf: Mutex<Utf8Buf>,
 }
 
 enum TokenizerInner {
@@ -37,8 +37,8 @@ impl Tokenizer {
         bos_token: TokenID,
         eos_token: TokenID,
     ) -> Self {
-        let tokens = Rc::new(tokens);
-        let decode_buf = RefCell::new(Utf8Buf::new());
+        let tokens = Arc::new(tokens);
+        let decode_buf = Mutex::new(Utf8Buf::new());
         let inner = TokenizerInner::Llama(LlamaTokenizer::new(
             tokens.clone(),
             scores,
@@ -60,8 +60,8 @@ impl Tokenizer {
         bos_token: TokenID,
         eos_token: TokenID,
     ) -> Self {
-        let tokens = Rc::new(tokens);
-        let decode_buf = RefCell::new(Utf8Buf::new());
+        let tokens = Arc::new(tokens);
+        let decode_buf = Mutex::new(Utf8Buf::new());
         let inner = TokenizerInner::GPT2(Gpt2Tokenizer::new(
             tokens.clone(),
             &merges,
@@ -101,7 +101,7 @@ impl Tokenizer {
             TokenizerInner::Llama(inner) => inner.decode(token),
             TokenizerInner::GPT2(inner) => inner.decode(token),
         };
-        Ok(self.utf8_buf.borrow_mut().step(&bytes))
+        Ok(self.utf8_buf.lock().unwrap().step(&bytes))
     }
 
     // encode the string text (input) into an upper-bound preallocated tokens[] array

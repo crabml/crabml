@@ -1,5 +1,5 @@
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::sync::Arc;
+use std::sync::Mutex;
 
 use crabml::cpu::buf::buf_f32::exp_f32_cached;
 use crabml::error::Error;
@@ -9,23 +9,23 @@ use half::f16;
 use rand::Rng;
 
 pub struct Llama2Sampler {
-    prob_index: RefCell<Vec<(f32, usize)>>,
+    prob_index: Mutex<Vec<(f32, usize)>>,
     temperature: f32,
     topp: f32,
-    exp_cache: Rc<Vec<f16>>,
+    exp_cache: Arc<Vec<f16>>,
 }
 
-pub type Llama2SamplerRef = Rc<Llama2Sampler>;
+pub type Llama2SamplerRef = Arc<Llama2Sampler>;
 
 impl Llama2Sampler {
     pub fn new(
         vocab_size: usize,
         temperature: f32,
         topp: f32,
-        exp_cache: Rc<Vec<f16>>,
+        exp_cache: Arc<Vec<f16>>,
     ) -> Llama2SamplerRef {
-        Rc::new(Self {
-            prob_index: RefCell::new(vec![(0.0, 0); vocab_size]),
+        Arc::new(Self {
+            prob_index: Mutex::new(vec![(0.0, 0); vocab_size]),
             temperature,
             topp,
             exp_cache,
@@ -55,7 +55,12 @@ impl Llama2Sampler {
             Self::sample_multi(logits, coin);
         }
 
-        Self::sample_topp(logits, self.topp, &self.prob_index, coin)
+        Self::sample_topp(
+            logits,
+            self.topp,
+            &mut self.prob_index.lock().unwrap(),
+            coin,
+        )
     }
 
     pub fn sample_multi(probs: &[f32], coin: f32) -> usize {
@@ -74,15 +79,13 @@ impl Llama2Sampler {
     pub fn sample_topp(
         probs: &[f32],
         topp: f32,
-        prob_index: &RefCell<Vec<(f32, usize)>>,
+        prob_index: &mut [(f32, usize)],
         coin: f32,
     ) -> Result<usize> {
         // top-p sampling (or "nucleus sampling") samples from the smallest set of
         // tokens that exceed probability topp. This way we never sample tokens that
         // have very low probabilities and are less likely to go "off the rails".
         // coin is a random number in [0, 1), usually from random_f32()
-        let mut prob_index = prob_index.borrow_mut();
-
         let cutoff = (1.0_f32 - topp) / (probs.len() - 1) as f32;
         let mut n0 = 0;
         for (i, prob) in probs.iter().enumerate() {

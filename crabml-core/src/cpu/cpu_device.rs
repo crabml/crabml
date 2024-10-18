@@ -1,14 +1,12 @@
-use std::cell::OnceCell;
-use std::cell::RefCell;
 use std::collections::HashMap;
-use std::rc::Rc;
+use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::OnceLock;
 
 use half::f16;
 
 use super::primitives::gelu_single;
 use super::thread_pool::ThreadPool;
-use super::CpuTensor;
 use crate::tensor::TensorMetrics;
 
 #[derive(Debug, Clone)]
@@ -53,14 +51,14 @@ impl CpuTensorDeviceOptions {
 pub struct CpuTensorDevice<'a> {
     pub(crate) opts: CpuTensorDeviceOptions,
     pub(crate) metrics: TensorMetrics,
-    pub(crate) debug_tensors: RefCell<HashMap<String, Vec<f32>>>,
-    pub(crate) exp_cache: Rc<Vec<f16>>,
-    pub(crate) gelu_cache: OnceCell<Vec<f16>>,
+    pub(crate) exp_cache: Arc<Vec<f16>>,
+    pub(crate) gelu_cache: OnceLock<Vec<f16>>,
     pub(crate) thread_pool: Mutex<ThreadPool>,
     _phantom: std::marker::PhantomData<&'a ()>,
+    pub(crate) debug_tensors: Mutex<HashMap<String, Vec<f32>>>,
 }
 
-pub type CpuTensorDeviceRef<'a> = Rc<CpuTensorDevice<'a>>;
+pub type CpuTensorDeviceRef<'a> = Arc<CpuTensorDevice<'a>>;
 
 impl<'a> CpuTensorDevice<'a> {
     pub fn new() -> CpuTensorDeviceRef<'a> {
@@ -75,12 +73,12 @@ impl<'a> CpuTensorDevice<'a> {
             opts,
             metrics,
             thread_pool,
-            debug_tensors: RefCell::new(HashMap::new()),
-            exp_cache: Rc::new(Self::init_exp_cache()),
-            gelu_cache: OnceCell::new(),
+            exp_cache: Arc::new(Self::init_exp_cache()),
+            gelu_cache: OnceLock::new(),
             _phantom: std::marker::PhantomData,
+            debug_tensors: Mutex::new(HashMap::new()),
         };
-        Rc::new(device)
+        Arc::new(device)
     }
 
     pub fn metrics(&self) -> &TensorMetrics {
@@ -96,10 +94,10 @@ impl<'a> CpuTensorDevice<'a> {
     }
 
     pub fn dump_debug_tensor(&self, name: &str) -> Option<Vec<f32>> {
-        self.debug_tensors.borrow().get(name).cloned()
+        self.debug_tensors.lock().unwrap().get(name).cloned()
     }
 
-    pub fn exp_cache(&self) -> Rc<Vec<f16>> {
+    pub fn exp_cache(&self) -> Arc<Vec<f16>> {
         self.exp_cache.clone()
     }
 
@@ -125,10 +123,11 @@ impl<'a> CpuTensorDevice<'a> {
             .collect()
     }
 
-    pub(crate) fn add_debug_tensor(&self, tensor: &CpuTensor<'a>) {
+    pub(crate) fn add_debug_tensor(&self, tensor: &super::CpuTensor<'a>) {
         let buf = tensor.buf().iter_f32().collect::<Vec<_>>();
         self.debug_tensors
-            .borrow_mut()
+            .lock()
+            .unwrap()
             .insert(tensor.name.clone().unwrap(), buf);
     }
 }

@@ -236,11 +236,12 @@ impl<'a> Tensor for CpuTensor<'a> {
 
     fn with_name(mut self, name: String) -> Self {
         self.name = Some(name);
-
+        
         // only used in test
         if self.device.opts.debug_named_tensors {
             self.device.add_debug_tensor(&self);
         }
+
         self
     }
 

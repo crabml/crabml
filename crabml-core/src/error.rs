@@ -1,3 +1,5 @@
+use std::error::Error as StdError;
+use std::fmt;
 use std::sync::Arc;
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
@@ -34,7 +36,7 @@ pub enum ErrorKind {
 pub struct Error {
     pub kind: ErrorKind,
     pub message: String,
-    pub cause: Option<Arc<dyn std::error::Error>>,
+    pub cause: Option<Arc<dyn StdError + Send + Sync>>,
 }
 
 impl Error {
@@ -47,8 +49,8 @@ impl Error {
     }
 }
 
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}: {}", self.kind, self.message)?;
         if let Some(cause) = self.cause.as_ref() {
             write!(f, "\ncaused by: {}", cause)?;
@@ -67,6 +69,6 @@ impl<S: Into<String>> From<(ErrorKind, S)> for Error {
     }
 }
 
-impl std::error::Error for Error {}
+impl StdError for Error {}
 
 pub type Result<T> = std::result::Result<T, Error>;

@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::sync::Arc;
 use std::vec;
 
 use crabml::error::Error;
@@ -24,9 +24,9 @@ pub enum Activation {
 
 pub struct Llama2Runner<T: Tensor> {
     conf: LlamaConfig,
-    weights: Rc<LlamaWeights<T>>,
-    tokenizer: Rc<Tokenizer>,
-    sampler: Rc<Llama2Sampler>,
+    weights: Arc<LlamaWeights<T>>,
+    tokenizer: Arc<Tokenizer>,
+    sampler: Arc<Llama2Sampler>,
     device: T::DeviceRef,
     logits: Vec<f32>,            // output logits (vocab_size, )
     key_cache: Vec<Option<T>>,   // (layer, n_kv_head, seq_len, kv_dim)

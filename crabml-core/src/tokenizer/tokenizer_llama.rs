@@ -1,10 +1,10 @@
 use std::collections::HashMap;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use super::TokenID;
 
 pub struct LlamaTokenizer {
-    tokens: Rc<Vec<String>>,
+    tokens: Arc<Vec<String>>,
     token_ids: HashMap<String, TokenID>,
     token_scores: HashMap<TokenID, f32>,
     token_buf_len: usize,
@@ -14,7 +14,7 @@ pub struct LlamaTokenizer {
 
 impl LlamaTokenizer {
     pub fn new(
-        tokens: Rc<Vec<String>>,
+        tokens: Arc<Vec<String>>,
         scores: Vec<f32>,
         bos_token: TokenID,
         eos_token: TokenID,

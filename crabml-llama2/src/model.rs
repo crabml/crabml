@@ -185,12 +185,7 @@ impl CpuLlamaModelLoader {
         let conf = self.load_config(gf)?;
         let weights = self.load_weights(gf, conf.n_layers, device.clone())?;
         let tokenizer = self.load_tokenizer(gf)?;
-        let sampler = Llama2Sampler::new(
-            conf.vocab_size,
-            self.temprature,
-            self.probability,
-            device.exp_cache(),
-        );
+        let sampler = Llama2Sampler::new(self.temprature, self.probability, device.exp_cache());
         Ok(CpuLlamaModel {
             conf,
             weights: Arc::new(weights),

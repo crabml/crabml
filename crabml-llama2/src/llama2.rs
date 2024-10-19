@@ -9,6 +9,7 @@ use crabml::tensor::RopeMode;
 use crabml::tensor::Tensor;
 use crabml::tensor::TensorMetrics;
 use crabml::tokenizer::Tokenizer;
+use crabml::tokenizer::Utf8Buf;
 
 use crate::model::LlamaConfig;
 use crate::model::LlamaModel;
@@ -25,12 +26,19 @@ pub enum Activation {
 pub struct Llama2Runner<T: Tensor> {
     conf: LlamaConfig,
     weights: Arc<LlamaWeights<T>>,
+
+    // TODO: make the tokenizer decodes an iterator of tokens and get rid of `decode_buf`
     tokenizer: Arc<Tokenizer>,
+    decode_buf: Utf8Buf,
+
     sampler: Arc<Llama2Sampler>,
+    prob_index: Vec<(f32, usize)>,
+
     device: T::DeviceRef,
     logits: Vec<f32>,            // output logits (vocab_size, )
     key_cache: Vec<Option<T>>,   // (layer, n_kv_head, seq_len, kv_dim)
     value_cache: Vec<Option<T>>, // (layer, n_kv_head, seq_len, kv_dim)
+
     pub metrics: TensorMetrics,
 }
 
@@ -53,6 +61,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         let sampler = model.sampler();
         let metrics = model.metrics().clone();
         let logits = vec![0.0; conf.vocab_size];
+        let prob_index = vec![(0.0, 0); conf.vocab_size];
         let key_cache = (0..conf.n_layers)
             .map(|_| {
                 T::alloc(
@@ -83,6 +92,8 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             value_cache,
             weights,
             tokenizer,
+            decode_buf: Utf8Buf::new(),
+            prob_index,
             device,
             metrics,
         })
@@ -114,12 +125,12 @@ impl<'a, T: Tensor> Llama2Runner<T> {
 
         let base_pos = self.kv_cache_len();
         // this is expected to be eos, make it as the prewarm
-        let sampler = self.sampler.clone();
-        let mut logits: &mut [f32] = &mut [];
         for (pos, token) in prompt_tokens.iter().enumerate() {
-            logits = self.forward(&[*token], base_pos + pos)?;
+            self.forward(&[*token], base_pos + pos)?;
         }
-        let token = sampler.sample(logits)?;
+        let token = self
+            .sampler
+            .sample(&mut self.logits, &mut self.prob_index)?;
         let last_token = *prompt_tokens.last().unwrap();
 
         // take the length of kv cache as the next position
@@ -141,15 +152,20 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             None => max_seq,
         };
 
-        let sampler = self.sampler.clone();
-        let first_token = self.tokenizer.decode(token);
+        let first_token = self.tokenizer.decode(token, &mut self.decode_buf);
         let tokens_iter = (pos..pos + max_steps).scan(token, move |current_token, pos| {
-            let logits = self.forward(&[*current_token], pos).unwrap();
-            let new_token = sampler.sample(logits).unwrap();
+            self.forward(&[*current_token], pos).unwrap();
+            let new_token = self
+                .sampler
+                .sample(&mut self.logits, &mut self.prob_index)
+                .unwrap();
             if new_token == self.tokenizer.eos_token() {
                 return None;
             }
-            let r = self.tokenizer.decode(new_token).unwrap();
+            let r = self
+                .tokenizer
+                .decode(new_token, &mut self.decode_buf)
+                .unwrap();
             *current_token = new_token;
             Some(Ok(r))
         });
@@ -166,7 +182,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
         Ok(self.generate(pos, token, Some(steps)))
     }
 
-    pub fn forward(&mut self, tokens: &[usize], pos: usize) -> Result<&mut [f32]> {
+    fn forward(&mut self, tokens: &[usize], pos: usize) -> Result<()> {
         let _t = self.metrics.forward_walltime.track();
 
         let x = match self.conf.architecture {
@@ -192,7 +208,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             .unwrap_or_else(|| &self.weights.token_embed);
         let logits = output_weight.matmul_vec(&x_final)?; // (batch_size, vocab_size),
         logits.export(&mut self.logits)?;
-        Ok(&mut self.logits)
+        Ok(())
     }
 
     fn forward_llama(&mut self, tokens: &[usize], pos: usize) -> Result<T> {

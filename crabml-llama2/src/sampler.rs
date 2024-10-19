@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::sync::Mutex;
 
 use crabml::cpu::buf::buf_f32::exp_f32_cached;
 use crabml::error::Error;
@@ -9,7 +8,6 @@ use half::f16;
 use rand::Rng;
 
 pub struct Llama2Sampler {
-    prob_index: Mutex<Vec<(f32, usize)>>,
     temperature: f32,
     topp: f32,
     exp_cache: Arc<Vec<f16>>,
@@ -18,21 +16,15 @@ pub struct Llama2Sampler {
 pub type Llama2SamplerRef = Arc<Llama2Sampler>;
 
 impl Llama2Sampler {
-    pub fn new(
-        vocab_size: usize,
-        temperature: f32,
-        topp: f32,
-        exp_cache: Arc<Vec<f16>>,
-    ) -> Llama2SamplerRef {
+    pub fn new(temperature: f32, topp: f32, exp_cache: Arc<Vec<f16>>) -> Llama2SamplerRef {
         Arc::new(Self {
-            prob_index: Mutex::new(vec![(0.0, 0); vocab_size]),
             temperature,
             topp,
             exp_cache,
         })
     }
 
-    pub fn sample(&self, logits: &mut [f32]) -> Result<usize> {
+    pub fn sample(&self, logits: &mut [f32], prob_index: &mut [(f32, usize)]) -> Result<usize> {
         if self.temperature == 0.0 {
             return Self::sample_argmax(logits);
         }
@@ -55,15 +47,10 @@ impl Llama2Sampler {
             Self::sample_multi(logits, coin);
         }
 
-        Self::sample_topp(
-            logits,
-            self.topp,
-            &mut self.prob_index.lock().unwrap(),
-            coin,
-        )
+        Self::sample_topp(logits, self.topp, prob_index, coin)
     }
 
-    pub fn sample_multi(probs: &[f32], coin: f32) -> usize {
+    fn sample_multi(probs: &[f32], coin: f32) -> usize {
         // sample index from probabilities (they must sum to 1!)
         // coin is a random number in [0, 1), usually from random_f32()
         let mut cdf = 0_f32;
@@ -76,7 +63,7 @@ impl Llama2Sampler {
         probs.len() - 1 // in case of rounding errors
     }
 
-    pub fn sample_topp(
+    fn sample_topp(
         probs: &[f32],
         topp: f32,
         prob_index: &mut [(f32, usize)],
@@ -119,7 +106,7 @@ impl Llama2Sampler {
         Ok(prob_index[last_idx].1) // in case of rounding errors
     }
 
-    pub fn sample_argmax(probs: &[f32]) -> Result<usize> {
+    fn sample_argmax(probs: &[f32]) -> Result<usize> {
         probs
             .iter()
             .enumerate()
@@ -133,7 +120,7 @@ impl Llama2Sampler {
     }
 }
 
-pub fn softmax(a: &mut [f32], exp_cache: &[f16]) {
+fn softmax(a: &mut [f32], exp_cache: &[f16]) {
     let max = a.iter().fold(f32::NAN, |a, b| a.max(*b));
     let mut sum = 0.0;
     for a in a.iter_mut() {

@@ -1,3 +1,4 @@
+use crate::bail;
 use crate::error::ErrorKind;
 use crate::error::Result;
 
@@ -35,14 +36,12 @@ impl TensorStrider {
     pub fn resize(&self, new_shape: &[usize]) -> Result<Self> {
         // only allow resize to a smaller size
         if new_shape.len() != self.shape.len() {
-            return Err((
+            bail!(
                 ErrorKind::TensorError,
-                format!(
-                    "invalid new shape {:?} for a tensor of shape {:?}",
-                    new_shape, self.shape
-                ),
-            )
-                .into());
+                "invalid new shape {:?} for a tensor of shape {:?}",
+                new_shape,
+                self.shape
+            );
         }
 
         Ok(Self {
@@ -65,25 +64,21 @@ impl TensorStrider {
 
     pub fn at(&self, idx: &[usize]) -> Result<usize> {
         if idx.len() != self.shape.len() {
-            return Err((
+            bail!(
                 ErrorKind::TensorError,
-                format!(
-                    "invalid index {:?} for tensor of shape {:?}",
-                    idx, self.shape
-                ),
-            )
-                .into());
+                "invalid index {:?} for tensor of shape {:?}",
+                idx,
+                self.shape
+            );
         }
         for (i, &dim) in idx.iter().enumerate() {
             if dim >= self.shape[i] {
-                return Err((
+                bail!(
                     ErrorKind::TensorError,
-                    format!(
-                        "invalid index {:?} for tensor of shape {:?}",
-                        idx, self.shape
-                    ),
-                )
-                    .into());
+                    "invalid index {:?} for tensor of shape {:?}",
+                    idx,
+                    self.shape
+                );
             }
         }
 
@@ -147,20 +142,17 @@ impl TensorStrider {
 
     pub fn reshape(&self, shape: Vec<usize>) -> Result<Self> {
         if !self.is_contiguous() {
-            return Err((ErrorKind::TensorError, "not contiguous").into());
+            bail!(ErrorKind::TensorError, "not contiguous");
         }
 
         let len: usize = shape.iter().product();
         if len != self.len() {
-            return Err((
+            bail!(
                 ErrorKind::TensorError,
-                format!(
-                    "invalid shape {:?} for a tensor's origin shape {:?}",
-                    shape,
-                    self.shape(),
-                ),
-            )
-                .into());
+                "invalid shape {:?} for a tensor's origin shape {:?}",
+                shape,
+                self.shape(),
+            );
         }
 
         let strider = TensorStrider::new(shape);
@@ -169,14 +161,12 @@ impl TensorStrider {
 
     pub fn transpose(&self, dims: &[usize]) -> Result<Self> {
         if dims.len() != self.shape.len() {
-            return Err((
+            bail!(
                 ErrorKind::TensorError,
-                format!(
-                    "invalid dims {:?} for a tensor of shape {:?}",
-                    dims, self.shape
-                ),
-            )
-                .into());
+                "invalid dims {:?} for a tensor of shape {:?}",
+                dims,
+                self.shape
+            );
         }
 
         let new_shape = dims.iter().map(|d| self.shape[*d]).collect::<Vec<_>>();

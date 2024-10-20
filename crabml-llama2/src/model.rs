@@ -1,11 +1,12 @@
 use std::sync::Arc;
 use std::vec;
 
+use crabml::bail;
 use crabml::cpu::CpuTensor;
 use crabml::cpu::CpuTensorDevice;
 use crabml::cpu::CpuTensorDeviceOptions;
 use crabml::cpu::CpuTensorDeviceRef;
-use crabml::error::Error;
+use crabml::error;
 use crabml::error::ErrorKind;
 use crabml::error::Result;
 use crabml::gguf::GGMLType;
@@ -413,11 +414,7 @@ impl CpuLlamaModelLoader {
                 }
             }
             arch => {
-                return Err(Error {
-                    kind: ErrorKind::ModelError,
-                    message: format!("unsupported architecture {}", arch),
-                    cause: None,
-                });
+                bail!(ErrorKind::ModelError, "unsupported architecture {}", arch);
             }
         }
 
@@ -486,11 +483,10 @@ impl CpuLlamaModelLoader {
         device: CpuTensorDeviceRef<'a>,
     ) -> Result<CpuTensor<'a>> {
         match self.load_tensor_optional(gf, name, device)? {
-            None => Err(Error {
-                kind: ErrorKind::TensorNotFound,
-                message: format!("failed to find tensor {}", name),
-                cause: None,
-            }),
+            None => Err(error!(
+                ErrorKind::TensorNotFound,
+                "failed to find tensor {}", name
+            )),
             Some(v) => Ok(v),
         }
     }
@@ -547,9 +543,9 @@ impl CpuLlamaModelLoader {
                     .collect::<Vec<_>>();
                 Ok(Tokenizer::new_gpt2(vocab, merges, bos_token, eos_token))
             }
-            other => Err(Error::new(
+            other => Err(error!(
                 ErrorKind::IOError,
-                format!("unsupported tokenizer {}", other),
+                "unsupported tokenizer {}", other
             )),
         }
     }
@@ -563,11 +559,7 @@ impl CpuLlamaModelLoader {
             "qwen2" => (ModelArchitecture::Qwen2, "qwen2"),
             "phi2" => (ModelArchitecture::Phi2, "phi2"),
             arch => {
-                return Err(Error {
-                    kind: ErrorKind::ModelError,
-                    message: format!("unsupported architecture {}", arch),
-                    cause: None,
-                });
+                bail!(ErrorKind::ModelError, "unsupported architecture {}", arch);
             }
         };
         let model_name = gf
@@ -827,11 +819,11 @@ impl<T: Tensor> GpuLlamaModel<T> {
         match tensor.dtype() {
             GGMLType::F32 => (),
             _ => {
-                return Err(Error {
-                    kind: ErrorKind::TensorError,
-                    message: format!("unsupported tensor type on gpu {:?}", buf),
-                    cause: None,
-                });
+                bail!(
+                    ErrorKind::TensorError,
+                    "unsupported tensor type on gpu {:?}",
+                    buf
+                );
             }
         };
 

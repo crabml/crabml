@@ -39,16 +39,6 @@ pub struct Error {
     pub cause: Option<Arc<dyn StdError + Send + Sync>>,
 }
 
-impl Error {
-    pub fn new(kind: ErrorKind, message: impl Into<String>) -> Self {
-        Error {
-            kind,
-            message: message.into(),
-            cause: None,
-        }
-    }
-}
-
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}: {}", self.kind, self.message)?;
@@ -59,16 +49,31 @@ impl fmt::Display for Error {
     }
 }
 
-impl<S: Into<String>> From<(ErrorKind, S)> for Error {
-    fn from((kind, message): (ErrorKind, S)) -> Self {
-        Self {
-            kind,
-            message: message.into(),
-            cause: None,
-        }
-    }
-}
-
 impl StdError for Error {}
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+#[macro_export]
+macro_rules! error {
+    ($kind:expr => $err:expr) => {
+        $crate::error::Error {
+            kind: $kind,
+            message: String::new(),
+            cause: Some(Arc::new($err)),
+        }
+    };
+    ($kind:expr, $($arg:tt)*) => {
+        $crate::error::Error {
+            kind: $kind,
+            message: format!($($arg)*),
+            cause: None,
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! bail {
+    ($($arg:tt)*) => {
+        return Err($crate::error!($($arg)*))
+    };
+}

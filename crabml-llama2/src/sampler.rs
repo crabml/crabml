@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crabml::cpu::buf::buf_f32::exp_f32_cached;
-use crabml::error::Error;
+use crabml::error;
 use crabml::error::ErrorKind;
 use crabml::error::Result;
 use half::f16;
@@ -112,11 +112,7 @@ impl Llama2Sampler {
             .enumerate()
             .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
             .map(|(i, _)| i)
-            .ok_or_else(|| Error {
-                kind: ErrorKind::Unexpected,
-                message: "failed to sample from logits".to_string(),
-                cause: None,
-            })
+            .ok_or_else(|| error!(ErrorKind::Unexpected, "failed to sample from logits"))
     }
 }
 

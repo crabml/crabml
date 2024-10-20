@@ -2,6 +2,7 @@ use std::borrow::Cow;
 
 use half::f16;
 
+use crate::bail;
 use crate::cpu::buf::buf_f16::vec_convert_f16_f32;
 use crate::cpu::CpuTensorBuf;
 use crate::error::ErrorKind;
@@ -64,11 +65,12 @@ pub fn concatenate_inplace<'a>(
             }
         }
         (buf1, buf2) => {
-            return Err((
+            bail!(
                 ErrorKind::TensorError,
-                format!("can not concatenate {} and {}", buf1.dtype(), buf2.dtype()),
+                "can not concatenate {} and {}",
+                buf1.dtype(),
+                buf2.dtype()
             )
-                .into());
         }
     };
     strider1.resize(&new_shape)

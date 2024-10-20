@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::vec;
 
-use crabml::error::Error;
+use crabml::bail;
 use crabml::error::ErrorKind;
 use crabml::error::Result;
 use crabml::gguf::GGMLType;
@@ -116,11 +116,10 @@ impl<'a, T: Tensor> Llama2Runner<T> {
     ) -> Result<(usize, usize, usize)> {
         let prompt_tokens = self.tokenizer.encode(prompt, bos, false)?;
         if prompt_tokens.is_empty() {
-            return Err(Error {
-                kind: ErrorKind::BadInput,
-                message: "something is wrong, expected at least 1 prompt token".to_string(),
-                cause: None,
-            });
+            bail!(
+                ErrorKind::BadInput,
+                "something is wrong, expected at least 1 prompt token"
+            );
         }
 
         let base_pos = self.kv_cache_len();

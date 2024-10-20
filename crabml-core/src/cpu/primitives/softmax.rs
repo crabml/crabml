@@ -1,3 +1,4 @@
+use crate::bail;
 use crate::cpu::buf::buf_f32::exp_f32_cached;
 use crate::cpu::buf::CpuTensorBuf;
 use crate::cpu::CpuTensorDeviceRef;
@@ -18,15 +19,12 @@ pub fn softmax_inplace<'a>(
     assert!(buf.dtype() == GGMLType::F32);
 
     if axis != strider.dims() - 1 {
-        return Err((
+        bail!(
             ErrorKind::TensorError,
-            format!(
-                "only axis={} is supported on a {} dimensions tensor",
-                strider.dims() - 1,
-                strider.dims()
-            ),
-        )
-            .into());
+            "only axis={} is supported on a {} dimensions tensor",
+            strider.dims() - 1,
+            strider.dims()
+        );
     }
 
     let (depths, rows, cols) = match strider.dims() {

@@ -7,6 +7,7 @@ use std::sync::Arc;
 use int_enum::IntEnum;
 use memmap2::Mmap;
 
+use crate::bail;
 use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::error::Result;
@@ -258,15 +259,12 @@ impl<'a> GGUFBufReader<'a> {
 
     pub fn read(&mut self, n: usize) -> Result<&'a [u8]> {
         if n > self.cursor.len() {
-            return Err(Error {
-                kind: ErrorKind::FormatError,
-                message: format!(
-                    "failed to read {} bytes from the buffer, only {} bytes left",
-                    n,
-                    self.cursor.len()
-                ),
-                cause: None,
-            });
+            bail!(
+                ErrorKind::FormatError,
+                "failed to read {} bytes from the buffer, only {} bytes left",
+                n,
+                self.cursor.len()
+            );
         }
         let v = &self.cursor[0..n];
         self.cursor = &self.cursor[n..];
@@ -385,12 +383,11 @@ impl<'a, 'b> GGUFMetadataReader<'a, 'b> {
     pub fn read_string(&mut self) -> Result<&'a str> {
         let len = self.read_len()?;
         let buf = self.buf.read(len)?;
-        let s = std::str::from_utf8(buf).map_err(|e| Error {
+        std::str::from_utf8(buf).map_err(|e| Error {
             kind: ErrorKind::FormatError,
             message: "Invalid UTF-8 string".to_string(),
             cause: Some(Arc::new(e)),
-        });
-        s
+        })
     }
 
     /// Read the length for string & array. It would be an 32 bit unsigned integer on spec v1, but 64
@@ -523,11 +520,7 @@ impl<'a> GGUFHeader<'a> {
         let mut r = GGUFMetadataReader::new(buf, GGUFVersion::V2);
         let magic = r.read_u32()?;
         if magic != GGUF_MAGIC {
-            return Err(Error {
-                kind: ErrorKind::FormatError,
-                message: format!("Invalid magic number: {}", magic),
-                cause: None,
-            });
+            bail!(ErrorKind::FormatError, "Invalid magic number: {}", magic);
         }
 
         let version = r.read_u32()?;
@@ -557,11 +550,10 @@ impl<'a> GGUFHeader<'a> {
         let architecture = match metadata.get_string(KEY_GENERAL_ARCHITECTURE) {
             Some(s) => s.to_string(),
             _ => {
-                return Err(Error {
-                    kind: ErrorKind::FormatError,
-                    message: "Missing string metadata general.architecture".to_string(),
-                    cause: None,
-                });
+                bail!(
+                    ErrorKind::FormatError,
+                    "Missing string metadata general.architecture"
+                )
             }
         };
 

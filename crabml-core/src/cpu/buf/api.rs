@@ -7,6 +7,7 @@ use super::buf_f16::f16_buf_from_bytes;
 use super::buf_f16::quantize_f32_f16;
 use super::buf_f32::f32_buf_from_bytes;
 use super::buf_f32::vec_dot_f32_f32;
+use crate::bail;
 use crate::cpu::buf::buf_f16::vec_dot_f16_f16;
 use crate::cpu::buf::QuantBufQ2K;
 use crate::cpu::buf::QuantBufQ3K;
@@ -20,6 +21,7 @@ use crate::cpu::buf::QuantBufQ6K;
 use crate::cpu::buf::QuantBufQ8K;
 use crate::cpu::buf::QuantBufQ8_0;
 use crate::cpu::buf::QuantBufQ8_1;
+use crate::error;
 use crate::error::ErrorKind;
 use crate::error::Result;
 use crate::gguf::GGMLType;
@@ -161,11 +163,11 @@ impl<'a> CpuTensorBuf<'a> {
     /// simplify the conversion on half-precision activation is enabled.
     pub fn dequantize(self, dtype: GGMLType) -> Result<Self> {
         if dtype != GGMLType::F32 && dtype != GGMLType::F16 {
-            return Err((
+            bail!(
                 ErrorKind::TensorError,
-                format!("dequantize to {:?} is not supported", dtype),
-            )
-                .into());
+                "dequantize to {:?} is not supported",
+                dtype
+            );
         }
 
         match dtype {
@@ -218,11 +220,10 @@ impl<'a> CpuTensorBuf<'a> {
             ))),
             GGMLType::Q5K => Ok(CpuTensorBuf::Q5K(QuantBufQ5K::quantize(self.as_f32_ref()))),
             GGMLType::Q6K => Ok(CpuTensorBuf::Q6K(QuantBufQ6K::quantize(self.as_f32_ref()))),
-            _ => Err((
+            _ => Err(error!(
                 ErrorKind::TensorError,
-                format!("quantize to {:?} is not supported", dtype),
-            )
-                .into()),
+                "quantize to {:?} is not supported", dtype
+            )),
         }
     }
 

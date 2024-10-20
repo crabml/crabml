@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use crabml::bail;
 use crabml::error::ErrorKind;
 use crabml::error::Result;
 use crabml::gguf::GGMLType;
@@ -37,7 +38,7 @@ impl WgpuTensor {
             });
         let strider = TensorStrider::new(shape.to_vec());
         if strider.len() != src.len() {
-            return Err((ErrorKind::TensorError, "new: buffer size mismatch").into());
+            bail!(ErrorKind::TensorError, "new: buffer size mismatch");
         };
         Ok(Self {
             buf: Arc::new(buf),
@@ -111,15 +112,12 @@ impl Tensor for WgpuTensor {
 
     fn resize(self, axis: usize, n: usize) -> Result<Self> {
         if axis >= self.shape().len() {
-            return Err((
+            bail!(
                 ErrorKind::TensorError,
-                format!(
-                    "resize: axis {} is larger than the current shape {:?}",
-                    axis,
-                    self.shape()
-                ),
-            )
-                .into());
+                "resize: axis {} is larger than the current shape {:?}",
+                axis,
+                self.shape()
+            );
         }
 
         let mut new_shape = self.shape().to_vec();
@@ -127,15 +125,12 @@ impl Tensor for WgpuTensor {
 
         let new_len: usize = new_shape.iter().product();
         if new_len > self.capacity {
-            return Err((
+            bail!(
                 ErrorKind::TensorError,
-                format!(
-                    "resize: new shape {:?} is larger than the current shape {:?}",
-                    new_shape,
-                    self.shape()
-                ),
-            )
-                .into());
+                "resize: new shape {:?} is larger than the current shape {:?}",
+                new_shape,
+                self.shape()
+            );
         }
 
         let new_strider = self.strider.resize(&new_shape)?;
@@ -193,14 +188,13 @@ impl Tensor for WgpuTensor {
 
     fn concatenate(&mut self, rhs: &Self, axis: usize) -> Result<()> {
         if self.shape().len() != 3 {
-            return Err((
+            bail!(
                 ErrorKind::TensorError,
                 "only support 3D tensor concatenation yet",
-            )
-                .into());
+            );
         }
         if self.dtype() != GGMLType::F32 || rhs.dtype() != GGMLType::F32 {
-            return Err((ErrorKind::TensorError, "concatenate: only support f32 yet").into());
+            bail!(ErrorKind::TensorError, "concatenate: only support f32 yet");
         }
 
         let meta = ConcatenateMeta {
@@ -250,7 +244,7 @@ impl Tensor for WgpuTensor {
                 resource: meta_buf.as_entire_binding(),
             },
         ];
-        let encoder = self.device.encode_pipeline_commnad(
+        let encoder = self.device.encode_pipeline_command(
             "concatenate_inplace",
             entries,
             (rhs.strider.len() as u32 / 16, 1, 1),
@@ -266,7 +260,7 @@ impl Tensor for WgpuTensor {
     fn copy_rows_from(&mut self, src: &Self, src_rows: &[usize]) -> Result<()> {
         // TODO: check is_owned
         if !self.is_contiguous() {
-            return Err((ErrorKind::TensorError, "not contiguous").into());
+            bail!(ErrorKind::TensorError, "not contiguous");
         }
         assert!(src.strider.dims() == 2);
 
@@ -299,14 +293,12 @@ impl Tensor for WgpuTensor {
     fn export(&self, dst: &mut [f32]) -> Result<()> {
         let buf_size = std::mem::size_of_val(dst);
         if buf_size > self.device.opts.staging_buf_bytes {
-            return Err((
+            bail!(
                 ErrorKind::TensorError,
-                format!(
-                    "buffer size exceeded staging buffer limit: {}, got: {}",
-                    self.device.opts.staging_buf_bytes, buf_size,
-                ),
-            )
-                .into());
+                "buffer size exceeded staging buffer limit: {}, got: {}",
+                self.device.opts.staging_buf_bytes,
+                buf_size
+            );
         }
 
         // enqueue copy from self.buf to staging buffer
@@ -388,7 +380,7 @@ impl Tensor for WgpuTensor {
                 resource: meta_buf.as_entire_binding(),
             },
         ];
-        let encoder = self.device.encode_pipeline_commnad(
+        let encoder = self.device.encode_pipeline_command(
             "rope_inplace",
             entries,
             (rows as u32 / 32 + 1, 1, 1),
@@ -426,7 +418,7 @@ impl Tensor for WgpuTensor {
         ];
         let encoder =
             self.device
-                .encode_pipeline_commnad("rms_norm_inplace", entries, (meta.n_batch, 1, 1));
+                .encode_pipeline_command("rms_norm_inplace", entries, (meta.n_batch, 1, 1));
         self.device.queue.submit(Some(encoder.finish()));
         Ok(self)
     }
@@ -459,7 +451,7 @@ impl Tensor for WgpuTensor {
         ];
         let encoder =
             self.device
-                .encode_pipeline_commnad("softmax_inplace", entries, (m * n / 16 + 1, 1, 1));
+                .encode_pipeline_command("softmax_inplace", entries, (m * n / 16 + 1, 1, 1));
         self.device.queue.submit(Some(encoder.finish()));
         Ok(self)
     }
@@ -472,7 +464,7 @@ impl Tensor for WgpuTensor {
             binding: 0,
             resource: self.buf.as_entire_binding(),
         }];
-        let encoder = self.device.encode_pipeline_commnad(
+        let encoder = self.device.encode_pipeline_command(
             "silu_inplace",
             entries,
             ((elms / 32 + 1) as u32, 1, 1),
@@ -489,7 +481,7 @@ impl Tensor for WgpuTensor {
             binding: 0,
             resource: self.buf.as_entire_binding(),
         }];
-        let encoder = self.device.encode_pipeline_commnad(
+        let encoder = self.device.encode_pipeline_command(
             "gelu_inplace",
             entries,
             ((elms / 32 + 1) as u32, 1, 1),
@@ -519,7 +511,7 @@ impl Tensor for WgpuTensor {
                 resource: meta_buf.as_entire_binding(),
             },
         ];
-        let encoder = self.device.encode_pipeline_commnad(
+        let encoder = self.device.encode_pipeline_command(
             "mul_inplace",
             entries,
             (n_elms as u32 / 32 + 1, 1, 1),
@@ -549,7 +541,7 @@ impl Tensor for WgpuTensor {
                 resource: meta_buf.as_entire_binding(),
             },
         ];
-        let encoder = self.device.encode_pipeline_commnad(
+        let encoder = self.device.encode_pipeline_command(
             "add_inplace",
             entries,
             (n_elms as u32 / 32 + 1, 1, 1),
@@ -583,7 +575,7 @@ impl Tensor for WgpuTensor {
                 resource: meta_buf.as_entire_binding(),
             },
         ];
-        let encoder = self.device.encode_pipeline_commnad(
+        let encoder = self.device.encode_pipeline_command(
             "mul_inplace",
             entries,
             (n_elms as u32 / 32 + 1, 1, 1),
@@ -635,7 +627,7 @@ impl Tensor for WgpuTensor {
         assert!(meta.m / 32 < 65535); // vulkan limit each dimension to 65535
         let encoder =
             self.device
-                .encode_pipeline_commnad("sgemv", entries, (meta.b, meta.m / 32, 1));
+                .encode_pipeline_command("sgemv", entries, (meta.b, meta.m / 32, 1));
         self.device.queue.submit(Some(encoder.finish()));
 
         Ok(output)
@@ -690,7 +682,7 @@ impl Tensor for WgpuTensor {
                 resource: output.buf.as_entire_binding(),
             },
         ];
-        let encoder = self.device.encode_pipeline_commnad(
+        let encoder = self.device.encode_pipeline_command(
             "batch_matmul",
             entries,
             (meta.b * meta.m * meta.n / 32 + 1, 1, 1),
@@ -736,7 +728,7 @@ impl Tensor for WgpuTensor {
                 resource: meta_buf.as_entire_binding(),
             },
         ];
-        let encoder = self.device.encode_pipeline_commnad(
+        let encoder = self.device.encode_pipeline_command(
             "contiguous",
             entries,
             (n_elms as u32 / 32 + 1, 1, 1),

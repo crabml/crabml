@@ -87,7 +87,7 @@ fn batch_matmul_simd_f16(
     );
 
     // On Grouped Query Attention, the batch size of A is always a multiple of the batch size of B.
-    // batch demension of A / batch_broadcast = batch dimension of B.
+    // batch dimension of A / batch_broadcast = batch dimension of B.
     let batch_broadcast = a_batch / b_batch;
 
     // matrix A is always row-wise contiguous, matrix B should be contiguous on the K

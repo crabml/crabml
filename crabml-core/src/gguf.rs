@@ -7,6 +7,7 @@ use std::sync::Arc;
 use int_enum::IntEnum;
 use memmap2::Mmap;
 
+use crate::bail;
 use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::error::Result;
@@ -24,7 +25,7 @@ pub const KEY_GENERAL_URL: &str = "general.url";
 pub const KEY_GENERAL_DESCRIPTION: &str = "general.description";
 pub const KEY_GENERAL_LICENSE: &str = "general.license";
 pub const KEY_GENERAL_SOURCE_URL: &str = "general.source.url";
-pub const KEY_GENERAL_SOURCE_HF_REPO: &str = "general.source.hugginface.repository";
+pub const KEY_GENERAL_SOURCE_HF_REPO: &str = "general.source.huggingface.repository";
 pub const KEY_GENERAL_FILE_TYPE: &str = "general.file_type";
 
 // LLM
@@ -40,8 +41,8 @@ pub const KEY_ATTENTION_HEAD_COUNT: &str = "{arch}.attention.head_count";
 pub const KEY_ATTENTION_HEAD_COUNT_KV: &str = "{arch}.attention.head_count_kv";
 pub const KEY_ATTENTION_MAX_ALIBI_BIAS: &str = "{arch}.attention.max_alibi_bias";
 pub const KEY_ATTENTION_CLAMP_KQV: &str = "{arch}.attention.clamp_kqv";
-pub const KEY_ATTENTION_LAYERNORM_EPS: &str = "{arch}.attention.layer_norm_epsilon";
-pub const KEY_ATTENTION_LAYERNORM_RMS_EPS: &str = "{arch}.attention.layer_norm_rms_epsilon";
+pub const KEY_ATTENTION_LAYER_NORM_EPS: &str = "{arch}.attention.layer_norm_epsilon";
+pub const KEY_ATTENTION_LAYER_NORM_RMS_EPS: &str = "{arch}.attention.layer_norm_rms_epsilon";
 
 // RoPE
 pub const KEY_ROPE_DIMENSION_COUNT: &str = "{arch}.rope.dimension_count";
@@ -57,7 +58,7 @@ pub const KEY_TOKENIZER_MERGES: &str = "tokenizer.ggml.merges";
 pub const KEY_TOKENIZER_BOS_ID: &str = "tokenizer.ggml.bos_token_id";
 pub const KEY_TOKENIZER_EOS_ID: &str = "tokenizer.ggml.eos_token_id";
 pub const KEY_TOKENIZER_UNK_ID: &str = "tokenizer.ggml.unknown_token_id";
-pub const KEY_TOKENIZER_SEP_ID: &str = "tokenizer.ggml.seperator_token_id";
+pub const KEY_TOKENIZER_SEP_ID: &str = "tokenizer.ggml.separator_token_id";
 pub const KEY_TOKENIZER_PAD_ID: &str = "tokenizer.ggml.padding_token_id";
 pub const KEY_TOKENIZER_HF_JSON: &str = "tokenizer.huggingface.json";
 pub const KEY_TOKENIZER_RWKV: &str = "tokenizer.rwkv.world";
@@ -258,15 +259,12 @@ impl<'a> GGUFBufReader<'a> {
 
     pub fn read(&mut self, n: usize) -> Result<&'a [u8]> {
         if n > self.cursor.len() {
-            return Err(Error {
-                kind: ErrorKind::FormatError,
-                message: format!(
-                    "failed to read {} bytes from the buffer, only {} bytes left",
-                    n,
-                    self.cursor.len()
-                ),
-                cause: None,
-            });
+            bail!(
+                ErrorKind::FormatError,
+                "failed to read {} bytes from the buffer, only {} bytes left",
+                n,
+                self.cursor.len()
+            );
         }
         let v = &self.cursor[0..n];
         self.cursor = &self.cursor[n..];
@@ -385,16 +383,15 @@ impl<'a, 'b> GGUFMetadataReader<'a, 'b> {
     pub fn read_string(&mut self) -> Result<&'a str> {
         let len = self.read_len()?;
         let buf = self.buf.read(len)?;
-        let s = std::str::from_utf8(buf).map_err(|e| Error {
+        std::str::from_utf8(buf).map_err(|e| Error {
             kind: ErrorKind::FormatError,
             message: "Invalid UTF-8 string".to_string(),
             cause: Some(Arc::new(e)),
-        });
-        s
+        })
     }
 
     /// Read the length for string & array. It would be an 32 bit unsigned integer on spec v1, but 64
-    /// bit on spec v2. For more infomation:
+    /// bit on spec v2. For more information:
     /// https://github.com/philpax/ggml/commit/b021b2577d4294800ece200c9f26c9c65b0f6f51
     fn read_len(&mut self) -> Result<usize> {
         let v = match self.version {
@@ -405,7 +402,7 @@ impl<'a, 'b> GGUFMetadataReader<'a, 'b> {
         Ok(v)
     }
 
-    /// compat v1 & v2 on the type change of the field dimensions[n]. for more infomation:
+    /// compat v1 & v2 on the type change of the field dimensions[n]. for more information:
     /// https://github.com/philpax/ggml/commit/b021b2577d4294800ece200c9f26c9c65b0f6f51#diff-d553f5c3bea777978686f7fd4ed40a185a2d8cdec90cba5e2d8a4d5504148505L154
     fn read_len_array(&mut self, n: usize) -> Result<Vec<usize>> {
         let v = match self.version {
@@ -523,11 +520,7 @@ impl<'a> GGUFHeader<'a> {
         let mut r = GGUFMetadataReader::new(buf, GGUFVersion::V2);
         let magic = r.read_u32()?;
         if magic != GGUF_MAGIC {
-            return Err(Error {
-                kind: ErrorKind::FormatError,
-                message: format!("Invalid magic number: {}", magic),
-                cause: None,
-            });
+            bail!(ErrorKind::FormatError, "Invalid magic number: {}", magic);
         }
 
         let version = r.read_u32()?;
@@ -557,11 +550,10 @@ impl<'a> GGUFHeader<'a> {
         let architecture = match metadata.get_string(KEY_GENERAL_ARCHITECTURE) {
             Some(s) => s.to_string(),
             _ => {
-                return Err(Error {
-                    kind: ErrorKind::FormatError,
-                    message: "Missing string metadata general.architecture".to_string(),
-                    cause: None,
-                });
+                bail!(
+                    ErrorKind::FormatError,
+                    "Missing string metadata general.architecture"
+                )
             }
         };
 

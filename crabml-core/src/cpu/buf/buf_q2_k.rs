@@ -11,7 +11,7 @@ use crate::cpu::buf::util::*;
 ///
 /// Weight is represented as x = a * q + b.
 ///
-/// 16 blocks of 16 elemenets each
+/// 16 blocks of 16 elements each
 ///
 /// Effectively 2.5625 bits per weight
 #[repr(C)]

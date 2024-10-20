@@ -1,10 +1,10 @@
 use std::borrow::Cow;
 
+use crate::bail;
 use crate::cpu::buf::buf_f16::alloc_f16_buf;
 use crate::cpu::buf::CpuTensorBuf;
 use crate::cpu::primitives;
 use crate::cpu::CpuTensorDeviceRef;
-use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::error::Result;
 use crate::gguf::GGMLType;
@@ -28,11 +28,12 @@ pub struct CpuTensor<'a> {
 impl<'a> CpuTensor<'a> {
     pub fn new(buf: Vec<f32>, shape: &[usize], device: CpuTensorDeviceRef<'a>) -> Result<Self> {
         if buf.len() != shape.iter().product() {
-            return Err(Error {
-                kind: ErrorKind::TensorError,
-                message: format!("invalid shape {:?} for data of length {}", shape, buf.len()),
-                cause: None,
-            });
+            bail!(
+                ErrorKind::TensorError,
+                "invalid shape {:?} for data of length {}",
+                shape,
+                buf.len()
+            );
         }
 
         let strider = TensorStrider::new(shape.to_vec());
@@ -136,7 +137,7 @@ impl<'a> Tensor for CpuTensor<'a> {
 
     fn alloc(shape: &[usize], dtype: GGMLType, device: Self::DeviceRef) -> Result<Self> {
         if dtype != GGMLType::F32 && dtype != GGMLType::F16 {
-            return Err((ErrorKind::TensorError, "only f32/f16 is supported").into());
+            bail!(ErrorKind::TensorError, "only f32/f16 is supported");
         }
 
         let buf_size = shape.iter().product();
@@ -165,15 +166,12 @@ impl<'a> Tensor for CpuTensor<'a> {
 
     fn resize(self, axis: usize, n: usize) -> Result<Self> {
         if axis >= self.shape().len() {
-            return Err((
+            bail!(
                 ErrorKind::TensorError,
-                format!(
-                    "resize: axis {} is larger than the current shape {:?}",
-                    axis,
-                    self.shape()
-                ),
-            )
-                .into());
+                "resize: axis {} is larger than the current shape {:?}",
+                axis,
+                self.shape()
+            );
         }
 
         let mut new_shape = self.shape().to_vec();
@@ -181,15 +179,12 @@ impl<'a> Tensor for CpuTensor<'a> {
 
         let new_len: usize = new_shape.iter().product();
         if new_len > self.buf.len() {
-            return Err((
+            bail!(
                 ErrorKind::TensorError,
-                format!(
-                    "resize: new shape {:?} is larger than the current shape {:?}",
-                    new_shape,
-                    self.shape()
-                ),
-            )
-                .into());
+                "resize: new shape {:?} is larger than the current shape {:?}",
+                new_shape,
+                self.shape()
+            );
         }
 
         let new_strider = self.strider.resize(&new_shape)?;
@@ -258,21 +253,19 @@ impl<'a> Tensor for CpuTensor<'a> {
         // (2, 1) + (2, 1) at axis 0 -> (4, 1)
         // (2, 1) + (2, 3) at axis 1 -> (2, 4)
         if !self.is_owned() {
-            return Err((ErrorKind::TensorError, "tensor not owned on concatenate").into());
+            bail!(ErrorKind::TensorError, "tensor not owned on concatenate");
         }
         if self.dtype() != GGMLType::F32 && self.dtype() != GGMLType::F16 {
-            return Err((
+            bail!(
                 ErrorKind::TensorError,
                 "only f32/f16 is supported on concatenate",
             )
-                .into());
         }
         if rhs.dtype() != GGMLType::F32 && rhs.dtype() != GGMLType::F16 {
-            return Err((
+            bail!(
                 ErrorKind::TensorError,
                 "only f32/f16 is supported on concatenate rhs",
-            )
-                .into());
+            );
         }
 
         // both tensors must have the same shape (except in the concatenating dimension)
@@ -281,15 +274,12 @@ impl<'a> Tensor for CpuTensor<'a> {
                 continue;
             }
             if self.shape()[i] != rhs.shape()[i] {
-                return Err((
+                bail!(
                     ErrorKind::TensorError,
-                    format!(
-                        "shape mismatch on concatenate, want {:?} but got {:?}",
-                        self.shape(),
-                        rhs.shape()
-                    ),
-                )
-                    .into());
+                    "shape mismatch on concatenate, want {:?} but got {:?}",
+                    self.shape(),
+                    rhs.shape()
+                );
             }
         }
 
@@ -316,20 +306,19 @@ impl<'a> Tensor for CpuTensor<'a> {
     fn copy_rows_from(&mut self, src: &CpuTensor<'a>, src_rows: &[usize]) -> Result<()> {
         let _t = self.device.metrics.copy_from_walltime.track();
         if !self.is_owned() {
-            return Err((ErrorKind::TensorError, "not owned").into());
+            bail!(ErrorKind::TensorError, "not owned");
         }
         if !self.is_contiguous() {
-            return Err((ErrorKind::TensorError, "dst tensor is not contiguous").into());
+            bail!(ErrorKind::TensorError, "dst tensor is not contiguous");
         }
         if !src.is_contiguous() {
-            return Err((ErrorKind::TensorError, "src tensor is not contiguous").into());
+            bail!(ErrorKind::TensorError, "src tensor is not contiguous");
         }
         if src.strider.dims() != 2 && src.strider.dims() != 1 {
-            return Err((
+            bail!(
                 ErrorKind::TensorError,
                 "copy_rows_from: src tensor is not 2d or 1d",
-            )
-                .into());
+            );
         }
 
         let cols = *self.shape().last().unwrap();
@@ -584,7 +573,7 @@ mod tests {
     }
 
     #[test]
-    fn test_contigous() -> Result<()> {
+    fn test_contiguous() -> Result<()> {
         let device = CpuTensorDevice::new();
         let t1 = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], device.clone())?;
         let t1 = t1.transpose(&[1, 0])?; // 3 x 2

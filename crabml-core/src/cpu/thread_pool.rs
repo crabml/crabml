@@ -3,7 +3,7 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 use std::time::Instant;
 
-type Thunk<'a> = Box<dyn FnOnce() + Send + 'a>;
+type Thunk<'a> = Box<dyn FnOnce() + Send + Sync + 'a>;
 
 type Work = (Thunk<'static>, Arc<AtomicUsize>, Instant);
 
@@ -77,7 +77,7 @@ pub struct Scope<'scope> {
 
 impl<'scope> Scope<'scope> {
     pub fn spawn<'a, F>(&mut self, f: F)
-    where F: FnOnce() + Send + 'a {
+    where F: FnOnce() + Send + Sync + 'a {
         let b = unsafe { mem::transmute::<Thunk<'a>, Thunk<'static>>(Box::new(f)) };
         self.thunks.push(b)
     }

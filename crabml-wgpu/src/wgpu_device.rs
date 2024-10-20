@@ -1,7 +1,7 @@
 use std::borrow::Cow;
-use std::cell::RefCell;
 use std::collections::HashMap;
-use std::rc::Rc;
+use std::sync::Arc;
+use std::sync::Mutex;
 
 use crabml::tensor::Tensor;
 use wgpu::util::DeviceExt;
@@ -45,10 +45,10 @@ pub struct WgpuTensorDevice {
     pub(crate) modules: HashMap<&'static str, wgpu::ShaderModule>,
 
     /// used for test only
-    pub debug_tensors: RefCell<HashMap<String, Vec<f32>>>,
+    pub debug_tensors: Mutex<HashMap<String, Vec<f32>>>,
 }
 
-pub type WgpuTensorDeviceRef = Rc<WgpuTensorDevice>;
+pub type WgpuTensorDeviceRef = Arc<WgpuTensorDevice>;
 
 impl WgpuTensorDevice {
     pub fn new(opts: WgpuTensorDeviceOptions) -> WgpuTensorDeviceRef {
@@ -65,10 +65,10 @@ impl WgpuTensorDevice {
             queue,
             staging_buf,
             modules: HashMap::new(),
-            debug_tensors: RefCell::new(HashMap::new()),
+            debug_tensors: Mutex::new(HashMap::new()),
         };
         d.load_modules();
-        Rc::new(d)
+        Arc::new(d)
     }
 
     pub(crate) fn load_modules(&mut self) {
@@ -167,10 +167,10 @@ impl WgpuTensorDevice {
     pub fn record_debug_tensor(&self, name: String, tensor: &impl Tensor) {
         let mut dst = vec![0.0; tensor.strider().len()];
         tensor.export(&mut dst).unwrap();
-        self.debug_tensors.borrow_mut().insert(name, dst);
+        self.debug_tensors.lock().unwrap().insert(name, dst);
     }
 
     pub fn dump_debug_tensor(&self, name: &str) -> Option<Vec<f32>> {
-        self.debug_tensors.borrow().get(name).cloned()
+        self.debug_tensors.lock().unwrap().get(name).cloned()
     }
 }

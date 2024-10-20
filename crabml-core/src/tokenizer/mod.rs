@@ -1,8 +1,7 @@
 mod tokenizer_gpt2;
 mod tokenizer_llama;
 
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use tokenizer_gpt2::Gpt2Tokenizer;
 use tokenizer_llama::LlamaTokenizer;
@@ -12,10 +11,9 @@ use crate::error::Result;
 pub type TokenID = usize;
 
 pub struct Tokenizer {
-    tokens: Rc<Vec<String>>,
+    tokens: Arc<Vec<String>>,
     eos_token: TokenID,
     inner: TokenizerInner,
-    utf8_buf: RefCell<Utf8Buf>,
 }
 
 enum TokenizerInner {
@@ -37,8 +35,7 @@ impl Tokenizer {
         bos_token: TokenID,
         eos_token: TokenID,
     ) -> Self {
-        let tokens = Rc::new(tokens);
-        let decode_buf = RefCell::new(Utf8Buf::new());
+        let tokens = Arc::new(tokens);
         let inner = TokenizerInner::Llama(LlamaTokenizer::new(
             tokens.clone(),
             scores,
@@ -49,7 +46,6 @@ impl Tokenizer {
         Self {
             tokens,
             eos_token,
-            utf8_buf: decode_buf,
             inner,
         }
     }
@@ -60,8 +56,7 @@ impl Tokenizer {
         bos_token: TokenID,
         eos_token: TokenID,
     ) -> Self {
-        let tokens = Rc::new(tokens);
-        let decode_buf = RefCell::new(Utf8Buf::new());
+        let tokens = Arc::new(tokens);
         let inner = TokenizerInner::GPT2(Gpt2Tokenizer::new(
             tokens.clone(),
             &merges,
@@ -71,7 +66,6 @@ impl Tokenizer {
         Self {
             tokens,
             eos_token,
-            utf8_buf: decode_buf,
             inner,
         }
     }
@@ -95,13 +89,13 @@ impl Tokenizer {
         self.tokens[token_id].clone()
     }
 
-    /// TODO: make it consume an Interator<Item=Result<TokenID>>
-    pub fn decode(&self, token: TokenID) -> Result<String> {
+    /// TODO: make it consume an Iterator<Item=Result<TokenID>>
+    pub fn decode(&self, token: TokenID, decode_buf: &mut Utf8Buf) -> Result<String> {
         let bytes = match &self.inner {
             TokenizerInner::Llama(inner) => inner.decode(token),
             TokenizerInner::GPT2(inner) => inner.decode(token),
         };
-        Ok(self.utf8_buf.borrow_mut().step(&bytes))
+        Ok(decode_buf.step(&bytes))
     }
 
     // encode the string text (input) into an upper-bound preallocated tokens[] array
@@ -116,8 +110,15 @@ impl Tokenizer {
 
 /// on the cases that a utf-8 character is split into multiple tokens, we need to buffer the tokens
 /// until we have a valid utf-8 string, then return it.
-struct Utf8Buf {
+#[derive(Debug)]
+pub struct Utf8Buf {
     buf: Vec<u8>,
+}
+
+impl Default for Utf8Buf {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Utf8Buf {

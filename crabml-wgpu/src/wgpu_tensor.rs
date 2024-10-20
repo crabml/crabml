@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::sync::Arc;
 
 use crabml::error::ErrorKind;
 use crabml::error::Result;
@@ -18,7 +18,7 @@ use crate::meta::RopeMeta;
 
 #[derive(Clone)]
 pub struct WgpuTensor {
-    buf: Rc<wgpu::Buffer>,
+    buf: Arc<wgpu::Buffer>,
     dtype: GGMLType,
     capacity: usize, // max element count
     strider: TensorStrider,
@@ -40,7 +40,7 @@ impl WgpuTensor {
             return Err((ErrorKind::TensorError, "new: buffer size mismatch").into());
         };
         Ok(Self {
-            buf: Rc::new(buf),
+            buf: Arc::new(buf),
             capacity: src.len(),
             dtype: GGMLType::F32,
             strider,
@@ -76,7 +76,7 @@ impl Tensor for WgpuTensor {
             });
         let strider = TensorStrider::new(shape.to_vec());
         Ok(Self {
-            buf: Rc::new(buf),
+            buf: Arc::new(buf),
             dtype,
             capacity: strider.len(),
             strider,
@@ -100,7 +100,7 @@ impl Tensor for WgpuTensor {
         });
         let strider = TensorStrider::new(shape.to_vec());
         Ok(Self {
-            buf: Rc::new(buf),
+            buf: Arc::new(buf),
             dtype: GGMLType::F32,
             capacity: n_elms,
             strider,

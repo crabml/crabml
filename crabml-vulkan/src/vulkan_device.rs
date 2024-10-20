@@ -1,6 +1,6 @@
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::Mutex;
 
 use bytemuck::NoUninit;
 use crabml::tensor::Tensor;
@@ -78,7 +78,7 @@ pub struct VulkanTensorDevice {
     pub(crate) inner: VulkanTensorDeviceInner,
 
     // only used for test
-    pub debug_tensors: RefCell<HashMap<String, Vec<f32>>>,
+    pub debug_tensors: Mutex<HashMap<String, Vec<f32>>>,
 }
 
 pub type VulkanTensorDeviceRef = Arc<VulkanTensorDevice>;
@@ -98,7 +98,7 @@ impl VulkanTensorDevice {
         let mut device = Self {
             opts,
             inner,
-            debug_tensors: RefCell::new(HashMap::new()),
+            debug_tensors: Mutex::new(HashMap::new()),
         };
         device.load_shaders();
         device.into()
@@ -188,11 +188,11 @@ impl VulkanTensorDevice {
     pub fn record_debug_tensor(&self, name: String, tensor: &impl Tensor) {
         let mut dst = vec![0.0; tensor.strider().len()];
         tensor.export(&mut dst).unwrap();
-        self.debug_tensors.borrow_mut().insert(name, dst);
+        self.debug_tensors.lock().unwrap().insert(name, dst);
     }
 
     pub fn dump_debug_tensor(&self, name: &str) -> Option<Vec<f32>> {
-        self.debug_tensors.borrow().get(name).cloned()
+        self.debug_tensors.lock().unwrap().get(name).cloned()
     }
 }
 

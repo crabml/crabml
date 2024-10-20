@@ -241,6 +241,7 @@ impl<'a> Tensor for CpuTensor<'a> {
         if self.device.opts.debug_named_tensors {
             self.device.add_debug_tensor(&self);
         }
+
         self
     }
 

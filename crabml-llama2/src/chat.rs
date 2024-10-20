@@ -282,7 +282,7 @@ impl ChatTemplate {
                     .map(|s| format!("<|im_start|>system\n{}<|im_end|>", s))
                     .unwrap_or("".to_string());
                 let assistant_prefix = match append_assistant_prefix {
-                    true => "<im_start>assistant\n",
+                    true => "<|im_start|>assistant\n",
                     false => "",
                 };
                 format!(

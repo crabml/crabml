@@ -1,13 +1,13 @@
 use std::collections::HashMap;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use regex::Regex;
 
 use super::TokenID;
 
 pub struct Gpt2Tokenizer {
-    tokens: Rc<Vec<String>>,
-    token_ids: Rc<HashMap<String, TokenID>>,
+    tokens: Arc<Vec<String>>,
+    token_ids: Arc<HashMap<String, TokenID>>,
     bpe_ranks: HashMap<(TokenID, TokenID), usize>,
     byte_encodes: HashMap<u8, char>,
     byte_decodes: HashMap<char, u8>,
@@ -17,12 +17,12 @@ pub struct Gpt2Tokenizer {
 
 impl Gpt2Tokenizer {
     pub fn new(
-        tokens: Rc<Vec<String>>,
+        tokens: Arc<Vec<String>>,
         merges: &[String],
         bos_token: TokenID,
         eos_token: TokenID,
     ) -> Self {
-        let token_ids: Rc<HashMap<String, TokenID>> = Rc::new(
+        let token_ids: Arc<HashMap<String, TokenID>> = Arc::new(
             tokens
                 .iter()
                 .enumerate()
@@ -229,7 +229,7 @@ mod tests {
             GGUFFileLoader::new("/Users/yazhou/llm/qwen1_5-0_5b-chat-q8_0.gguf", false)?;
         let gf = gf_loader.open()?;
 
-        let tokens = Rc::new(
+        let tokens = Arc::new(
             gf.metadata()
                 .get_string_array("tokenizer.ggml.tokens")
                 .unwrap()

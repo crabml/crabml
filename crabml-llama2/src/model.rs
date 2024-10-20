@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::sync::Arc;
 use std::vec;
 
 use crabml::cpu::CpuTensor;
@@ -89,9 +89,9 @@ pub trait LlamaModel {
 
     fn device(&self) -> <Self::T as Tensor>::DeviceRef;
 
-    fn weights(&self) -> Rc<LlamaWeights<Self::T>>;
+    fn weights(&self) -> Arc<LlamaWeights<Self::T>>;
 
-    fn tokenizer(&self) -> Rc<Tokenizer>;
+    fn tokenizer(&self) -> Arc<Tokenizer>;
 
     fn sampler(&self) -> Llama2SamplerRef;
 
@@ -100,8 +100,8 @@ pub trait LlamaModel {
 
 pub struct CpuLlamaModel<'a> {
     pub conf: LlamaConfig,
-    pub weights: Rc<LlamaWeights<CpuTensor<'a>>>,
-    pub tokenizer: Rc<Tokenizer>,
+    pub weights: Arc<LlamaWeights<CpuTensor<'a>>>,
+    pub tokenizer: Arc<Tokenizer>,
     pub device: CpuTensorDeviceRef<'a>,
     pub sampler: Llama2SamplerRef,
     pub metrics: TensorMetrics,
@@ -118,11 +118,11 @@ impl<'a> LlamaModel for &CpuLlamaModel<'a> {
         self.device.clone()
     }
 
-    fn weights(&self) -> Rc<LlamaWeights<CpuTensor<'a>>> {
+    fn weights(&self) -> Arc<LlamaWeights<CpuTensor<'a>>> {
         self.weights.clone()
     }
 
-    fn tokenizer(&self) -> Rc<Tokenizer> {
+    fn tokenizer(&self) -> Arc<Tokenizer> {
         self.tokenizer.clone()
     }
 
@@ -185,17 +185,12 @@ impl CpuLlamaModelLoader {
         let conf = self.load_config(gf)?;
         let weights = self.load_weights(gf, conf.n_layers, device.clone())?;
         let tokenizer = self.load_tokenizer(gf)?;
-        let sampler = Llama2Sampler::new(
-            conf.vocab_size,
-            self.temprature,
-            self.probability,
-            device.exp_cache(),
-        );
+        let sampler = Llama2Sampler::new(self.temprature, self.probability, device.exp_cache());
         Ok(CpuLlamaModel {
             conf,
-            weights: Rc::new(weights),
+            weights: Arc::new(weights),
             device,
-            tokenizer: Rc::new(tokenizer),
+            tokenizer: Arc::new(tokenizer),
             sampler,
             metrics,
         })
@@ -649,8 +644,8 @@ impl CpuLlamaModelLoader {
 #[derive(Clone)]
 pub struct GpuLlamaModel<T: Tensor> {
     pub conf: LlamaConfig,
-    pub weights: Rc<LlamaWeights<T>>,
-    pub tokenizer: Rc<Tokenizer>,
+    pub weights: Arc<LlamaWeights<T>>,
+    pub tokenizer: Arc<Tokenizer>,
     pub device: T::DeviceRef,
     pub sampler: Llama2SamplerRef,
     pub metrics: TensorMetrics,
@@ -663,7 +658,7 @@ impl<T: Tensor> LlamaModel for &GpuLlamaModel<T> {
         self.conf.clone()
     }
 
-    fn weights(&self) -> Rc<LlamaWeights<Self::T>> {
+    fn weights(&self) -> Arc<LlamaWeights<Self::T>> {
         self.weights.clone()
     }
 
@@ -671,7 +666,7 @@ impl<T: Tensor> LlamaModel for &GpuLlamaModel<T> {
         self.device.clone()
     }
 
-    fn tokenizer(&self) -> Rc<Tokenizer> {
+    fn tokenizer(&self) -> Arc<Tokenizer> {
         self.tokenizer.clone()
     }
 
@@ -689,7 +684,7 @@ impl<T: Tensor> GpuLlamaModel<T> {
         let weights = Self::convert_cpu_weights(&cpu_model.weights, device.clone())?;
         Ok(Self {
             conf: cpu_model.conf.clone(),
-            weights: Rc::new(weights),
+            weights: Arc::new(weights),
             tokenizer: cpu_model.tokenizer.clone(),
             sampler: cpu_model.sampler.clone(),
             metrics: cpu_model.metrics.clone(),

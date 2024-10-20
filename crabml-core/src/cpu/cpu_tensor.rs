@@ -573,7 +573,7 @@ mod tests {
     }
 
     #[test]
-    fn test_contigous() -> Result<()> {
+    fn test_contiguous() -> Result<()> {
         let device = CpuTensorDevice::new();
         let t1 = CpuTensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], device.clone())?;
         let t1 = t1.transpose(&[1, 0])?; // 3 x 2

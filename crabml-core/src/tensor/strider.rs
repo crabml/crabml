@@ -298,7 +298,7 @@ mod tests {
     }
 
     #[test]
-    fn test_is_contigous() -> Result<()> {
+    fn test_is_contiguous() -> Result<()> {
         let s = TensorStrider::new(vec![2, 3]);
         assert!(s.is_contiguous());
         assert!(s.is_contiguous_on_axis(1));

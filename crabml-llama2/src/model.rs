@@ -137,7 +137,7 @@ impl<'a> LlamaModel for &CpuLlamaModel<'a> {
 }
 
 pub struct CpuLlamaModelLoader {
-    temprature: f32,
+    temperature: f32,
 
     probability: f32,
 
@@ -152,16 +152,16 @@ impl Default for CpuLlamaModelLoader {
 
 impl CpuLlamaModelLoader {
     pub fn new() -> Self {
-        // this default value is suiteable for running tests
+        // this default value is suitable for running tests
         Self {
-            temprature: 0.0,
+            temperature: 0.0,
             probability: 0.0,
             device_options: CpuTensorDeviceOptions::default(),
         }
     }
 
     pub fn with_temperature(mut self, temperature: f32) -> Self {
-        self.temprature = temperature;
+        self.temperature = temperature;
         self
     }
 
@@ -186,7 +186,7 @@ impl CpuLlamaModelLoader {
         let conf = self.load_config(gf)?;
         let weights = self.load_weights(gf, conf.n_layers, device.clone())?;
         let tokenizer = self.load_tokenizer(gf)?;
-        let sampler = Llama2Sampler::new(self.temprature, self.probability, device.exp_cache());
+        let sampler = Llama2Sampler::new(self.temperature, self.probability, device.exp_cache());
         Ok(CpuLlamaModel {
             conf,
             weights: Arc::new(weights),

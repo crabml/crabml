@@ -138,7 +138,7 @@ impl WgpuTensorDevice {
         (device, queue)
     }
 
-    pub fn encode_pipeline_commnad(
+    pub fn encode_pipeline_command(
         &self,
         key: &'static str,
         entries: &[wgpu::BindGroupEntry],

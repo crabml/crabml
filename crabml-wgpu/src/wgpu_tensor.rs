@@ -244,7 +244,7 @@ impl Tensor for WgpuTensor {
                 resource: meta_buf.as_entire_binding(),
             },
         ];
-        let encoder = self.device.encode_pipeline_commnad(
+        let encoder = self.device.encode_pipeline_command(
             "concatenate_inplace",
             entries,
             (rhs.strider.len() as u32 / 16, 1, 1),
@@ -380,7 +380,7 @@ impl Tensor for WgpuTensor {
                 resource: meta_buf.as_entire_binding(),
             },
         ];
-        let encoder = self.device.encode_pipeline_commnad(
+        let encoder = self.device.encode_pipeline_command(
             "rope_inplace",
             entries,
             (rows as u32 / 32 + 1, 1, 1),
@@ -418,7 +418,7 @@ impl Tensor for WgpuTensor {
         ];
         let encoder =
             self.device
-                .encode_pipeline_commnad("rms_norm_inplace", entries, (meta.n_batch, 1, 1));
+                .encode_pipeline_command("rms_norm_inplace", entries, (meta.n_batch, 1, 1));
         self.device.queue.submit(Some(encoder.finish()));
         Ok(self)
     }
@@ -451,7 +451,7 @@ impl Tensor for WgpuTensor {
         ];
         let encoder =
             self.device
-                .encode_pipeline_commnad("softmax_inplace", entries, (m * n / 16 + 1, 1, 1));
+                .encode_pipeline_command("softmax_inplace", entries, (m * n / 16 + 1, 1, 1));
         self.device.queue.submit(Some(encoder.finish()));
         Ok(self)
     }
@@ -464,7 +464,7 @@ impl Tensor for WgpuTensor {
             binding: 0,
             resource: self.buf.as_entire_binding(),
         }];
-        let encoder = self.device.encode_pipeline_commnad(
+        let encoder = self.device.encode_pipeline_command(
             "silu_inplace",
             entries,
             ((elms / 32 + 1) as u32, 1, 1),
@@ -481,7 +481,7 @@ impl Tensor for WgpuTensor {
             binding: 0,
             resource: self.buf.as_entire_binding(),
         }];
-        let encoder = self.device.encode_pipeline_commnad(
+        let encoder = self.device.encode_pipeline_command(
             "gelu_inplace",
             entries,
             ((elms / 32 + 1) as u32, 1, 1),
@@ -511,7 +511,7 @@ impl Tensor for WgpuTensor {
                 resource: meta_buf.as_entire_binding(),
             },
         ];
-        let encoder = self.device.encode_pipeline_commnad(
+        let encoder = self.device.encode_pipeline_command(
             "mul_inplace",
             entries,
             (n_elms as u32 / 32 + 1, 1, 1),
@@ -541,7 +541,7 @@ impl Tensor for WgpuTensor {
                 resource: meta_buf.as_entire_binding(),
             },
         ];
-        let encoder = self.device.encode_pipeline_commnad(
+        let encoder = self.device.encode_pipeline_command(
             "add_inplace",
             entries,
             (n_elms as u32 / 32 + 1, 1, 1),
@@ -575,7 +575,7 @@ impl Tensor for WgpuTensor {
                 resource: meta_buf.as_entire_binding(),
             },
         ];
-        let encoder = self.device.encode_pipeline_commnad(
+        let encoder = self.device.encode_pipeline_command(
             "mul_inplace",
             entries,
             (n_elms as u32 / 32 + 1, 1, 1),
@@ -627,7 +627,7 @@ impl Tensor for WgpuTensor {
         assert!(meta.m / 32 < 65535); // vulkan limit each dimension to 65535
         let encoder =
             self.device
-                .encode_pipeline_commnad("sgemv", entries, (meta.b, meta.m / 32, 1));
+                .encode_pipeline_command("sgemv", entries, (meta.b, meta.m / 32, 1));
         self.device.queue.submit(Some(encoder.finish()));
 
         Ok(output)
@@ -682,7 +682,7 @@ impl Tensor for WgpuTensor {
                 resource: output.buf.as_entire_binding(),
             },
         ];
-        let encoder = self.device.encode_pipeline_commnad(
+        let encoder = self.device.encode_pipeline_command(
             "batch_matmul",
             entries,
             (meta.b * meta.m * meta.n / 32 + 1, 1, 1),
@@ -728,7 +728,7 @@ impl Tensor for WgpuTensor {
                 resource: meta_buf.as_entire_binding(),
             },
         ];
-        let encoder = self.device.encode_pipeline_commnad(
+        let encoder = self.device.encode_pipeline_command(
             "contiguous",
             entries,
             (n_elms as u32 / 32 + 1, 1, 1),

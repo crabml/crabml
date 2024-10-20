@@ -602,7 +602,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
     }
 
     fn forward_ffn(&self, mut x: T, l: usize, _pos: usize, activation: Activation) -> Result<T> {
-        // save for redidual connection
+        // save for residual connection
         let x_orig_ffn = x.dup()?; // (n_batch, embed_dim)
 
         // ffn rmsnorm

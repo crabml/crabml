@@ -58,7 +58,7 @@ impl<'a, T: Tensor> Llama2Chat<'a, T> {
     }
 }
 
-/// Llama2ChatReplyIteratorStats is used to return some useful infomation
+/// Llama2ChatReplyIteratorStats is used to return some useful information
 /// after/during the execution of iterator.
 #[derive(Debug, Default)]
 struct Llama2ChatReplyIteratorStats {
@@ -122,7 +122,7 @@ impl<'a> Iterator for Llama2ChatReplyIterator<'a> {
 
 /// the model response might ends with stop mark like "<end_of_turn>", please note
 /// these stop mark are NOT a single token. we'd use a simple state machine to track
-/// wheter we've entered these stop marks, and merge these tokens in the stop mark
+/// whether we've entered these stop marks, and merge these tokens in the stop mark
 /// to a single String.
 pub struct MarkMatcher {
     state: MarkMatchState,
@@ -256,14 +256,14 @@ impl ChatTemplate {
                         )
                     })
                     .unwrap_or("".to_string());
-                let assitant_prefix = if append_assistant_prefix {
+                let assistant_prefix = if append_assistant_prefix {
                     "<|start_header_id|>assistant<|end_header_id|>\n\n"
                 } else {
                     ""
                 };
                 format!(
                     "{}<|start_header_id|>user<|end_header_id|>\n\n{}<|eot_id|>{}",
-                    system_prompt, prompt, assitant_prefix
+                    system_prompt, prompt, assistant_prefix
                 )
             }
             ChatTemplate::Gemma => {

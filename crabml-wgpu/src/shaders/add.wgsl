@@ -1,5 +1,5 @@
 struct Meta {
-    N: u32, // elments count
+    N: u32, // elements count
 }
 
 @group(0) @binding(0)

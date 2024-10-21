@@ -39,7 +39,7 @@ pub fn quantize_f32_f16<'a>(buf: &[f32]) -> Cow<'a, [f16]> {
 }
 
 pub fn vec_dot_f16_f16(a: &[f16], a_offset: usize, b: &[f16], b_offset: usize, len: usize) -> f32 {
-    #[cfg(target_arch = "aarch64", target_feature = "fp16")]
+    #[cfg(and(target_arch = "aarch64", target_feature = "fp16"))]
     {
         vec_dot_f16_f16_neon(a, a_offset, b, b_offset, len)
     }

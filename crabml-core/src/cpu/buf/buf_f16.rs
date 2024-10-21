@@ -44,7 +44,7 @@ pub fn vec_dot_f16_f16(a: &[f16], a_offset: usize, b: &[f16], b_offset: usize, l
         vec_dot_f16_f16_neon(a, a_offset, b, b_offset, len)
     }
 
-    #[cfg(not(any(target_arch = "aarch64",)))]
+    #[cfg(not(any(target_arch = "aarch64", target_feature = "fp16")))]
     {
         vec_dot_f16_f16_fallback(a, a_offset, b, b_offset, len)
     }

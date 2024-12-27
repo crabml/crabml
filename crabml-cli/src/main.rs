@@ -1,3 +1,4 @@
+#[cfg(not(target_env = "msvc"))]
 extern crate jemallocator;
 
 use std::io::Write;
@@ -21,6 +22,7 @@ use crabml_wgpu::WgpuTensorDeviceOptions;
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 
+#[cfg(not(target_env = "msvc"))]
 #[global_allocator]
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 

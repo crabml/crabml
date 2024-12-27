@@ -788,6 +788,7 @@ pub struct GGUFFileLoader {
 }
 
 impl GGUFFileLoader {
+    #[allow(unused_variables)]
     pub fn new(path: &str, mlock: bool) -> Result<Self> {
         let file = File::open(path).map_err(|err| Error {
             kind: ErrorKind::IOError,
@@ -802,16 +803,20 @@ impl GGUFFileLoader {
                 cause: Some(Arc::new(err)),
             })?
         };
+
+        #[cfg(unix)]
         mmap.advise(memmap2::Advice::WillNeed)
             .map_err(|err| Error {
                 kind: ErrorKind::IOError,
                 message: format!("failed to advise the mmap: {}", path),
                 cause: Some(Arc::new(err)),
             })?;
+
+        #[cfg(unix)]
         if mlock {
             mmap.lock().map_err(|err| Error {
                 kind: ErrorKind::IOError,
-                message: format!("failed to advise the mmap: {}", path),
+                message: format!("failed to lock the mmap: {}", path),
                 cause: Some(Arc::new(err)),
             })?;
         }

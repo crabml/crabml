@@ -128,8 +128,14 @@ pub fn vec_dot_q4_0_q8_0(abs: &[BlockQ4_0], bbs: &[BlockQ8_0]) -> f32 {
     {
         vec_dot_q4_0_q8_0_neon(abs, bbs)
     }
-
-    #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    {
+        vec_dot_q4_0_q8_0_avx2(abs, bbs)
+    }
+    #[cfg(not(any(
+        all(target_arch = "aarch64", target_feature = "neon"),
+        all(target_arch = "x86_64", target_feature = "avx2")
+    )))]
     {
         vec_dot_q4_0_q8_0_fallback(abs, bbs)
     }
@@ -202,6 +208,33 @@ pub fn vec_dot_q4_0_q8_0_neon(abs: &[BlockQ4_0], bbs: &[BlockQ8_0]) -> f32 {
     }
 
     sumf
+}
+
+// https://github.com/huggingface/candle/blob/cd639131f04990c16bfc498ea347cb9df3d2374f/candle-core/src/quantized/avx.rs#L51
+#[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+pub fn vec_dot_q4_0_q8_0_avx2(abs: &[BlockQ4_0], bbs: &[BlockQ8_0]) -> f32 {
+    use std::arch::x86_64::*;
+
+    use crate::cpu::archutil::x86_64::*;
+
+    // abs length must be a multiple of 32, otherwise, use the fallback version
+    if abs.len() % 32 != 0 {
+        return vec_dot_q4_0_q8_0_fallback(abs, bbs);
+    }
+
+    unsafe {
+        let mut acc = _mm256_setzero_ps();
+        for (x, y) in abs.iter().zip(bbs.iter()) {
+            let d = _mm256_set1_ps(f16::to_f32(x.d) * f16::to_f32(y.d));
+            let bx = bytes_from_nibbles_32(x.qs.as_ptr());
+            let off = _mm256_set1_epi8(8);
+            let bx = _mm256_sub_epi8(bx, off);
+            let by = _mm256_loadu_si256(y.qs.as_ptr() as *const __m256i);
+            let q = mul_sum_i8_pairs_float(bx, by);
+            acc = _mm256_fmadd_ps(d, q, acc);
+        }
+        hsum_float_8(acc)
+    }
 }
 
 pub fn vec_dot_q4_0_q8_0_fallback(abs: &[BlockQ4_0], bbs: &[BlockQ8_0]) -> f32 {

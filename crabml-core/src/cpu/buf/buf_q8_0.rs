@@ -228,7 +228,8 @@ fn vec_dot_q8_0_q8_0_neon(abs: &[BlockQ8_0], bbs: &[BlockQ8_0]) -> f32 {
 pub fn vec_dot_q8_0_q8_0_avx2(abs: &[BlockQ8_0], bbs: &[BlockQ8_0]) -> f32 {
     use std::arch::x86_64::*;
 
-    use crate::backends::cpu::archutil::x86_64::*;
+    use crate::cpu::archutil::x86_64::*;
+
     debug_assert_eq!(abs.len(), bbs.len());
 
     unsafe {
@@ -254,7 +255,7 @@ pub fn vec_dot_q8_0_q8_0_avx2(abs: &[BlockQ8_0], bbs: &[BlockQ8_0]) -> f32 {
 
         if abs.len() % 2 == 1 {
             let a = abs.last().unwrap_unchecked();
-            let b = abs.last().unwrap_unchecked();
+            let b = bbs.last().unwrap_unchecked();
 
             let d = _mm256_set1_ps(a.d.to_f32() * b.d.to_f32());
 

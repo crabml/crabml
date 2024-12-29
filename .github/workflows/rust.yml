@@ -20,13 +20,20 @@ jobs:
     - name: Clippy
       run: cargo clippy --all-targets --all-features -- -D warnings
 
-  test:
-    runs-on: ubuntu-22.04
+  test-linux:
+    runs-on: ${{ matrix.config.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - { os: ubuntu-22.04, arch: x86_64, feature: native }
+          - { os: ubuntu-22.04, arch: x86_64, feature: avx2 }
+
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       # refer to https://vulkan.lunarg.com/doc/view/latest/linux/getting_started_ubuntu.html
-      - name: (linux) install vulkan sdk
+      - name: install vulkan sdk
         if: runner.os == 'Linux'
         shell: bash
         run: |
@@ -41,5 +48,73 @@ jobs:
           # Refer to https://github.com/gfx-rs/wgpu/issues/5086
           sudo apt install vulkan-validationlayers
 
-      - name: Run tests
-        run: RUST_TEST_THREADS=1 cargo test --workspace
+      - name: set build env vars
+        if: runner.os == 'Linux'
+        run: |
+          if [ "${{ matrix.config.feature }}" = "avx2" ]; then
+            flags="-C target-feature=+avx2"
+            echo "RUSTFLAGS=${flags}" >> $GITHUB_ENV
+          fi
+
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          override: true
+      - uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --workspace --verbose
+
+  test-windows:
+    runs-on: ${{ matrix.config.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - { os: windows-latest, arch: x86_64, feature: native }
+          - { os: windows-latest, arch: x86_64, feature: avx2 }
+
+    steps:
+      - uses: actions/checkout@v4
+#      - name: install vulkan sdk
+#        run: |
+#          curl.exe -o $env:RUNNER_TEMP/VulkanSDK-Installer.exe -L "https://sdk.lunarg.com/sdk/download/1.3.296.0/windows/VulkanSDK-1.3.296.0-Installer.exe"
+#          & "$env:RUNNER_TEMP\VulkanSDK-Installer.exe" --accept-licenses --default-answer --confirm-command install
+#          Add-Content $env:GITHUB_ENV "VULKAN_SDK=C:\VulkanSDK\1.3.296.0"
+#          Add-Content $env:GITHUB_PATH "C:\VulkanSDK\1.3.296.0\bin"
+
+      - name: install ninja
+        if: runner.os == 'Windows'
+        run: |
+          choco install ninja
+
+      - name: set build env vars
+        if: runner.os == 'Windows' && matrix.config.feature == 'avx2'
+        shell: pwsh
+        run: |
+          $env:RUSTFLAGS="-C target-feature=+avx2"
+
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          override: true
+      - uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: -p crabml --verbose
+
+  test-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          override: true
+      - uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: -p crabml --verbose

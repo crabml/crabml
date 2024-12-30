@@ -1,4 +1,4 @@
-name: Rust
+name: ci
 
 on:
   push:
@@ -14,7 +14,7 @@ jobs:
   check:
     runs-on: ubuntu-22.04
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Format
       run: cargo fmt --all -- --check
     - name: Clippy
@@ -34,7 +34,6 @@ jobs:
 
       # refer to https://vulkan.lunarg.com/doc/view/latest/linux/getting_started_ubuntu.html
       - name: install vulkan sdk
-        if: runner.os == 'Linux'
         shell: bash
         run: |
           set -e
@@ -49,7 +48,6 @@ jobs:
           sudo apt install vulkan-validationlayers
 
       - name: set build env vars
-        if: runner.os == 'Linux'
         run: |
           if [ "${{ matrix.config.feature }}" = "avx2" ]; then
             flags="-C target-feature=+avx2"
@@ -77,21 +75,19 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-#      - name: install vulkan sdk
-#        run: |
-#          curl.exe -o $env:RUNNER_TEMP/VulkanSDK-Installer.exe -L "https://sdk.lunarg.com/sdk/download/1.3.296.0/windows/VulkanSDK-1.3.296.0-Installer.exe"
-#          & "$env:RUNNER_TEMP\VulkanSDK-Installer.exe" --accept-licenses --default-answer --confirm-command install
-#          Add-Content $env:GITHUB_ENV "VULKAN_SDK=C:\VulkanSDK\1.3.296.0"
-#          Add-Content $env:GITHUB_PATH "C:\VulkanSDK\1.3.296.0\bin"
+      # - name: install vulkan sdk
+      #   run: |
+      #     curl.exe -o $env:RUNNER_TEMP/VulkanSDK-Installer.exe -L "https://sdk.lunarg.com/sdk/download/1.3.296.0/windows/VulkanSDK-1.3.296.0-Installer.exe"
+      #     & "$env:RUNNER_TEMP\VulkanSDK-Installer.exe" --accept-licenses --default-answer --confirm-command install
+      #     Add-Content $env:GITHUB_ENV "VULKAN_SDK=C:\VulkanSDK\1.3.296.0"
+      #     Add-Content $env:GITHUB_PATH "C:\VulkanSDK\1.3.296.0\bin"
 
       - name: install ninja
-        if: runner.os == 'Windows'
         run: |
           choco install ninja
 
       - name: set build env vars
-        if: runner.os == 'Windows' && matrix.config.feature == 'avx2'
-        shell: pwsh
+        if: matrix.config.feature == 'avx2'
         run: |
           $env:RUSTFLAGS="-C target-feature=+avx2"
 
@@ -106,8 +102,21 @@ jobs:
           args: -p crabml --verbose
 
   test-macos:
-    runs-on: macos-latest
+    runs-on: ${{ matrix.config.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - { os: macos-latest, arch: aarch64, feature: native }
+          - { os: macos-latest, arch: aarch64, feature: neon }
     steps:
+      - name: set build env vars
+        run: |
+          if [ "${{ matrix.config.feature }}" = "neon" ]; then
+            flags="-C target-feature=+neon"
+            echo "RUSTFLAGS=${flags}" >> $GITHUB_ENV
+          fi
+
       - uses: actions/checkout@v4
       - uses: actions-rs/toolchain@v1
         with:

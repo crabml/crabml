@@ -10,7 +10,7 @@ description = "crabml llama2 support"
 rand = "0.8.5"
 crabml = { workspace = true }
 crabml-vulkan = { workspace = true }
-half = { version = "2.3.1" }
+half = { version = "2.3.1", features = ["bytemuck"]}
 
 [dev-dependencies]
 approx = "0.5.1"

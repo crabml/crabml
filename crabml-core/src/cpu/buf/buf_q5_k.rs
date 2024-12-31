@@ -178,7 +178,7 @@ pub fn quantize_f32_q5_k(data: &[f32]) -> Vec<BlockQ5K> {
             let dm = dmin * m as f32;
             for i in 0..32 {
                 let index = 32 * idx + i;
-                let ll = nearest_i32((chunk[index] + dm) / d).min(31).max(0);
+                let ll = nearest_i32((chunk[index] + dm) / d).clamp(0, 31);
                 l[index] = ll as u8;
             }
         }

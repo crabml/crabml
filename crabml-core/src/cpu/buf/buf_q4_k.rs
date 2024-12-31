@@ -166,7 +166,7 @@ pub fn quantize_f32_q4_k(data: &[f32]) -> Vec<BlockQ4K> {
             let dm = dmin * m as f32;
             for i in 0..32 {
                 let index = 32 * idx + i;
-                let ll = nearest_i32((chunk[index] + dm) / d).min(15).max(0);
+                let ll = nearest_i32((chunk[index] + dm) / d).clamp(0, 15);
                 l[index] = ll as u8;
             }
         }

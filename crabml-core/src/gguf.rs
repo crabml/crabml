@@ -207,7 +207,7 @@ pub enum GGUFMetadataValue<'a> {
     Array(GGUFMetadataArray<'a>),
 }
 
-impl<'a> GGUFMetadataValue<'a> {
+impl GGUFMetadataValue<'_> {
     pub fn typ(&self) -> GGUFMetadataValueType {
         match self {
             GGUFMetadataValue::U8(_) => GGUFMetadataValueType::U8,
@@ -250,7 +250,7 @@ pub struct GGUFBufReader<'a> {
 }
 
 impl<'a> GGUFBufReader<'a> {
-    pub fn new(buf: &'a [u8]) -> GGUFBufReader {
+    pub fn new(buf: &'a [u8]) -> GGUFBufReader<'a> {
         GGUFBufReader {
             cursor: buf,
             read_bytes: 0,
@@ -297,7 +297,10 @@ macro_rules! define_gguf_metadata_value_read_fn {
                 assert!(data.len() % typ_size == 0);
                 let ptr = data.as_ptr();
                 // assert!(ptr.align_offset(typ_size) == 0, "unaligned data: {:p}", ptr);
-                mem::transmute(std::slice::from_raw_parts(ptr, data.len() / typ_size))
+                mem::transmute::<&[u8], &[$typ]>(std::slice::from_raw_parts(
+                    ptr,
+                    data.len() / typ_size,
+                ))
             };
             Ok(transmuted_data)
         }

@@ -108,6 +108,7 @@ pub fn quantize_f32_q8_1(data: &[f32]) -> Vec<BlockQ8_1> {
         // Quantize the chunk
         for (i, &value) in chunk.iter().enumerate() {
             let scaled_value = value / d; // Scale the value
+
             // Convert the scaled value to i8, clamping it to the i8 range
             let quantized_value = scaled_value.max(i8::MIN as f32).min(i8::MAX as f32) as i8;
             qs[i] = quantized_value;

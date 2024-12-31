@@ -180,7 +180,7 @@ pub fn quantize_f32_q3_k(data: &[f32]) -> Vec<BlockQ3K> {
             let iscale = -32f32 / max_scale;
             for (j, &scale) in scales.iter().enumerate() {
                 let mut _l = nearest_i32(iscale * scale) as i8;
-                _l = _l.min(31).max(-32) + 32;
+                _l = _l.clamp(-32, 31) + 32;
                 if j < 8 {
                     bs[i].scales[j] = _l as u8 & 0xf;
                 } else {
@@ -206,7 +206,7 @@ pub fn quantize_f32_q3_k(data: &[f32]) -> Vec<BlockQ3K> {
             }
             for (&d, l) in data_block.iter().zip(l.iter_mut()) {
                 let mut _l = nearest_i32(d / _d);
-                _l = _l.min(3).max(-4);
+                _l = _l.clamp(-4, 3);
                 *l = (_l + 4) as i8;
             }
         }

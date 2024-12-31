@@ -1,5 +1,4 @@
 #![feature(thread_local)]
-#![feature(lazy_cell)]
 
 mod meta;
 mod wgpu_device;

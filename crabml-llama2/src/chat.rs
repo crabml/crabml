@@ -92,7 +92,7 @@ impl<'a> Llama2ChatReplyIterator<'a> {
     }
 }
 
-impl<'a> Iterator for Llama2ChatReplyIterator<'a> {
+impl Iterator for Llama2ChatReplyIterator<'_> {
     type Item = Result<String>;
 
     fn next(&mut self) -> Option<Self::Item> {

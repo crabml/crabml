@@ -42,7 +42,7 @@ pub struct Llama2Runner<T: Tensor> {
     pub metrics: TensorMetrics,
 }
 
-impl<'a, T: Tensor> Llama2Runner<T> {
+impl<T: Tensor> Llama2Runner<T> {
     pub fn new(
         model: impl LlamaModel<T = T>,
         seq_len: usize,
@@ -139,7 +139,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
     }
 
     pub fn generate(
-        &'a mut self,
+        &mut self,
         pos: usize,
         token: usize,
         steps: Option<usize>,
@@ -173,7 +173,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
 
     // simplify the test cases
     pub fn prefill_and_generate(
-        &'a mut self,
+        &mut self,
         prompt: &str,
         steps: usize,
     ) -> Result<impl Iterator<Item = Result<String>> + '_> {
@@ -571,6 +571,7 @@ impl<'a, T: Tensor> Llama2Runner<T> {
             let k_cache = self.key_cache[l].take().unwrap();
             let k_cache_strider_orig = k_cache.strider().clone();
             let k_cache = k_cache.transpose(&[0, 2, 1])?; // (n_kv_heads, head_size, seq)
+
             // (n_head, 1, head_size) @ (n_kv_heads, head_size, seq)
             let attn = q.batch_matmul(&k_cache)?; // (n_head, n_batch, seq)
             let attn = attn.softmax_inplace(2)?;

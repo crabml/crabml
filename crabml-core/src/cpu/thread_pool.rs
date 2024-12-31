@@ -75,7 +75,7 @@ pub struct Scope<'scope> {
     _phantom: std::marker::PhantomData<&'scope ()>,
 }
 
-impl<'scope> Scope<'scope> {
+impl Scope<'_> {
     pub fn spawn<'a, F>(&mut self, f: F)
     where F: FnOnce() + Send + Sync + 'a {
         let b = unsafe { mem::transmute::<Thunk<'a>, Thunk<'static>>(Box::new(f)) };

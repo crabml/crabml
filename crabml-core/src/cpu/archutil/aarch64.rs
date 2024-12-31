@@ -138,12 +138,9 @@ pub unsafe fn vaddvq_f16(a: float16x8_t) -> f32 {
 
 /// calling this is much slower than using the intrinsics.
 #[inline]
-pub unsafe fn vdotq_s32(mut a: int32x4_t, b: int8x16_t, c: int8x16_t) -> int32x4_t {
-    asm!(
-        "sdot {0:v}.4s, {1:v}.16b, {2:v}.16b",
-        inout(vreg) a,
-        in(vreg) b,
-        in(vreg) c,
-        options(nomem, nostack, preserves_flags));
-    a
+pub unsafe fn vdotq_s32(a: int8x16_t, b: int8x16_t) -> int32x4_t {
+    use core::arch::aarch64::*;
+    let p0 = vmull_s8(vget_low_s8(a), vget_low_s8(b));
+    let p1 = vmull_s8(vget_high_s8(a), vget_high_s8(b));
+    vaddq_s32(vpaddlq_s16(p0), vpaddlq_s16(p1))
 }
